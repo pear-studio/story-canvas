@@ -1,0 +1,4 @@
+interface:
+  display_name: "视觉方向"
+  short_description: "提出角色与整组视觉方向及镜头建议，子设定验证交由用户验收"
+  default_prompt: "使用 $visual-production 为当前范围提出角色和整组视觉建议。"

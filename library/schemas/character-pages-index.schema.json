@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://storyvisualizer.local/schemas/character-pages-index.schema.json",
+  "type": "object",
+  "required": [
+    "$schema",
+    "pages"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "https://storyvisualizer.local/schemas/character-pages-index.schema.json"
+    },
+    "pages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "page_id",
+          "character_id",
+          "variant_id"
+        ],
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "pattern": "^page-(?:[0-9]{3}|[a-f0-9]{12})$"
+          },
+          "character_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "not": {
+              "const": "npc"
+            }
+          },
+          "variant_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "not": {
+              "const": "main"
+            },
+            "description": "必填；角色 visual/prompt 中的造型 id。"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "next_number": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,16 @@
+{
+  "id": "anima-base-depth-v1",
+  "steps": 16,
+  "shift": 5,
+  "base_sha256": "bd43b7cffe1ed1153d9c41e7beb2f18cb1273eafbaa3af3edd6a173dc90a006e",
+  "controlnet": "anima-vace-depth.safetensors",
+  "controlnet_sha256": "29762e7037bd74b70abaa832c79d10159d5e7e0612045961318e304eb50e802d",
+  "preprocessor": "depth_anything_v2_vits.pth",
+  "preprocessor_sha256": "715fade13be8f229f8a70cc02066f656f2423a59effd0579197bbf57860e1378",
+  "sources": {
+    "controlnet": "https://huggingface.co/TaihoC/Anima-ControlNet-VACE-Depth",
+    "preprocessor": "https://huggingface.co/depth-anything/Depth-Anything-V2-Small",
+    "controlnet_node": "https://github.com/TaihoC/ComfyUI-Advanced-ControlNet-Anima/tree/c7186c70db1111a05c4f23bd7ed1ece4526dac0d",
+    "preprocessor_node": "https://github.com/Fannovel16/comfyui_controlnet_aux/tree/59b1fc411ede8623b2997855b8018f0b3b6cf49f"
+  }
+}

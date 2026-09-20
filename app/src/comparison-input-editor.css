@@ -1,0 +1,15 @@
+.comparison-input-editor > p { color: var(--muted); font-size: 13px; }
+.comparison-input-editor select { width: 100%; min-height: 38px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; background: white; }
+.comparison-input-editor .comparison-form-grid > button { align-self: end; min-height: 38px; }
+.comparison-input-card > summary { cursor: pointer; font-weight: 600; margin-bottom: 12px; }
+.comparison-input-card > label { display: grid; gap: 6px; margin: 12px 0; min-width: 0; }
+.comparison-input-card > small { display: block; color: var(--muted); overflow-wrap: anywhere; }
+.comparison-input-card textarea { width: 100%; min-height: 90px; resize: vertical; }
+.comparison-input-card > button { margin-right: 8px; }
+.comparison-input-card .free-lora-row > span { min-width: 0; overflow-wrap: anywhere; }
+.comparison-experiments-page .comparison-experiment-list > article { grid-template-columns: auto minmax(0, 1fr) auto auto auto; }
+@media (max-width: 720px) {
+  .comparison-experiments-page .comparison-experiment-list > article { grid-template-columns: auto minmax(0, 1fr); }
+  .comparison-experiments-page .comparison-experiment-list > article > div { grid-column: 2; }
+  .comparison-input-card .free-lora-row { display: flex; flex-wrap: wrap; }
+}

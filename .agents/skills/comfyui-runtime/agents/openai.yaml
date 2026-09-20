@@ -1,0 +1,4 @@
+interface:
+  display_name: "ComfyUI 运行环境"
+  short_description: "管理、诊断并复现 StoryVisualizer 本地图片生成环境"
+  default_prompt: "使用 $comfyui-runtime 检查并准备当前项目的 ComfyUI 运行环境。"

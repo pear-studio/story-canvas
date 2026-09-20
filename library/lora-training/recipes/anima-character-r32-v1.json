@@ -1,0 +1,15 @@
+{
+  "id": "anima-character-r32-v1",
+  "version": 1,
+  "name": "Anima 角色 LoRA · Rank 32",
+  "family": "anima",
+  "description": "面向单角色身份训练的 Anima Rank 32 训练方案。",
+  "semantic_config": {
+    "resolution": 1024,
+    "effective_batch_size": 1,
+    "network_dim": 32,
+    "network_alpha": 16,
+    "learning_rate": 0.00002,
+    "optimizer_type": "AdamW8bit"
+  }
+}

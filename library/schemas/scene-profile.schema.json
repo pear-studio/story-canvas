@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://storyvisualizer.local/schemas/scene-profile.schema.json",
+  "type": "object",
+  "required": [
+    "$schema",
+    "name",
+    "description"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "https://storyvisualizer.local/schemas/scene-profile.schema.json"
+    },
+    "name": {
+      "type": "string",
+      "pattern": "\\S",
+      "maxLength": 100
+    },
+    "description": {
+      "type": "string",
+      "pattern": "\\S",
+      "maxLength": 1000
+    }
+  },
+  "additionalProperties": false
+}

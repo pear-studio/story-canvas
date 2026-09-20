@@ -1,0 +1,129 @@
+{
+  "$schema": "https://storyvisualizer.local/schemas/lora-resource.schema.json",
+  "version": 2,
+  "id": "lora-4f40e5cf2d8c3093",
+  "name": "Anime Flat Style",
+  "kind": "lora",
+  "created_at": "2026-08-21T14:12:36.782Z",
+  "updated_at": "2026-08-21T14:45:08.590Z",
+  "file": {
+    "relative_path": "loras/civitai-anima/1952560-2985705-Flar_ANIMA_BASE.safetensors",
+    "sha256": "4f40e5cf2d8c3093f7a5e105a51afebc679dff519743118f897e289275effede",
+    "size_bytes": 91879600
+  },
+  "architecture": {
+    "family": "anima",
+    "prompt_family": "anima"
+  },
+  "base_models": [
+    {
+      "kind": "base_model",
+      "name": "Anima",
+      "identity_status": "declared",
+      "relative_path": null,
+      "sha256": null,
+      "size_bytes": null,
+      "source": "https://civitai.com/models/1952560?modelVersionId=2985705"
+    }
+  ],
+  "concept": {
+    "name": "Anime Flat Style",
+    "description": "This LoRA is designed to generate vibrant, clean anime artwork featuring bold, flat colors with minimal shading and depth—perfect for a striking, 2D-inspired aesthetic reminiscent of classic cel-shaded animation. It's trained on high-quality datasets to capture smooth gradients and vivid palettes while keeping things simple and eye-catching. Ideal for character designs, scenes, or illustrations that pop without complex details.\n\n版本说明（Anima-Base）：\nI don't know if this is a lot different since I trained on a preview before, now  I im doing it on a base model, have fun with the lora ^^"
+  },
+  "activation": {
+    "trigger_words": [],
+    "tags": [
+      "anime",
+      "style",
+      "flat color",
+      "zimageturbo",
+      "qwen",
+      "anime screencaps",
+      "ltx-2.3",
+      "anima"
+    ]
+  },
+  "recommended_generation": {
+    "weight": {
+      "default": null,
+      "minimum": null,
+      "maximum": null,
+      "status": "untested"
+    },
+    "clip_skip": null,
+    "sampler": null,
+    "scheduler": null,
+    "steps": null,
+    "cfg": null,
+    "status": "untested"
+  },
+  "training": null,
+  "description": "This LoRA is designed to generate vibrant, clean anime artwork featuring bold, flat colors with minimal shading and depth—perfect for a striking, 2D-inspired aesthetic reminiscent of classic cel-shaded animation. It's trained on high-quality datasets to capture smooth gradients and vivid palettes while keeping things simple and eye-catching. Ideal for character designs, scenes, or illustrations that pop without complex details.\n\n版本说明（Anima-Base）：\nI don't know if this is a lot different since I trained on a preview before, now  I im doing it on a base model, have fun with the lora ^^",
+  "usage_notes": "以下推荐信息来自 Civitai 选定版本及其模型发布说明；本机尚未对参数做实测，因此资源状态仍为 untested。\n页面未明确触发词、权重或采样参数。\n本次保存 3 张 Civitai 发布图；不使用 nsfw=None 过滤。图片级 nsfwLevel：132149008:4, 132148974:8, 132148721:16。",
+  "license": {
+    "type": "civitai_model_permissions",
+    "allow_no_credit": true,
+    "allow_commercial_use": [
+      "Image",
+      "RentCivit",
+      "Rent",
+      "Sell"
+    ],
+    "allow_derivatives": true,
+    "allow_different_license": true
+  },
+  "source": {
+    "type": "civitai",
+    "url": "https://civitai.com/models/1952560?modelVersionId=2985705",
+    "civitai_model_id": 1952560,
+    "civitai_version_id": 2985705,
+    "version_name": "Anima-Base"
+  },
+  "previews": [
+    {
+      "id": "preview-001",
+      "file": "previews/preview-001.jpg",
+      "alt": "Anime Flat Style · Anima-Base Civitai 发布图 1",
+      "source": "https://civitai.com/images/132149008",
+      "nsfw_level": 4
+    },
+    {
+      "id": "preview-002",
+      "file": "previews/preview-002.jpg",
+      "alt": "Anime Flat Style · Anima-Base Civitai 发布图 2",
+      "source": "https://civitai.com/images/132148974",
+      "nsfw_level": 8
+    },
+    {
+      "id": "preview-003",
+      "file": "previews/preview-003.jpg",
+      "alt": "Anime Flat Style · Anima-Base Civitai 发布图 3",
+      "source": "https://civitai.com/images/132148721",
+      "nsfw_level": 16
+    }
+  ],
+  "examples": [],
+  "embedded_metadata": {
+    "role": "backup",
+    "values": {
+      "civitai.model_id": "1952560",
+      "civitai.version_id": "2985705",
+      "civitai.version_name": "Anima-Base",
+      "civitai.creator": "Agino",
+      "civitai.base_model": "Anima",
+      "civitai.file_name": "Flar_ANIMA_BASE.safetensors",
+      "civitai.file_sha256": "4f40e5cf2d8c3093f7a5e105a51afebc679dff519743118f897e289275effede",
+      "civitai.file_size_kb": "89726.171875",
+      "civitai.trained_words": "[]",
+      "civitai.model_tags": "[\"anime\",\"style\",\"flat color\",\"zimageturbo\",\"qwen\",\"anime screencaps\",\"ltx-2.3\",\"anima\"]",
+      "civitai.version_created_at": "2026-05-28T22:22:29.770Z",
+      "civitai.version_published_at": "2026-05-28T22:42:26.196Z",
+      "civitai.preview_source": "https://civitai.com/images/132809285",
+      "civitai.preview_images": "[{\"id\":\"132149008\",\"nsfw_level\":4,\"source\":\"https://civitai.com/images/132149008\"},{\"id\":\"132148974\",\"nsfw_level\":8,\"source\":\"https://civitai.com/images/132148974\"},{\"id\":\"132148721\",\"nsfw_level\":16,\"source\":\"https://civitai.com/images/132148721\"}]",
+      "civitai.recommendation_source": "https://civitai.com/models/1952560?modelVersionId=2985705"
+    }
+  },
+  "name_zh": "平涂动漫画风",
+  "summary_zh": "引入平涂动漫插画风格。",
+  "purpose": "画风"
+}

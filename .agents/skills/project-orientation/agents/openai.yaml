@@ -1,0 +1,4 @@
+interface:
+  display_name: "项目定向"
+  short_description: "了解项目当前事实和待决问题，与用户确定本次需要完成的一步"
+  default_prompt: "使用 $project-orientation 了解当前故事项目，给出当前一步的建议。"

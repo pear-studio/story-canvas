@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/src/styles.css"><title>选择控件验证</title></head>
+<body><main style="padding:24px;max-width:640px">
+<div class="resource-picker-filters"><label>用途分类<select id="purpose"><option>全部用途</option><option>画风</option><option>角色</option><option disabled>不可用用途</option></select></label></div>
+<p><label class="resource-picker-check"><input id="check" type="checkbox">启用资源</label></p>
+<p><label class="resource-picker-check"><input type="checkbox" disabled>不可用资源</label></p>
+<div class="finished-options"><label><input name="mode" type="radio" value="first" checked>仅当前页</label><label><input name="mode" type="radio" value="all">全部页面</label></div>
+<p><label class="resource-picker-check"><input id="partial" type="checkbox">部分选择</label></p>
+<div class="token-role" style="position:relative;display:inline-flex"><span>角色</span><select aria-label="角色归属"><option>主角</option><option>配角</option></select></div>
+</main><script>document.querySelector('#partial').indeterminate=true;</script></body></html>

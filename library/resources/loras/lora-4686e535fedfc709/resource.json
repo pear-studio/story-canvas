@@ -1,0 +1,126 @@
+{
+  "$schema": "https://storyvisualizer.local/schemas/lora-resource.schema.json",
+  "version": 2,
+  "id": "lora-4686e535fedfc709",
+  "name": "BunnySlop AI Style 『Anima | Illustrious』",
+  "kind": "lora",
+  "created_at": "2026-08-21T14:18:43.945Z",
+  "updated_at": "2026-08-21T14:46:39.333Z",
+  "file": {
+    "relative_path": "loras/civitai-anima/2613391-3250911-BunnySlop_Ani_v6.9.safetensors",
+    "sha256": "4686e535fedfc7090c131037b6448ccf2599cfd81442f5c400ee6c997151775a",
+    "size_bytes": 138663707
+  },
+  "architecture": {
+    "family": "anima",
+    "prompt_family": "anima"
+  },
+  "base_models": [
+    {
+      "kind": "base_model",
+      "name": "Anima",
+      "identity_status": "declared",
+      "relative_path": null,
+      "sha256": null,
+      "size_bytes": null,
+      "source": "https://civitai.com/models/2613391?modelVersionId=3250911"
+    }
+  ],
+  "concept": {
+    "name": "BunnySlop AI Style 『Anima | Illustrious』",
+    "description": "BunnySlop AI Style.\n\nbig boobs 1 girls slop style IL/Anima LoRA. from Slopia with love.|\nAnima v5.56 : more vibrant color this maybe final ver.\nIL v5.56 : kinda unstable in some checkpoint. lower it weight when it happen\n\nsince most of my dataset are black haired girl, it may bias toward that.\n\nThis is my first attempt at create LoRa. this shit gonna be suck. you has been warned.\n\nI create this intended for personal use because I'm tired of have to stack shit ton of style LoRas to get style I want and I'm suck at using artist tag. skill issues.\n\nPreview image setting\nSampler: Eular a\n\nSchedule type: Simple\n\nStep: 32\n\nCFG Scale: 4\n\nHires-fix upcaler: 4x_IllustrationJaNai_V1_DAT2_190k, x1.5, 20 step\n\ngen with Forge neo. so no workflow for ya."
+  },
+  "activation": {
+    "trigger_words": [
+      "@sl0p"
+    ],
+    "tags": [
+      "anime",
+      "slop",
+      "hentai",
+      "style"
+    ]
+  },
+  "recommended_generation": {
+    "weight": {
+      "default": null,
+      "minimum": null,
+      "maximum": null,
+      "status": "untested"
+    },
+    "clip_skip": null,
+    "sampler": "Euler a",
+    "scheduler": "Simple",
+    "steps": 32,
+    "cfg": 4,
+    "status": "untested"
+  },
+  "training": null,
+  "description": "BunnySlop AI Style.\n\nbig boobs 1 girls slop style IL/Anima LoRA. from Slopia with love.|\nAnima v5.56 : more vibrant color this maybe final ver.\nIL v5.56 : kinda unstable in some checkpoint. lower it weight when it happen\n\nsince most of my dataset are black haired girl, it may bias toward that.\n\nThis is my first attempt at create LoRa. this shit gonna be suck. you has been warned.\n\nI create this intended for personal use because I'm tired of have to stack shit ton of style LoRas to get style I want and I'm suck at using artist tag. skill issues.\n\nPreview image setting\nSampler: Eular a\n\nSchedule type: Simple\n\nStep: 32\n\nCFG Scale: 4\n\nHires-fix upcaler: 4x_IllustrationJaNai_V1_DAT2_190k, x1.5, 20 step\n\ngen with Forge neo. so no workflow for ya.",
+  "usage_notes": "以下推荐信息来自 Civitai 选定版本及其模型发布说明；本机尚未对参数做实测，因此资源状态仍为 untested。\n页面预览图条件：Sampler Euler a、Schedule type Simple、Steps 32、CFG Scale 4；页面还提醒出现不稳定时降低权重，但未给出 Anima 数值权重。\n本次保存 3 张 Civitai 发布图；不使用 nsfw=None 过滤。图片级 nsfwLevel：140347674:2, 140347672:16, 140347666:4。",
+  "license": {
+    "type": "civitai_model_permissions",
+    "allow_no_credit": true,
+    "allow_commercial_use": [
+      "RentCivit",
+      "Rent",
+      "Image"
+    ],
+    "allow_derivatives": true,
+    "allow_different_license": true
+  },
+  "source": {
+    "type": "civitai",
+    "url": "https://civitai.com/models/2613391?modelVersionId=3250911",
+    "civitai_model_id": 2613391,
+    "civitai_version_id": 3250911,
+    "version_name": "Anima v6.9"
+  },
+  "previews": [
+    {
+      "id": "preview-001",
+      "file": "previews/preview-001.jpg",
+      "alt": "BunnySlop AI Style 『Anima | Illustrious』 · Anima v6.9 Civitai 发布图 1",
+      "source": "https://civitai.com/images/140347674",
+      "nsfw_level": 2
+    },
+    {
+      "id": "preview-002",
+      "file": "previews/preview-002.jpg",
+      "alt": "BunnySlop AI Style 『Anima | Illustrious』 · Anima v6.9 Civitai 发布图 2",
+      "source": "https://civitai.com/images/140347672",
+      "nsfw_level": 16
+    },
+    {
+      "id": "preview-003",
+      "file": "previews/preview-003.jpg",
+      "alt": "BunnySlop AI Style 『Anima | Illustrious』 · Anima v6.9 Civitai 发布图 3",
+      "source": "https://civitai.com/images/140347666",
+      "nsfw_level": 4
+    }
+  ],
+  "examples": [],
+  "embedded_metadata": {
+    "role": "backup",
+    "values": {
+      "civitai.model_id": "2613391",
+      "civitai.version_id": "3250911",
+      "civitai.version_name": "Anima v6.9",
+      "civitai.creator": "Bunnykiin",
+      "civitai.base_model": "Anima",
+      "civitai.file_name": "BunnySlop_Ani_v6.9.safetensors",
+      "civitai.file_sha256": "4686e535fedfc7090c131037b6448ccf2599cfd81442f5c400ee6c997151775a",
+      "civitai.file_size_kb": "135413.7763671875",
+      "civitai.trained_words": "[\"@sl0p\"]",
+      "civitai.model_tags": "[\"anime\",\"slop\",\"hentai\",\"style\"]",
+      "civitai.version_created_at": "2026-08-21T05:52:49.668Z",
+      "civitai.version_published_at": "2026-08-21T06:22:41.049Z",
+      "civitai.preview_source": "",
+      "civitai.preview_images": "[{\"id\":\"140347674\",\"nsfw_level\":2,\"source\":\"https://civitai.com/images/140347674\"},{\"id\":\"140347672\",\"nsfw_level\":16,\"source\":\"https://civitai.com/images/140347672\"},{\"id\":\"140347666\",\"nsfw_level\":4,\"source\":\"https://civitai.com/images/140347666\"}]",
+      "civitai.recommendation_source": "https://civitai.com/models/2613391?modelVersionId=3250911"
+    }
+  },
+  "name_zh": "BunnySlop 画风",
+  "summary_zh": "引入 BunnySlop AI 插画的画风。",
+  "purpose": "画风"
+}

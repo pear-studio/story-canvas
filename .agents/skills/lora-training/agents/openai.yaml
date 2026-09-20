@@ -1,0 +1,4 @@
+interface:
+  display_name: "LoRA 训练"
+  short_description: "准备、诊断并分析项目内的 LoRA 训练任务和结果"
+  default_prompt: "Use $lora-training to prepare this project LoRA task until it is ready for me to start training."

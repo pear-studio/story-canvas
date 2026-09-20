@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://storyvisualizer.local/schemas/story-outline.schema.json",
+  "type": "object",
+  "required": ["$schema", "synopsis", "chapters"],
+  "properties": {
+    "$schema": { "const": "https://storyvisualizer.local/schemas/story-outline.schema.json" },
+    "synopsis": { "type": "string", "pattern": "\\S" },
+    "chapters": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "summary", "sequences"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+          "title": { "type": "string", "pattern": "\\S" },
+          "summary": { "type": "string", "pattern": "\\S" },
+          "sequences": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "title", "summary"],
+              "properties": {
+                "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+                "title": { "type": "string", "pattern": "\\S" },
+                "summary": { "type": "string", "pattern": "\\S" }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

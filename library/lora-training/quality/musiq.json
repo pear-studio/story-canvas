@@ -1,0 +1,10 @@
+{
+  "id": "musiq-koniq10k",
+  "package": "pyiqa==0.1.14.1",
+  "file": {
+    "relative_path": "quality_assessment/musiq_koniq_ckpt-e95806b9.pth",
+    "size_bytes": 108610983,
+    "sha256": "e95806b9eae5f3814c410f574ba8e552362bd5bc63d758ed5b97860f5d6185aa",
+    "source": "https://huggingface.co/chaofengc/IQA-PyTorch-Weights/resolve/main/musiq_koniq_ckpt-e95806b9.pth"
+  }
+}

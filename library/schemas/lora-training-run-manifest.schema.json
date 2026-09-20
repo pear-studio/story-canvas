@@ -1,0 +1,793 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://storyvisualizer.local/schemas/lora-training-run-manifest.schema.json",
+  "type": "object",
+  "required": [
+    "version",
+    "id",
+    "task_id",
+    "dataset_id",
+    "created_at",
+    "family",
+    "prompt_family",
+    "task_name",
+    "dataset_name",
+    "usage_defaults",
+    "description",
+    "activation_terms",
+    "items",
+    "groups",
+    "models",
+    "trainer",
+    "recipe",
+    "semantic_config",
+    "experiment",
+    "execution_config",
+    "run_settings",
+    "config",
+    "dataset_toml_sha256",
+    "execution",
+    "seed"
+  ],
+  "properties": {
+    "version": {
+      "const": 4
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^run-[a-f0-9]{12}$"
+    },
+    "task_id": {
+      "type": "string",
+      "pattern": "^lora-[a-f0-9]{12}$"
+    },
+    "dataset_id": {
+      "type": "string",
+      "pattern": "^dataset-[a-f0-9]{12}$"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "task_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "dataset_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "family": {
+      "const": "anima"
+    },
+    "prompt_family": {
+      "type": "string",
+      "minLength": 1
+    },
+    "usage_defaults": {
+      "$ref": "#/$defs/usage_defaults"
+    },
+    "description": {
+      "type": "string"
+    },
+    "activation_terms": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/item"
+      }
+    },
+    "groups": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/group"
+      }
+    },
+    "models": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/model"
+      }
+    },
+    "trainer": {
+      "$ref": "#/$defs/trainer"
+    },
+    "recipe": {
+      "$ref": "#/$defs/recipe"
+    },
+    "semantic_config": {
+      "$ref": "#/$defs/semantic_config"
+    },
+    "experiment": {
+      "$ref": "#/$defs/experiment"
+    },
+    "execution_config": {
+      "$ref": "#/$defs/execution_config"
+    },
+    "run_settings": {
+      "$ref": "#/$defs/run_settings"
+    },
+    "config": {
+      "$ref": "#/$defs/config"
+    },
+    "dataset_toml_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "checkpoints_relative_path": {
+      "$ref": "#/$defs/safe_relative_path"
+    },
+    "execution": {
+      "$ref": "#/$defs/execution"
+    },
+    "seed": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "family": {
+            "const": "anima"
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+          "properties": {
+            "models": {
+              "type": "array",
+              "minItems": 3,
+            "maxItems": 4,
+            "items": {
+              "allOf": [
+                { "$ref": "#/$defs/model" },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": { "enum": ["dit", "text_encoder", "vae", "llm_adapter"] }
+                  },
+                  "required": ["kind"]
+                }
+              ]
+            },
+            "allOf": [
+              {
+                "type": "array",
+                "contains": {
+                  "type": "object",
+                  "required": [
+                    "kind"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "const": "dit"
+                    }
+                  }
+                }
+              },
+              {
+                "type": "array",
+                "contains": {
+                  "type": "object",
+                  "required": [
+                    "kind"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "const": "text_encoder"
+                    }
+                  }
+                }
+              },
+              {
+                "type": "array",
+                "contains": {
+                  "type": "object",
+                  "required": [
+                    "kind"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "const": "vae"
+                    }
+                  }
+                }
+              },
+              {
+                "type": "array",
+                "not": {
+                  "type": "array",
+                  "contains": {
+                    "type": "object",
+                    "required": ["kind"],
+                    "properties": { "kind": { "const": "dit" } }
+                  },
+                  "minContains": 2
+                }
+              },
+              {
+                "type": "array",
+                "not": {
+                  "type": "array",
+                  "contains": {
+                    "type": "object",
+                    "required": ["kind"],
+                    "properties": { "kind": { "const": "text_encoder" } }
+                  },
+                  "minContains": 2
+                }
+              },
+              {
+                "type": "array",
+                "not": {
+                  "type": "array",
+                  "contains": {
+                    "type": "object",
+                    "required": ["kind"],
+                    "properties": { "kind": { "const": "vae" } }
+                  },
+                  "minContains": 2
+                }
+              },
+              {
+                "type": "array",
+                "not": {
+                  "type": "array",
+                  "contains": {
+                    "type": "object",
+                    "required": ["kind"],
+                    "properties": { "kind": { "const": "llm_adapter" } }
+                  },
+                  "minContains": 2
+                }
+              }
+            ]
+          },
+          "execution_config": {
+            "$ref": "#/$defs/anima_execution_config"
+          },
+          "run_settings": {
+            "$ref": "#/$defs/anima_run_settings"
+          },
+          "config": {
+            "$ref": "#/$defs/anima_config"
+          }
+        }
+      }
+    }
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "safe_relative_path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?![A-Za-z]:[\\\\/])(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$))(?!\\s)(?!.*\\s$).+$"
+    },
+    "usage_defaults": {
+      "type": "object",
+      "required": [
+        "clip_skip",
+        "sampler",
+        "scheduler",
+        "steps",
+        "cfg"
+      ],
+      "properties": {
+        "clip_skip": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "sampler": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scheduler": {
+          "type": "string",
+          "minLength": 1
+        },
+        "steps": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "cfg": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "item": {
+      "type": "object",
+      "required": [
+        "item_id",
+        "asset_id",
+        "group_id",
+        "source_file",
+        "image_file",
+        "caption_file",
+        "image_sha256",
+        "caption_sha256"
+      ],
+      "properties": {
+        "item_id": {
+          "type": "string",
+          "pattern": "^item-[a-f0-9]{12}$"
+        },
+        "asset_id": {
+          "type": "string",
+          "pattern": "^(?:asset-[a-f0-9]{12}|[a-z][a-z0-9]*(?:-[a-z0-9]+)*-[0-9]{3})$"
+        },
+        "group_id": {
+          "type": "string",
+          "pattern": "^group-[a-f0-9]{12}$"
+        },
+        "source_file": {
+          "$ref": "#/$defs/safe_relative_path"
+        },
+        "image_file": {
+          "$ref": "#/$defs/safe_relative_path"
+        },
+        "caption_file": {
+          "$ref": "#/$defs/safe_relative_path"
+        },
+        "image_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "caption_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "additionalProperties": false
+    },
+    "group": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "enabled",
+        "repeats"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^group-[a-f0-9]{12}$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "repeats": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "model": {
+      "type": "object",
+      "required": [
+        "kind",
+        "relative_path",
+        "sha256",
+        "size_bytes",
+        "source"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "dit",
+            "text_encoder",
+            "vae",
+            "llm_adapter"
+          ]
+        },
+        "relative_path": {
+          "$ref": "#/$defs/safe_relative_path"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "source": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "trainer": {
+      "type": "object",
+      "required": [
+        "sd_scripts_commit",
+        "python",
+        "torch",
+        "cuda",
+        "accelerate",
+        "gpu",
+        "vram_bytes"
+      ],
+      "properties": {
+        "sd_scripts_commit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "python": {
+          "type": "string",
+          "minLength": 1
+        },
+        "torch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cuda": {
+          "type": "string",
+          "minLength": 1
+        },
+        "accelerate": {
+          "type": "string",
+          "minLength": 1
+        },
+        "gpu": {
+          "type": "string",
+          "minLength": 1
+        },
+        "vram_bytes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "recipe": {
+      "type": "object",
+      "required": [
+        "id",
+        "version",
+        "sha256",
+        "overrides"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "overrides": {
+          "$ref": "#/$defs/recipe_overrides"
+        }
+      },
+      "additionalProperties": false
+    },
+    "recipe_overrides": {
+      "type": "object",
+      "properties": {
+        "resolution": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "effective_batch_size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "network_dim": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "network_alpha": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "learning_rate": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "semantic_config": {
+      "type": "object",
+      "required": [
+        "resolution",
+        "effective_batch_size",
+        "network_dim",
+        "network_alpha",
+        "learning_rate",
+        "optimizer_type"
+      ],
+      "properties": {
+        "resolution": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "effective_batch_size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "network_dim": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "network_alpha": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "learning_rate": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "optimizer_type": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "experiment": {
+      "type": "object",
+      "required": [
+        "max_train_steps",
+        "save_every_n_steps",
+        "seed"
+      ],
+      "properties": {
+        "max_train_steps": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "save_every_n_steps": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "execution_config": {
+      "type": "object",
+      "required": [
+        "micro_batch_size",
+        "gradient_accumulation_steps",
+        "effective_batch_size",
+        "max_data_loader_n_workers"
+      ],
+      "properties": {
+        "micro_batch_size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "gradient_accumulation_steps": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "effective_batch_size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_data_loader_n_workers": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "blocks_to_swap": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "anima_execution_config": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/execution_config"
+        },
+        {
+          "type": "object",
+          "required": [
+            "blocks_to_swap"
+          ],
+          "properties": {
+            "blocks_to_swap": {}
+          }
+        }
+      ]
+    },
+    "run_settings": {
+      "type": "object",
+      "required": [
+        "max_train_steps",
+        "save_every_n_steps",
+        "seed",
+        "micro_batch_size",
+        "gradient_accumulation_steps",
+        "max_data_loader_n_workers"
+      ],
+      "properties": {
+        "note": { "type": "string" },
+        "max_train_steps": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "save_every_n_steps": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "micro_batch_size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "gradient_accumulation_steps": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_data_loader_n_workers": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "blocks_to_swap": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "anima_run_settings": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/run_settings"
+        },
+        {
+          "type": "object",
+          "required": [
+            "blocks_to_swap"
+          ],
+          "properties": {
+            "blocks_to_swap": {}
+          }
+        }
+      ]
+    },
+    "config": {
+      "type": "object",
+      "required": [
+        "resolution",
+        "max_train_steps",
+        "train_batch_size",
+        "network_dim",
+        "network_alpha",
+        "learning_rate",
+        "optimizer_type",
+        "save_every_n_steps",
+        "seed",
+        "gradient_accumulation_steps",
+        "max_data_loader_n_workers"
+      ],
+      "properties": {
+        "resolution": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_train_steps": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "train_batch_size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "network_dim": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "network_alpha": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "learning_rate": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "optimizer_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "save_every_n_steps": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "gradient_accumulation_steps": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_data_loader_n_workers": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "blocks_to_swap": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "anima_config": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/config"
+        },
+        {
+          "type": "object",
+          "required": [
+            "blocks_to_swap"
+          ],
+          "properties": {
+            "blocks_to_swap": {}
+          }
+        }
+      ]
+    },
+    "execution": {
+      "type": "object",
+      "required": [
+        "executable",
+        "argv"
+      ],
+      "properties": {
+        "executable": {
+          "type": "string",
+          "minLength": 1
+        },
+        "argv": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

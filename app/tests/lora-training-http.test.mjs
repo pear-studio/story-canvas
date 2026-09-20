@@ -1,0 +1,113 @@
+import { cp } from "node:fs/promises";
+import { datasetRoot, taskRoot } from "../server/lora-training-support.mjs";
+import assert from "node:assert/strict";
+import test from "node:test";
+import { createServer } from "node:http";
+import { mkdtemp, readFile, rm, access, writeFile, stat, utimes } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { handleLoraTrainingRequest } from "../server/lora-training-http.mjs";
+import { createLoraTrainingOperations } from "../server/lora-training-operations.mjs";
+import { createTrainingClient } from "../src/lora-training-client.ts";
+import { readJsonBody, readOptionalJsonBody, readLoraAssetRequest, sendJson } from "../server/http-support.mjs";
+import sharp from "sharp";
+import { importLoraTrainingAssets } from "../server/lora-training-facts.mjs";
+
+test("全局训练无需项目即可创建编辑；并发旧稿被拒绝，其他数据集不影响当前保存", async t => {
+  const root = await mkdtemp(path.join(tmpdir(), "global-training-"));
+  await cp(new URL("../../library/lora-training", import.meta.url), path.join(root, "library/lora-training"), { recursive: true });
+  const trainingOperations = createLoraTrainingOperations(root);
+  const server = createServer(async (request, response) => {
+    try {
+      if (!await handleLoraTrainingRequest({ request, response, decodedPath: new URL(request.url, "http://localhost").pathname, resolvedProjectRoot: root, config: {}, trainingOperations, readJsonBody, readOptionalJsonBody, readLoraAssetRequest })) sendJson(response, 404, { error: "not_found" });
+    } catch (error) { sendJson(response, error.status ?? 500, { error: error.code ?? error.message }); }
+  });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  t.after(async () => { await new Promise(resolve => server.close(resolve)); await rm(root, { recursive: true, force: true }); });
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  const base = `${origin}/api/lora-training/datasets`;
+  const body = value => ({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(value) });
+  const created = await fetch(base, body({ name: "跨项目训练" }));
+  assert.equal(created.status, 201);
+  const dataset = await created.json();
+  const url = `${base}/${dataset.id}`;
+  const first = createTrainingClient();
+  const second = createTrainingClient();
+  const document = (await (await first.read(url)).json()).dataset;
+  await second.read(url);
+  const other = await fetch(base, body({ name: "另一个数据集" }));
+  assert.equal(other.status, 201);
+  const saved = await first.write(url, { ...body({ ...document, name: "新名称" }), method: "PUT" });
+  assert.equal(saved.status, 200);
+  // 辅助信息刷新不能替换旧草稿所依据的版本。
+  assert.equal((await second.read(`${url}/captioning`)).status, 200);
+  const stale = await second.write(url, { ...body({ ...document, name: "旧窗口" }), method: "PUT" });
+  assert.equal(stale.status, 409);
+  assert.deepEqual(await stale.json(), { error: "training_revision_conflict" });
+  assert.equal((await fetch(`${url}/postprocess/prepare`, body({}))).status, 428);
+  assert.equal((await second.write(`${url}/postprocess/prepare`, body({}))).status, 409);
+  const unavailable = await first.write(`${url}/postprocess/prepare`, body({}));
+  assert.equal(unavailable.status, 200);
+  assert.equal((await unavailable.json()).total, 0);
+  assert.equal((await (await fetch(url)).json()).dataset.name, "新名称");
+  const disk = JSON.parse(await readFile(path.join(datasetRoot(root, dataset.id), "project.json"), "utf8"));
+  assert.equal(disk.name, "新名称");
+  await access(path.join(root, "workspace", dataset.id, "settings.json"));
+  assert.equal((await fetch(`${origin}/api/projects/example/lora-training/datasets`)).status, 404);
+  const missing = await fetch(url, { ...body(document), method: "PUT" });
+  assert.equal(missing.status, 428);
+
+  const png = await sharp({ create: { width: 1200, height: 800, channels: 3, background: "red" } }).png().toBuffer();
+  await first.read(url);
+  const uploadForm = new FormData();
+  uploadForm.set("group_id", dataset.dataset.groups[0].id);
+  uploadForm.append("files", new Blob([png], { type: "image/png" }), "auto-prepare.png");
+  const uploadResponse = await first.write(`${url}/assets`, { method: "POST", body: uploadForm });
+  assert.equal(uploadResponse.status, 201);
+  const uploadDetail = await uploadResponse.json();
+  assert.match(uploadDetail.items[0].preparation_error, /MUSIQ/);
+  assert.equal((await (await first.read(url)).json()).items[0].preparation_error, uploadDetail.items[0].preparation_error, "导入自动处理失败必须保留图片和原因，刷新只读取");
+  const imported = await importLoraTrainingAssets(root, dataset.id, { group_id: dataset.dataset.groups[0].id, files: [{ filename: "test.png", buffer: png }] });
+  const mediaUrl = `${origin}/api/lora-training/media/${imported.items[0].media_url.replace(/^lora-training\//, "")}`;
+  const thumbnail = await fetch(`${mediaUrl}?w=320`);
+  assert.equal(thumbnail.status, 200);
+  assert.equal(thumbnail.headers.get("content-type"), "image/webp");
+  assert.equal(thumbnail.headers.get("cache-control"), "private, no-cache");
+  const thumbnailBytes = Buffer.from(await thumbnail.arrayBuffer());
+  assert.equal((await sharp(thumbnailBytes).metadata()).width, 320);
+  const etag = thumbnail.headers.get("etag");
+  assert.equal((await fetch(`${mediaUrl}?w=320`, { headers: { "if-none-match": etag } })).status, 304);
+  const original = await fetch(mediaUrl, { headers: { "if-none-match": etag } });
+  assert.equal(original.status, 200, "原图与缩略图有独立缓存身份");
+  assert.equal((await sharp(Buffer.from(await original.arrayBuffer())).metadata()).width, 1200);
+  const replacement = await sharp({ create: { width: 800, height: 1200, channels: 3, background: "blue" } }).png().toBuffer();
+  await writeFile(path.join(root, "workspace", dataset.id, imported.items[0].media_url.split("/").slice(3).join("/")), replacement);
+  const changed = await fetch(`${mediaUrl}?w=320`, { headers: { "if-none-match": etag } });
+  assert.equal(changed.status, 200, "文件变化后不能返回旧图片缓存");
+  assert.notEqual(changed.headers.get("etag"), etag);
+  const changedMetadata = await sharp(Buffer.from(await changed.arrayBuffer())).metadata();
+  assert.equal(changedMetadata.width, 320);
+  assert.equal(changedMetadata.height, 480);
+
+  // 同尺寸和字节数、保留 mtime 的替换仍须让磁盘变体与浏览器缓存同时失效。
+  const fixedPng = background => sharp({ create: { width: 800, height: 1200, channels: 3, background } }).png({ compressionLevel: 0 }).toBuffer();
+  const [blue, green] = await Promise.all([fixedPng("blue"), fixedPng("green")]);
+  assert.equal(blue.length, green.length);
+  const imagePath = path.join(root, "workspace", dataset.id, imported.items[0].media_url.split("/").slice(3).join("/"));
+  await writeFile(imagePath, blue);
+  // 使用整秒时间避免 utimes 往返舍入改变 mtime，保证只由 ctime 触发失效。
+  const preservedTime = new Date("2026-01-01T00:00:00Z");
+  await utimes(imagePath, preservedTime, preservedTime);
+  const beforeInfo = await stat(imagePath);
+  const before = await fetch(`${mediaUrl}?w=320`);
+  const beforeBytes = Buffer.from(await before.arrayBuffer());
+  await writeFile(imagePath, green);
+  await utimes(imagePath, preservedTime, preservedTime);
+  const afterInfo = await stat(imagePath);
+  assert.equal(afterInfo.size, beforeInfo.size);
+  assert.equal(afterInfo.mtimeMs, beforeInfo.mtimeMs);
+  const after = await fetch(`${mediaUrl}?w=320`, { headers: { "if-none-match": before.headers.get("etag") } });
+  assert.equal(after.status, 200);
+  assert.notEqual(after.headers.get("etag"), before.headers.get("etag"));
+  assert.notDeepEqual(Buffer.from(await after.arrayBuffer()), beforeBytes);
+});

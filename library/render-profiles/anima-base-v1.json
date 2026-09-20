@@ -1,0 +1,149 @@
+{
+  "$schema": "../schemas/render-profile.schema.json",
+  "id": "anima-base-v1",
+  "name": "Anima Base v1.0",
+  "description": "Anima 原生动漫插画配置；当前仅开放生成候选图。",
+  "tags": [
+    "Anima",
+    "动漫",
+    "实验配置"
+  ],
+  "architecture_family": "anima",
+  "models": {
+    "dit": {
+      "filename": "anima-base-v1.0.safetensors",
+      "relative_path": "diffusion_models/anima-base-v1.0.safetensors",
+      "size_bytes": 4182218328,
+      "sha256": "bd43b7cffe1ed1153d9c41e7beb2f18cb1273eafbaa3af3edd6a173dc90a006e",
+      "source": "https://huggingface.co/circlestone-labs/Anima/resolve/main/anima-base-v1.0.safetensors"
+    },
+    "text_encoder": {
+      "filename": "qwen_3_06b_base.safetensors",
+      "relative_path": "text_encoders/qwen_3_06b_base.safetensors",
+      "size_bytes": 1192135096,
+      "sha256": "cd2a512003e2f9f3cd3c32a9c3573f820bb28c940f73c57b1ddaa983d9223eba",
+      "source": "https://huggingface.co/Comfy-Org/Anima_ComfyUI/resolve/main/split_files/text_encoders/qwen_3_06b_base.safetensors"
+    },
+    "vae": {
+      "filename": "qwen_image_vae.safetensors",
+      "relative_path": "vae/qwen_image_vae.safetensors",
+      "size_bytes": 253806246,
+      "sha256": "a70580f0213e67967ee9c95f05bb400e8fb08307e017a924bf3441223e023d1f",
+      "source": "https://huggingface.co/Comfy-Org/Anima_ComfyUI/resolve/main/split_files/vae/qwen_image_vae.safetensors"
+    }
+  },
+  "prompt": {
+    "policy": "anima-v1",
+    "fragments": {
+      "quality-masterpiece": {
+        "polarity": "positive",
+        "placement": "prefix",
+        "order": 100,
+        "prompt_type": "custom_description",
+        "prompt_text": "masterpiece"
+      },
+      "quality-best": {
+        "polarity": "positive",
+        "placement": "prefix",
+        "order": 110,
+        "prompt_type": "custom_description",
+        "prompt_text": "best quality"
+      },
+      "quality-score-7": {
+        "polarity": "positive",
+        "placement": "prefix",
+        "order": 120,
+        "prompt_type": "custom_description",
+        "prompt_text": "score_7"
+      },
+      "avoid-worst-quality": {
+        "polarity": "negative",
+        "placement": "prefix",
+        "order": 100,
+        "prompt_type": "custom_description",
+        "prompt_text": "worst quality"
+      },
+      "avoid-low-quality": {
+        "polarity": "negative",
+        "placement": "prefix",
+        "order": 110,
+        "prompt_type": "custom_description",
+        "prompt_text": "low quality"
+      },
+      "avoid-score-1": {
+        "polarity": "negative",
+        "placement": "prefix",
+        "order": 120,
+        "prompt_type": "custom_description",
+        "prompt_text": "score_1"
+      },
+      "avoid-score-2": {
+        "polarity": "negative",
+        "placement": "prefix",
+        "order": 130,
+        "prompt_type": "custom_description",
+        "prompt_text": "score_2"
+      },
+      "avoid-score-3": {
+        "polarity": "negative",
+        "placement": "prefix",
+        "order": 140,
+        "prompt_type": "custom_description",
+        "prompt_text": "score_3"
+      },
+      "avoid-artist-name": {
+        "polarity": "negative",
+        "placement": "prefix",
+        "order": 150,
+        "prompt_type": "danbooru",
+        "prompt_text": "artist name"
+      },
+      "avoid-blurry": {
+        "polarity": "negative",
+        "placement": "prefix",
+        "order": 160,
+        "prompt_type": "danbooru",
+        "prompt_text": "blurry"
+      },
+      "avoid-jpeg-artifacts": {
+        "polarity": "negative",
+        "placement": "prefix",
+        "order": 170,
+        "prompt_type": "danbooru",
+        "prompt_text": "jpeg artifacts"
+      },
+      "avoid-chromatic-aberration": {
+        "polarity": "negative",
+        "placement": "prefix",
+        "order": 180,
+        "prompt_type": "danbooru",
+        "prompt_text": "chromatic aberration"
+      },
+      "avoid-text": {
+        "polarity": "negative",
+        "placement": "prefix",
+        "order": 190,
+        "prompt_type": "custom_description",
+        "prompt_text": "text"
+      },
+      "avoid-watermark": {
+        "polarity": "negative",
+        "placement": "prefix",
+        "order": 200,
+        "prompt_type": "danbooru",
+        "prompt_text": "watermark"
+      }
+    }
+  },
+  "operations": {
+    "candidates": {
+      "routes": {
+        "empty_latent": {
+          "workflow": "anima-candidate-page",
+          "recipe": "anima-base-v1-candidate"
+        }
+      }
+    }
+  },
+  "style_loras": {}
+}

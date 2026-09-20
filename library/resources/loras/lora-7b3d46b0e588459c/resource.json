@@ -1,0 +1,122 @@
+{
+  "$schema": "https://storyvisualizer.local/schemas/lora-resource.schema.json",
+  "version": 2,
+  "id": "lora-7b3d46b0e588459c",
+  "name": "Artist Style: Rei_17/老累/sanbonzakura",
+  "kind": "lora",
+  "created_at": "2026-08-21T14:16:11.501Z",
+  "updated_at": "2026-08-21T14:46:03.620Z",
+  "file": {
+    "relative_path": "loras/civitai-anima/538535-3240697-rei_Anima1_lora_V52.safetensors",
+    "sha256": "7b3d46b0e588459c586c22eee424e113305b932206285c907d80bff5b85c8f0d",
+    "size_bytes": 183620904
+  },
+  "architecture": {
+    "family": "anima",
+    "prompt_family": "anima"
+  },
+  "base_models": [
+    {
+      "kind": "base_model",
+      "name": "Anima",
+      "identity_status": "declared",
+      "relative_path": null,
+      "sha256": null,
+      "size_bytes": null,
+      "source": "https://civitai.com/models/538535?modelVersionId=3240697"
+    }
+  ],
+  "concept": {
+    "name": "Artist Style: Rei_17/老累/sanbonzakura",
+    "description": "I will release multiple versions for a few popular models. Feel free to request for artist or model.\nVersion naming convention: MajorVersion.MinorVersion [BaseModel]\nMajorVesion: For big updates that can apply to any style LoRA. For example, training parameter update.\nMinorVersion: For small updates that only apply to this LoRA. For example, epoch selection, removing a certain image from dataset.\nBaseModel: SDXL LoRA/LyCORIS works best on the model that it was trained on."
+  },
+  "activation": {
+    "trigger_words": [],
+    "tags": [
+      "style"
+    ]
+  },
+  "recommended_generation": {
+    "weight": {
+      "default": null,
+      "minimum": null,
+      "maximum": null,
+      "status": "untested"
+    },
+    "clip_skip": null,
+    "sampler": null,
+    "scheduler": null,
+    "steps": null,
+    "cfg": null,
+    "status": "untested"
+  },
+  "training": null,
+  "description": "I will release multiple versions for a few popular models. Feel free to request for artist or model.\nVersion naming convention: MajorVersion.MinorVersion [BaseModel]\nMajorVesion: For big updates that can apply to any style LoRA. For example, training parameter update.\nMinorVersion: For small updates that only apply to this LoRA. For example, epoch selection, removing a certain image from dataset.\nBaseModel: SDXL LoRA/LyCORIS works best on the model that it was trained on.",
+  "usage_notes": "以下推荐信息来自 Civitai 选定版本及其模型发布说明；本机尚未对参数做实测，因此资源状态仍为 untested。\n页面说明版本号代表大版本训练参数更新与小版本数据/epoch 调整，但未明确本版本的生成权重或采样参数。\n本次保存 3 张 Civitai 发布图；不使用 nsfw=None 过滤。图片级 nsfwLevel：140040520:2, 140040529:2, 140040544:2。",
+  "license": {
+    "type": "civitai_model_permissions",
+    "allow_no_credit": true,
+    "allow_commercial_use": [
+      "Image",
+      "RentCivit",
+      "Rent",
+      "Sell"
+    ],
+    "allow_derivatives": true,
+    "allow_different_license": true
+  },
+  "source": {
+    "type": "civitai",
+    "url": "https://civitai.com/models/538535?modelVersionId=3240697",
+    "civitai_model_id": 538535,
+    "civitai_version_id": 3240697,
+    "version_name": "v5.2 [Anima1.0]"
+  },
+  "previews": [
+    {
+      "id": "preview-001",
+      "file": "previews/preview-001.jpg",
+      "alt": "Artist Style: Rei_17/老累/sanbonzakura · v5.2 [Anima1.0] Civitai 发布图 1",
+      "source": "https://civitai.com/images/140040520",
+      "nsfw_level": 2
+    },
+    {
+      "id": "preview-002",
+      "file": "previews/preview-002.jpg",
+      "alt": "Artist Style: Rei_17/老累/sanbonzakura · v5.2 [Anima1.0] Civitai 发布图 2",
+      "source": "https://civitai.com/images/140040529",
+      "nsfw_level": 2
+    },
+    {
+      "id": "preview-003",
+      "file": "previews/preview-003.jpg",
+      "alt": "Artist Style: Rei_17/老累/sanbonzakura · v5.2 [Anima1.0] Civitai 发布图 3",
+      "source": "https://civitai.com/images/140040544",
+      "nsfw_level": 2
+    }
+  ],
+  "examples": [],
+  "embedded_metadata": {
+    "role": "backup",
+    "values": {
+      "civitai.model_id": "538535",
+      "civitai.version_id": "3240697",
+      "civitai.version_name": "v5.2 [Anima1.0]",
+      "civitai.creator": "silvermoong",
+      "civitai.base_model": "Anima",
+      "civitai.file_name": "rei_Anima1_lora_V52.safetensors",
+      "civitai.file_sha256": "7b3d46b0e588459c586c22eee424e113305b932206285c907d80bff5b85c8f0d",
+      "civitai.file_size_kb": "179317.2890625",
+      "civitai.trained_words": "[]",
+      "civitai.model_tags": "[\"style\"]",
+      "civitai.version_created_at": "2026-08-18T03:54:09.747Z",
+      "civitai.version_published_at": "2026-08-18T03:54:57.936Z",
+      "civitai.preview_source": "https://civitai.com/images/140040643",
+      "civitai.preview_images": "[{\"id\":\"140040520\",\"nsfw_level\":2,\"source\":\"https://civitai.com/images/140040520\"},{\"id\":\"140040529\",\"nsfw_level\":2,\"source\":\"https://civitai.com/images/140040529\"},{\"id\":\"140040544\",\"nsfw_level\":2,\"source\":\"https://civitai.com/images/140040544\"}]",
+      "civitai.recommendation_source": "https://civitai.com/models/538535?modelVersionId=3240697"
+    }
+  },
+  "name_zh": "老累画风",
+  "summary_zh": "引入老累（Rei_17／sanbonzakura）的插画风格。",
+  "purpose": "画风"
+}

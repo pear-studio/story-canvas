@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://storyvisualizer.local/schemas/finished-page.schema.json",
+  "type": "object",
+  "required": ["page_key", "lettering", "created_at", "width", "height", "outputs"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "page_key": { "type": "object", "required": ["page_id"], "properties": { "page_id": { "type": "string" } }, "additionalProperties": false },
+    "page_kind": { "const": "text", "description": "文字页成品：无候选底图，黑底加文字直接渲染。" },
+    "candidate_id": { "type": "string", "pattern": "^candidate-" },
+    "source_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "generation": { "type": "object" },
+    "lettering": { "type": "object", "required": ["settings", "canvas"], "properties": { "dialogue": { "type": "array" }, "items": { "type": "array" }, "settings": { "type": "object" }, "canvas": { "type": "string" }, "page_kind": { "const": "text" }, "display_title": { "type": "string" }, "body": { "type": "string" }, "text_layout": { "$ref": "https://storyvisualizer.local/schemas/story-page-narrative.schema.json#/$defs/text_layout" } }, "additionalProperties": false },
+    "upscale": { "type": "object", "required": ["name", "sha256", "scale", "source"], "properties": { "name": { "type": "string" }, "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "scale": { "const": 2 }, "source": { "type": "string" } }, "additionalProperties": false },
+    "created_at": { "type": "string" },
+    "width": { "type": "integer", "minimum": 1 },
+    "height": { "type": "integer", "minimum": 1 },
+    "outputs": { "type": "object", "required": ["clean", "lettered"], "properties": { "clean": { "type": "string", "pattern": "^generated/finished/" }, "lettered": { "type": "string", "pattern": "^generated/finished/" } }, "additionalProperties": false }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "page_kind": { "const": "text" } }, "required": ["page_kind"] },
+      "then": { "properties": { "candidate_id": false, "source_sha256": false, "generation": false, "upscale": false } },
+      "else": { "required": ["candidate_id", "source_sha256", "generation", "upscale"] }
+    }
+  ],
+  "additionalProperties": false
+}

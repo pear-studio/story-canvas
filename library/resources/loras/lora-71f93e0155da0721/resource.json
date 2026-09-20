@@ -1,0 +1,129 @@
+{
+  "$schema": "https://storyvisualizer.local/schemas/lora-resource.schema.json",
+  "version": 2,
+  "id": "lora-71f93e0155da0721",
+  "name": "AIイラストおじさん Uncle AI illustration/nuren_nuren Style - ANI/KR2/CKXL",
+  "kind": "lora",
+  "created_at": "2026-08-21T14:05:31.161Z",
+  "updated_at": "2026-08-21T14:43:13.895Z",
+  "file": {
+    "relative_path": "loras/civitai-anima/2564226-3179881-AIIllustOjisan_Alt_AnimaB_v01.safetensors",
+    "sha256": "71f93e0155da0721a24c4690822df7c93492ca7202c8468a75f10ca2147fc8e7",
+    "size_bytes": 45986312
+  },
+  "architecture": {
+    "family": "anima",
+    "prompt_family": "anima"
+  },
+  "base_models": [
+    {
+      "kind": "base_model",
+      "name": "Anima",
+      "identity_status": "declared",
+      "relative_path": null,
+      "sha256": null,
+      "size_bytes": null,
+      "source": "https://civitai.com/models/2564226?modelVersionId=3179881"
+    }
+  ],
+  "concept": {
+    "name": "AIイラストおじさん Uncle AI illustration/nuren_nuren Style - ANI/KR2/CKXL",
+    "description": "This is a LoRA for Uncle AI illustration AIイラストおじさん's style, He is currently active under the name Nuren Nuren.\nI will remove it if requested by the original artist.\nInfo (Anima/Chenkin):\nTrigger word: @411llust0j1s4n,\nTrigger word (for alt): @411llust0j1s4nalt,\n\nRecommended prompt: shiny skin, wet skin,\n\nInfo (Krea 2):\nTrigger word: 411llust0j1s4n,\n\n版本说明（Alt v1.0 AB1）：\nTrained on Anima Base v1.0.\n\nLimited training images to original characters (non-copyrighted works) from March 29 to August 6, 2024."
+  },
+  "activation": {
+    "trigger_words": [
+      "@411llust0j1s4nalt"
+    ],
+    "tags": [
+      "shiny skin",
+      "curvy",
+      "woman",
+      "skindentation",
+      "wet skin",
+      "aiイラストおじさん",
+      "uncle ai illustration",
+      "style"
+    ]
+  },
+  "recommended_generation": {
+    "weight": {
+      "default": null,
+      "minimum": null,
+      "maximum": null,
+      "status": "untested"
+    },
+    "clip_skip": null,
+    "sampler": null,
+    "scheduler": null,
+    "steps": null,
+    "cfg": null,
+    "status": "untested"
+  },
+  "training": null,
+  "description": "This is a LoRA for Uncle AI illustration AIイラストおじさん's style, He is currently active under the name Nuren Nuren.\nI will remove it if requested by the original artist.\nInfo (Anima/Chenkin):\nTrigger word: @411llust0j1s4n,\nTrigger word (for alt): @411llust0j1s4nalt,\n\nRecommended prompt: shiny skin, wet skin,\n\nInfo (Krea 2):\nTrigger word: 411llust0j1s4n,\n\n版本说明（Alt v1.0 AB1）：\nTrained on Anima Base v1.0.\n\nLimited training images to original characters (non-copyrighted works) from March 29 to August 6, 2024.",
+  "usage_notes": "以下推荐信息来自 Civitai 选定版本及其模型发布说明；本机尚未对参数做实测，因此资源状态仍为 untested。\n页面写明建议加入 shiny skin、wet skin；未明确权重、采样器、Scheduler、步数或 CFG。\n本次保存 3 张 Civitai 发布图；不使用 nsfw=None 过滤。图片级 nsfwLevel：138215128:2, 138216338:4, 138216337:4。",
+  "license": {
+    "type": "civitai_model_permissions",
+    "allow_no_credit": true,
+    "allow_commercial_use": [
+      "Image",
+      "RentCivit"
+    ],
+    "allow_derivatives": true,
+    "allow_different_license": true
+  },
+  "source": {
+    "type": "civitai",
+    "url": "https://civitai.com/models/2564226?modelVersionId=3179881",
+    "civitai_model_id": 2564226,
+    "civitai_version_id": 3179881,
+    "version_name": "Alt v1.0 AB1"
+  },
+  "previews": [
+    {
+      "id": "preview-001",
+      "file": "previews/preview-001.jpg",
+      "alt": "AIイラストおじさん Uncle AI illustration/nuren_nuren Style - ANI/KR2/CKXL · Alt v1.0 AB1 Civitai 发布图 1",
+      "source": "https://civitai.com/images/138215128",
+      "nsfw_level": 2
+    },
+    {
+      "id": "preview-002",
+      "file": "previews/preview-002.jpg",
+      "alt": "AIイラストおじさん Uncle AI illustration/nuren_nuren Style - ANI/KR2/CKXL · Alt v1.0 AB1 Civitai 发布图 2",
+      "source": "https://civitai.com/images/138216338",
+      "nsfw_level": 4
+    },
+    {
+      "id": "preview-003",
+      "file": "previews/preview-003.jpg",
+      "alt": "AIイラストおじさん Uncle AI illustration/nuren_nuren Style - ANI/KR2/CKXL · Alt v1.0 AB1 Civitai 发布图 3",
+      "source": "https://civitai.com/images/138216337",
+      "nsfw_level": 4
+    }
+  ],
+  "examples": [],
+  "embedded_metadata": {
+    "role": "backup",
+    "values": {
+      "civitai.model_id": "2564226",
+      "civitai.version_id": "3179881",
+      "civitai.version_name": "Alt v1.0 AB1",
+      "civitai.creator": "toghashie441",
+      "civitai.base_model": "Anima",
+      "civitai.file_name": "AIIllustOjisan_Alt_AnimaB_v01.safetensors",
+      "civitai.file_sha256": "71f93e0155da0721a24c4690822df7c93492ca7202c8468a75f10ca2147fc8e7",
+      "civitai.file_size_kb": "44908.5078125",
+      "civitai.trained_words": "[\"@411llust0j1s4nalt,\"]",
+      "civitai.model_tags": "[\"shiny skin\",\"curvy\",\"woman\",\"skindentation\",\"wet skin\",\"aiイラストおじさん\",\"uncle ai illustration\",\"style\"]",
+      "civitai.version_created_at": "2026-07-29T23:57:14.311Z",
+      "civitai.version_published_at": "2026-07-30T04:54:38.781Z",
+      "civitai.preview_source": "https://civitai.com/images/139040411",
+      "civitai.preview_images": "[{\"id\":\"138215128\",\"nsfw_level\":2,\"source\":\"https://civitai.com/images/138215128\"},{\"id\":\"138216338\",\"nsfw_level\":4,\"source\":\"https://civitai.com/images/138216338\"},{\"id\":\"138216337\",\"nsfw_level\":4,\"source\":\"https://civitai.com/images/138216337\"}]",
+      "civitai.recommendation_source": "https://civitai.com/models/2564226?modelVersionId=3179881"
+    }
+  },
+  "name_zh": "Nuren Nuren 画风",
+  "summary_zh": "引入 Nuren Nuren（AI 插画大叔）的画风。",
+  "purpose": "画风"
+}

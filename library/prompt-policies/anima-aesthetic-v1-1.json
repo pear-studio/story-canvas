@@ -1,0 +1,15 @@
+{
+  "$schema": "../schemas/prompt-policy.schema.json",
+  "id": "anima-aesthetic-v1-1",
+  "name": "Anima Aesthetic v1.1 Prompt 策略",
+  "family": "anima",
+  "separator": ", ",
+  "avoidance_strategy": "negative_prompt",
+  "category_order": [
+    "subject",
+    "person",
+    "setting",
+    "camera"
+  ],
+  "fragments": {}
+}

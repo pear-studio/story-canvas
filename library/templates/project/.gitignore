@@ -1,0 +1,16 @@
+/generated/
+/candidates/
+/output/
+/cache/
+/thumbnails/
+/logs/
+/tasks/
+/runtime/
+/models/
+/local-state.json
+*.partial
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.gguf

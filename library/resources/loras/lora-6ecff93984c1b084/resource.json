@@ -1,0 +1,130 @@
+{
+  "$schema": "https://storyvisualizer.local/schemas/lora-resource.schema.json",
+  "version": 2,
+  "id": "lora-6ecff93984c1b084",
+  "name": "Style > gpt-image-2",
+  "kind": "lora",
+  "created_at": "2026-08-21T14:07:09.161Z",
+  "updated_at": "2026-08-21T14:43:54.227Z",
+  "file": {
+    "relative_path": "loras/civitai-anima/2564225-2998634-gpt-image-2_anima-base1_v1-1.safetensors",
+    "sha256": "6ecff93984c1b084950f4535ff71293299dc1ee2225d267b79e5186fc7d38a99",
+    "size_bytes": 23037256
+  },
+  "architecture": {
+    "family": "anima",
+    "prompt_family": "anima"
+  },
+  "base_models": [
+    {
+      "kind": "base_model",
+      "name": "Anima",
+      "identity_status": "declared",
+      "relative_path": null,
+      "sha256": null,
+      "size_bytes": null,
+      "source": "https://civitai.com/models/2564225?modelVersionId=2998634"
+    }
+  ],
+  "concept": {
+    "name": "Style > gpt-image-2",
+    "description": "Description\nSteers the model towards the style of gpt image 2. It improves details, lighting and texture a lot, though the image might end up looking slightly sloppy.\nThis is meant as an enhancer so play with lora strength to allow more style diversity :)\n\nNote on versions\nv1.1 is closer to the images in the dataset, it adds a lot more texture and details, shifts the colors less, and affects the pose / composition a bit less too compared to v1. It has the downside of sticking more closely to the body and face of gpt-image-2 (which gets boring fairly quickly), and having some of the less pleasing repeating texture pattern of gpt2 image.\nYou might just prefer the effect that v1 give if you want less texture or punchier colors.\n\nMisc Notes\nThis is trained without a reg dataset, so the trigger word is not needed, but helps ever so slightly.\nI found some better optimizer settings, and fixed some bug in the custom code I added to the trainer I used between v1 and v1.1. That was most likely holding back all of my anima LoRA. Which explain the large change between the two version when trained with the exact same dataset.\nI might train another version since the v1.1 LoRA was still learning when the save published was auto-generated, but it started to get bad composition in the following epochs. I might need to lower the shift during training to it focuses more on the details. Though it will never be \"perfect\" because Qwen VAE is one of the worse VAE alongside the old SD model ones.\n\n版本说明（Anima-base1 v1.1）：\nTraining Settings: batch size 4, 1024px, ~114 images per epoch, optimizer is SinkSGD_adv\nI did a few multires epochs at up to 1344px after the model stabilized to bring out the details."
+  },
+  "activation": {
+    "trigger_words": [
+      "@gpt-image-2"
+    ],
+    "tags": [
+      "texture",
+      "details",
+      "gpt",
+      "style",
+      "anime",
+      "light",
+      "shade"
+    ]
+  },
+  "recommended_generation": {
+    "weight": {
+      "default": null,
+      "minimum": null,
+      "maximum": null,
+      "status": "untested"
+    },
+    "clip_skip": null,
+    "sampler": null,
+    "scheduler": null,
+    "steps": null,
+    "cfg": null,
+    "status": "untested"
+  },
+  "training": null,
+  "description": "Description\nSteers the model towards the style of gpt image 2. It improves details, lighting and texture a lot, though the image might end up looking slightly sloppy.\nThis is meant as an enhancer so play with lora strength to allow more style diversity :)\n\nNote on versions\nv1.1 is closer to the images in the dataset, it adds a lot more texture and details, shifts the colors less, and affects the pose / composition a bit less too compared to v1. It has the downside of sticking more closely to the body and face of gpt-image-2 (which gets boring fairly quickly), and having some of the less pleasing repeating texture pattern of gpt2 image.\nYou might just prefer the effect that v1 give if you want less texture or punchier colors.\n\nMisc Notes\nThis is trained without a reg dataset, so the trigger word is not needed, but helps ever so slightly.\nI found some better optimizer settings, and fixed some bug in the custom code I added to the trainer I used between v1 and v1.1. That was most likely holding back all of my anima LoRA. Which explain the large change between the two version when trained with the exact same dataset.\nI might train another version since the v1.1 LoRA was still learning when the save published was auto-generated, but it started to get bad composition in the following epochs. I might need to lower the shift during training to it focuses more on the details. Though it will never be \"perfect\" because Qwen VAE is one of the worse VAE alongside the old SD model ones.\n\n版本说明（Anima-base1 v1.1）：\nTraining Settings: batch size 4, 1024px, ~114 images per epoch, optimizer is SinkSGD_adv\nI did a few multires epochs at up to 1344px after the model stabilized to bring out the details.",
+  "usage_notes": "以下推荐信息来自 Civitai 选定版本及其模型发布说明；本机尚未对参数做实测，因此资源状态仍为 untested。\n页面说明这是 enhancer，应通过调节 LoRA strength 保留风格多样性，但未给出数值权重或采样参数；并说明 trigger word 非必需、但略有帮助。\n本次保存 3 张 Civitai 发布图；不使用 nsfw=None 过滤。图片级 nsfwLevel：132699696:1, 132699698:1, 132601514:1。",
+  "license": {
+    "type": "civitai_model_permissions",
+    "allow_no_credit": false,
+    "allow_commercial_use": [
+      "Image",
+      "RentCivit",
+      "Rent",
+      "Sell"
+    ],
+    "allow_derivatives": true,
+    "allow_different_license": true
+  },
+  "source": {
+    "type": "civitai",
+    "url": "https://civitai.com/models/2564225?modelVersionId=2998634",
+    "civitai_model_id": 2564225,
+    "civitai_version_id": 2998634,
+    "version_name": "Anima-base1 v1.1"
+  },
+  "previews": [
+    {
+      "id": "preview-001",
+      "file": "previews/preview-001.jpg",
+      "alt": "Style > gpt-image-2 · Anima-base1 v1.1 Civitai 发布图 1",
+      "source": "https://civitai.com/images/132699696",
+      "nsfw_level": 1
+    },
+    {
+      "id": "preview-002",
+      "file": "previews/preview-002.jpg",
+      "alt": "Style > gpt-image-2 · Anima-base1 v1.1 Civitai 发布图 2",
+      "source": "https://civitai.com/images/132699698",
+      "nsfw_level": 1
+    },
+    {
+      "id": "preview-003",
+      "file": "previews/preview-003.jpg",
+      "alt": "Style > gpt-image-2 · Anima-base1 v1.1 Civitai 发布图 3",
+      "source": "https://civitai.com/images/132601514",
+      "nsfw_level": 1
+    }
+  ],
+  "examples": [],
+  "embedded_metadata": {
+    "role": "backup",
+    "values": {
+      "civitai.model_id": "2564225",
+      "civitai.version_id": "2998634",
+      "civitai.version_name": "Anima-base1 v1.1",
+      "civitai.creator": "AgileNumbers",
+      "civitai.base_model": "Anima",
+      "civitai.file_name": "gpt-image-2_anima-base1_v1-1.safetensors",
+      "civitai.file_sha256": "6ecff93984c1b084950f4535ff71293299dc1ee2225d267b79e5186fc7d38a99",
+      "civitai.file_size_kb": "22497.3203125",
+      "civitai.trained_words": "[\"@gpt-image-2,\"]",
+      "civitai.model_tags": "[\"texture\",\"details\",\"gpt\",\"style\",\"anime\",\"light\",\"shade\"]",
+      "civitai.version_created_at": "2026-06-02T11:29:54.067Z",
+      "civitai.version_published_at": "2026-06-03T12:00:00.000Z",
+      "civitai.preview_source": "https://civitai.com/images/134831162",
+      "civitai.preview_images": "[{\"id\":\"132699696\",\"nsfw_level\":1,\"source\":\"https://civitai.com/images/132699696\"},{\"id\":\"132699698\",\"nsfw_level\":1,\"source\":\"https://civitai.com/images/132699698\"},{\"id\":\"132601514\",\"nsfw_level\":1,\"source\":\"https://civitai.com/images/132601514\"}]",
+      "civitai.recommendation_source": "https://civitai.com/models/2564225?modelVersionId=2998634"
+    }
+  },
+  "name_zh": "GPT Image 2 画风",
+  "summary_zh": "偏向 GPT Image 2 的细节、光照和纹理表现。",
+  "purpose": "画风"
+}

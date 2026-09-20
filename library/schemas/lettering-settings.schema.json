@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://storyvisualizer.local/schemas/lettering-settings.schema.json",
+  "type": "object",
+  "required": ["$schema", "font_family", "font_size", "character_speech", "character_thought", "npc_speech", "character_colors"],
+  "properties": {
+    "$schema": { "const": "https://storyvisualizer.local/schemas/lettering-settings.schema.json" },
+    "font_family": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "font_size": { "type": "integer", "minimum": 12, "maximum": 96 },
+    "character_speech": { "$ref": "#/$defs/lettering_preset" },
+    "character_thought": { "$ref": "#/$defs/lettering_preset" },
+    "npc_speech": { "$ref": "#/$defs/lettering_preset" },
+    "character_colors": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+        "not": { "const": "npc" }
+      },
+      "additionalProperties": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "lettering_preset": {
+      "type": "object",
+      "required": ["direction", "kind"],
+      "properties": {
+        "direction": { "enum": ["horizontal", "vertical"] },
+        "kind": { "enum": ["plain", "balloon", "caption", "float"] }
+      },
+      "additionalProperties": false
+    }
+  }
+}

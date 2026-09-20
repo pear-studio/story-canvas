@@ -1,0 +1,230 @@
+{
+  "$schema": "https://storyvisualizer.local/schemas/visual-page-templates.schema.json",
+  "version": 1,
+  "categories": [
+    {
+      "id": "character-check",
+      "name": "角色检查"
+    }
+  ],
+  "templates": [
+    {
+      "id": "natural-standing-full-body",
+      "name": "自然站立全身",
+      "description": "确认角色整体外观、体态和从头到脚的完整轮廓。",
+      "category": "character-check",
+      "applies_to": [
+        "story",
+        "character",
+        "scene"
+      ],
+      "page": {
+        "title": "自然站立全身",
+        "visual_goal": {
+          "content": "角色以自然站立姿态呈现完整的全身外观。",
+          "intent": "detail",
+          "criteria": [
+            {
+              "text": "画面只有一个角色，并完整呈现从头到脚的全身轮廓。"
+            },
+            {
+              "text": "角色保持自然、放松的站立姿态，不是战斗或夸张动作。"
+            },
+            {
+              "text": "角色的发型、面部、服装和主要配饰清晰可辨。"
+            }
+          ]
+        },
+        "visual": {
+          "subject": [
+            {
+              "prompt_type": "danbooru",
+              "prompt_text": "solo"
+            }
+          ],
+          "person": [
+            {
+              "prompt_type": "danbooru",
+              "prompt_text": "standing",
+              "role_slot": "subject"
+            }
+          ],
+          "setting": [],
+          "camera": [
+            {
+              "prompt_type": "custom_description",
+              "prompt_text": "full body"
+            },
+            {
+              "prompt_type": "custom_description",
+              "prompt_text": "facing viewer",
+              "role_slot": "subject"
+            }
+          ],
+          "avoid": []
+        }
+      }
+    },
+    {
+      "id": "standard-t-pose",
+      "name": "标准 T-pose",
+      "description": "适用于有两条手臂的双足人形角色，用标准姿态检查身体比例、服装和装备的平面呈现。",
+      "category": "character-check",
+      "applies_to": [
+        "story",
+        "character",
+        "scene"
+      ],
+      "page": {
+        "title": "标准 T-pose",
+        "visual_goal": {
+          "content": "有两条手臂的双足人形角色面向画面，以标准 T-pose 呈现完整身体和服装结构。",
+          "intent": "detail",
+          "criteria": [
+            {
+              "text": "画面只有一个角色，并完整呈现从头到脚的全身轮廓。"
+            },
+            {
+              "text": "角色面向画面，双臂在肩高水平向两侧伸展，形成清晰的 T-pose。"
+            },
+            {
+              "text": "角色的服装层次、鞋子、主要配饰和装备没有被姿态遮挡。"
+            }
+          ]
+        },
+        "visual": {
+          "subject": [
+            {
+              "prompt_type": "danbooru",
+              "prompt_text": "solo"
+            }
+          ],
+          "person": [
+            {
+              "prompt_type": "danbooru",
+              "prompt_text": "t-pose",
+              "role_slot": "subject"
+            }
+          ],
+          "setting": [],
+          "camera": [
+            {
+              "prompt_type": "custom_description",
+              "prompt_text": "full body"
+            },
+            {
+              "prompt_type": "custom_description",
+              "prompt_text": "facing viewer",
+              "role_slot": "subject"
+            }
+          ],
+          "avoid": []
+        }
+      }
+    },
+    {
+      "id": "character-multi-view-sheet",
+      "name": "多视图角色设定板",
+      "description": "以同一角色和同一套设定制作四区视图，便于核对外观连续性。",
+      "category": "character-check",
+      "applies_to": [
+        "story",
+        "character",
+        "scene"
+      ],
+      "page": {
+        "title": "多视图角色设定板",
+        "visual_goal": {
+          "content": "同一角色在同一套设定下展示正面、侧面、背面全身视图和正面脸部近景四个区域。",
+          "intent": "detail",
+          "criteria": [
+            {
+              "text": "画面清晰分成四个视图区：正面全身、侧面全身、背面全身和正面脸部近景。"
+            },
+            {
+              "text": "前三个区域都完整呈现同一角色的全身轮廓，第四个区域清晰呈现正面脸部。"
+            },
+            {
+              "text": "四个区域使用同一角色、同一套服装和同一组主要配饰。"
+            },
+            {
+              "text": "画面没有其他人物、无关物体或模型生成的说明文字。"
+            }
+          ]
+        },
+        "visual": {
+          "subject": [],
+          "person": [],
+          "setting": [
+            {
+              "prompt_type": "custom_description",
+              "prompt_text": "reference sheet"
+            }
+          ],
+          "camera": [
+            {
+              "prompt_type": "custom_description",
+              "prompt_text": "front side back full-body views and front face close-up"
+            },
+            {
+              "prompt_type": "custom_description",
+              "prompt_text": "multiple views"
+            }
+          ],
+          "avoid": []
+        }
+      }
+    },
+    {
+      "id": "upper-body-portrait",
+      "name": "上半身肖像",
+      "description": "集中确认角色的面部、发型和上半身服装识别度。",
+      "category": "character-check",
+      "applies_to": [
+        "story",
+        "character",
+        "scene"
+      ],
+      "page": {
+        "title": "上半身肖像",
+        "visual_goal": {
+          "content": "角色以面向画面的上半身肖像呈现面部、发型和服装细节。",
+          "intent": "detail",
+          "criteria": [
+            {
+              "text": "画面只有一个角色，完整呈现头发、面部、肩膀和上半身躯干。"
+            },
+            {
+              "text": "角色面部清晰、身份可辨，发型和主要服装细节可见。"
+            },
+            {
+              "text": "构图保持稳定的上半身肖像范围，没有被裁切到只剩脸部。"
+            }
+          ]
+        },
+        "visual": {
+          "subject": [
+            {
+              "prompt_type": "danbooru",
+              "prompt_text": "solo"
+            }
+          ],
+          "person": [],
+          "setting": [],
+          "camera": [
+            {
+              "prompt_type": "custom_description",
+              "prompt_text": "upper body"
+            },
+            {
+              "prompt_type": "custom_description",
+              "prompt_text": "facing viewer",
+              "role_slot": "subject"
+            }
+          ],
+          "avoid": []
+        }
+      }
+    }
+  ]
+}

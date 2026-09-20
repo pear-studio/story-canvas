@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://storyvisualizer.local/schemas/prompt-policy.schema.json",
+  "$defs": {
+    "fragment": {
+      "type": "object",
+      "required": [
+        "polarity",
+        "placement",
+        "order",
+        "prompt_type",
+        "prompt_text"
+      ],
+      "properties": {
+        "polarity": {
+          "enum": [
+            "positive",
+            "negative"
+          ]
+        },
+        "placement": {
+          "enum": [
+            "prefix",
+            "suffix"
+          ]
+        },
+        "order": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "prompt_type": {
+          "enum": [
+            "danbooru",
+            "custom_description"
+          ]
+        },
+        "prompt_text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "weight": {
+          "type": "number",
+          "minimum": 0.2,
+          "maximum": 10
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "type": "object",
+  "required": [
+    "id",
+    "name",
+    "family",
+    "separator",
+    "avoidance_strategy",
+    "category_order",
+    "fragments"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "family": {
+      "const": "anima"
+    },
+    "separator": {
+      "type": "string"
+    },
+    "avoidance_strategy": {
+      "enum": [
+        "negative_prompt",
+        "unsupported"
+      ]
+    },
+    "category_order": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "subject",
+          "person",
+          "setting",
+          "camera"
+        ]
+      }
+    },
+    "fragments": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z0-9][a-z0-9-]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/fragment"
+      }
+    }
+  },
+  "additionalProperties": false
+}

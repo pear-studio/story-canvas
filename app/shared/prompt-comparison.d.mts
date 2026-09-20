@@ -1,0 +1,1 @@
+export function comparePromptText(before: string, after: string, beforeParts?: {text: string}[], afterParts?: {text: string}[]): {kind: 'same' | 'format' | 'order' | 'content'; removed: string[]; added: string[]};

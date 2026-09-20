@@ -1,0 +1,126 @@
+import assert from 'node:assert/strict';
+import {test} from 'node:test';
+import {fileURLToPath} from 'node:url';
+import {createServer} from 'vite';
+import {chromium} from 'playwright';
+
+async function editor(t, query='') {
+ const server=await createServer({root:fileURLToPath(new URL('../../',import.meta.url)),server:{host:'127.0.0.1',port:0},logLevel:'error'});
+ await server.listen();t.after(()=>server.close());
+ const browser=await chromium.launch({headless:true,channel:process.env.BROWSER_CHANNEL||(process.platform==='win32'?'msedge':undefined)});t.after(()=>browser.close());
+ const page=await browser.newPage({viewport:{width:1250,height:1100}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/tests/browser/heart-lettering.html${query}`);
+ return {page,errors};
+}
+
+test('真实编辑器：独立缩放、旋转、骰子、类型切换与刷新保持排布', async t=>{
+ const {page,errors}=await editor(t);
+ await page.getByRole('tab',{name:'嵌字'}).click();await page.locator('.heart-lettering').first().waitFor();
+ const first=page.locator('[data-dialogue-id="dialogue-111111111111"]'),second=page.locator('[data-dialogue-id="dialogue-222222222222"]');
+ const original=await first.boundingBox(),other=await second.innerHTML();
+ assert.equal(await page.getByRole('spinbutton').count(),0);
+ await first.click();
+ let rect=await first.locator('.lettering-resize-handle').boundingBox();
+ await page.mouse.move(rect.x+rect.width/2,rect.y+rect.height/2);await page.mouse.down();await page.mouse.move(rect.x+rect.width/2+55,rect.y+rect.height/2+20,{steps:4});await page.mouse.up();
+ assert.ok((await first.boundingBox()).width>original.width+20);
+ assert.equal(await second.innerHTML(),other);
+ const object=await first.boundingBox(),pivot={x:object.x+object.width/2,y:object.y+object.height/2};
+ rect=await first.getByRole('button',{name:'旋转爱心排布'}).boundingBox();
+ const radius=pivot.y-(rect.y+rect.height/2);
+ await page.mouse.move(rect.x+rect.width/2,rect.y+rect.height/2);await page.mouse.down();
+ await page.mouse.move(pivot.x+radius,pivot.y,{steps:8});await page.mouse.up();
+ const glyphs=await first.locator('svg.heart-lettering text').evaluateAll(nodes=>nodes.map(n=>{const m=n.getScreenCTM();return {x:Number(n.getAttribute('x')),y:Number(n.getAttribute('y')),b:m.b,c:m.c}}));
+ assert.ok(Math.abs(glyphs.at(-1).y-glyphs[0].y)>100,'排布轴转为接近竖向');
+ assert.ok(glyphs.every(g=>Math.abs(g.b)<1e-6&&Math.abs(g.c)<1e-6),'每个字保持正立');
+ const upright=await first.locator('[data-heart-asset]').evaluateAll(nodes=>nodes.every(n=>{const m=n.getScreenCTM();return Math.abs(m.b)<1e-6&&Math.abs(m.c)<1e-6}));assert.equal(upright,true);
+ await page.screenshot({path:fileURLToPath(new URL('../../../runtime/lettering-demo/axis-rotation.png',import.meta.url)),fullPage:true});
+ const beforeDice=await first.locator('svg.heart-lettering').innerHTML();await page.getByRole('button',{name:'重新排列爱心'}).first().click();assert.notEqual(await first.locator('svg.heart-lettering').innerHTML(),beforeDice);
+ await page.getByRole('button',{name:'保存',exact:true}).click();
+ const saved=await first.locator('svg.heart-lettering').innerHTML();
+ const savedItems=await page.evaluate(()=>JSON.parse(localStorage.getItem('heart-items')));
+ assert.ok(savedItems[0].heart.font_size>48);assert.ok(savedItems[0].heart.rotation>60);assert.equal(savedItems[1].heart.font_size,48);assert.equal(savedItems[1].heart.rotation,-8);
+ await page.reload();await page.getByRole('tab',{name:'嵌字'}).click();await first.locator('svg.heart-lettering').waitFor();assert.equal(await first.locator('svg.heart-lettering').innerHTML(),saved);
+ await page.getByRole('button',{name:'重置',exact:true}).first().click();
+ await page.getByRole('button',{name:'保存',exact:true}).click();
+ const resetItems=await page.evaluate(()=>JSON.parse(localStorage.getItem('heart-items')));
+ assert.equal(resetItems[0].heart.font_size,56);assert.equal(resetItems[0].heart.rotation,-8);assert.notEqual(resetItems[0].heart.seed,savedItems[0].heart.seed);
+ assert.deepEqual(resetItems[1],savedItems[1]);
+ await page.getByLabel('文案类型').nth(0).selectOption('heart');assert.equal(await page.getByRole('button',{name:'重新排列爱心'}).count(),3);
+ await page.getByLabel('文案类型').nth(2).selectOption('speech');assert.equal(await page.getByRole('button',{name:'重新排列爱心'}).count(),2);
+ const plain=page.locator('[data-dialogue-id="dialogue-333333333333"]');await plain.click();assert.equal(await plain.locator('svg').count(),0);assert.equal(await plain.locator('.lettering-rotate-handle').count(),0);
+ await first.click();
+ await page.getByLabel('旁白',{exact:true}).fill('夜幕降临，长街安静下来。');
+ const narrationBar=page.locator('.narration-bar');await narrationBar.waitFor();
+ assert.match(await narrationBar.innerText(),/夜幕降临/);
+ assert.equal(await narrationBar.locator('.lettering-resize-handle').count(),0,'旁白字幕条不提供缩放手柄');
+ assert.equal(await page.locator('.lettering-object').count(),3,'旁白不占用可拖动文字框');
+ await page.screenshot({path:fileURLToPath(new URL('../../../runtime/lettering-demo/narration-bar.png',import.meta.url)),fullPage:true});
+ await page.getByRole('button',{name:'保存',exact:true}).click();
+ const withNarration=await page.evaluate(()=>({content:JSON.parse(localStorage.getItem('heart-page')),items:JSON.parse(localStorage.getItem('heart-items'))}));
+ const savedNarration=withNarration.content.dialogue.find(line=>line.mode==='narration');
+ assert.match(savedNarration.id,/^dialogue-[a-f0-9]{12}$/);assert.equal(savedNarration.text,'夜幕降临，长街安静下来。');
+ assert.equal(withNarration.items.some(item=>item.dialogue_id===savedNarration.id),false,'旁白不保存布局');
+ await page.getByLabel('旁白',{exact:true}).fill('');assert.equal(await narrationBar.count(),0,'清空旁白后字幕条消失');
+ await page.screenshot({path:fileURLToPath(new URL('../../../runtime/lettering-demo/integrated.png',import.meta.url)),fullPage:true});
+ assert.deepEqual(errors,[]);
+});
+
+test('旁白字幕条可选顶部或底部并随内容保存', async t=>{
+ const {page,errors}=await editor(t);
+ await page.getByRole('tab',{name:'嵌字'}).click();
+ const positionSelect=page.getByLabel('旁白位置');
+ assert.equal(await positionSelect.isDisabled(),true,'没有旁白时位置选择不可用');
+ await page.getByLabel('旁白',{exact:true}).fill('夜幕降临，长街安静下来。');
+ const bar=page.locator('.narration-bar');await bar.waitFor();
+ assert.equal(await bar.evaluate(node=>node.classList.contains('narration-bar--top')),false,'默认在底部');
+ await positionSelect.selectOption('top');
+ assert.equal(await bar.evaluate(node=>node.classList.contains('narration-bar--top')),true);
+ await page.getByRole('button',{name:'保存',exact:true}).click();
+ let content=await page.evaluate(()=>JSON.parse(localStorage.getItem('heart-page')));
+ assert.equal(content.dialogue.find(line=>line.mode==='narration').position,'top');
+ await positionSelect.selectOption('bottom');
+ assert.equal(await bar.evaluate(node=>node.classList.contains('narration-bar--top')),false);
+ await page.getByRole('button',{name:'保存',exact:true}).click();
+ content=await page.evaluate(()=>JSON.parse(localStorage.getItem('heart-page')));
+ assert.equal(content.dialogue.find(line=>line.mode==='narration').position,undefined,'底部是缺省，不写入 position');
+ assert.deepEqual(errors,[]);
+});
+
+for (const failure of ['', 'fail-layout', 'fail-content']) test(`统一保存：新文案先排版、正式 ID 映射及删除${failure ? '，'+failure+' 后可重试' : ''}`, async t=>{
+ const {page,errors}=await editor(t,failure?'?'+failure:'');
+ await page.getByRole('tab',{name:'嵌字'}).click();
+ assert.equal(await page.getByRole('button',{name:'保存',exact:true}).count(),1);
+ assert.equal(await page.getByRole('button',{name:'保存布局',exact:true}).count(),0);
+ await page.getByRole('button',{name:'＋ 添加',exact:true}).click();
+ const line=page.locator('.lettering-line.is-selected');
+ await line.locator('textarea').fill('新增爱心');await line.getByLabel('文案类型').selectOption('heart');
+ const preview=page.locator('[data-dialogue-id^="draft-dialogue-"]');await preview.locator('svg.heart-lettering').waitFor();
+ const box=await preview.boundingBox();await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width/2-50,box.y+box.height/2+30,{steps:3});await page.mouse.up();
+ const coordinates=(await preview.getAttribute('data-lettering-box')).split(',').map(Number);
+ const artwork=await preview.locator('svg.heart-lettering').innerHTML();
+ await page.getByRole('button',{name:'保存',exact:true}).click();
+ if(failure){
+   await page.getByRole('alert').filter({hasText:'草稿已保留'}).waitFor();
+   assert.equal(await page.getByRole('button',{name:'保存',exact:true}).isEnabled(),true);
+   assert.equal(await page.evaluate(()=>localStorage.getItem('heart-items')),null);
+   assert.equal(await page.evaluate(()=>localStorage.getItem('heart-page')),null);
+   assert.equal(await page.locator('.lettering-line').last().locator('textarea').inputValue(),'新增爱心');
+   await page.getByRole('button',{name:'保存',exact:true}).click();
+ }
+ await page.waitForFunction(()=>JSON.parse(localStorage.getItem('heart-items')||'[]').length===4);
+ const persisted=await page.evaluate(()=>({content:JSON.parse(localStorage.getItem('heart-page')),items:JSON.parse(localStorage.getItem('heart-items')),saves:Number(localStorage.getItem('content-saves'))}));
+ assert.equal(persisted.saves,failure?2:1);
+ const added=persisted.content.dialogue.at(-1);assert.match(added.id,/^dialogue-[a-f0-9]{12}$/);assert.equal(added.text,'新增爱心');
+ const placement=persisted.items.find(item=>item.dialogue_id===added.id);assert.deepEqual(Object.values(placement.box),coordinates);
+ assert.equal(await page.locator(`[data-dialogue-id="${added.id}"] svg.heart-lettering`).innerHTML(),artwork);
+ assert.equal(await page.getByRole('button',{name:'保存',exact:true}).isDisabled(),true);
+ await page.locator('.lettering-line--heart').first().getByRole('button',{name:'删除文案'}).click();
+ await page.getByRole('button',{name:'保存',exact:true}).click();
+ await page.waitForFunction(()=>JSON.parse(localStorage.getItem('heart-items')).length===3);
+ const final=await page.evaluate(()=>({content:JSON.parse(localStorage.getItem('heart-page')),items:JSON.parse(localStorage.getItem('heart-items'))}));
+ assert.deepEqual(final.items.map(item=>item.dialogue_id),final.content.dialogue.map(line=>line.id));
+ assert.equal(final.items.some(item=>item.dialogue_id==='dialogue-111111111111'),false);
+ await page.reload();await page.getByRole('tab',{name:'嵌字'}).click();await page.locator(`[data-dialogue-id="${added.id}"] svg.heart-lettering`).waitFor();
+ assert.equal(await page.locator(`[data-dialogue-id="${added.id}"] svg.heart-lettering`).innerHTML(),artwork);
+ assert.deepEqual(errors,[]);
+});

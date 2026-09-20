@@ -1,0 +1,102 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { createServer } from 'vite';
+import { chromium } from 'playwright';
+async function openHarness(t, query = '') {
+ const server = await createServer({ cacheDir: '.temp/vite-inheritance-tests', root: fileURLToPath(new URL('../../', import.meta.url)), server: { host: '127.0.0.1', port: 0 }, logLevel: 'error' });
+ await server.listen(); t.after(() => server.close());
+ const browser = await chromium.launch({ headless: true, channel: process.platform === 'win32' ? 'msedge' : undefined }); t.after(() => browser.close());
+ const page = await browser.newPage({ viewport: { width: 1200, height: 850 } });
+ const errors = []; page.on('pageerror', e => errors.push(e.message));
+ await page.route('**/api/prompt-dictionary**', route => route.fulfill({ json: { available: true, matches: [], suggestions: [] } }));
+ await page.goto('http://127.0.0.1:' + server.httpServer.address().port + '/tests/browser/inheritance.html' + query);
+ return { page, errors };
+}
+test('基础词默认展开且与本地对齐，继承行可开关和改权重，恢复上游不复制词条', async t => {
+ const {page, errors} = await openHarness(t);
+ const base = page.locator('details').first();
+ await base.locator('.prompt-fragment-row').waitFor();
+ assert.equal(await base.evaluate(e => e.open), true);
+ assert.equal(await page.locator('details').nth(1).evaluate(e => e.open), false);
+ const inheritedBox = await base.locator('.prompt-fragment-row').boundingBox();
+ const localBox = await page.locator('#local .prompt-fragment-row').boundingBox();
+ assert.ok(Math.abs(inheritedBox.x - localBox.x) < 1);
+ assert.ok(Math.abs(inheritedBox.width - localBox.width) < 1);
+ assert.equal(await base.locator('.prompt-fragment-reset').isVisible(), true);
+ assert.match(await base.locator('summary').innerText(), /调整 1 项/);
+ await base.locator('.prompt-fragment-enabled').click();
+ assert.deepEqual(JSON.parse(await page.locator('output').textContent()), {});
+ await base.locator('.prompt-fragment-weight-button').click();
+ await base.getByRole('spinbutton').fill('0.8');
+ await base.getByRole('button', {name: '确定', exact: true}).click();
+ assert.deepEqual(JSON.parse(await page.locator('output').textContent()), { 'long blue hair': {weight: 0.8} });
+ await base.locator('.prompt-fragment-enabled').click();
+ assert.deepEqual(JSON.parse(await page.locator('output').textContent()), { 'long blue hair': {weight: 0.8, enabled: false} });
+ assert.match(await base.locator('summary').innerText(), /调整 1 项/);
+ await page.screenshot({path: process.env.TEMP + '/story-canvas-inheritance-adjusted.png', fullPage: true});
+ await base.locator('.prompt-fragment-reset').click();
+ assert.deepEqual(JSON.parse(await page.locator('output').textContent()), {});
+ assert.equal(await base.locator('.prompt-fragment-reset').count(), 0);
+ assert.equal(await base.locator('summary').innerText(), '基础 Prompt');
+ await page.screenshot({ path: process.env.TEMP + '/story-canvas-inheritance-ui.png', fullPage: true });
+ assert.deepEqual(errors, []);
+});
+
+test('错误与复杂信息持久展示，右下角仅显示简短结果', async t => {
+ const {page, errors} = await openHarness(t, '?feedback');
+ await page.clock.install();
+ await page.getByRole('button', {name:'触发错误'}).click();
+ const dialog=page.getByRole('dialog', {name:'操作失败'});
+ await dialog.waitFor();
+ assert.match(await dialog.innerText(), /hair_over_one_eye/);
+ assert.equal(await page.locator('.feedback-toast').count(),0);
+ await page.clock.fastForward(10000);
+ assert.equal(await dialog.isVisible(),true);
+ await dialog.getByRole('button', {name:'知道了'}).click();
+ await page.getByRole('button', {name:'触发复杂信息'}).click();
+ await page.getByRole('dialog', {name:'提示'}).waitFor();
+ assert.equal(await page.locator('.feedback-toast').count(),0);
+ await page.getByRole('button', {name:'知道了'}).click();
+ await page.getByRole('button', {name:'触发成功'}).click();
+ assert.match(await page.locator('.feedback-toast').innerText(),/已保存/);
+ assert.equal(await page.getByRole('dialog').count(),0);
+ assert.deepEqual(errors,[]);
+});
+
+test('场景标签可切换、移除并从选择菜单重新添加', async t => {
+ const {page, errors} = await openHarness(t);
+ const scene = page.locator('.participant-editor');
+ assert.equal(await scene.getByLabel('页面场景设定').inputValue(), 'steel:default');
+ await scene.getByLabel('页面场景设定').selectOption('space:default');
+ assert.equal(await scene.getByLabel('页面场景设定').inputValue(), 'space:default');
+ await scene.getByRole('button', {name:'移除场景引用'}).click();
+ assert.equal(await scene.getByLabel('页面场景设定').inputValue(), '');
+ await scene.getByLabel('页面场景设定').selectOption('steel:default');
+ assert.equal(await scene.getByLabel('页面场景设定').inputValue(), 'steel:default'); assert.deepEqual(errors, []);
+});
+
+test('生成预览区分无候选与不符候选，二级详情展示实际词句变化', async t => {
+ const {page, errors} = await openHarness(t, '?candidates');
+ const parts = text => [{text}];
+ const current = {ready:true,blockers:[],prompt:{positive:'stone wall',negative:'blur',signature:'new',parts:{positive:parts('stone wall'),negative:parts('blur')}}};
+ await page.route('**/workbench/story-candidate-refresh', route => route.fulfill({json:{pages:['empty','changed'].map(id=>({page_key:{page_id:id},status:'ready',signature:'new',matched:0,candidate_ids:id==='empty'?[]:['old'],all_candidate_ids:id==='empty'?[]:['old']}))}}));
+ await page.route('**/workbench/page-render-inspection', route => route.fulfill({json:{inspection:current}}));
+ await page.route('**/workbench/candidate-detail', route => route.fulfill({json:{detail:{seed:42,generation:{prompt:{positive:'steel wall',negative:'blur',parts:{positive:parts('steel wall'),negative:parts('blur')}}}}}}));
+ await page.getByRole('button', {name:'生成候选',exact:true}).click();
+ const preview=page.getByRole('dialog', {name:'生成候选',exact:true});
+ await preview.getByRole('button', {name:'生成 2 张',exact:true}).waitFor();
+ assert.match(await preview.innerText(), /尚无候选 1 页 · 已有候选但无相符结果 1 页/);
+ await preview.locator('li').filter({hasText:'没有候选的页面'}).getByRole('button',{name:'查看详情'}).click();
+ let detail=page.getByRole('dialog',{name:'候选差异详情'});
+ await detail.getByText('本页没有候选图，没有旧 Prompt 可比较。').waitFor();
+ await detail.getByRole('button',{name:'关闭',exact:true}).last().click();
+ await preview.locator('li').filter({hasText:'有变化的页面'}).getByRole('button',{name:'查看详情'}).click();
+ detail=page.getByRole('dialog',{name:'候选差异详情'});
+ await detail.locator('.candidate-prompt-added').waitFor();
+ assert.equal(await detail.locator('.candidate-prompt-removed').innerText(),'steel wall');
+ assert.equal(await detail.locator('.candidate-prompt-added').innerText(),'stone wall');
+ assert.match(await detail.innerText(),/负向 Prompt · 完全一致/);
+ await page.screenshot({path:process.env.TEMP+'/story-candidate-difference.png',fullPage:true});
+ assert.deepEqual(errors,[]);
+});

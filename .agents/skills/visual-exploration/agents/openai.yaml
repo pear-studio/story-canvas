@@ -1,0 +1,4 @@
+interface:
+  display_name: "视觉探索"
+  short_description: "围绕用户指定的问题比较少量视觉方向，保留结果供用户判断取舍"
+  default_prompt: "使用 $visual-exploration 比较当前指定的视觉方向，先确定小范围方案。"

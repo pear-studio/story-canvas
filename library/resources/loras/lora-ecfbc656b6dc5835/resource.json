@@ -1,0 +1,122 @@
+{
+  "$schema": "https://storyvisualizer.local/schemas/lora-resource.schema.json",
+  "version": 2,
+  "id": "lora-ecfbc656b6dc5835",
+  "name": "Zoda 🥤 – NSFW Detailer",
+  "kind": "lora",
+  "created_at": "2026-08-21T14:22:07.692Z",
+  "updated_at": "2026-08-21T14:47:55.518Z",
+  "file": {
+    "relative_path": "loras/civitai-anima/1879987-3130764-zoda_v3_anima.safetensors",
+    "sha256": "ecfbc656b6dc58355089522ada330741d9d581f24391a6c12b325457aa01969c",
+    "size_bytes": 69441344
+  },
+  "architecture": {
+    "family": "anima",
+    "prompt_family": "anima"
+  },
+  "base_models": [
+    {
+      "kind": "base_model",
+      "name": "Anima",
+      "identity_status": "declared",
+      "relative_path": null,
+      "sha256": null,
+      "size_bytes": null,
+      "source": "https://civitai.com/models/1879987?modelVersionId=3130764"
+    }
+  ],
+  "concept": {
+    "name": "Zoda 🥤 – NSFW Detailer",
+    "description": "v3_illustrious have 2 files:\nzoda_v3_illu_hires.safetensors (435MB, Hi-Res version , default option)\n\nzoda_v3_illu.safetensors (218MB, Standard version )\n\nRecommend all illustrious user give ANIMA (66MB) a try\nCredit to @Choco_Tarte for v3 Beta test.\n\n>> 🎉🎉 Checkout our Zoda Gallery 🎉🎉 <<\nZoda is a LoRA model designed to enhance detail and expression in NSFW generations.\n\nRecommend Setting:\nILLU / PONY / SDXL :\nSampling : Euler A / DPM++ 2M SDE\nSchedule: Karras / Exponential\nSteps : 20+\nStrength : 0.5 - 1.0 (0.5 if distorting in multi-LORA)\n\nAnima :\nscheduler: SimpleSteps: 30 - 45Strength: 1.2 - 1.8 (v1) , 1.0-1.2 (v2)\n\nTag means work best on tested model base, didn't mean only work on that model.\nIllustrious / NoobAI / SDXL are Compatible, cross-apply Lora and models may give out some surprise🎉.\nRecommend SDXL ❤️\nWelcome to adapt to any SDXL branch, please post it and let me know. ❤️\n\nThis is my first model, and while it's not fully refined yet, it serves as a solid foundation for future improvements.\nFeedback is always welcome — feel free to drop a comment below. Your input is greatly appreciated!"
+  },
+  "activation": {
+    "trigger_words": [],
+    "tags": [
+      "style"
+    ]
+  },
+  "recommended_generation": {
+    "weight": {
+      "default": null,
+      "minimum": null,
+      "maximum": null,
+      "status": "untested"
+    },
+    "clip_skip": null,
+    "sampler": null,
+    "scheduler": "Simple",
+    "steps": null,
+    "cfg": null,
+    "status": "untested"
+  },
+  "training": null,
+  "description": "v3_illustrious have 2 files:\nzoda_v3_illu_hires.safetensors (435MB, Hi-Res version , default option)\n\nzoda_v3_illu.safetensors (218MB, Standard version )\n\nRecommend all illustrious user give ANIMA (66MB) a try\nCredit to @Choco_Tarte for v3 Beta test.\n\n>> 🎉🎉 Checkout our Zoda Gallery 🎉🎉 <<\nZoda is a LoRA model designed to enhance detail and expression in NSFW generations.\n\nRecommend Setting:\nILLU / PONY / SDXL :\nSampling : Euler A / DPM++ 2M SDE\nSchedule: Karras / Exponential\nSteps : 20+\nStrength : 0.5 - 1.0 (0.5 if distorting in multi-LORA)\n\nAnima :\nscheduler: SimpleSteps: 30 - 45Strength: 1.2 - 1.8 (v1) , 1.0-1.2 (v2)\n\nTag means work best on tested model base, didn't mean only work on that model.\nIllustrious / NoobAI / SDXL are Compatible, cross-apply Lora and models may give out some surprise🎉.\nRecommend SDXL ❤️\nWelcome to adapt to any SDXL branch, please post it and let me know. ❤️\n\nThis is my first model, and while it's not fully refined yet, it serves as a solid foundation for future improvements.\nFeedback is always welcome — feel free to drop a comment below. Your input is greatly appreciated!",
+  "usage_notes": "以下推荐信息来自 Civitai 选定版本及其模型发布说明；本机尚未对参数做实测，因此资源状态仍为 untested。\n页面给出的 Anima 条件：Scheduler Simple、Steps 30–45；Strength 写为 v1 1.2–1.8、v2 1.0–1.2，但未给出当前 v3 的专属数值范围，因此不强行填入推荐权重。\n本次保存 3 张 Civitai 发布图；不使用 nsfw=None 过滤。图片级 nsfwLevel：138162728:2, 136744320:4, 137663266:2。",
+  "license": {
+    "type": "civitai_model_permissions",
+    "allow_no_credit": false,
+    "allow_commercial_use": [
+      "RentCivit",
+      "Rent",
+      "Image",
+      "Sell"
+    ],
+    "allow_derivatives": false,
+    "allow_different_license": true
+  },
+  "source": {
+    "type": "civitai",
+    "url": "https://civitai.com/models/1879987?modelVersionId=3130764",
+    "civitai_model_id": 1879987,
+    "civitai_version_id": 3130764,
+    "version_name": "v3_anima"
+  },
+  "previews": [
+    {
+      "id": "preview-001",
+      "file": "previews/preview-001.jpg",
+      "alt": "Zoda 🥤 – NSFW Detailer · v3_anima Civitai 发布图 1",
+      "source": "https://civitai.com/images/138162728",
+      "nsfw_level": 2
+    },
+    {
+      "id": "preview-002",
+      "file": "previews/preview-002.jpg",
+      "alt": "Zoda 🥤 – NSFW Detailer · v3_anima Civitai 发布图 2",
+      "source": "https://civitai.com/images/136744320",
+      "nsfw_level": 4
+    },
+    {
+      "id": "preview-003",
+      "file": "previews/preview-003.jpg",
+      "alt": "Zoda 🥤 – NSFW Detailer · v3_anima Civitai 发布图 3",
+      "source": "https://civitai.com/images/137663266",
+      "nsfw_level": 2
+    }
+  ],
+  "examples": [],
+  "embedded_metadata": {
+    "role": "backup",
+    "values": {
+      "civitai.model_id": "1879987",
+      "civitai.version_id": "3130764",
+      "civitai.version_name": "v3_anima",
+      "civitai.creator": "al123sdaw",
+      "civitai.base_model": "Anima",
+      "civitai.file_name": "zoda_v3_anima.safetensors",
+      "civitai.file_sha256": "ecfbc656b6dc58355089522ada330741d9d581f24391a6c12b325457aa01969c",
+      "civitai.file_size_kb": "67813.8125",
+      "civitai.trained_words": "[]",
+      "civitai.model_tags": "[\"style\"]",
+      "civitai.version_created_at": "2026-07-15T01:52:33.059Z",
+      "civitai.version_published_at": "2026-07-29T15:47:07.529Z",
+      "civitai.preview_source": "https://civitai.com/images/138368427",
+      "civitai.preview_images": "[{\"id\":\"138162728\",\"nsfw_level\":2,\"source\":\"https://civitai.com/images/138162728\"},{\"id\":\"136744320\",\"nsfw_level\":4,\"source\":\"https://civitai.com/images/136744320\"},{\"id\":\"137663266\",\"nsfw_level\":2,\"source\":\"https://civitai.com/images/137663266\"}]",
+      "civitai.recommendation_source": "https://civitai.com/models/1879987?modelVersionId=3130764"
+    }
+  },
+  "name_zh": "Zoda 细节增强",
+  "summary_zh": "增强成人题材画面的细节与表情表现。",
+  "purpose": "动作／效果"
+}

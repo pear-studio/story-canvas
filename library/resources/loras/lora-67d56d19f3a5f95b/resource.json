@@ -1,0 +1,1292 @@
+{
+  "$schema": "https://storyvisualizer.local/schemas/lora-resource.schema.json",
+  "version": 2,
+  "id": "lora-67d56d19f3a5f95b",
+  "kind": "lora",
+  "name": "ZZZ Game Style · Anima v1.0",
+  "created_at": "2026-09-18T09:44:11.770Z",
+  "updated_at": "2026-09-19T15:45:16.739Z",
+  "file": {
+    "relative_path": "loras/training/lora-6ceeecdb4def/run-1975397f1648/lora-step00000600.safetensors",
+    "sha256": "67d56d19f3a5f95b7bf13ca08ec2cd4db8feda8e6f81124a1e0510c0eda24b82",
+    "size_bytes": 91885784
+  },
+  "architecture": {
+    "family": "anima",
+    "prompt_family": "anima"
+  },
+  "base_models": [
+    {
+      "kind": "dit",
+      "relative_path": "diffusion_models/anima-base-v1.0.safetensors",
+      "sha256": "bd43b7cffe1ed1153d9c41e7beb2f18cb1273eafbaa3af3edd6a173dc90a006e",
+      "size_bytes": 4182218328,
+      "source": "https://huggingface.co/circlestone-labs/Anima/tree/main/split_files",
+      "name": "anima-base-v1.0.safetensors",
+      "identity_status": "exact"
+    },
+    {
+      "kind": "text_encoder",
+      "relative_path": "text_encoders/qwen_3_06b_base.safetensors",
+      "sha256": "cd2a512003e2f9f3cd3c32a9c3573f820bb28c940f73c57b1ddaa983d9223eba",
+      "size_bytes": 1192135096,
+      "source": "https://huggingface.co/circlestone-labs/Anima/tree/main/split_files",
+      "name": "qwen_3_06b_base.safetensors",
+      "identity_status": "exact"
+    },
+    {
+      "kind": "vae",
+      "relative_path": "vae/qwen_image_vae.safetensors",
+      "sha256": "a70580f0213e67967ee9c95f05bb400e8fb08307e017a924bf3441223e023d1f",
+      "size_bytes": 253806246,
+      "source": "https://huggingface.co/circlestone-labs/Anima/tree/main/split_files",
+      "name": "qwen_image_vae.safetensors",
+      "identity_status": "exact"
+    }
+  ],
+  "concept": {
+    "name": "绝区零游戏画风",
+    "description": "动漫五官、块状发束、简化明暗和统一的非真实渲染材质；身份、服装、姿态与背景允许变化。"
+  },
+  "description": "100张截图训练，800步预算中选取600步检查点。68张受控对比已完成，推荐0.8起用，1.0强化游戏化渲染。",
+  "activation": {
+    "trigger_words": [
+      "zenless zone zero",
+      "3d"
+    ],
+    "tags": [
+      "style",
+      "zenless zone zero",
+      "anima"
+    ]
+  },
+  "usage_notes": "推荐生成词zenless zone zero, 3d；没有专门训练独立新触发词。0.8为通用起点，1.0可进一步简化皮肤高光、发束和材质。0.6已测但目标画风较弱。男性、拟人狼、无人场景和双人同车做过两颗seed的有限回归；复杂脚踏与肢体连接仍有局限。600步来自800总步数的cosine轨迹，不等同于600总预算重新训练。",
+  "recommended_generation": {
+    "weight": {
+      "default": 0.8,
+      "minimum": 0.6,
+      "maximum": 1,
+      "status": "tested"
+    },
+    "clip_skip": null,
+    "sampler": "er_sde",
+    "scheduler": "beta",
+    "steps": 32,
+    "cfg": 4,
+    "status": "tested"
+  },
+  "training": {
+    "task_id": "lora-6ceeecdb4def",
+    "task_name": "绝区零画风 · 主训练方案",
+    "run_id": "run-1975397f1648",
+    "dataset_id": "dataset-ebb919bf1194",
+    "dataset_name": "绝区零画风 · 主数据集",
+    "checkpoint_step": 600,
+    "total_steps": 800,
+    "image_count": 100,
+    "recipe": {
+      "id": "anima-character-r32-v1",
+      "version": 1,
+      "sha256": "8faa405302211c74a773bd16c27f8e36dbf7a0d3026deda3bf071be962c85879",
+      "overrides": {
+        "resolution": 1024,
+        "effective_batch_size": 4,
+        "network_dim": 32,
+        "network_alpha": 32,
+        "learning_rate": 0.00005
+      }
+    },
+    "semantic_config": {
+      "resolution": 1024,
+      "effective_batch_size": 4,
+      "network_dim": 32,
+      "network_alpha": 32,
+      "learning_rate": 0.00005,
+      "optimizer_type": "AdamW8bit"
+    },
+    "execution_config": {
+      "micro_batch_size": 2,
+      "gradient_accumulation_steps": 2,
+      "effective_batch_size": 4,
+      "max_data_loader_n_workers": 2,
+      "blocks_to_swap": 4
+    },
+    "run_settings": {
+      "max_train_steps": 800,
+      "save_every_n_steps": 100,
+      "seed": 20260917,
+      "micro_batch_size": 2,
+      "max_data_loader_n_workers": 2,
+      "blocks_to_swap": 4,
+      "gradient_accumulation_steps": 2,
+      "note": "100张素材，Micro Batch 2 × 梯度累积2 = 有效Batch4；800步，每100步保存；其余参数不变。目标为整体视觉统一、贴近绝区零非真实渲染，不将脸部平面化本身视为问题。先比较200/400/600/800步，必要时补500等中间点，再筛权重。"
+    },
+    "trainer": {
+      "sd_scripts_commit": "37a1cbbc5725ed2a3575506e7bd2001c9908ac92",
+      "python": "3.10.19",
+      "torch": "2.6.0+cu124",
+      "cuda": "12.4",
+      "accelerate": "1.6.0",
+      "gpu": "NVIDIA GeForce RTX 4090",
+      "vram_bytes": 25756696576
+    },
+    "seed": 20260917,
+    "dataset_toml_sha256": "70267bc73579187fdee3967bc2486a2fc02bc515429fbe5dd5c7d7d471185a22",
+    "items": [
+      {
+        "item_id": "item-fae6691a825a",
+        "asset_id": "v2-zzz-capture-004",
+        "group_id": "group-b563f3b5a042",
+        "source_file": "assets/v2-zzz-capture-004/original.png",
+        "image_file": "dataset/group-b563f3b5a042/item-fae6691a825a.png",
+        "caption_file": "dataset/group-b563f3b5a042/item-fae6691a825a.txt",
+        "image_sha256": "f70d57b010d64c4a8154f260d47db94ee0007be41ffe39f7b2934aa2fa6dcdec",
+        "caption_sha256": "718d39ec22b3189dc81ca40e5f8af7d62aa12539bb22d51d90f2b2f5ffd29561"
+      },
+      {
+        "item_id": "item-2b72667ae375",
+        "asset_id": "v2-zzz-capture-007",
+        "group_id": "group-b563f3b5a042",
+        "source_file": "assets/v2-zzz-capture-007/original.png",
+        "image_file": "dataset/group-b563f3b5a042/item-2b72667ae375.png",
+        "caption_file": "dataset/group-b563f3b5a042/item-2b72667ae375.txt",
+        "image_sha256": "c26f93ac686c6d9af7bc438abfc065250c12e1de8761e8072410fad946375d1d",
+        "caption_sha256": "341a1fd24ae9257e80f7b9e0ff8a568f43b4896f615f1fd68c0190f8a903675b"
+      },
+      {
+        "item_id": "item-b3bd2104a1a6",
+        "asset_id": "v2-zzz-capture-010",
+        "group_id": "group-b563f3b5a042",
+        "source_file": "assets/v2-zzz-capture-010/original.png",
+        "image_file": "dataset/group-b563f3b5a042/item-b3bd2104a1a6.png",
+        "caption_file": "dataset/group-b563f3b5a042/item-b3bd2104a1a6.txt",
+        "image_sha256": "5932ca16da90b8695df96795a68d59fdd3ee7fe2910f27d66d0f1e7e5c2dff38",
+        "caption_sha256": "d96ebc34890941aad3c6edc7a10db24245ce5e00c74113db26664030af760e0d"
+      },
+      {
+        "item_id": "item-1828c1cc32ef",
+        "asset_id": "v2-zzz-capture-013",
+        "group_id": "group-b563f3b5a042",
+        "source_file": "assets/v2-zzz-capture-013/original.png",
+        "image_file": "dataset/group-b563f3b5a042/item-1828c1cc32ef.png",
+        "caption_file": "dataset/group-b563f3b5a042/item-1828c1cc32ef.txt",
+        "image_sha256": "e845262f299df9cbe4454e27c990bec58750d9225b1f7dd201ed57fc9eef866c",
+        "caption_sha256": "5cc6dee6f100b3f321aab3942ece47592175f820c13559388d1db8df66c7234b"
+      },
+      {
+        "item_id": "item-4f60d78133a5",
+        "asset_id": "v2-zzz-capture-016",
+        "group_id": "group-b563f3b5a042",
+        "source_file": "assets/v2-zzz-capture-016/original.png",
+        "image_file": "dataset/group-b563f3b5a042/item-4f60d78133a5.png",
+        "caption_file": "dataset/group-b563f3b5a042/item-4f60d78133a5.txt",
+        "image_sha256": "ac3d0c21e6898e61a682507130fa8414adf5cf0cd4dd2829ee3613b545177df0",
+        "caption_sha256": "10030effb08ab39bc67aa439d190c028d74dfc6b67d8c6213a2495ac9b63d55c"
+      },
+      {
+        "item_id": "item-0329ed560e89",
+        "asset_id": "v2-zzz-capture-019",
+        "group_id": "group-b563f3b5a042",
+        "source_file": "assets/v2-zzz-capture-019/original.png",
+        "image_file": "dataset/group-b563f3b5a042/item-0329ed560e89.png",
+        "caption_file": "dataset/group-b563f3b5a042/item-0329ed560e89.txt",
+        "image_sha256": "c7f92738e46830b860dff26be3a538e3273977314680cd9c3d656ed19c792068",
+        "caption_sha256": "10ec329fe80cb705a75afe343e780d85a6dad788ae3f0b1e8b9f0ec71f3044e9"
+      },
+      {
+        "item_id": "item-933295641fd7",
+        "asset_id": "v2-zzz-capture-022",
+        "group_id": "group-b563f3b5a042",
+        "source_file": "assets/v2-zzz-capture-022/original.png",
+        "image_file": "dataset/group-b563f3b5a042/item-933295641fd7.png",
+        "caption_file": "dataset/group-b563f3b5a042/item-933295641fd7.txt",
+        "image_sha256": "0a82bbe135a956066ed85c47793c73e516f8b87afcd51607b868cb51cb289633",
+        "caption_sha256": "9bf3bd22ff471832f0c600c824291a6a3c6c5bb641eedc64bc72edccb9639d37"
+      },
+      {
+        "item_id": "item-dfb2195d533e",
+        "asset_id": "v2-zzz-capture-025",
+        "group_id": "group-b563f3b5a042",
+        "source_file": "assets/v2-zzz-capture-025/original.png",
+        "image_file": "dataset/group-b563f3b5a042/item-dfb2195d533e.png",
+        "caption_file": "dataset/group-b563f3b5a042/item-dfb2195d533e.txt",
+        "image_sha256": "9b61e78da122743cc6efcfa50271f70a3a9557a8f783176549ef5c3e44b27c21",
+        "caption_sha256": "406d03d5b3af466e6f18e8a16e3600b521201787c90779a0ca09715ce822ddd8"
+      },
+      {
+        "item_id": "item-02549632131d",
+        "asset_id": "v2-zzz-capture-028",
+        "group_id": "group-b563f3b5a042",
+        "source_file": "assets/v2-zzz-capture-028/original.png",
+        "image_file": "dataset/group-b563f3b5a042/item-02549632131d.png",
+        "caption_file": "dataset/group-b563f3b5a042/item-02549632131d.txt",
+        "image_sha256": "65d504aa8dc814177c1305746204c6ebde49a9e57d737559dd26e34032ef177d",
+        "caption_sha256": "703d36fa6f8761a5e987d421c67569e16f8e456968439ece1aad18fed75b9106"
+      },
+      {
+        "item_id": "item-05c2737dbe73",
+        "asset_id": "v2-zzz-capture-097",
+        "group_id": "group-b563f3b5a042",
+        "source_file": "assets/v2-zzz-capture-097/original.png",
+        "image_file": "dataset/group-b563f3b5a042/item-05c2737dbe73.png",
+        "caption_file": "dataset/group-b563f3b5a042/item-05c2737dbe73.txt",
+        "image_sha256": "74e4ea99ed61d308a590d8c0af8c44b42b310bf864139ca7ab79eae6c5062258",
+        "caption_sha256": "b9a6139a53a22386c8a7ab57af6a36293200331ece22922b194818f4e9974324"
+      },
+      {
+        "item_id": "item-52935f6f54fa",
+        "asset_id": "v2-zzz-capture-102",
+        "group_id": "group-b563f3b5a042",
+        "source_file": "assets/v2-zzz-capture-102/original.png",
+        "image_file": "dataset/group-b563f3b5a042/item-52935f6f54fa.png",
+        "caption_file": "dataset/group-b563f3b5a042/item-52935f6f54fa.txt",
+        "image_sha256": "64a80420e7f2ea857a9784fd065eed1961fb0b00af5b6b812a0ea068a061f479",
+        "caption_sha256": "cf589cfdc965b4f47a1155ac9341c825aef74d7321c12c2a259b60ea618221cc"
+      },
+      {
+        "item_id": "item-0082af045ba4",
+        "asset_id": "v2-zzz-capture-133",
+        "group_id": "group-b563f3b5a042",
+        "source_file": "assets/v2-zzz-capture-133/original.png",
+        "image_file": "dataset/group-b563f3b5a042/item-0082af045ba4.png",
+        "caption_file": "dataset/group-b563f3b5a042/item-0082af045ba4.txt",
+        "image_sha256": "995266673d969df110eba207d43caa79f6d8630023bcde16c9a799324542ff76",
+        "caption_sha256": "c76a382310dc17a42f586ce32f3f98f1c3ac243e24afe18da97e5f895c61ab4c"
+      },
+      {
+        "item_id": "item-2a4570f01ab1",
+        "asset_id": "v2-zzz-capture-141",
+        "group_id": "group-b563f3b5a042",
+        "source_file": "assets/v2-zzz-capture-141/original.png",
+        "image_file": "dataset/group-b563f3b5a042/item-2a4570f01ab1.png",
+        "caption_file": "dataset/group-b563f3b5a042/item-2a4570f01ab1.txt",
+        "image_sha256": "99abd61cf0d30a61985178727d4166f6d44ce3ce073b09dc41db085dfb560ddb",
+        "caption_sha256": "a60df9575d2d2bbbebe85676cfd79b4e4c8d529dfd06e4b2df7e024f20026862"
+      },
+      {
+        "item_id": "item-be6498ba4d58",
+        "asset_id": "v2-zzz-capture-144",
+        "group_id": "group-b563f3b5a042",
+        "source_file": "assets/v2-zzz-capture-144/original.png",
+        "image_file": "dataset/group-b563f3b5a042/item-be6498ba4d58.png",
+        "caption_file": "dataset/group-b563f3b5a042/item-be6498ba4d58.txt",
+        "image_sha256": "d875eecee0e3a2340e81f07160bf1b813af183a95c7365162e9e4f9db2b252d6",
+        "caption_sha256": "ee45d100d849a99ac4e309c4e5cad06b2d2c8b9d40265fa668e06d062d09231e"
+      },
+      {
+        "item_id": "item-86c6ed6575bf",
+        "asset_id": "v2-zzz-capture-145",
+        "group_id": "group-b563f3b5a042",
+        "source_file": "assets/v2-zzz-capture-145/original.png",
+        "image_file": "dataset/group-b563f3b5a042/item-86c6ed6575bf.png",
+        "caption_file": "dataset/group-b563f3b5a042/item-86c6ed6575bf.txt",
+        "image_sha256": "110be64340b92264747b69ae60ff5d63c7b89071716331fafdee005c7e2481a4",
+        "caption_sha256": "f42298c35aabfee085b8639068c930a8ebe42dc2c520ed741d51cfa228506407"
+      },
+      {
+        "item_id": "item-597657f47cd5",
+        "asset_id": "v2-zzz-capture-149",
+        "group_id": "group-b563f3b5a042",
+        "source_file": "assets/v2-zzz-capture-149/original.png",
+        "image_file": "dataset/group-b563f3b5a042/item-597657f47cd5.png",
+        "caption_file": "dataset/group-b563f3b5a042/item-597657f47cd5.txt",
+        "image_sha256": "93d137433c83f025fdfb0792e10132081f78a83ba97106abd116d19fcd7e1447",
+        "caption_sha256": "fde006f8d3014d8e0178e52577ae261641b1d85fd7c6fc1c64b34fd7c8235859"
+      },
+      {
+        "item_id": "item-61437a693bab",
+        "asset_id": "v2-zzz-capture-151",
+        "group_id": "group-b563f3b5a042",
+        "source_file": "assets/v2-zzz-capture-151/original.png",
+        "image_file": "dataset/group-b563f3b5a042/item-61437a693bab.png",
+        "caption_file": "dataset/group-b563f3b5a042/item-61437a693bab.txt",
+        "image_sha256": "9b7f2e5b109149e58fbf2124bdf4d9803e829048c1960f5b63318ea7a30f7103",
+        "caption_sha256": "3b59b49022a0d45c32597445212dc0d71d5962b6a6deb73e1e1a6248e1c429d7"
+      },
+      {
+        "item_id": "item-d8c4a5bdf30b",
+        "asset_id": "v2-zzz-capture-156",
+        "group_id": "group-b563f3b5a042",
+        "source_file": "assets/v2-zzz-capture-156/original.png",
+        "image_file": "dataset/group-b563f3b5a042/item-d8c4a5bdf30b.png",
+        "caption_file": "dataset/group-b563f3b5a042/item-d8c4a5bdf30b.txt",
+        "image_sha256": "88918d17dd432a9aa3d6ad9e68b96de5c5b53f53248ebab6b7dbc726eee0583d",
+        "caption_sha256": "56f9c3a5df096aa9a8a4f02c000991c26fbc313ef9ef432477c512f6c359c773"
+      },
+      {
+        "item_id": "item-b65f2d9986fe",
+        "asset_id": "v2-zzz-capture-163",
+        "group_id": "group-b563f3b5a042",
+        "source_file": "assets/v2-zzz-capture-163/original.png",
+        "image_file": "dataset/group-b563f3b5a042/item-b65f2d9986fe.png",
+        "caption_file": "dataset/group-b563f3b5a042/item-b65f2d9986fe.txt",
+        "image_sha256": "24e7ade8a8038d910aa2edcef468500685a188ba6aaa88b1ecbc8708fa0ff1ee",
+        "caption_sha256": "37e199dae3cc3fe2579ec8b51cddf8d8552056e36ab74284f6351ddb4664ca7a"
+      },
+      {
+        "item_id": "item-a5f793f29e93",
+        "asset_id": "v2-zzz-capture-173",
+        "group_id": "group-b563f3b5a042",
+        "source_file": "assets/v2-zzz-capture-173/original.png",
+        "image_file": "dataset/group-b563f3b5a042/item-a5f793f29e93.png",
+        "caption_file": "dataset/group-b563f3b5a042/item-a5f793f29e93.txt",
+        "image_sha256": "9ffbcc51525000b2edcf63ac831128c61312d0ab2f6e15797947d1c861f4c00e",
+        "caption_sha256": "d8d35205ad3e30e5070317275efd49d04d764877dfe3b68e2dd2b54c2832f67a"
+      },
+      {
+        "item_id": "item-1474bd38473e",
+        "asset_id": "v2-zzz-capture-182",
+        "group_id": "group-b563f3b5a042",
+        "source_file": "assets/v2-zzz-capture-182/original.png",
+        "image_file": "dataset/group-b563f3b5a042/item-1474bd38473e.png",
+        "caption_file": "dataset/group-b563f3b5a042/item-1474bd38473e.txt",
+        "image_sha256": "84dec090148d21b59d6089ca7765a51d8ea67cecacd4b5489b0fff1a817ecafc",
+        "caption_sha256": "c2a7bcea915d09459c14e651ee51a38da56e3b2f40a5ad0779a821ccccb5798c"
+      },
+      {
+        "item_id": "item-55d465a3b2a3",
+        "asset_id": "v2-zzz-capture-184",
+        "group_id": "group-b563f3b5a042",
+        "source_file": "assets/v2-zzz-capture-184/original.png",
+        "image_file": "dataset/group-b563f3b5a042/item-55d465a3b2a3.png",
+        "caption_file": "dataset/group-b563f3b5a042/item-55d465a3b2a3.txt",
+        "image_sha256": "8e311dc494dc2978cd15979c6f7565c2aa45ba31c80f993452cc330a95b989c0",
+        "caption_sha256": "05d35795bcd6448f0a20bae461f0dad828ce0ba0ad16d16e3ed82b92fa4a17f1"
+      },
+      {
+        "item_id": "item-4c83aeaee974",
+        "asset_id": "v2-zzz-capture-187",
+        "group_id": "group-b563f3b5a042",
+        "source_file": "assets/v2-zzz-capture-187/original.png",
+        "image_file": "dataset/group-b563f3b5a042/item-4c83aeaee974.png",
+        "caption_file": "dataset/group-b563f3b5a042/item-4c83aeaee974.txt",
+        "image_sha256": "27b9b6a606fb26ff27af7a6aa937f213dc5f50a1b302461dfdab249f3722f482",
+        "caption_sha256": "c215cfb8f860ee505f40ac7adf143ba27fd3eb8c847aec9cd54e6e639a3594ae"
+      },
+      {
+        "item_id": "item-fd28c9c5ffa0",
+        "asset_id": "v2-zzz-capture-191",
+        "group_id": "group-b563f3b5a042",
+        "source_file": "assets/v2-zzz-capture-191/original.png",
+        "image_file": "dataset/group-b563f3b5a042/item-fd28c9c5ffa0.png",
+        "caption_file": "dataset/group-b563f3b5a042/item-fd28c9c5ffa0.txt",
+        "image_sha256": "95ee958321cec440f8dd3bacc37e0edf019bce39bac099679034a57f9abf5e73",
+        "caption_sha256": "2a9532c072a95caf2199198ca5d9fb830fa7e3d4fce4eccf0fd5572c08c71a7e"
+      },
+      {
+        "item_id": "item-2900c35be4ec",
+        "asset_id": "v2-zzz-capture-001",
+        "group_id": "group-d66ae894b605",
+        "source_file": "assets/v2-zzz-capture-001/original.png",
+        "image_file": "dataset/group-d66ae894b605/item-2900c35be4ec.png",
+        "caption_file": "dataset/group-d66ae894b605/item-2900c35be4ec.txt",
+        "image_sha256": "d56835f04e7f361e8e8c7df7c3c2e4c8609364b44b69f32db24758742bb1e2f9",
+        "caption_sha256": "4a31a92e5d73b212491d1bc8ca38adf12ed3c26ba62a22faf0c08532d40ab4b0"
+      },
+      {
+        "item_id": "item-8b8c608ee535",
+        "asset_id": "v2-zzz-capture-005",
+        "group_id": "group-d66ae894b605",
+        "source_file": "assets/v2-zzz-capture-005/original.png",
+        "image_file": "dataset/group-d66ae894b605/item-8b8c608ee535.png",
+        "caption_file": "dataset/group-d66ae894b605/item-8b8c608ee535.txt",
+        "image_sha256": "e2cfad6f15c35777a3bf5de03fd20a767dc01d14bc66f3a43363bb2982078693",
+        "caption_sha256": "a12e53f4ec2aa1f73d717ed66c8794b1e0128a6487c45c2ee08a91d6d895adf3"
+      },
+      {
+        "item_id": "item-bacc5f821d0e",
+        "asset_id": "v2-zzz-capture-008",
+        "group_id": "group-d66ae894b605",
+        "source_file": "assets/v2-zzz-capture-008/original.png",
+        "image_file": "dataset/group-d66ae894b605/item-bacc5f821d0e.png",
+        "caption_file": "dataset/group-d66ae894b605/item-bacc5f821d0e.txt",
+        "image_sha256": "5e88fe376a73b1d7106e96878c8ed200c86404a799eaeec647f1941af11d0d18",
+        "caption_sha256": "b617e750fb49d5923164b6f30a17a184b12705ec6f2c2c7e429372d0b8a5bc82"
+      },
+      {
+        "item_id": "item-c48c6a839f6a",
+        "asset_id": "v2-zzz-capture-011",
+        "group_id": "group-d66ae894b605",
+        "source_file": "assets/v2-zzz-capture-011/original.png",
+        "image_file": "dataset/group-d66ae894b605/item-c48c6a839f6a.png",
+        "caption_file": "dataset/group-d66ae894b605/item-c48c6a839f6a.txt",
+        "image_sha256": "ac00d5e0b4045c1d2bdf55f9b16c6c4526a6f76da0b316268d0472740d614f96",
+        "caption_sha256": "5fa34a0446fd0bb666ca9f7d4d5602a80412cc888202e3bc9a279df0b9b54e4b"
+      },
+      {
+        "item_id": "item-878b474d78a6",
+        "asset_id": "v2-zzz-capture-017",
+        "group_id": "group-d66ae894b605",
+        "source_file": "assets/v2-zzz-capture-017/original.png",
+        "image_file": "dataset/group-d66ae894b605/item-878b474d78a6.png",
+        "caption_file": "dataset/group-d66ae894b605/item-878b474d78a6.txt",
+        "image_sha256": "c9aad52f4eb6f1ed771a3258aad73328f201bd220fb5a98f3d0e7656b1e82cb2",
+        "caption_sha256": "520372129747dd2d6c26ccc91ed8a64283fa105e1f3701d35aed5b48198d64be"
+      },
+      {
+        "item_id": "item-dd81e341b3a1",
+        "asset_id": "v2-zzz-capture-020",
+        "group_id": "group-d66ae894b605",
+        "source_file": "assets/v2-zzz-capture-020/original.png",
+        "image_file": "dataset/group-d66ae894b605/item-dd81e341b3a1.png",
+        "caption_file": "dataset/group-d66ae894b605/item-dd81e341b3a1.txt",
+        "image_sha256": "f4b3fb8c18176e31dbf36e93c2dc90a46e405d0689866fee7d322f1b1a888731",
+        "caption_sha256": "d6c9a94a82126a8ac116d4e969e0dd237cedf7714853950db55f291f532e9919"
+      },
+      {
+        "item_id": "item-9db777a59670",
+        "asset_id": "v2-zzz-capture-023",
+        "group_id": "group-d66ae894b605",
+        "source_file": "assets/v2-zzz-capture-023/original.png",
+        "image_file": "dataset/group-d66ae894b605/item-9db777a59670.png",
+        "caption_file": "dataset/group-d66ae894b605/item-9db777a59670.txt",
+        "image_sha256": "87112c5f45afa6a93b1b614ae3d305178b4e3b62902b973b87faecfa6cd6eb0d",
+        "caption_sha256": "5bccb65a566a74f6ed1d943d28f9c9bb08b79fbcf287cc5d316839c929ae5098"
+      },
+      {
+        "item_id": "item-fba50e0c4623",
+        "asset_id": "v2-zzz-capture-026",
+        "group_id": "group-d66ae894b605",
+        "source_file": "assets/v2-zzz-capture-026/original.png",
+        "image_file": "dataset/group-d66ae894b605/item-fba50e0c4623.png",
+        "caption_file": "dataset/group-d66ae894b605/item-fba50e0c4623.txt",
+        "image_sha256": "f4860ebea300efa9dffaf19bb0b4d8f9747eccbbbe464800b6cb19d088df8e31",
+        "caption_sha256": "dffd366a99c376c47681ceb9bef19197bea2cec0a6f59177fe8b3f7aafe0eb51"
+      },
+      {
+        "item_id": "item-de01c2bea523",
+        "asset_id": "v2-zzz-capture-062",
+        "group_id": "group-d66ae894b605",
+        "source_file": "assets/v2-zzz-capture-062/original.png",
+        "image_file": "dataset/group-d66ae894b605/item-de01c2bea523.png",
+        "caption_file": "dataset/group-d66ae894b605/item-de01c2bea523.txt",
+        "image_sha256": "4758f98b14acbcb385663075ec6255ad30c8f984ee63fe8d94c66a0fcf0fec28",
+        "caption_sha256": "6badf6fff894e80505f00cd9275de96641a0e44049259e0c4f018603e8c0bd8a"
+      },
+      {
+        "item_id": "item-2982f36fed20",
+        "asset_id": "v2-zzz-capture-065",
+        "group_id": "group-d66ae894b605",
+        "source_file": "assets/v2-zzz-capture-065/original.png",
+        "image_file": "dataset/group-d66ae894b605/item-2982f36fed20.png",
+        "caption_file": "dataset/group-d66ae894b605/item-2982f36fed20.txt",
+        "image_sha256": "2c4b2e9e2e1155fa81e4db956185203b779f6138973ed6fa640ae43a80da48b6",
+        "caption_sha256": "34bf9e6f9db15b5872d86685fe233c93561c2cb21c6be8c4ccff1e30d16c7ed2"
+      },
+      {
+        "item_id": "item-1a4226b0ac49",
+        "asset_id": "v2-zzz-capture-067",
+        "group_id": "group-d66ae894b605",
+        "source_file": "assets/v2-zzz-capture-067/original.png",
+        "image_file": "dataset/group-d66ae894b605/item-1a4226b0ac49.png",
+        "caption_file": "dataset/group-d66ae894b605/item-1a4226b0ac49.txt",
+        "image_sha256": "9a6b081fd42e3bef2669e99bb60f8efae6cf89a233675cfa213e0647f087bea1",
+        "caption_sha256": "b5f4a98feb492fa5733c98fcfbda1ddb327e50711c13e45bc30569b059620fe9"
+      },
+      {
+        "item_id": "item-dec520ebf9ca",
+        "asset_id": "v2-zzz-capture-068",
+        "group_id": "group-d66ae894b605",
+        "source_file": "assets/v2-zzz-capture-068/original.png",
+        "image_file": "dataset/group-d66ae894b605/item-dec520ebf9ca.png",
+        "caption_file": "dataset/group-d66ae894b605/item-dec520ebf9ca.txt",
+        "image_sha256": "b8900577b54d1945bacccf1762f88d436f98c1ab65ddf5460e7e16424f5bc9a5",
+        "caption_sha256": "8959682fbd64b9b4c0471352af86ae04d880d67767efab1f60a93f007549acd6"
+      },
+      {
+        "item_id": "item-1bcecbdee6c0",
+        "asset_id": "v2-zzz-capture-069",
+        "group_id": "group-d66ae894b605",
+        "source_file": "assets/v2-zzz-capture-069/original.png",
+        "image_file": "dataset/group-d66ae894b605/item-1bcecbdee6c0.png",
+        "caption_file": "dataset/group-d66ae894b605/item-1bcecbdee6c0.txt",
+        "image_sha256": "af929a5ffed6be66b837dc567e425afc680cb52378da63575decf03ea012e9f3",
+        "caption_sha256": "9833be26f18de13548e7ccfbe465d7129e9eea40672f993423666006f4eb98f4"
+      },
+      {
+        "item_id": "item-8970fca990ea",
+        "asset_id": "v2-zzz-capture-072",
+        "group_id": "group-d66ae894b605",
+        "source_file": "assets/v2-zzz-capture-072/original.png",
+        "image_file": "dataset/group-d66ae894b605/item-8970fca990ea.png",
+        "caption_file": "dataset/group-d66ae894b605/item-8970fca990ea.txt",
+        "image_sha256": "a11ca8a436634063872609dcb4e64419f0ceee0f57dc9e70c772682c9ae5debd",
+        "caption_sha256": "30efb58758f8a33e435eb9b11fbd6d9443aac00311f65743f492cd31f777c37d"
+      },
+      {
+        "item_id": "item-8046a630d21e",
+        "asset_id": "v2-zzz-capture-073",
+        "group_id": "group-d66ae894b605",
+        "source_file": "assets/v2-zzz-capture-073/original.png",
+        "image_file": "dataset/group-d66ae894b605/item-8046a630d21e.png",
+        "caption_file": "dataset/group-d66ae894b605/item-8046a630d21e.txt",
+        "image_sha256": "da2338aeac89c960e3b878d64f078d25a166e1f6e75d20a26c2f17bf9c4aa1e9",
+        "caption_sha256": "185d95caa7b320f4d347b4d4915102d5e87f229008f5026a638df7becad0b123"
+      },
+      {
+        "item_id": "item-b72264127e70",
+        "asset_id": "v2-zzz-capture-089",
+        "group_id": "group-d66ae894b605",
+        "source_file": "assets/v2-zzz-capture-089/original.png",
+        "image_file": "dataset/group-d66ae894b605/item-b72264127e70.png",
+        "caption_file": "dataset/group-d66ae894b605/item-b72264127e70.txt",
+        "image_sha256": "532d6c7b7038b2437753b1ac814c6e79bebb30d5d0144f876976e068946ba88e",
+        "caption_sha256": "01f4afc106c32d2cbfe7441749fc84d4155156127ed77f13a957220fb9c4e0d3"
+      },
+      {
+        "item_id": "item-381b0ff132af",
+        "asset_id": "v2-zzz-capture-103",
+        "group_id": "group-d66ae894b605",
+        "source_file": "assets/v2-zzz-capture-103/original.png",
+        "image_file": "dataset/group-d66ae894b605/item-381b0ff132af.png",
+        "caption_file": "dataset/group-d66ae894b605/item-381b0ff132af.txt",
+        "image_sha256": "09bcd57b332b14dd8a037a75ffa879362103680a68288edc07c4a2a1aee04a2f",
+        "caption_sha256": "2bc2060a90b1911b10cef46393447e152a1884bed8d955a2d70e30c6bd0cbebe"
+      },
+      {
+        "item_id": "item-8d9754ce5041",
+        "asset_id": "v2-zzz-capture-132",
+        "group_id": "group-d66ae894b605",
+        "source_file": "assets/v2-zzz-capture-132/original.png",
+        "image_file": "dataset/group-d66ae894b605/item-8d9754ce5041.png",
+        "caption_file": "dataset/group-d66ae894b605/item-8d9754ce5041.txt",
+        "image_sha256": "0036f876ccf754f20f16258db8eca011ebf53a6f9edecad97e03b51d59c8c94e",
+        "caption_sha256": "4dd699f84638ae20b92f6dcb52d7ca30301f8fd174fa7efc7218967586c59cc2"
+      },
+      {
+        "item_id": "item-82e5a6504e41",
+        "asset_id": "v2-zzz-capture-147",
+        "group_id": "group-d66ae894b605",
+        "source_file": "assets/v2-zzz-capture-147/original.png",
+        "image_file": "dataset/group-d66ae894b605/item-82e5a6504e41.png",
+        "caption_file": "dataset/group-d66ae894b605/item-82e5a6504e41.txt",
+        "image_sha256": "23378aaaf427e7df446cf6baadbc95d84d900463894806a063d7be6f5af9eceb",
+        "caption_sha256": "29ade36ea55b6fe9a589f70d0e4f34c80d8783d6b2307d56cbbdcac2d49fe64c"
+      },
+      {
+        "item_id": "item-a9067b77dbe4",
+        "asset_id": "v2-zzz-capture-152",
+        "group_id": "group-d66ae894b605",
+        "source_file": "assets/v2-zzz-capture-152/original.png",
+        "image_file": "dataset/group-d66ae894b605/item-a9067b77dbe4.png",
+        "caption_file": "dataset/group-d66ae894b605/item-a9067b77dbe4.txt",
+        "image_sha256": "14535546a8af5f241ee255f7997fd94aae21957efbe62aeb0eb2ad26ee1cd67c",
+        "caption_sha256": "44834f36148a4d440ae5ff7a50d9b939c4232ed02857f91cbd1927b4294b5c84"
+      },
+      {
+        "item_id": "item-c3f1754ce2d2",
+        "asset_id": "v2-zzz-capture-154",
+        "group_id": "group-d66ae894b605",
+        "source_file": "assets/v2-zzz-capture-154/original.png",
+        "image_file": "dataset/group-d66ae894b605/item-c3f1754ce2d2.png",
+        "caption_file": "dataset/group-d66ae894b605/item-c3f1754ce2d2.txt",
+        "image_sha256": "d7a8ce7d6bc0450631f54d3535ccd665a7aaeae889c617e4057857e11e045066",
+        "caption_sha256": "0f9e8b6aacca9286db899ed37dc8436e2b4fefae351f9ff4471530ba0e6ea5dd"
+      },
+      {
+        "item_id": "item-408ea77a2bc0",
+        "asset_id": "v2-zzz-capture-155",
+        "group_id": "group-d66ae894b605",
+        "source_file": "assets/v2-zzz-capture-155/original.png",
+        "image_file": "dataset/group-d66ae894b605/item-408ea77a2bc0.png",
+        "caption_file": "dataset/group-d66ae894b605/item-408ea77a2bc0.txt",
+        "image_sha256": "6992de7ee481123330a6db6d5b253d23379822a08b387694661e4b7c9774ff50",
+        "caption_sha256": "ad3553eb321905b61d9058359d3c87cba76920f2af48818872c32a1c3f3efc28"
+      },
+      {
+        "item_id": "item-bf82b2b87d81",
+        "asset_id": "v2-zzz-capture-174",
+        "group_id": "group-d66ae894b605",
+        "source_file": "assets/v2-zzz-capture-174/original.png",
+        "image_file": "dataset/group-d66ae894b605/item-bf82b2b87d81.png",
+        "caption_file": "dataset/group-d66ae894b605/item-bf82b2b87d81.txt",
+        "image_sha256": "232f433af8decd71acf67e5e495870a2824cb8fc71c63b79a55a25ba5ebad1b6",
+        "caption_sha256": "cbbb42c0916fd85d71eca7ad44ecdddbd13ecaea8078f52f4bd6cc7858995f2c"
+      },
+      {
+        "item_id": "item-f90fe4374294",
+        "asset_id": "v2-zzz-capture-185",
+        "group_id": "group-d66ae894b605",
+        "source_file": "assets/v2-zzz-capture-185/original.png",
+        "image_file": "dataset/group-d66ae894b605/item-f90fe4374294.png",
+        "caption_file": "dataset/group-d66ae894b605/item-f90fe4374294.txt",
+        "image_sha256": "5006acab42afddfdb1ea3712104d9db035669f5bf86ab6757b00e2cc4e00b108",
+        "caption_sha256": "ac96ec37701a10e6397061c7e20ab13f467c9cef7e898d5ba7868b4d36f48236"
+      },
+      {
+        "item_id": "item-77b08d07cd22",
+        "asset_id": "v2-zzz-capture-186",
+        "group_id": "group-d66ae894b605",
+        "source_file": "assets/v2-zzz-capture-186/original.png",
+        "image_file": "dataset/group-d66ae894b605/item-77b08d07cd22.png",
+        "caption_file": "dataset/group-d66ae894b605/item-77b08d07cd22.txt",
+        "image_sha256": "501288d8341ec4f9768c6f11b891fbe506104e754fa3c6f47c076fe34aa3eb36",
+        "caption_sha256": "2c0bdc8d7b61fdd9503e048dc10e274d10cd90829739ab8626e87cb0de8c9058"
+      },
+      {
+        "item_id": "item-ae414f411b1f",
+        "asset_id": "v2-zzz-capture-188",
+        "group_id": "group-d66ae894b605",
+        "source_file": "assets/v2-zzz-capture-188/original.png",
+        "image_file": "dataset/group-d66ae894b605/item-ae414f411b1f.png",
+        "caption_file": "dataset/group-d66ae894b605/item-ae414f411b1f.txt",
+        "image_sha256": "60ab96aca09a23cd60bd1f2f374a47c6602ad7317934d7e5beba2a65909c3e20",
+        "caption_sha256": "b12b16e9333b4c59edc529a55eb7fe263f0e72470a81b11559f42f0ef5e4c2ce"
+      },
+      {
+        "item_id": "item-eab01930ce62",
+        "asset_id": "v2-zzz-capture-192",
+        "group_id": "group-d66ae894b605",
+        "source_file": "assets/v2-zzz-capture-192/original.png",
+        "image_file": "dataset/group-d66ae894b605/item-eab01930ce62.png",
+        "caption_file": "dataset/group-d66ae894b605/item-eab01930ce62.txt",
+        "image_sha256": "68dbbaf72363ac6ac0055aab7ffca47c36c9e4275df8e148fd88c9cbf20c0740",
+        "caption_sha256": "8fb089c48f5a289fbae400fae9f403092b04b0a43670c864a26dd1357a6fec22"
+      },
+      {
+        "item_id": "item-59e3efb5b727",
+        "asset_id": "v2-zzz-capture-195",
+        "group_id": "group-d66ae894b605",
+        "source_file": "assets/v2-zzz-capture-195/original.png",
+        "image_file": "dataset/group-d66ae894b605/item-59e3efb5b727.png",
+        "caption_file": "dataset/group-d66ae894b605/item-59e3efb5b727.txt",
+        "image_sha256": "fa82c057dd79fad566bc5d265423be93dae75222ce0c5b30809903cde0908517",
+        "caption_sha256": "c2764d4c664fb87a5c1c3ef2eae18704bf5ae88c4a47259931223cf323b702ed"
+      },
+      {
+        "item_id": "item-9b4329dd2c73",
+        "asset_id": "v2-zzz-capture-029",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-029/original.png",
+        "image_file": "dataset/group-e32807023625/item-9b4329dd2c73.png",
+        "caption_file": "dataset/group-e32807023625/item-9b4329dd2c73.txt",
+        "image_sha256": "2a1f97cfb3daf56fc315fc1ef863b05c070e54d148523c80f0a4dd99eac9a5ac",
+        "caption_sha256": "815bb322e274e1fa70c4e36c19d2bf0886d9ae42ed915b9840e194f6b7811644"
+      },
+      {
+        "item_id": "item-68f135f7af49",
+        "asset_id": "v2-zzz-capture-030",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-030/original.png",
+        "image_file": "dataset/group-e32807023625/item-68f135f7af49.png",
+        "caption_file": "dataset/group-e32807023625/item-68f135f7af49.txt",
+        "image_sha256": "6116fe5028c9ffc2fe42b8644154250491ec00a2bc1085de93830af0a8fea352",
+        "caption_sha256": "ce88d9ece996ec42cd173a8fb3552c4d8682d39bab5c4965db937a55a524480a"
+      },
+      {
+        "item_id": "item-65e4efa6d9b4",
+        "asset_id": "v2-zzz-capture-031",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-031/original.png",
+        "image_file": "dataset/group-e32807023625/item-65e4efa6d9b4.png",
+        "caption_file": "dataset/group-e32807023625/item-65e4efa6d9b4.txt",
+        "image_sha256": "adfdac91c89012a989bcfaef49d2e47d27ae4fa4e85e89fdb4f3661820c589e4",
+        "caption_sha256": "4d9609192d21415aa4121defbf632e757bed3d11b363fe752cee579303896fee"
+      },
+      {
+        "item_id": "item-eb825115d46e",
+        "asset_id": "v2-zzz-capture-032",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-032/original.png",
+        "image_file": "dataset/group-e32807023625/item-eb825115d46e.png",
+        "caption_file": "dataset/group-e32807023625/item-eb825115d46e.txt",
+        "image_sha256": "69d98b5de36547b87b1e0224bcb26113175e82dc76a1af70947a98ae675f1e31",
+        "caption_sha256": "6e618d7416cd2db8eadd6d6d08571618ce25f0d857aaae968a4e39639b9a73bb"
+      },
+      {
+        "item_id": "item-250b6d203277",
+        "asset_id": "v2-zzz-capture-034",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-034/original.png",
+        "image_file": "dataset/group-e32807023625/item-250b6d203277.png",
+        "caption_file": "dataset/group-e32807023625/item-250b6d203277.txt",
+        "image_sha256": "6c34003f034d5cb7d100e2016389a1747466dfc4c41ed97a6230f737f70b46fe",
+        "caption_sha256": "48b1ec378a7dce58d7e639641755cd7cddac623b9ded22ce3cc914f843fdd605"
+      },
+      {
+        "item_id": "item-33ba501270c8",
+        "asset_id": "v2-zzz-capture-037",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-037/original.png",
+        "image_file": "dataset/group-e32807023625/item-33ba501270c8.png",
+        "caption_file": "dataset/group-e32807023625/item-33ba501270c8.txt",
+        "image_sha256": "a55fe6f62329e7081490af2d2b71bcee9b0cccff3c274a821b3ff6a9cacc946e",
+        "caption_sha256": "9278c654c11fa30aa6e2c898cda8a7ce7a77d980ede721ad826b56e19b61f495"
+      },
+      {
+        "item_id": "item-7f39733c519d",
+        "asset_id": "v2-zzz-capture-038",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-038/original.png",
+        "image_file": "dataset/group-e32807023625/item-7f39733c519d.png",
+        "caption_file": "dataset/group-e32807023625/item-7f39733c519d.txt",
+        "image_sha256": "63ed4263ed88893350075e2991c66e80ff62597f3af4f474d57e38bb3da879c8",
+        "caption_sha256": "97bbff685324d14c98e2622015705dd21892aa981ac11a0257f0a5c3f18156d2"
+      },
+      {
+        "item_id": "item-85637f17bdcf",
+        "asset_id": "v2-zzz-capture-058",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-058/original.png",
+        "image_file": "dataset/group-e32807023625/item-85637f17bdcf.png",
+        "caption_file": "dataset/group-e32807023625/item-85637f17bdcf.txt",
+        "image_sha256": "7f2bf70453b2f516b5b1b8edab37381698de4e3b76e6c937d69a98b84694d747",
+        "caption_sha256": "eebf1536ea7772871bc98a1b850da7a94f58526e5cf9d0514c481c6f40dd7431"
+      },
+      {
+        "item_id": "item-9fe9db490135",
+        "asset_id": "v2-zzz-capture-061",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-061/original.png",
+        "image_file": "dataset/group-e32807023625/item-9fe9db490135.png",
+        "caption_file": "dataset/group-e32807023625/item-9fe9db490135.txt",
+        "image_sha256": "0a7d659ba04ec883c58a84edabd3c39674339c84fb7ae71d65fdab67916f9da3",
+        "caption_sha256": "ed492ae039eb76706acade12cb70f9758b958ceee7dd74be881adcb9a50cb63e"
+      },
+      {
+        "item_id": "item-8c28b0a47704",
+        "asset_id": "v2-zzz-capture-063",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-063/original.png",
+        "image_file": "dataset/group-e32807023625/item-8c28b0a47704.png",
+        "caption_file": "dataset/group-e32807023625/item-8c28b0a47704.txt",
+        "image_sha256": "97f325c664f3f441e7af8d402dd741957a23a23e0724bae5dc56d31c33dce3c0",
+        "caption_sha256": "de93cb37a57d5b421d06807d078ecb1e1fe1e84920492f0102fed6eea15f9af8"
+      },
+      {
+        "item_id": "item-b9dd431fb66d",
+        "asset_id": "v2-zzz-capture-071",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-071/original.png",
+        "image_file": "dataset/group-e32807023625/item-b9dd431fb66d.png",
+        "caption_file": "dataset/group-e32807023625/item-b9dd431fb66d.txt",
+        "image_sha256": "ef10d5d6023cc4e5320ad00f6eace58e862eaa98ffc6be6fe7172b2c01e22624",
+        "caption_sha256": "cc1ec52dd7f9d2474961697c160a35f3ab3bf07095462631d9449a755a7ebd48"
+      },
+      {
+        "item_id": "item-4421e9be0af1",
+        "asset_id": "v2-zzz-capture-077",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-077/original.png",
+        "image_file": "dataset/group-e32807023625/item-4421e9be0af1.png",
+        "caption_file": "dataset/group-e32807023625/item-4421e9be0af1.txt",
+        "image_sha256": "fd23e4f7536a54f47a1ef8a4a410fa331bec46de99a33d56884f08bb5fe5b6ea",
+        "caption_sha256": "21def27d643c484c462d2b18e1a6e055d26d01c634c64e78b7cad46500d459e9"
+      },
+      {
+        "item_id": "item-e33d86b4448d",
+        "asset_id": "v2-zzz-capture-079",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-079/original.png",
+        "image_file": "dataset/group-e32807023625/item-e33d86b4448d.png",
+        "caption_file": "dataset/group-e32807023625/item-e33d86b4448d.txt",
+        "image_sha256": "232a19fc68c0bc0a69b7ccee3026801c01ddc6198803d42f2c5839040b1ac0a8",
+        "caption_sha256": "41c6824412722a44866b48b19504083a8c93f19fc3ba75c885f5d8d8bae6ad1c"
+      },
+      {
+        "item_id": "item-b085f9f8d37d",
+        "asset_id": "v2-zzz-capture-083",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-083/original.png",
+        "image_file": "dataset/group-e32807023625/item-b085f9f8d37d.png",
+        "caption_file": "dataset/group-e32807023625/item-b085f9f8d37d.txt",
+        "image_sha256": "e0a267c9593637d8cd888cee2366af64d65ed08910aa0e2d15d61e7dc4a82de9",
+        "caption_sha256": "b703bd449c6f53ce8c50ca35ad121fb3e89d475a06882f7f60e8bf746852b231"
+      },
+      {
+        "item_id": "item-cfc4404a0be3",
+        "asset_id": "v2-zzz-capture-084",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-084/original.png",
+        "image_file": "dataset/group-e32807023625/item-cfc4404a0be3.png",
+        "caption_file": "dataset/group-e32807023625/item-cfc4404a0be3.txt",
+        "image_sha256": "3d66acca03419bb608630f82b77317711b1f2107803b95e2a8723cecec998ff2",
+        "caption_sha256": "d66f52661a0ebd7e49a7a082be45b60ab7f8620fb8d8bde19ac96e102e581918"
+      },
+      {
+        "item_id": "item-29e71d41921c",
+        "asset_id": "v2-zzz-capture-085",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-085/original.png",
+        "image_file": "dataset/group-e32807023625/item-29e71d41921c.png",
+        "caption_file": "dataset/group-e32807023625/item-29e71d41921c.txt",
+        "image_sha256": "f983e9f0a492809514194701ddb4745a936b0e33f94c5f18245ef7ab34accec3",
+        "caption_sha256": "a9085c1e989339752a5f210a1cd12a65bc3d34613d7ef9222ab18feb7be18577"
+      },
+      {
+        "item_id": "item-7b48f0b76138",
+        "asset_id": "v2-zzz-capture-086",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-086/original.png",
+        "image_file": "dataset/group-e32807023625/item-7b48f0b76138.png",
+        "caption_file": "dataset/group-e32807023625/item-7b48f0b76138.txt",
+        "image_sha256": "d8fd4f77a6a73f3d68eff82611bcae804d8a2c3527492b2917125a5a9d5f5e24",
+        "caption_sha256": "7de12c545543b611fc295bc5ee825a6258bf1d4320ffbe64a592291c37fbb921"
+      },
+      {
+        "item_id": "item-adc8cf1f2b19",
+        "asset_id": "v2-zzz-capture-087",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-087/original.png",
+        "image_file": "dataset/group-e32807023625/item-adc8cf1f2b19.png",
+        "caption_file": "dataset/group-e32807023625/item-adc8cf1f2b19.txt",
+        "image_sha256": "819184ec3e2d7f4d94fb601481f1236e0df5edc3949489fd6f8a227349d633dc",
+        "caption_sha256": "13fee99b60d00f271c52612def24281fc009fece6a6f2cc605adb07eaa9cce52"
+      },
+      {
+        "item_id": "item-8eefc8bc60bc",
+        "asset_id": "v2-zzz-capture-090",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-090/original.png",
+        "image_file": "dataset/group-e32807023625/item-8eefc8bc60bc.png",
+        "caption_file": "dataset/group-e32807023625/item-8eefc8bc60bc.txt",
+        "image_sha256": "70037a11826e8f3bbcb8ea6ea98ebe600127b9de7735c68823476c25c85c0a95",
+        "caption_sha256": "3232fc7150da5221776f830a72babb1e6c537e4dcc2acceff368e470c0db7546"
+      },
+      {
+        "item_id": "item-6476604e36bd",
+        "asset_id": "v2-zzz-capture-091",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-091/original.png",
+        "image_file": "dataset/group-e32807023625/item-6476604e36bd.png",
+        "caption_file": "dataset/group-e32807023625/item-6476604e36bd.txt",
+        "image_sha256": "c6af378a8189ba41a06233729afb36b0943e54cf1b496946a2e067c96706dad6",
+        "caption_sha256": "75f639af43bd95c319c9c4ca66ee770da51fb3069f4df8b5c9bdc63a90d93048"
+      },
+      {
+        "item_id": "item-f61de307fcb1",
+        "asset_id": "v2-zzz-capture-094",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-094/original.png",
+        "image_file": "dataset/group-e32807023625/item-f61de307fcb1.png",
+        "caption_file": "dataset/group-e32807023625/item-f61de307fcb1.txt",
+        "image_sha256": "416e757de2a0452ee1c1fa2c1c346a9307e52f5c6e798584f2d49e56cab7f1b3",
+        "caption_sha256": "25ca8804d77f7af85445e2ea6f94a43bb8444eb1ff79ebaa7bc1310f539ac99c"
+      },
+      {
+        "item_id": "item-f5966430cb12",
+        "asset_id": "v2-zzz-capture-098",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-098/original.png",
+        "image_file": "dataset/group-e32807023625/item-f5966430cb12.png",
+        "caption_file": "dataset/group-e32807023625/item-f5966430cb12.txt",
+        "image_sha256": "bcc1b01f20f9775b33326dda9361ce39dc05e14df22b1f64c576b7d55ac75895",
+        "caption_sha256": "cfd4bd630a4e0d2311d18ec93dc5f95e8d99b15e939ca8c108bf06529578d514"
+      },
+      {
+        "item_id": "item-ec4ef9ac028a",
+        "asset_id": "v2-zzz-capture-110",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-110/original.png",
+        "image_file": "dataset/group-e32807023625/item-ec4ef9ac028a.png",
+        "caption_file": "dataset/group-e32807023625/item-ec4ef9ac028a.txt",
+        "image_sha256": "ff0c098584e6225254400108880f4bf93efe1d6e75f6e70638d66a5d710eb2b2",
+        "caption_sha256": "4154213f3797a9014b9f12c942821011bb7a917aa4f4c11b55ca4496ac4bb714"
+      },
+      {
+        "item_id": "item-873e9b87c9bd",
+        "asset_id": "v2-zzz-capture-111",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-111/original.png",
+        "image_file": "dataset/group-e32807023625/item-873e9b87c9bd.png",
+        "caption_file": "dataset/group-e32807023625/item-873e9b87c9bd.txt",
+        "image_sha256": "bcb10eaf1137f30da720cb7825df5ef65d3614546949c97879e690136de031ae",
+        "caption_sha256": "08acc08e511f005f5588a23fe4db4b27660b56ee3d1efbaa7af3fc6e13fddd92"
+      },
+      {
+        "item_id": "item-80924878666e",
+        "asset_id": "v2-zzz-capture-120",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-120/original.png",
+        "image_file": "dataset/group-e32807023625/item-80924878666e.png",
+        "caption_file": "dataset/group-e32807023625/item-80924878666e.txt",
+        "image_sha256": "7855b981dff74dabde5f9bb4c86f95d8af9dab1a913aa1f745e883ae3709a8bc",
+        "caption_sha256": "d1485de9f280b07f1f02bfba1c7a8f09b5f86e5b506c734509096a1558da4a8e"
+      },
+      {
+        "item_id": "item-41d1290f50df",
+        "asset_id": "v2-zzz-capture-123",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-123/original.png",
+        "image_file": "dataset/group-e32807023625/item-41d1290f50df.png",
+        "caption_file": "dataset/group-e32807023625/item-41d1290f50df.txt",
+        "image_sha256": "c23d58cc943f25b3b7c22596943928aa56ac002ce8f3c4e245c9193532deff7f",
+        "caption_sha256": "55cda7751db707c7b15693812adc2be44110e48b0b696e7313961bf7e815ccbe"
+      },
+      {
+        "item_id": "item-7a5f321a6884",
+        "asset_id": "v2-zzz-capture-126",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-126/original.png",
+        "image_file": "dataset/group-e32807023625/item-7a5f321a6884.png",
+        "caption_file": "dataset/group-e32807023625/item-7a5f321a6884.txt",
+        "image_sha256": "a98e3b201e842bdf2cfd1fed249e049f483b9f9bfd7e379da47e005d0fc10535",
+        "caption_sha256": "9fe8972ab8c1afcd874fd3ca7aa490269134e66b7ef459d4276f73b1cb4c9d7e"
+      },
+      {
+        "item_id": "item-7bb9477d4ef0",
+        "asset_id": "v2-zzz-capture-137",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-137/original.png",
+        "image_file": "dataset/group-e32807023625/item-7bb9477d4ef0.png",
+        "caption_file": "dataset/group-e32807023625/item-7bb9477d4ef0.txt",
+        "image_sha256": "d7e140f1f64aa0564c00831029923faeffc3c2fd48183f9a5c3daa3db717250f",
+        "caption_sha256": "67621a6d3ac3b416dd6ed688add9aad27908779c30f47ea27eab1efc167915d3"
+      },
+      {
+        "item_id": "item-316b7d266977",
+        "asset_id": "v2-zzz-capture-138",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-138/original.png",
+        "image_file": "dataset/group-e32807023625/item-316b7d266977.png",
+        "caption_file": "dataset/group-e32807023625/item-316b7d266977.txt",
+        "image_sha256": "d22d791bf37c1e16ac2dc67b40cec67a24ac1d0ae9080bc91081c88142385aff",
+        "caption_sha256": "811b04bd9a7a318b7245e203409a1b878782d44527031c7a8da311d75253c89e"
+      },
+      {
+        "item_id": "item-1df01c32cb5b",
+        "asset_id": "v2-zzz-capture-146",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-146/original.png",
+        "image_file": "dataset/group-e32807023625/item-1df01c32cb5b.png",
+        "caption_file": "dataset/group-e32807023625/item-1df01c32cb5b.txt",
+        "image_sha256": "43c7bbc1ce2796240c3698fcf03bc5435fef994a378309438213636842fdd97c",
+        "caption_sha256": "c06794c416b29b68523ef66ea31be63ff86d0f8e64ad490ab29a7f2b22510278"
+      },
+      {
+        "item_id": "item-3650cc11a382",
+        "asset_id": "v2-zzz-capture-158",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-158/original.png",
+        "image_file": "dataset/group-e32807023625/item-3650cc11a382.png",
+        "caption_file": "dataset/group-e32807023625/item-3650cc11a382.txt",
+        "image_sha256": "875ea3897d3f8c548203e885341d061567dcdc151ea19ded0e377b484fca42fd",
+        "caption_sha256": "144630d6cf93ef34c8761691d8f21beb290785806dbf14f0c698557541cc79d3"
+      },
+      {
+        "item_id": "item-f05195ff991d",
+        "asset_id": "v2-zzz-capture-165",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-165/original.png",
+        "image_file": "dataset/group-e32807023625/item-f05195ff991d.png",
+        "caption_file": "dataset/group-e32807023625/item-f05195ff991d.txt",
+        "image_sha256": "1c00a8d255d4fcf43d8c5e0dafd47bfa81ee9367d25588b62206543b49a48af8",
+        "caption_sha256": "ca602b6118dba96ec6bd0e56b4180f28507994f5b50fe0657dda094cf42964fc"
+      },
+      {
+        "item_id": "item-cf6b0e5393cf",
+        "asset_id": "v2-zzz-capture-171",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-171/original.png",
+        "image_file": "dataset/group-e32807023625/item-cf6b0e5393cf.png",
+        "caption_file": "dataset/group-e32807023625/item-cf6b0e5393cf.txt",
+        "image_sha256": "afbf0f93c1ca73efbf4867fd4d468dc5fdef6a9031669a08ebe04bfbe891c14d",
+        "caption_sha256": "3ab4ba00aa9566112103ced4b6bd912c0b6bdd1ead1e41965a5ae588c3e4d962"
+      },
+      {
+        "item_id": "item-5075d1921af7",
+        "asset_id": "v2-zzz-capture-175",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-175/original.png",
+        "image_file": "dataset/group-e32807023625/item-5075d1921af7.png",
+        "caption_file": "dataset/group-e32807023625/item-5075d1921af7.txt",
+        "image_sha256": "92521007f1587c65b79efa8f88e10e7a9ac260328d741ab50cbcc3734e9f2d75",
+        "caption_sha256": "eb008ac9078ddece3c24c9a6102c0a803f36ffbec9b6d4152168023b3125f681"
+      },
+      {
+        "item_id": "item-4d1c47e251ba",
+        "asset_id": "v2-zzz-capture-180",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-180/original.png",
+        "image_file": "dataset/group-e32807023625/item-4d1c47e251ba.png",
+        "caption_file": "dataset/group-e32807023625/item-4d1c47e251ba.txt",
+        "image_sha256": "0df7ccc57dd986ec9be159410d14e1da9bc857c98315e0b138b5d01f6efcbf5e",
+        "caption_sha256": "f932e4de358eeb3e6cafb1bc4ed2feb3e16858470df1d0224fad8904aa40b05e"
+      },
+      {
+        "item_id": "item-3a3956250d67",
+        "asset_id": "v2-zzz-capture-190",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-190/original.png",
+        "image_file": "dataset/group-e32807023625/item-3a3956250d67.png",
+        "caption_file": "dataset/group-e32807023625/item-3a3956250d67.txt",
+        "image_sha256": "fdf9fd38176d4a398d2e0f5f0b5b33d5694ea549d810052997656be9d659e5a7",
+        "caption_sha256": "d0153aba7a6ac5b224d7b542d3a0000f723b58c604e2162d1d725e154aceefc0"
+      },
+      {
+        "item_id": "item-8ff18c8e8ef1",
+        "asset_id": "v2-zzz-capture-196",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v2-zzz-capture-196/original.png",
+        "image_file": "dataset/group-e32807023625/item-8ff18c8e8ef1.png",
+        "caption_file": "dataset/group-e32807023625/item-8ff18c8e8ef1.txt",
+        "image_sha256": "06fdee8d98bdd4393f139a2db0d57cd660429add7d746a3dc9c29852ef658c31",
+        "caption_sha256": "b1f25f0388e210a14f974c9fb91c7381f1d33ac094211d5e4b104292dc7ebf16"
+      },
+      {
+        "item_id": "item-d4a328a81efe",
+        "asset_id": "v6-zzz-capture-057",
+        "group_id": "group-d66ae894b605",
+        "source_file": "assets/v6-zzz-capture-057/original.png",
+        "image_file": "dataset/group-d66ae894b605/item-d4a328a81efe.png",
+        "caption_file": "dataset/group-d66ae894b605/item-d4a328a81efe.txt",
+        "image_sha256": "18d76b8e5affd500823edfa85e07f9d30d36753d5ab139f18e9c5120a203ea98",
+        "caption_sha256": "743f00d1afd31dbd16e06ebeff170fd677bdfd0f7a875a13161d5c6c1135c2b4"
+      },
+      {
+        "item_id": "item-bf08d39ed460",
+        "asset_id": "v6-zzz-capture-064",
+        "group_id": "group-d66ae894b605",
+        "source_file": "assets/v6-zzz-capture-064/original.png",
+        "image_file": "dataset/group-d66ae894b605/item-bf08d39ed460.png",
+        "caption_file": "dataset/group-d66ae894b605/item-bf08d39ed460.txt",
+        "image_sha256": "30d080f9ac638274495919a2368fdbad5781fdf173e9a330b921555326923cdd",
+        "caption_sha256": "0db946a0f55302aa6440b62f90bb19e389f3bf530a32813bb6758fbb7f96fc2f"
+      },
+      {
+        "item_id": "item-7070a192e1f7",
+        "asset_id": "v6-zzz-capture-066",
+        "group_id": "group-d66ae894b605",
+        "source_file": "assets/v6-zzz-capture-066/original.png",
+        "image_file": "dataset/group-d66ae894b605/item-7070a192e1f7.png",
+        "caption_file": "dataset/group-d66ae894b605/item-7070a192e1f7.txt",
+        "image_sha256": "25e0a0e3b5d4c301cbed0b52c177358c13fc0106a7d96c6521f96dad5514717e",
+        "caption_sha256": "13d4351efaa7ebdeda34adad9461de2d7960db98666880e8d6ea8111fec13dba"
+      },
+      {
+        "item_id": "item-a9810346ba9e",
+        "asset_id": "v6-zzz-capture-095",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v6-zzz-capture-095/original.png",
+        "image_file": "dataset/group-e32807023625/item-a9810346ba9e.png",
+        "caption_file": "dataset/group-e32807023625/item-a9810346ba9e.txt",
+        "image_sha256": "825103e0b6acd6255e78e84572b6ccd3e0a9a1e598595f9ba89e210fe673f4e6",
+        "caption_sha256": "75d716673e819d6dfed0c2b53f3b201be99b00045d853119a8743b35c41a479b"
+      },
+      {
+        "item_id": "item-98a1459012c9",
+        "asset_id": "v6-zzz-capture-078",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v6-zzz-capture-078/original.png",
+        "image_file": "dataset/group-e32807023625/item-98a1459012c9.png",
+        "caption_file": "dataset/group-e32807023625/item-98a1459012c9.txt",
+        "image_sha256": "4e31316c16ebae6472bdabb6bcf1091ea2ece2af07e15f4b420e648cf365288d",
+        "caption_sha256": "1c4cef4a8e077549ac3479660bfb61cb2cc2582d18a72750963690b62905db41"
+      },
+      {
+        "item_id": "item-3f21edf4fb30",
+        "asset_id": "v6-zzz-capture-081",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/v6-zzz-capture-081/original.png",
+        "image_file": "dataset/group-e32807023625/item-3f21edf4fb30.png",
+        "caption_file": "dataset/group-e32807023625/item-3f21edf4fb30.txt",
+        "image_sha256": "393c18ba5d290b0d710e95869fb2ad80f19337967c99b5a95a266e7d750d532b",
+        "caption_sha256": "1806609cd196c660d08ac60cbb1b9f7906feb02f66c6de1e82c5535dcad92434"
+      },
+      {
+        "item_id": "item-57337e852713",
+        "asset_id": "zzz-capture-047",
+        "group_id": "group-e32807023625",
+        "source_file": "assets/zzz-capture-047/original.png",
+        "image_file": "dataset/group-e32807023625/item-57337e852713.png",
+        "caption_file": "dataset/group-e32807023625/item-57337e852713.txt",
+        "image_sha256": "28d9b1b044079b804aa23da5d82bf7f7b4fce07e4bfbf35160fc611d77d4b8c1",
+        "caption_sha256": "07f841565e964ad24ef49712d8d34e6cc3f5a94e69626dafce9f93dc470ac512"
+      },
+      {
+        "item_id": "item-05bcca3de913",
+        "asset_id": "zzz-capture-104",
+        "group_id": "group-d66ae894b605",
+        "source_file": "assets/zzz-capture-104/original.png",
+        "image_file": "dataset/group-d66ae894b605/item-05bcca3de913.png",
+        "caption_file": "dataset/group-d66ae894b605/item-05bcca3de913.txt",
+        "image_sha256": "4ea42b1b366c6a073ed3761bc5605c68247ae9a78765a7961c3f8501dee27c56",
+        "caption_sha256": "ba39d6478815c2f4c3f50c46628a6ac836180aa0f60d124a87022f1bcf6ceb7b"
+      },
+      {
+        "item_id": "item-05fe04e79332",
+        "asset_id": "zzz-capture-164",
+        "group_id": "group-b563f3b5a042",
+        "source_file": "assets/zzz-capture-164/original.png",
+        "image_file": "dataset/group-b563f3b5a042/item-05fe04e79332.png",
+        "caption_file": "dataset/group-b563f3b5a042/item-05fe04e79332.txt",
+        "image_sha256": "17745f16d4bf675f11061d4fdf0b03b74a390f22662245104a7fb44a97a849c4",
+        "caption_sha256": "7f978b631ba06eaddcd6904c1191d5ef14d52c1848f130aef5927a26ebf62caf"
+      },
+      {
+        "item_id": "item-d223c38f2b95",
+        "asset_id": "zzz-capture-183",
+        "group_id": "group-b563f3b5a042",
+        "source_file": "assets/zzz-capture-183/original.png",
+        "image_file": "dataset/group-b563f3b5a042/item-d223c38f2b95.png",
+        "caption_file": "dataset/group-b563f3b5a042/item-d223c38f2b95.txt",
+        "image_sha256": "be10b78ee7caeef8374c227a2aafc4cfe9efc03fcb3428137b8b2a89dfc29ffc",
+        "caption_sha256": "6663e0f6f8438db78171ff23a39c8b287ae68a08679a60648795477f6a5e44c7"
+      },
+      {
+        "item_id": "item-5d3a383e0e99",
+        "asset_id": "zzz-capture-193",
+        "group_id": "group-d66ae894b605",
+        "source_file": "assets/zzz-capture-193/original.png",
+        "image_file": "dataset/group-d66ae894b605/item-5d3a383e0e99.png",
+        "caption_file": "dataset/group-d66ae894b605/item-5d3a383e0e99.txt",
+        "image_sha256": "d0f57602dd91ad3b224cb6c5765353caa014d61e10bc98deab7eb484240430a0",
+        "caption_sha256": "1d7a46a66c61e15ab774fd214d1d019d28ed049896f625a73af48bf584fa3bd4"
+      }
+    ],
+    "groups": [
+      {
+        "id": "group-b563f3b5a042",
+        "name": "面部与近景",
+        "enabled": true,
+        "repeats": 1
+      },
+      {
+        "id": "group-d66ae894b605",
+        "name": "半身与材质",
+        "enabled": true,
+        "repeats": 1
+      },
+      {
+        "id": "group-e32807023625",
+        "name": "全身与动作",
+        "enabled": true,
+        "repeats": 1
+      }
+    ],
+    "config": {
+      "resolution": 1024,
+      "max_train_steps": 800,
+      "train_batch_size": 2,
+      "network_dim": 32,
+      "network_alpha": 32,
+      "learning_rate": 0.00005,
+      "optimizer_type": "AdamW8bit",
+      "save_every_n_steps": 100,
+      "seed": 20260917,
+      "gradient_accumulation_steps": 2,
+      "max_data_loader_n_workers": 2,
+      "blocks_to_swap": 4
+    }
+  },
+  "source": {
+    "type": "civitai",
+    "url": "https://civitai.com/models/2949386?modelVersionId=3340207",
+    "civitai_model_id": 2949386,
+    "civitai_version_id": 3340207,
+    "version_name": "v1.0"
+  },
+  "license": null,
+  "previews": [
+    {
+      "id": "preview-001",
+      "file": "previews/preview-001.jpg",
+      "alt": "对比拼图：女性全身 · 晨间商店街（左：底模无风格词；右：ZZZ Game Style 0.8）",
+      "source": "https://civitai.com/images/143226901",
+      "nsfw_level": 2
+    },
+    {
+      "id": "preview-002",
+      "file": "previews/preview-002.jpg",
+      "alt": "对比拼图：女性面部特写（左：底模无风格词；右：ZZZ Game Style 0.8）",
+      "source": "https://civitai.com/images/143226899",
+      "nsfw_level": 2
+    },
+    {
+      "id": "preview-003",
+      "file": "previews/preview-003.jpg",
+      "alt": "对比拼图：滑板动态（左：底模无风格词；右：ZZZ Game Style 0.8）",
+      "source": "https://civitai.com/images/143226900",
+      "nsfw_level": 2
+    }
+  ],
+  "examples": [
+    {
+      "id": "example-001",
+      "file": "examples/example-001.png",
+      "alt": "发布展示：女性全身 · 晨间商店街 · 0.8",
+      "prompt": "masterpiece, best quality, score_7,\nsafe, zenless zone zero, 3d, 1girl, solo,\nstanding, adult woman, shoulder-length dark brown hair, brown eyes, denim jacket, black pleated skirt, black tights, brown boots,\nnarrow shopping street, glass storefronts, vending machine, power lines, morning light,\nfrom front, full body",
+      "negative_prompt": "worst quality, low quality, score_1, score_2, score_3, artist name, blurry, jpeg artifacts, chromatic aberration, text, watermark",
+      "seed": 45281736,
+      "weight": 0.8,
+      "width": 832,
+      "height": 1216,
+      "sampler": "er_sde",
+      "scheduler": "beta",
+      "steps": 32,
+      "cfg": 4,
+      "source": "comparison:zzz-style-publish-v6/cell-8dd9becab4b966533a10b77c4b9746e456f6fddfa65a03556fdf57998da24911"
+    },
+    {
+      "id": "example-002",
+      "file": "examples/example-002.png",
+      "alt": "发布展示：女性面部特写 · 0.8",
+      "prompt": "masterpiece, best quality, score_7,\nsafe, zenless zone zero, 3d, 1girl, solo, face focus,\nadult woman, long wavy auburn hair, green eyes, red hair ribbon, casual white blouse, collarbones,\nsunlit room, white curtains,\nfrom front, extreme close-up",
+      "negative_prompt": "worst quality, low quality, score_1, score_2, score_3, artist name, blurry, jpeg artifacts, chromatic aberration, text, watermark",
+      "seed": 90346128,
+      "weight": 0.8,
+      "width": 832,
+      "height": 1216,
+      "sampler": "er_sde",
+      "scheduler": "beta",
+      "steps": 32,
+      "cfg": 4,
+      "source": "comparison:zzz-style-publish-v6/cell-d52462e1891e41cb7c23d9d798729dbda2d6627cabd43de1e9a92ac774f5cb9f"
+    },
+    {
+      "id": "example-003",
+      "file": "examples/example-003.png",
+      "alt": "发布展示：滑板动态 · 0.8",
+      "prompt": "masterpiece, best quality, score_7,\nsafe, zenless zone zero, 3d, 1girl, solo,\nriding a skateboard, leaning forward, arms out for balance, long dark purple hair, dark purple hair, black oversized t-shirt, beige cargo pants, white sneakers,\ncity plaza, afternoon,\nfrom side, full body",
+      "negative_prompt": "worst quality, low quality, score_1, score_2, score_3, artist name, blurry, jpeg artifacts, chromatic aberration, text, watermark",
+      "seed": 45281736,
+      "weight": 0.8,
+      "width": 832,
+      "height": 1216,
+      "sampler": "er_sde",
+      "scheduler": "beta",
+      "steps": 32,
+      "cfg": 4,
+      "source": "comparison:zzz-style-publish-v6/cell-ea0a13ec541ae9f1e15f849b222476d8fc808f568622e663cc09edfbfdfd35a0"
+    },
+    {
+      "id": "example-004",
+      "file": "examples/example-004.png",
+      "alt": "发布展示：狐娘喂鸟与保安 · 0.8",
+      "prompt": "masterpiece, best quality, score_7,\nsafe, zenless zone zero, 3d, 1boy, 1girl, furry,\nA fox girl crouches to feed pigeons while a security guard watches warily., the fox girl has orange fur, fox ears, a big fluffy tail, a white baseball jersey and black leggings; the security guard wears a black uniform and a cap,\npark, trees, pigeons, afternoon,\nfrom side, full body",
+      "negative_prompt": "worst quality, low quality, score_1, score_2, score_3, artist name, blurry, jpeg artifacts, chromatic aberration, text, watermark",
+      "seed": 48291037,
+      "weight": 0.8,
+      "width": 832,
+      "height": 1216,
+      "sampler": "er_sde",
+      "scheduler": "beta",
+      "steps": 32,
+      "cfg": 4,
+      "source": "comparison:zzz-style-publish-v9/cell-3acca43871d7b4a2b728ff5c431244ad53a3b685e3d2eb53f3d93b3a1e02847a"
+    },
+    {
+      "id": "example-005",
+      "file": "examples/example-005.png",
+      "alt": "发布展示：银狼科幻房间微俯角 · 0.8",
+      "prompt": "masterpiece, best quality, score_7,\nsafe, zenless zone zero, 3d, silver wolf (honkai: star rail), 1girl, solo,\nsitting, legs crossed, holding a game controller, grey hair, high ponytail, goggles on head, black jacket, black shorts, black boots,\nsci-fi room, monitors, server racks, screen light,\nhigh angle, full body",
+      "negative_prompt": "worst quality, low quality, score_1, score_2, score_3, artist name, blurry, jpeg artifacts, chromatic aberration, text, watermark",
+      "seed": 56490281,
+      "weight": 0.8,
+      "width": 832,
+      "height": 1216,
+      "sampler": "er_sde",
+      "scheduler": "beta",
+      "steps": 32,
+      "cfg": 4,
+      "source": "comparison:zzz-style-publish-v9-sw/cell-2f0aa7b70065006f457f3ed83569b7c801736b7ad813ad2e444471afeec6a4f8"
+    }
+  ],
+  "embedded_metadata": {
+    "role": "backup",
+    "values": {}
+  },
+  "name_zh": "绝区零游戏画风",
+  "summary_zh": "偏向绝区零的块状发束、简化明暗和非写实材质。",
+  "purpose": "画风"
+}

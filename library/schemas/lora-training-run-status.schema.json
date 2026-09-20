@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://storyvisualizer.local/schemas/lora-training-run-status.schema.json",
+  "type": "object",
+  "required": ["version", "status", "step", "loss", "eta_seconds", "pid", "exit_code", "error", "checkpoints", "updated_at"],
+  "properties": {
+    "version": { "const": 1 },
+    "status": { "enum": ["starting", "running", "stopping", "completed", "failed", "interrupted"] },
+    "step": { "type": "integer", "minimum": 0 },
+    "loss": { "type": ["number", "null"] },
+    "eta_seconds": { "type": ["integer", "null"], "minimum": 0 },
+    "pid": { "type": ["integer", "null"] },
+    "exit_code": { "type": ["integer", "null"] },
+    "error": { "type": ["string", "null"] },
+    "checkpoints": { "type": "array" },
+    "updated_at": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,14 @@
+@font-face { font-family: SVHeart; src: url('./assets/lettering/ZhiMangXing-Regular.ttf') format('truetype'); font-weight: 400; font-display: block; }
+.lettering-object.lettering-object--heart { background: transparent; border: 0; padding: 0; border-radius: 0; box-shadow: none; }
+.heart-lettering { display: block; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.heart-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; color: #d52587; padding: 8px 0; }
+.heart-controls label { display: flex; align-items: center; gap: 5px; font-size: 12px; }
+.heart-controls input { width: 62px; }
+.heart-controls button { display: inline-flex; align-items: center; justify-content: center; }
+.lettering-object > .lettering-rotate-handle { position: absolute; top: -32px; left: calc(50% - 12px); width: 24px; height: 24px; padding: 3px; display: grid; place-items: center; border: 1px solid var(--green); border-radius: 50%; background: white; color: var(--green); cursor: grab; touch-action: none; }
+.lettering-rotate-handle::after { content: ''; position: absolute; top: 23px; left: 11px; height: 8px; border-left: 1px solid var(--green); pointer-events: none; }
+.lettering-object--heart > .lettering-resize-handle { cursor: nwse-resize; }
+.heart-preview-note { grid-column: 1 / -1; margin: 0; padding: 0 12px 4px; color: var(--muted); font-size: var(--text-meta); }
+.lettering-style-preset-controls.heart-preview-controls { grid-template-columns: 1fr auto; }
+.heart-preview-controls > span { font-size: var(--text-meta); color: var(--muted); }
+.heart-preview-controls > button { display: grid; place-items: center; width: 32px; height: 32px; padding: 6px; border: 1px solid var(--line); border-radius: 6px; background: white; color: var(--ink); cursor: pointer; }

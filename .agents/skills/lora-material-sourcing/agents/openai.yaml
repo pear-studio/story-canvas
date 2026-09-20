@@ -1,0 +1,4 @@
+interface:
+  display_name: "LoRA 角色参考图搜寻"
+  short_description: "搜寻、核查、去重并整理角色参考图片，输出纯图片验收目录"
+  default_prompt: "Use $lora-material-sourcing to find and organize reference images for this character."

@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "id": "real-esrgan-x4plus-anime-6b",
+  "name": "Real-ESRGAN Anime 6B",
+  "executor": "comfyui_builtin",
+  "native_scale": 4,
+  "output_scales": [1, 2, 4],
+  "file": {
+    "relative_path": "upscale_models/RealESRGAN_x4plus_anime_6B.pth",
+    "size_bytes": 17938799,
+    "sha256": "f872d837d3c90ed2e05227bed711af5671a6fd1c9f7d7e91c911a61f155e99da",
+    "source": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.2.4/RealESRGAN_x4plus_anime_6B.pth"
+  }
+}

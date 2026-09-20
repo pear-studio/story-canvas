@@ -1,0 +1,235 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://storyvisualizer.local/schemas/lora-resource.schema.json",
+  "type": "object",
+  "required": [
+    "$schema",
+    "version",
+    "id",
+    "name",
+    "kind",
+    "created_at",
+    "updated_at",
+    "file",
+    "architecture",
+    "base_models",
+    "concept",
+    "activation",
+    "recommended_generation",
+    "training",
+    "description",
+    "usage_notes",
+    "license",
+    "source",
+    "previews",
+    "examples",
+    "embedded_metadata"
+  ],
+  "properties": {
+    "$schema": { "const": "https://storyvisualizer.local/schemas/lora-resource.schema.json" },
+    "version": { "const": 2 },
+    "id": { "pattern": "^lora-[a-f0-9]{16}$" },
+    "name": { "type": "string", "minLength": 1 },
+    "name_zh": { "type": "string", "minLength": 1 },
+    "summary_zh": { "type": "string", "minLength": 1 },
+    "purpose": { "enum": ["画风", "角色", "服装／道具", "场景", "外观调节", "动作／效果", "未分类"] },
+    "kind": { "const": "lora" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "file": {
+      "type": "object",
+      "required": ["relative_path", "sha256", "size_bytes"],
+      "properties": {
+        "relative_path": { "type": "string", "pattern": "^loras/(?!.*\\\\)(?!.*\\.\\.).+$" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "size_bytes": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "architecture": {
+      "type": "object",
+      "required": ["family", "prompt_family"],
+      "properties": {
+        "family": { "enum": ["sd15", "sdxl", "anima", "sd3", "flux", "other"] },
+        "prompt_family": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "base_models": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/model" } },
+    "concept": {
+      "type": "object",
+      "required": ["name", "description"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "activation": {
+      "type": "object",
+      "required": ["trigger_words", "tags"],
+      "properties": {
+        "trigger_words": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "tags": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      },
+      "additionalProperties": false
+    },
+    "recommended_generation": {
+      "type": "object",
+      "required": ["weight", "clip_skip", "sampler", "scheduler", "steps", "cfg", "status"],
+      "properties": {
+        "weight": {
+          "type": "object",
+          "required": ["default", "minimum", "maximum", "status"],
+          "properties": {
+            "default": { "type": ["number", "null"], "minimum": -4, "maximum": 4 },
+            "minimum": { "type": ["number", "null"], "minimum": -4, "maximum": 4 },
+            "maximum": { "type": ["number", "null"], "minimum": -4, "maximum": 4 },
+            "status": { "enum": ["untested", "tested"] }
+          },
+          "additionalProperties": false
+        },
+        "clip_skip": { "type": ["integer", "null"], "minimum": 1 },
+        "sampler": { "type": ["string", "null"] },
+        "scheduler": { "type": ["string", "null"] },
+        "steps": { "type": ["integer", "null"], "minimum": 1 },
+        "cfg": { "type": ["number", "null"], "minimum": 0 },
+        "status": { "enum": ["untested", "tested"] }
+      },
+      "additionalProperties": false
+    },
+    "training": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["origin", "trainer", "recipe", "semantic_config", "experiment", "execution_config", "config", "resolution", "dataset"],
+          "properties": {
+            "origin": { "$ref": "#/$defs/source" },
+            "trainer": { "type": "object" },
+            "recipe": { "type": "object" },
+            "semantic_config": { "type": "object" },
+            "experiment": { "type": "object" },
+            "execution_config": { "type": "object" },
+            "config": { "type": "object" },
+            "resolution": { "type": ["integer", "null"], "minimum": 1 },
+            "dataset": {
+              "type": "object",
+              "required": ["image_count", "groups", "items"],
+              "properties": {
+                "image_count": { "type": "integer", "minimum": 0 },
+                "groups": { "type": "array" },
+                "items": { "type": "array" }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "description": { "type": "string" },
+    "usage_notes": { "type": "string" },
+    "license": { "type": ["object", "null"] },
+    "source": { "$ref": "#/$defs/source" },
+    "previews": { "type": "array", "items": { "$ref": "#/$defs/media" } },
+    "examples": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "file", "prompt", "negative_prompt", "seed", "weight", "width", "height", "sampler", "scheduler", "steps", "cfg"],
+        "properties": {
+          "id": { "pattern": "^example-\\d{3}$" },
+          "file": { "pattern": "^examples/example-\\d{3}\\.(?:jpg|jpeg|png|webp)$" },
+          "prompt": { "type": "string" },
+          "negative_prompt": { "type": "string" },
+          "seed": { "type": ["integer", "null"], "minimum": 0 },
+          "weight": { "type": ["number", "null"], "minimum": -4, "maximum": 4 },
+          "width": { "type": ["integer", "null"], "minimum": 1 },
+          "height": { "type": ["integer", "null"], "minimum": 1 },
+          "sampler": { "type": ["string", "null"] },
+          "scheduler": { "type": ["string", "null"] },
+          "steps": { "type": ["integer", "null"], "minimum": 1 },
+          "cfg": { "type": ["number", "null"], "minimum": 0 },
+          "source": { "type": "string", "minLength": 1 },
+          "nsfw_level": { "type": ["integer", "null"], "minimum": 0 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "embedded_metadata": {
+      "type": "object",
+      "required": ["role", "values"],
+      "properties": {
+        "role": { "const": "backup" },
+        "values": { "type": "object", "additionalProperties": { "type": "string" } }
+      },
+      "additionalProperties": false
+    }
+  },
+  "anyOf": [
+    { "properties": { "previews": { "type": "array", "minItems": 1 } } },
+    { "properties": { "examples": { "type": "array", "minItems": 1 } } }
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "model": {
+      "type": "object",
+      "required": ["kind", "name", "identity_status", "relative_path", "sha256", "size_bytes", "source"],
+      "properties": {
+        "kind": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "identity_status": { "enum": ["exact", "declared", "unknown"] },
+        "relative_path": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string", "pattern": "^(?!/)(?!.*\\.\\.)(?!.*\\\\).+$" }
+          ]
+        },
+        "sha256": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/sha256" }
+          ]
+        },
+        "size_bytes": { "type": ["integer", "null"], "minimum": 0 },
+        "source": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "source": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string", "minLength": 1 },
+        "project_id": { "type": "string", "minLength": 1 },
+        "dataset_id": { "type": "string", "minLength": 1 },
+        "task_id": { "type": "string", "minLength": 1 },
+        "run_id": { "type": "string", "minLength": 1 },
+        "checkpoint_id": { "type": "string", "minLength": 1 },
+        "step": { "type": "integer", "minimum": 0 },
+        "url": { "type": "string", "minLength": 1 },
+        "civitai_model_id": { "type": "integer", "minimum": 1 },
+        "civitai_version_id": { "type": "integer", "minimum": 1 },
+        "version_name": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "media": {
+      "type": "object",
+      "required": ["id", "file", "alt"],
+      "properties": {
+        "id": { "pattern": "^preview-\\d{3}$" },
+        "file": { "pattern": "^previews/preview-\\d{3}\\.(?:jpg|jpeg|png|webp)$" },
+        "alt": { "type": "string", "minLength": 1 },
+        "source": { "type": "string", "minLength": 1 },
+        "nsfw_level": { "type": ["integer", "null"], "minimum": 0 }
+      },
+      "additionalProperties": false
+    }
+  }
+}

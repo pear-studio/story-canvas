@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://storyvisualizer.local/schemas/creative-agreement.schema.json",
+  "type": "object",
+  "required": ["items"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "text", "strength"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,79}$" },
+          "text": { "type": "string", "minLength": 1, "maxLength": 20000 },
+          "strength": { "enum": ["hard", "preference"] }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

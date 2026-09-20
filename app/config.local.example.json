@@ -1,0 +1,17 @@
+{
+  "port": 3000,
+  "workspace_dir": "workspace",
+  "comfyui_urls": [],
+  "comfy_cli": "",
+  "comfyui_root": "",
+  "comfy_install_source": "",
+  "models_root": "",
+  "lora_training": {
+    "trainer_root": "app/data.local/lora-training/sd-scripts",
+    "python": "app/data.local/lora-training/sd-scripts/.venv/Scripts/python.exe",
+    "quality": { "python": "" }
+  },
+  "prompt_dictionary": {
+    "preset": "a1111-tagcomplete"
+  }
+}

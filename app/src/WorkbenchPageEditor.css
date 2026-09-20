@@ -1,0 +1,154 @@
+.workbench-page-editor__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+/* 保存/放弃/生成/警示在紧凑层由底部悬浮条承担，头部行不再重复显示。 */
+.workbench-page-editor__dock-actions {
+  display: contents;
+}
+
+@media (max-width: 1160px) {
+  .workbench-page-editor__dock-actions {
+    display: none;
+  }
+}
+
+.workbench-page-editor .prompt-save-error {
+  margin-top: 7px;
+}
+
+.workbench-page-editor .lettering-line footer {
+  align-items: center;
+}
+
+.workbench-page-editor .lettering-line footer small {
+  margin-right: auto;
+  color: var(--muted);
+  font-size: var(--text-meta);
+}
+
+.workbench-flow-placeholder,
+.workbench-lettering-note {
+  margin: 9px 0 0;
+  padding: 16px;
+  color: var(--muted);
+  border: 1px dashed var(--line);
+  border-radius: 9px;
+  background: #f7f9f7;
+  font-size: var(--text-body);
+}
+
+.workbench-flow-placeholder b {
+  color: var(--ink);
+}
+
+.workbench-flow-placeholder p {
+  margin: 5px 0 0;
+  line-height: 1.55;
+}
+
+/* 与页面的表格输入、分段切换共用色彩与尺寸。 */
+.current-workbench-prompts > .section-header { align-items: center; flex-wrap: wrap; }
+.current-workbench-prompts .section-header__title { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.prompt-mode-switch { display: inline-flex; padding: 3px; gap: 2px; border: 1px solid var(--line); border-radius: 8px; background: #edf3ef; }
+.prompt-mode-switch .button { min-height: 28px; padding: 5px 10px; border: 0; border-radius: 5px; font-size: 12px; box-shadow: none; }
+.prompt-mode-switch .button--quiet { background: transparent; color: var(--muted); }
+.prompt-save-actions .icon-button { width: 30px; height: 30px; padding: 0; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: white; cursor: pointer; }
+.prompt-save-actions .icon-button:hover:not(:disabled) { border-color: #b8c3bc; color: var(--ink); }
+.prompt-save-actions .icon-button:disabled { opacity: .45; cursor: default; }
+.prompt-camera-actions { margin-top: 14px; display: flex; }
+.free-prompt-editor { display: grid; gap: 14px; }
+.free-prompt-import { display: flex; gap: 8px; }
+.free-prompt-import .button, .free-lora-heading .button { min-height: 28px; padding: 5px 10px; font-size: 12px; }
+.free-prompt-editor > label { display: grid; gap: 7px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.free-prompt-editor textarea { width: 100%; box-sizing: border-box; padding: 10px 12px; resize: vertical; font-size: 13px; font-weight: 400; line-height: 1.65; border: 1px solid var(--line); border-radius: 8px; background: white; color: var(--ink); }
+.free-prompt-editor textarea:focus { border-color: #82b6a0; box-shadow: 0 0 0 2px #2d725c12; }
+.free-lora-heading { display: flex; align-items: center; justify-content: space-between; font-size: 13px; }
+.free-prompt-editor > p { margin: 0; padding: 12px; border: 1px dashed var(--line); border-radius: 8px; color: var(--muted); font-size: 12px; }
+.free-lora-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: white; font-size: 12px; }
+.free-lora-row > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.free-lora-row b { font-weight: 500; }
+.free-lora-row small { display: block; margin-top: 5px; color: var(--muted); }
+.free-lora-row label { display: grid; gap: 4px; color: var(--muted); font-size: 11px; }
+.free-lora-row input { width: 64px; padding: 6px; font-size: 12px; }
+.free-lora-row .free-lora-remove { border: 0; padding: 4px; min-width: 24px; min-height: 24px; color: #b34e48; font-size: 20px; background: transparent; }
+.free-lora-row .free-prompt-warning { color: #a3712d; }
+
+ .custom-prompt-status { display: inline-flex; align-items: center; padding: 3px 9px; border: 1px solid var(--line); border-radius: 999px; font-size: 11px; line-height: 1.5; color: var(--muted); background: #f3f6f4; }
+.custom-prompt-status.is-modified { color: #2c6954; background: #eaf4ee; border-color: #bbd9c8; }
+.custom-prompt-status.is-conflict { color: #9b6c24; background: #fbf3e6; border-color: #e8d0a7; }
+.free-prompt-import { align-items: center; flex-wrap: wrap; }
+
+.two-step-panel { margin-top: 18px; border: 1px solid var(--line); border-radius: 8px; background: #f8faf8; }
+.two-step-panel > summary { padding: 12px; cursor: pointer; font-size: 13px; font-weight: 600; }
+.two-step-panel > summary .custom-prompt-status { margin-left: 8px; font-weight: 400; }
+.two-step-panel__body { padding: 0 12px 12px; }
+.two-step-controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 12px; }
+.two-step-controls > label { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+.two-step-controls input[type=checkbox] { width: 16px; height: 16px; min-height: 0; padding: 0; margin: 0; flex: none; accent-color: var(--green); }
+.two-step-controls input[type=number] { width: 64px; padding: 6px; }
+.two-step-note { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 10px 0; }
+.page-save-fields { display: contents; margin: 0; padding: 0; border: 0; min-width: 0; }
+
+.workbench-page-editor .lettering-text-source {
+  margin-top: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8faf8;
+  font-size: var(--text-meta);
+}
+
+.workbench-page-editor .lettering-text-source > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.workbench-page-editor .lettering-text-source > summary small {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.workbench-page-editor .lettering-text-source-body {
+  padding: 0 10px 10px;
+  display: grid;
+  gap: 7px;
+}
+
+.workbench-page-editor .lettering-text-source-sentence {
+  margin: 0;
+  color: var(--ink);
+  line-height: 1.6;
+}
+
+.workbench-page-editor .lettering-text-source-origin {
+  margin: 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.workbench-page-editor .lettering-text-source-context {
+  margin: 0;
+  padding-left: 26px;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.workbench-page-editor .lettering-text-source-context li.is-hit {
+  color: var(--ink);
+}
+
+.workbench-page-editor .lettering-text-source-error {
+  margin: 0;
+  color: var(--red);
+}
+
+.workbench-page-editor .lettering-text-source-body .is-danger {
+  justify-self: start;
+}

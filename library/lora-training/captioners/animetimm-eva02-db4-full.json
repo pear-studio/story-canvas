@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "id": "animetimm-eva02-db4-full",
+  "name": "AnimeTimm EVA02 Large dbv4-full",
+  "description": "用于二次元角色 LoRA 素材的 Danbooru 标签基础 Prompt 生成器。",
+  "license": "GPL-3.0",
+  "source": {
+    "repository": "https://huggingface.co/animetimm/eva02_large_patch14_448.dbv4-full",
+    "revision": "7f11ec9fdb54dfbfd7cd7fad2ecc452a25b57acb",
+    "tested_mirror": "https://huggingface.co/Makki2104/animetimm",
+    "tested_mirror_revision": "b58bf63e828e8d795c0d5d3e4366b2eb27dc4ccf"
+  },
+  "input": {
+    "width": 448,
+    "height": 448,
+    "pad_width": 512,
+    "pad_height": 512,
+    "pad_color": "white",
+    "pad_interpolation": "bilinear",
+    "resize_interpolation": "bicubic",
+    "channel_order": "RGB",
+    "mean": [0.48145467042922974, 0.45782750844955444, 0.40821072459220886],
+    "std": [0.2686295509338379, 0.2613025903701782, 0.27577710151672363]
+  },
+  "categories": {
+    "0": "general",
+    "4": "character",
+    "9": "rating"
+  },
+  "thresholds": {
+    "0": 0.39,
+    "4": 0.61,
+    "9": 0.38
+  },
+  "prompt": {
+    "category_order": [4, 0],
+    "exclude_categories": [9],
+    "tag_separator": ", ",
+    "preserve_underscores": true
+  },
+  "runtime": {
+    "entrypoint": "app/scripts/lora-caption-anime-eva02.py",
+    "python_packages": ["numpy", "onnxruntime-gpu==1.21.1", "Pillow"],
+    "required_providers": ["CUDAExecutionProvider"],
+    "forbidden_providers": ["CPUExecutionProvider"]
+  },
+  "files": {
+    "model": {
+      "relative_path": "model.onnx",
+      "size_bytes": 1268832518,
+      "sha256": "a9c51fd22bca855c3e890048b18b8e47d7ad6fb419b0e948c38b3c2478f97f25"
+    },
+    "labels": {
+      "relative_path": "selected_tags.csv",
+      "size_bytes": 3399136,
+      "sha256": "56d941a9388c238f8e96961dca740c796908f4af4a85ef2270d01e135249cf82"
+    },
+    "thresholds": {
+      "relative_path": "thresholds.csv",
+      "size_bytes": 279,
+      "sha256": "f746771a64f9c06456402c3dc9e2aa3ec5c96836d820f50bc95f62d098c564c6"
+    }
+  },
+  "supporting_files": [
+    {
+      "relative_path": "preprocess.json",
+      "size_bytes": 2235,
+      "sha256": "61d806d8917485ab6528001aca6ec76feb7a8555b307028382e701405cb6c83e"
+    },
+    {
+      "relative_path": "categories.json",
+      "size_bytes": 189,
+      "sha256": "9c02d594bba377da15a414c4ccca513959d3fb3e79d350032fabebd347f39916"
+    }
+  ]
+}

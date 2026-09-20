@@ -1,0 +1,128 @@
+{
+  "$schema": "https://storyvisualizer.local/schemas/lora-resource.schema.json",
+  "version": 2,
+  "id": "lora-6a082c64e47bbef1",
+  "name": "MoriiMee - Gothic Niji Journey - Style Anima LORA",
+  "kind": "lora",
+  "created_at": "2026-08-21T14:19:57.076Z",
+  "updated_at": "2026-08-21T14:47:16.181Z",
+  "file": {
+    "relative_path": "loras/civitai-anima/2485109-2945538-MoriiMee_AnimaV10_byKonan.safetensors",
+    "sha256": "6a082c64e47bbef10b067776258e7352077166e8916a88e4595278a82297c784",
+    "size_bytes": 51727984
+  },
+  "architecture": {
+    "family": "anima",
+    "prompt_family": "anima"
+  },
+  "base_models": [
+    {
+      "kind": "base_model",
+      "name": "Anima",
+      "identity_status": "declared",
+      "relative_path": null,
+      "sha256": null,
+      "size_bytes": null,
+      "source": "https://civitai.com/models/2485109?modelVersionId=2945538"
+    }
+  ],
+  "concept": {
+    "name": "MoriiMee - Gothic Niji Journey - Style Anima LORA",
+    "description": "Trained on Anima with 36 pictures.\nBest result with weight between : 0.8-1.\nPrompts : realistic\nInspired by this LoRA and from the original artist MoriiMee\nReviews are really appreciated, i love to see the community use my work, that's why I share it.\nIf you like my work, you can tip me here.\nGot a specific request ? I'm open for commission on my kofi! If you provide enough data, OCs are accepted\nIf you want to get updates on my projects as they go, you can follow me on X"
+  },
+  "activation": {
+    "trigger_words": [
+      "realistic"
+    ],
+    "tags": [
+      "moriimee",
+      "niji journey",
+      "gothic",
+      "nijijourney",
+      "style",
+      "woman",
+      "goth"
+    ]
+  },
+  "recommended_generation": {
+    "weight": {
+      "default": null,
+      "minimum": 0.8,
+      "maximum": 1,
+      "status": "untested"
+    },
+    "clip_skip": null,
+    "sampler": null,
+    "scheduler": null,
+    "steps": null,
+    "cfg": null,
+    "status": "untested"
+  },
+  "training": null,
+  "description": "Trained on Anima with 36 pictures.\nBest result with weight between : 0.8-1.\nPrompts : realistic\nInspired by this LoRA and from the original artist MoriiMee\nReviews are really appreciated, i love to see the community use my work, that's why I share it.\nIf you like my work, you can tip me here.\nGot a specific request ? I'm open for commission on my kofi! If you provide enough data, OCs are accepted\nIf you want to get updates on my projects as they go, you can follow me on X",
+  "usage_notes": "以下推荐信息来自 Civitai 选定版本及其模型发布说明；本机尚未对参数做实测，因此资源状态仍为 untested。\n页面推荐权重范围 0.8–1.0，并建议提示词加入 realistic。\n本次保存 3 张 Civitai 发布图；不使用 nsfw=None 过滤。图片级 nsfwLevel：130707745:1, 130707755:1, 130707756:2。",
+  "license": {
+    "type": "civitai_model_permissions",
+    "allow_no_credit": true,
+    "allow_commercial_use": [
+      "Image",
+      "RentCivit"
+    ],
+    "allow_derivatives": true,
+    "allow_different_license": true
+  },
+  "source": {
+    "type": "civitai",
+    "url": "https://civitai.com/models/2485109?modelVersionId=2945538",
+    "civitai_model_id": 2485109,
+    "civitai_version_id": 2945538,
+    "version_name": "AnimaBaseV1.0"
+  },
+  "previews": [
+    {
+      "id": "preview-001",
+      "file": "previews/preview-001.jpg",
+      "alt": "MoriiMee - Gothic Niji Journey - Style Anima LORA · AnimaBaseV1.0 Civitai 发布图 1",
+      "source": "https://civitai.com/images/130707745",
+      "nsfw_level": 1
+    },
+    {
+      "id": "preview-002",
+      "file": "previews/preview-002.jpg",
+      "alt": "MoriiMee - Gothic Niji Journey - Style Anima LORA · AnimaBaseV1.0 Civitai 发布图 2",
+      "source": "https://civitai.com/images/130707755",
+      "nsfw_level": 1
+    },
+    {
+      "id": "preview-003",
+      "file": "previews/preview-003.jpg",
+      "alt": "MoriiMee - Gothic Niji Journey - Style Anima LORA · AnimaBaseV1.0 Civitai 发布图 3",
+      "source": "https://civitai.com/images/130707756",
+      "nsfw_level": 2
+    }
+  ],
+  "examples": [],
+  "embedded_metadata": {
+    "role": "backup",
+    "values": {
+      "civitai.model_id": "2485109",
+      "civitai.version_id": "2945538",
+      "civitai.version_name": "AnimaBaseV1.0",
+      "civitai.creator": "Konan",
+      "civitai.base_model": "Anima",
+      "civitai.file_name": "MoriiMee_AnimaV10_byKonan.safetensors",
+      "civitai.file_sha256": "6a082c64e47bbef10b067776258e7352077166e8916a88e4595278a82297c784",
+      "civitai.file_size_kb": "50515.609375",
+      "civitai.trained_words": "[\"realistic\"]",
+      "civitai.model_tags": "[\"moriimee\",\"niji journey\",\"gothic\",\"nijijourney\",\"style\",\"woman\",\"goth\"]",
+      "civitai.version_created_at": "2026-05-14T19:56:47.033Z",
+      "civitai.version_published_at": "2026-05-14T19:58:31.245Z",
+      "civitai.preview_source": "https://civitai.com/images/130707745",
+      "civitai.preview_images": "[{\"id\":\"130707745\",\"nsfw_level\":1,\"source\":\"https://civitai.com/images/130707745\"},{\"id\":\"130707755\",\"nsfw_level\":1,\"source\":\"https://civitai.com/images/130707755\"},{\"id\":\"130707756\",\"nsfw_level\":2,\"source\":\"https://civitai.com/images/130707756\"}]",
+      "civitai.recommendation_source": "https://civitai.com/models/2485109?modelVersionId=2945538"
+    }
+  },
+  "name_zh": "MoriiMee 哥特画风",
+  "summary_zh": "引入 MoriiMee 的哥特系插画风格。",
+  "purpose": "画风"
+}

@@ -1,0 +1,124 @@
+{
+  "$schema": "https://storyvisualizer.local/schemas/lora-resource.schema.json",
+  "version": 2,
+  "id": "lora-65355af26aa3d3bc",
+  "name": "Anima B1 Nikke Style Lora",
+  "kind": "lora",
+  "created_at": "2026-08-21T14:11:35.256Z",
+  "updated_at": "2026-08-21T14:44:46.051Z",
+  "file": {
+    "relative_path": "loras/civitai-anima/2534308-2949175-NikkeB1.safetensors",
+    "sha256": "65355af26aa3d3bccf9ddb831049a69fb1f1535740e940c1b3e24e7415960ce9",
+    "size_bytes": 137731216
+  },
+  "architecture": {
+    "family": "anima",
+    "prompt_family": "anima"
+  },
+  "base_models": [
+    {
+      "kind": "base_model",
+      "name": "Anima",
+      "identity_status": "declared",
+      "relative_path": null,
+      "sha256": null,
+      "size_bytes": null,
+      "source": "https://civitai.com/models/2534308?modelVersionId=2949175"
+    }
+  ],
+  "concept": {
+    "name": "Anima B1 Nikke Style Lora",
+    "description": "26.04.24Dataset expansion and improved skin texture.\n\n26.05.16Retrained using a new base model.\n\nThis is a Nikke-style LoRA trained using Anima Base v1.0.\n\nThis is a NIKKE-style LoRA trained on Anima Base v1.0.\nThe trigger word is @Nikkestyle. You can use it without the trigger word by directly loading the LoRA in ComfyUI, and it should work in a similar way in other environments as well.\nEven without the trigger word, the style is applied to some extent, but it works better when the trigger word is used.\n\nA LoRA weight of 1.0 produced solid results, so you can adjust it based on your preference.\n\nUsing tags likepale skin, shiny skin, wet, humid skin together can help achieve a skin texture closer to the original style.\n\n아니마 베이스v1.0 으로 학습한 니케 스타일 lora 입니다.\n트리거 워드는 @Nikkestyle 입니다.\nComfyUI로 lora 직접 연동하여 트리거 워드 없이 사용 가능하며 다른 환경에서도 비슷한 방식으로 구동이 가능 합니다.트리거 워드 없이 사용해도 스타일이 어느정도 적용이 되나 트리거워드가 있을 시 더욱 잘 적용됩니다.\nLoRA weight는 1.0으로 돌려도 무난하게 잘 뽑혔습니다. 취향대로 조절하여 사용하면 될 것 같습니다.\npale skin, shiny skin, wet, humid skin 등을 같이 사용하면 더욱 원본과 유사한 피부 질감을 체험할 수 있습니다.\n\n版本说明（Anima B1）：\nAnima Base v1.0 was used for retraining and dataset adjustments.\nThe trigger word is @Nikkestyle."
+  },
+  "activation": {
+    "trigger_words": [
+      "@Nikkestyle"
+    ],
+    "tags": [
+      "nikke",
+      "style",
+      "니케"
+    ]
+  },
+  "recommended_generation": {
+    "weight": {
+      "default": 1,
+      "minimum": null,
+      "maximum": null,
+      "status": "untested"
+    },
+    "clip_skip": null,
+    "sampler": null,
+    "scheduler": null,
+    "steps": null,
+    "cfg": null,
+    "status": "untested"
+  },
+  "training": null,
+  "description": "26.04.24Dataset expansion and improved skin texture.\n\n26.05.16Retrained using a new base model.\n\nThis is a Nikke-style LoRA trained using Anima Base v1.0.\n\nThis is a NIKKE-style LoRA trained on Anima Base v1.0.\nThe trigger word is @Nikkestyle. You can use it without the trigger word by directly loading the LoRA in ComfyUI, and it should work in a similar way in other environments as well.\nEven without the trigger word, the style is applied to some extent, but it works better when the trigger word is used.\n\nA LoRA weight of 1.0 produced solid results, so you can adjust it based on your preference.\n\nUsing tags likepale skin, shiny skin, wet, humid skin together can help achieve a skin texture closer to the original style.\n\n아니마 베이스v1.0 으로 학습한 니케 스타일 lora 입니다.\n트리거 워드는 @Nikkestyle 입니다.\nComfyUI로 lora 직접 연동하여 트리거 워드 없이 사용 가능하며 다른 환경에서도 비슷한 방식으로 구동이 가능 합니다.트리거 워드 없이 사용해도 스타일이 어느정도 적용이 되나 트리거워드가 있을 시 더욱 잘 적용됩니다.\nLoRA weight는 1.0으로 돌려도 무난하게 잘 뽑혔습니다. 취향대로 조절하여 사용하면 될 것 같습니다.\npale skin, shiny skin, wet, humid skin 등을 같이 사용하면 더욱 원본과 유사한 피부 질감을 체험할 수 있습니다.\n\n版本说明（Anima B1）：\nAnima Base v1.0 was used for retraining and dataset adjustments.\nThe trigger word is @Nikkestyle.",
+  "usage_notes": "以下推荐信息来自 Civitai 选定版本及其模型发布说明；本机尚未对参数做实测，因此资源状态仍为 untested。\n页面明确触发词为 @Nikkestyle；页面还写明 LoRA weight 1.0 能稳定出图，可按偏好调整。\n本次保存 3 张 Civitai 发布图；不使用 nsfw=None 过滤。图片级 nsfwLevel：130846119:4, 130846118:4, 130846121:1。",
+  "license": {
+    "type": "civitai_model_permissions",
+    "allow_no_credit": true,
+    "allow_commercial_use": [
+      "RentCivit",
+      "Rent"
+    ],
+    "allow_derivatives": true,
+    "allow_different_license": true
+  },
+  "source": {
+    "type": "civitai",
+    "url": "https://civitai.com/models/2534308?modelVersionId=2949175",
+    "civitai_model_id": 2534308,
+    "civitai_version_id": 2949175,
+    "version_name": "Anima B1"
+  },
+  "previews": [
+    {
+      "id": "preview-001",
+      "file": "previews/preview-001.jpg",
+      "alt": "Anima B1 Nikke Style Lora · Anima B1 Civitai 发布图 1",
+      "source": "https://civitai.com/images/130846119",
+      "nsfw_level": 4
+    },
+    {
+      "id": "preview-002",
+      "file": "previews/preview-002.jpg",
+      "alt": "Anima B1 Nikke Style Lora · Anima B1 Civitai 发布图 2",
+      "source": "https://civitai.com/images/130846118",
+      "nsfw_level": 4
+    },
+    {
+      "id": "preview-003",
+      "file": "previews/preview-003.jpg",
+      "alt": "Anima B1 Nikke Style Lora · Anima B1 Civitai 发布图 3",
+      "source": "https://civitai.com/images/130846121",
+      "nsfw_level": 1
+    }
+  ],
+  "examples": [],
+  "embedded_metadata": {
+    "role": "backup",
+    "values": {
+      "civitai.model_id": "2534308",
+      "civitai.version_id": "2949175",
+      "civitai.version_name": "Anima B1",
+      "civitai.creator": "FlyingOyster",
+      "civitai.base_model": "Anima",
+      "civitai.file_name": "NikkeB1.safetensors",
+      "civitai.file_sha256": "65355af26aa3d3bccf9ddb831049a69fb1f1535740e940c1b3e24e7415960ce9",
+      "civitai.file_size_kb": "134503.140625",
+      "civitai.trained_words": "[]",
+      "civitai.model_tags": "[\"nikke\",\"style\",\"니케\"]",
+      "civitai.version_created_at": "2026-05-16T04:24:08.756Z",
+      "civitai.version_published_at": "2026-05-16T04:27:51.270Z",
+      "civitai.preview_source": "https://civitai.com/images/136622663",
+      "civitai.preview_images": "[{\"id\":\"130846119\",\"nsfw_level\":4,\"source\":\"https://civitai.com/images/130846119\"},{\"id\":\"130846118\",\"nsfw_level\":4,\"source\":\"https://civitai.com/images/130846118\"},{\"id\":\"130846121\",\"nsfw_level\":1,\"source\":\"https://civitai.com/images/130846121\"}]",
+      "civitai.recommendation_source": "https://civitai.com/models/2534308?modelVersionId=2949175"
+    }
+  },
+  "name_zh": "妮姬画风",
+  "summary_zh": "引入《胜利女神：妮姬》的插画风格。",
+  "purpose": "画风"
+}

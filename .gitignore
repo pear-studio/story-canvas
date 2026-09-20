@@ -1,0 +1,39 @@
+# 本机设置、可清理数据与临时项目
+/Config/
+/Saved/
+/workspace/
+
+# 安装环境、依赖和构建
+/app/data.local/
+/app/node_modules/
+/app/dist/
+/app/coverage/
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# 本机 Agent 投影
+/.claude/skills/
+/.claude/.agent-sync.json
+/CLAUDE.md
+
+# 凭据、系统文件、模型权重
+.env*
+*.pem
+*.key
+.DS_Store
+Thumbs.db
+__pycache__/
+*.pyc
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.bin
+*.gguf
+*.partial
+npm-debug.log*

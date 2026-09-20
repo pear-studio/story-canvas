@@ -1,0 +1,122 @@
+{
+  "$schema": "https://storyvisualizer.local/schemas/lora-resource.schema.json",
+  "version": 2,
+  "id": "lora-c19f00638bb342aa",
+  "name": "铭音 meion style 【krea2&anima&il】",
+  "kind": "lora",
+  "created_at": "2026-08-21T14:09:06.762Z",
+  "updated_at": "2026-08-21T14:44:11.153Z",
+  "file": {
+    "relative_path": "loras/civitai-anima/2533943-3011314-Meion_anima_style_lokr_2-000034.safetensors",
+    "sha256": "c19f00638bb342aae1579ee3b38c73b7d69550dfa7948b66e9c1e8733362678e",
+    "size_bytes": 251359716
+  },
+  "architecture": {
+    "family": "anima",
+    "prompt_family": "anima"
+  },
+  "base_models": [
+    {
+      "kind": "base_model",
+      "name": "Anima",
+      "identity_status": "declared",
+      "relative_path": null,
+      "sha256": null,
+      "size_bytes": null,
+      "source": "https://civitai.com/models/2533943?modelVersionId=3011314"
+    }
+  ],
+  "concept": {
+    "name": "铭音 meion style 【krea2&anima&il】",
+    "description": "anima-2.9B在comfyui可以直接用这个节点加载lora：https://github.com/hpoc766-afk/ComfyUI-Anima-28to40-Lora-Stack\nkrea2 v1.0无触发词（no tigger word）\n经过多次尝试，还是把krea2版本的lora训练出来了。我对此lora依旧不满意，但是也不得不承认这是在我当前所能达到的极限了。krea2模型训练门槛太高，我的试错机会也不多。等未来有比较成熟的训练方案后再继续尝试吧。\nAfter numerous attempts, I finally managed to train the Krea2 version of the LoRA. I'm still not satisfied with it, but I have to admit that this is the best I can achieve with my current resources. The Krea2 model has a very high barrier to training, and I don't have many chances to experiment. I'll wait until a more mature training approach becomes available and give it another try then.\nanima base v2.0触发词tigger word：@meionANIMAstyle\n更新详解：更新了数据集。这次采用了比较激进的训练方法，采用完全nl标的格式，且训练的是lycoris的lokr，在画风上表现会更强但是会损失一定的兼容性，当与其他 LoRa 一起使用时，建议降低权重。\nUpdate Details: The dataset has been updated. A more aggressive training approach was adopted this time, using a fully NL-targeted format. The model being trained is the LyCORIS LoKr, which results in stronger stylistic expression but at the cost of some compatibility,so when using it with other LoRa, it is recommended to reduce the weights.\n\n以下是anima base v2.0和anima base v1.0的对比图：\nHere is the comparison chart between Anima Base v2.0 and Anima Base v1.0.：\n\nanima base v1.0触发词tigger word：@meionRE5style\n没想到anima base这么快就来了。这次采用的是一半nl格式打标和一半tag格式打标，@meion依旧也可以加，anima base训练了gel，对单个画师的画风还是很还原的。\n\nPS：最近发现的问题，在出现green eyes和underwear的条件下，会出现角色被替换成原神中的草神的情况，我排查了一下，是训练集那张画作打标居然只有触发词，其他为空。不介意的话可以继续用，介意的话等我过段时间再训练一版。\nanima pre3 v1.0 触发词tigger word：@meion\n经过一个星期的努力，总算是摸索出anima的lora要怎么训练了，本lora训练于anima p3。后续anima出正式版会重新训练。\n特别感谢LuIynx的炉子，让我这个5060笔记本电脑也能较为快速的炼anima的lora。\n项目地址：https://github.com/WhitecrowAurora/lora-rescripts\nil V2.0 触发词tigger word：Meion_style\n推荐权重lora weight:0.3-1.0\nil V1.0触发词tigger word：meion\n推荐权重lora weight:0.3-0.8"
+  },
+  "activation": {
+    "trigger_words": [
+      "@meionANIMAstyle"
+    ],
+    "tags": [
+      "style"
+    ]
+  },
+  "recommended_generation": {
+    "weight": {
+      "default": null,
+      "minimum": null,
+      "maximum": null,
+      "status": "untested"
+    },
+    "clip_skip": null,
+    "sampler": null,
+    "scheduler": null,
+    "steps": null,
+    "cfg": null,
+    "status": "untested"
+  },
+  "training": null,
+  "description": "anima-2.9B在comfyui可以直接用这个节点加载lora：https://github.com/hpoc766-afk/ComfyUI-Anima-28to40-Lora-Stack\nkrea2 v1.0无触发词（no tigger word）\n经过多次尝试，还是把krea2版本的lora训练出来了。我对此lora依旧不满意，但是也不得不承认这是在我当前所能达到的极限了。krea2模型训练门槛太高，我的试错机会也不多。等未来有比较成熟的训练方案后再继续尝试吧。\nAfter numerous attempts, I finally managed to train the Krea2 version of the LoRA. I'm still not satisfied with it, but I have to admit that this is the best I can achieve with my current resources. The Krea2 model has a very high barrier to training, and I don't have many chances to experiment. I'll wait until a more mature training approach becomes available and give it another try then.\nanima base v2.0触发词tigger word：@meionANIMAstyle\n更新详解：更新了数据集。这次采用了比较激进的训练方法，采用完全nl标的格式，且训练的是lycoris的lokr，在画风上表现会更强但是会损失一定的兼容性，当与其他 LoRa 一起使用时，建议降低权重。\nUpdate Details: The dataset has been updated. A more aggressive training approach was adopted this time, using a fully NL-targeted format. The model being trained is the LyCORIS LoKr, which results in stronger stylistic expression but at the cost of some compatibility,so when using it with other LoRa, it is recommended to reduce the weights.\n\n以下是anima base v2.0和anima base v1.0的对比图：\nHere is the comparison chart between Anima Base v2.0 and Anima Base v1.0.：\n\nanima base v1.0触发词tigger word：@meionRE5style\n没想到anima base这么快就来了。这次采用的是一半nl格式打标和一半tag格式打标，@meion依旧也可以加，anima base训练了gel，对单个画师的画风还是很还原的。\n\nPS：最近发现的问题，在出现green eyes和underwear的条件下，会出现角色被替换成原神中的草神的情况，我排查了一下，是训练集那张画作打标居然只有触发词，其他为空。不介意的话可以继续用，介意的话等我过段时间再训练一版。\nanima pre3 v1.0 触发词tigger word：@meion\n经过一个星期的努力，总算是摸索出anima的lora要怎么训练了，本lora训练于anima p3。后续anima出正式版会重新训练。\n特别感谢LuIynx的炉子，让我这个5060笔记本电脑也能较为快速的炼anima的lora。\n项目地址：https://github.com/WhitecrowAurora/lora-rescripts\nil V2.0 触发词tigger word：Meion_style\n推荐权重lora weight:0.3-1.0\nil V1.0触发词tigger word：meion\n推荐权重lora weight:0.3-0.8",
+  "usage_notes": "以下推荐信息来自 Civitai 选定版本及其模型发布说明；本机尚未对参数做实测，因此资源状态仍为 untested。\n当前 Anima v2.0 页面说明与其他 LoRA 一起使用时建议降低权重，但未给出 Anima v2.0 的数值范围；页面列出的 0.3–1.0/0.3–0.8 属于旧 Illustrious 版本，未写入本记录。\n本次保存 3 张 Civitai 发布图；不使用 nsfw=None 过滤。图片级 nsfwLevel：133065456:4, 133065453:4, 133065469:2。",
+  "license": {
+    "type": "civitai_model_permissions",
+    "allow_no_credit": true,
+    "allow_commercial_use": [
+      "RentCivit",
+      "Rent"
+    ],
+    "allow_derivatives": true,
+    "allow_different_license": true
+  },
+  "source": {
+    "type": "civitai",
+    "url": "https://civitai.com/models/2533943?modelVersionId=3011314",
+    "civitai_model_id": 2533943,
+    "civitai_version_id": 3011314,
+    "version_name": "anima base v2.0"
+  },
+  "previews": [
+    {
+      "id": "preview-001",
+      "file": "previews/preview-001.jpg",
+      "alt": "铭音 meion style 【krea2&anima&il】 · anima base v2.0 Civitai 发布图 1",
+      "source": "https://civitai.com/images/133065456",
+      "nsfw_level": 4
+    },
+    {
+      "id": "preview-002",
+      "file": "previews/preview-002.jpg",
+      "alt": "铭音 meion style 【krea2&anima&il】 · anima base v2.0 Civitai 发布图 2",
+      "source": "https://civitai.com/images/133065453",
+      "nsfw_level": 4
+    },
+    {
+      "id": "preview-003",
+      "file": "previews/preview-003.jpg",
+      "alt": "铭音 meion style 【krea2&anima&il】 · anima base v2.0 Civitai 发布图 3",
+      "source": "https://civitai.com/images/133065469",
+      "nsfw_level": 2
+    }
+  ],
+  "examples": [],
+  "embedded_metadata": {
+    "role": "backup",
+    "values": {
+      "civitai.model_id": "2533943",
+      "civitai.version_id": "3011314",
+      "civitai.version_name": "anima base v2.0",
+      "civitai.creator": "NXMZ",
+      "civitai.base_model": "Anima",
+      "civitai.file_name": "Meion_anima_style_lokr_2-000034.safetensors",
+      "civitai.file_sha256": "c19f00638bb342aae1579ee3b38c73b7d69550dfa7948b66e9c1e8733362678e",
+      "civitai.file_size_kb": "245468.47265625",
+      "civitai.trained_words": "[\"@meionANIMAstyle\"]",
+      "civitai.model_tags": "[\"style\"]",
+      "civitai.version_created_at": "2026-06-07T07:54:52.744Z",
+      "civitai.version_published_at": "2026-06-07T07:57:47.281Z",
+      "civitai.preview_source": "https://civitai.com/images/135739307",
+      "civitai.preview_images": "[{\"id\":\"133065456\",\"nsfw_level\":4,\"source\":\"https://civitai.com/images/133065456\"},{\"id\":\"133065453\",\"nsfw_level\":4,\"source\":\"https://civitai.com/images/133065453\"},{\"id\":\"133065469\",\"nsfw_level\":2,\"source\":\"https://civitai.com/images/133065469\"}]",
+      "civitai.recommendation_source": "https://civitai.com/models/2533943?modelVersionId=3011314"
+    }
+  },
+  "name_zh": "铭音画风",
+  "summary_zh": "引入铭音（meion）的插画风格。",
+  "purpose": "画风"
+}

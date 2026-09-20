@@ -1,0 +1,7 @@
+# 素材处理：评分、GPU 打标与 CPU 抠图；Python 3.11。
+--extra-index-url https://download.pytorch.org/whl/cu124
+torch==2.6.0+cu124
+torchvision==0.21.0+cu124
+pyiqa==0.1.14.1
+rembg==2.0.84
+onnxruntime-gpu==1.23.2

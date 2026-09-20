@@ -1,0 +1,117 @@
+{
+  "$schema": "../schemas/resource-catalog.schema.json",
+  "version": 1,
+  "models": [
+    {
+      "id": "anima-vace-depth",
+      "name": "Anima VACE Depth",
+      "kind": "other",
+      "architecture_family": "anima",
+      "filename": "anima-vace-depth.safetensors",
+      "relative_path": "controlnet/anima-vace-depth.safetensors",
+      "sha256": "29762e7037bd74b70abaa832c79d10159d5e7e0612045961318e304eb50e802d",
+      "source": "https://huggingface.co/TaihoC/Anima-ControlNet-VACE-Depth"
+    },
+    {
+      "id": "anima-base-v1-dit",
+      "name": "Anima Base v1.0",
+      "kind": "dit",
+      "architecture_family": "anima",
+      "prompt_family": "anima",
+      "filename": "anima-base-v1.0.safetensors",
+      "relative_path": "diffusion_models/anima-base-v1.0.safetensors",
+      "sha256": "bd43b7cffe1ed1153d9c41e7beb2f18cb1273eafbaa3af3edd6a173dc90a006e",
+      "source": "https://huggingface.co/circlestone-labs/Anima/resolve/main/anima-base-v1.0.safetensors",
+      "preview": {
+        "images": [
+          {
+            "src": "/resource-previews/anima-base-v1-dit-1.jpg",
+            "alt": "Anima Base v1.0 示例图 1",
+            "source": "https://civitai.com/images/134134612"
+          },
+          {
+            "src": "/resource-previews/anima-base-v1-dit-2.jpg",
+            "alt": "Anima Base v1.0 示例图 2",
+            "source": "https://civitai.com/images/134289679"
+          },
+          {
+            "src": "/resource-previews/anima-base-v1-dit-3.jpg",
+            "alt": "Anima Base v1.0 示例图 3",
+            "source": "https://civitai.com/images/133951905"
+          }
+        ]
+      }
+    },
+    {
+      "id": "anima-qwen3-06b-base",
+      "name": "Anima Qwen3 0.6B 文本编码器",
+      "kind": "text_encoder",
+      "architecture_family": "anima",
+      "prompt_family": "anima",
+      "filename": "qwen_3_06b_base.safetensors",
+      "relative_path": "text_encoders/qwen_3_06b_base.safetensors",
+      "sha256": "cd2a512003e2f9f3cd3c32a9c3573f820bb28c940f73c57b1ddaa983d9223eba",
+      "source": "https://huggingface.co/Comfy-Org/Anima_ComfyUI/resolve/main/split_files/text_encoders/qwen_3_06b_base.safetensors"
+    },
+    {
+      "id": "anima-aesthetic-v11-dit",
+      "name": "Anima Aesthetic v1.1",
+      "kind": "dit",
+      "architecture_family": "anima",
+      "prompt_family": "anima",
+      "filename": "anima-aesthetic-v1.1.safetensors",
+      "relative_path": "diffusion_models/anima-aesthetic-v1.1.safetensors",
+      "sha256": "3c1868387a3a1ff504bbb87c33678321965ead381fcf87afbd0264daa600c082",
+      "source": "https://huggingface.co/circlestone-labs/Anima/resolve/main/split_files/diffusion_models/anima-aesthetic-v1.1.safetensors",
+      "preview": {
+        "images": [
+          {
+            "src": "/resource-previews/anima-aesthetic-v11-dit-1.jpg",
+            "alt": "Anima Aesthetic v1.1 示例图 1",
+            "source": "https://civitai.com/images/139083425"
+          },
+          {
+            "src": "/resource-previews/anima-aesthetic-v11-dit-2.jpg",
+            "alt": "Anima Aesthetic v1.1 示例图 2",
+            "source": "https://civitai.com/images/136614294"
+          },
+          {
+            "src": "/resource-previews/anima-aesthetic-v11-dit-3.jpg",
+            "alt": "Anima Aesthetic v1.1 示例图 3",
+            "source": "https://civitai.com/images/136812163"
+          }
+        ]
+      }
+    },
+    {
+      "id": "anima-qwen-image-vae",
+      "name": "Anima Qwen Image VAE",
+      "kind": "vae",
+      "architecture_family": "anima",
+      "prompt_family": "anima",
+      "filename": "qwen_image_vae.safetensors",
+      "relative_path": "vae/qwen_image_vae.safetensors",
+      "sha256": "a70580f0213e67967ee9c95f05bb400e8fb08307e017a924bf3441223e023d1f",
+      "source": "https://huggingface.co/Comfy-Org/Anima_ComfyUI/resolve/main/split_files/vae/qwen_image_vae.safetensors"
+    },
+    {
+      "id": "animesharp-v4-2x",
+      "name": "AnimeSharpV4 2×（RCAN）",
+      "kind": "other",
+      "architecture_family": "other",
+      "filename": "2x-AnimeSharpV4_RCAN.safetensors",
+      "relative_path": "upscale_models/2x-AnimeSharpV4_RCAN.safetensors",
+      "sha256": "6470bb91d6622d6acdff81132c1a8615b961b919ce2b9a01ce993378500cfbe1",
+      "source": "https://openmodeldb.info/models/2x-AnimeSharpV4",
+      "preview": {
+        "images": [
+          {
+            "src": "/resource-previews/animesharp-v4-test.png",
+            "alt": "AnimeSharpV4 2 倍超分技术测试图，非角色画质示例",
+            "source": "https://openmodeldb.info/models/2x-AnimeSharpV4"
+          }
+        ]
+      }
+    }
+  ]
+}

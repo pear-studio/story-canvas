@@ -1,0 +1,8 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://storyvisualizer.local/schemas/page-key.schema.json",
+  "type":"object",
+  "required":["page_id"],
+  "additionalProperties":false,
+  "properties":{"page_id":{"type":"string","pattern":"^page-(?:[0-9]{3}|[a-f0-9]{12})$"}}
+}

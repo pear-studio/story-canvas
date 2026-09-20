@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://storyvisualizer.local/schemas/lora-training-dataset.schema.json",
+  "type": "object",
+  "required": ["version", "name", "description", "activation_terms", "groups", "items"],
+  "properties": {
+    "version": { "const": 5 },
+    "name": { "type": "string", "minLength": 1 },
+    "description": { "type": "string" },
+    "activation_terms": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "groups": { "type": "array", "items": { "$ref": "#/$defs/group" } },
+    "items": { "type": "array", "items": { "$ref": "#/$defs/item" } }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "group": {
+      "type": "object",
+      "required": ["id", "name", "enabled", "repeats"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^group-[a-f0-9]{12}$" },
+        "name": { "type": "string", "minLength": 1 },
+        "enabled": { "type": "boolean" },
+        "repeats": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "item": {
+      "type": "object",
+      "required": ["id", "asset_id", "group_id", "enabled"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^item-[a-f0-9]{12}$" },
+        "asset_id": { "type": "string", "pattern": "^(?:asset-[a-f0-9]{12}|[a-z][a-z0-9]*(?:-[a-z0-9]+)*-[0-9]{3})$" },
+        "group_id": { "type": "string", "pattern": "^group-[a-f0-9]{12}$" },
+        "enabled": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

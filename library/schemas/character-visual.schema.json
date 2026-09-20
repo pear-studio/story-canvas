@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://storyvisualizer.local/schemas/character-visual.schema.json",
+  "$defs": {
+    "variant_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "not": {
+        "const": "main"
+      }
+    }
+  },
+  "type": "object",
+  "required": [
+    "$schema",
+    "variants"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "https://storyvisualizer.local/schemas/character-visual.schema.json"
+    },
+    "description": {
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "base_description": {
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "variants": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/variant_id"
+          },
+          "name": {
+            "type": "string",
+            "pattern": "\\S",
+            "maxLength": 100
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

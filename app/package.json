@@ -1,0 +1,56 @@
+{
+  "name": "story-canvas",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "validate:project": "node scripts/validate-project.mjs",
+    "project:copy": "node scripts/manage-project.mjs copy",
+    "project:rename": "node scripts/manage-project.mjs rename",
+    "project:create": "node scripts/create-project.mjs",
+    "story:page": "node scripts/story-page.mjs",
+    "corpus:search": "node scripts/corpus-search.mjs",
+    "character:fact": "node scripts/character-fact.mjs",
+    "character:variant-explicit-migration": "node scripts/character-variant-explicit-migration.mjs",
+    "visual:produce": "node scripts/visual-production.mjs",
+    "workbench:api": "node scripts/workbench-api.mjs",
+    "camera:prompt": "node scripts/camera-prompt.mjs",
+    "smoke:lora": "node scripts/lora-api-smoke.mjs",
+    "comfy:start": "node scripts/comfy-runtime-cli.mjs start",
+    "dev": "node scripts/start-workbench.mjs dev",
+    "build": "vite build",
+    "start": "node scripts/start-workbench.mjs production",
+    "check": "tsc --noEmit",
+    "test": "npm run check && npm run build && node --test tests/*.test.mjs",
+    "test:navigation-ui": "node --test tests/browser/workbench-navigation.test.mjs",
+    "test:floating-ui": "node --test tests/browser/floating-layer.test.mjs",
+    "test:comparison-ui": "node --test tests/browser/comparison-experiments.test.mjs",
+    "test:selection-ui": "node --test tests/browser/selection-controls.test.mjs",
+    "test:lora-ui": "node --test tests/browser/lora-preparation.test.mjs",
+    "test:prompt-ui": "node --test tests/browser/prompt-editor.test.mjs tests/browser/prompt-overview.test.mjs tests/browser/inheritance.test.mjs tests/browser/unified-page.test.mjs",
+    "project:storage": "node scripts/project-storage.mjs",
+    "test:finished-ui": "npm run build && node --test tests/browser/finished-pages.test.mjs tests/browser/text-pages.test.mjs"
+  },
+  "dependencies": {
+    "playwright": "1.62.1",
+    "pngjs": "^7.0.0",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "sharp": "^0.34.5",
+    "yazl": "^3.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.19",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.2",
+    "ajv": "^8.17.1",
+    "typescript": "5.9.3",
+    "vite": "8.0.13"
+  }
+}

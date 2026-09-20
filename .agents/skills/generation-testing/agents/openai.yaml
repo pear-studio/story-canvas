@@ -1,0 +1,4 @@
+interface:
+  display_name: "生成验证"
+  short_description: "按明确范围受控验证生成可靠性，保留全部样本并说明结论边界"
+  default_prompt: "使用 $generation-testing 为当前可靠性问题提出有明确预算的验证方案。"

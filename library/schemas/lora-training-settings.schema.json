@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://storyvisualizer.local/schemas/lora-training-settings.schema.json",
+  "type": "object",
+  "required": [
+    "version",
+    "target",
+    "training_recipe",
+    "run_defaults"
+  ],
+  "properties": {
+    "version": {
+      "const": 4
+    },
+    "target": {
+      "type": "object",
+      "required": [
+        "family",
+        "prompt_family",
+        "usage_defaults",
+        "base"
+      ],
+      "properties": {
+        "family": {
+          "const": "anima"
+        },
+        "prompt_family": {
+          "type": "string",
+          "minLength": 1
+        },
+        "usage_defaults": {
+          "$ref": "#/$defs/usage_defaults"
+        },
+        "base": {
+          "type": "object",
+          "required": [
+            "dit",
+            "text_encoder",
+            "vae"
+          ],
+          "properties": {
+            "dit": {
+              "$ref": "#/$defs/model"
+            },
+            "text_encoder": {
+              "$ref": "#/$defs/model"
+            },
+            "vae": {
+              "$ref": "#/$defs/model"
+            },
+            "llm_adapter": {
+              "$ref": "#/$defs/model"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "training_recipe": {
+      "type": "object",
+      "required": [
+        "id",
+        "overrides"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "overrides": {
+          "$ref": "#/$defs/recipe_overrides"
+        }
+      },
+      "additionalProperties": false
+    },
+    "run_defaults": {
+      "type": "object",
+      "required": [
+        "max_train_steps",
+        "save_every_n_steps",
+        "seed",
+        "micro_batch_size",
+        "max_data_loader_n_workers",
+        "blocks_to_swap"
+      ],
+      "properties": {
+        "max_train_steps": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "save_every_n_steps": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "micro_batch_size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_data_loader_n_workers": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "blocks_to_swap": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "usage_defaults": {
+      "type": "object",
+      "required": [
+        "clip_skip",
+        "sampler",
+        "scheduler",
+        "steps",
+        "cfg"
+      ],
+      "properties": {
+        "clip_skip": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "sampler": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scheduler": {
+          "type": "string",
+          "minLength": 1
+        },
+        "steps": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "cfg": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "model": {
+      "type": "object",
+      "required": [
+        "relative_path"
+      ],
+      "properties": {
+        "relative_path": {
+          "type": "string",
+          "pattern": "^(?!/)(?!.*\\.\\.)(?!.*\\\\).+$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "recipe_overrides": {
+      "type": "object",
+      "properties": {
+        "resolution": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "effective_batch_size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "network_dim": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "network_alpha": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "learning_rate": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "title": "训练项目当前设置"
+}

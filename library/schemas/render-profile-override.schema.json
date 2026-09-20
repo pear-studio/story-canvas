@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://storyvisualizer.local/schemas/render-profile-override.schema.json",
+  "$defs": {
+    "state": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["exists"],
+          "properties": { "exists": { "const": false } },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["exists", "value"],
+          "properties": { "exists": { "const": true }, "value": true },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "change": {
+      "type": "object",
+      "required": ["target", "original", "project"],
+      "properties": {
+        "target": {
+          "type": "string",
+          "anyOf": [
+            { "pattern": "^models\\.[a-z0-9][a-z0-9_-]*$" },
+            { "const": "prompt.policy" },
+            { "pattern": "^prompt\\.fragments\\.[a-z0-9][a-z0-9-]*$" },
+            { "pattern": "^operations\\.candidates\\.routes\\.empty_latent\\.(workflow|recipe\\.(steps|cfg|sampler|scheduler|clip_skip|scale|denoise|second_pass_steps|second_pass_cfg|second_pass_sampler|second_pass_scheduler|resolutions\\.(2:3|3:4|9:16|4:3)))$" },
+            { "pattern": "^style_loras\\.[a-z0-9][a-z0-9-]*$" },
+            { "pattern": "^style_loras\\.[a-z0-9][a-z0-9-]*\\.weight$" }
+          ]
+        },
+        "original": { "$ref": "#/$defs/state" },
+        "project": { "$ref": "#/$defs/state" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "type": "object",
+  "required": ["version", "profiles"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": { "const": 1 },
+    "profiles": {
+      "type": "object",
+      "patternProperties": {
+        "^[a-z0-9][a-z0-9-]*$": {
+          "type": "object",
+          "required": ["changes"],
+          "properties": {
+            "changes": { "type": "array", "items": { "$ref": "#/$defs/change" } }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

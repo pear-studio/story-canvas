@@ -1,0 +1,137 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { readFile, mkdir } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { chromium } from "playwright";
+import { fixture, key, json } from "../helpers/finished-fixture.mjs";
+import { defaultTextPageLayout } from "../../shared/text-page-layout.mjs";
+import { defaultLetteringSettings } from "../../server/lettering-settings.mjs";
+import { createStoryCanvasServer } from "../../server/index.mjs";
+
+// 使用完整编辑器和真实保存接口，验证无标题、独立设置、预览/输出与溢出行为。
+test("文字页独立排版保存恢复，预览与输出一致，长文溢出不静默裁切", async t => {
+  const f = await fixture(t);
+  const file = path.join(f.directory, `pages/${key.page_id}.content.json`);
+  await json(file, { $schema: "https://storyvisualizer.local/schemas/story-page-narrative.schema.json", title: "后记目录", scene_description: "", characters: [], dialogue: [], page_kind: "text", display_title: "写在最后", body: "窗外的风渐渐安静。\n故事暂时停在这里。", text_layout: { ...defaultTextPageLayout } });
+  const server = await createStoryCanvasServer({ projectRoot: f.root, appRoot: fileURLToPath(new URL("../../", import.meta.url)), production: true, localConfig: { comfyui_urls: [] }, hardwareStatusReader: async () => ({ cpu: { available: false }, memory: { available: false }, gpu: { available: false }, comfyui: { connected: false, status: "offline" } }) });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  const browser = await chromium.launch({ headless: true, channel: process.platform === "win32" ? "msedge" : undefined });
+  t.after(async () => { await browser.close(); await new Promise(resolve => server.close(resolve)); });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  page.setDefaultTimeout(10000);
+  const errors = []; page.on("pageerror", error => errors.push(error.message));
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  await page.goto(`${origin}/?project=demo&tab=story&page=${key.page_id}`);
+  await page.getByLabel("显示标题", { exact: true }).fill("");
+  await page.getByLabel("标题字号", { exact: true }).fill("72");
+  await page.getByLabel("正文字号", { exact: true }).fill("40");
+  await page.getByRole("group", { name: "标题对齐", exact: true }).getByRole("button", { name: "右对齐", exact: true }).click();
+  await page.getByRole("group", { name: "正文对齐", exact: true }).getByRole("button", { name: "左对齐", exact: true }).click();
+  const placement = page.getByRole("group", { name: "整组位置", exact: true });
+  await placement.getByRole("button", { name: "上三分之一", exact: true }).click();
+  const artwork = page.locator(".text-page-artwork");
+  await artwork.locator(".text-page-artwork__body").waitFor();
+  assert.equal(await artwork.locator("h1").count(), 0, "空标题不渲染也不占位");
+  const geometry = element => {
+    const frame = element.getBoundingClientRect(), text = element.querySelector(".text-page-artwork__content").getBoundingClientRect();
+    const body = element.querySelector(".text-page-artwork__body");
+    return { center: (text.y + text.height / 2 - frame.y) / frame.height, x: (text.x - frame.x) / frame.width, bodySize: parseFloat(getComputedStyle(body).fontSize) / frame.width, align: getComputedStyle(body).textAlign };
+  };
+  for (const [name, fraction] of [["上三分之一", 1 / 3], ["居中", .5], ["下三分之一", 2 / 3]]) {
+    await placement.getByRole("button", { name, exact: true }).click();
+    await page.waitForFunction(expected => {
+      const frame = document.querySelector(".text-page-artwork").getBoundingClientRect(), text = document.querySelector(".text-page-artwork__content").getBoundingClientRect();
+      return Math.abs((text.y + text.height / 2 - frame.y) / frame.height - expected) < .005;
+    }, fraction);
+    assert.equal(await page.getByLabel("正文字号", { exact: true }).inputValue(), "40");
+  }
+  const preview = await artwork.evaluate(geometry);
+  assert.equal(preview.align, "left");
+  assert.ok(Math.abs(preview.bodySize - 40 / 1024) < .001);
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await page.waitForFunction(() => !document.querySelector("[data-page-content-dirty=true]"));
+  const saved = JSON.parse(await readFile(file, "utf8"));
+  assert.equal(saved.title, "后记目录"); assert.equal(saved.display_title, "");
+  assert.deepEqual(saved.text_layout, { title_font_size: 72, body_font_size: 40, title_align: "right", body_align: "left", position: "lower" });
+  await page.reload();
+  await page.getByLabel("显示标题", { exact: true }).waitFor();
+  assert.equal(await page.getByLabel("显示标题", { exact: true }).inputValue(), "");
+  assert.equal(await placement.getByRole("button", { name: "下三分之一", exact: true }).getAttribute("aria-pressed"), "true");
+  const view = await (await page.request.get(`${origin}/api/projects/demo/workbench`)).json();
+  const dimensions = view.render_capabilities.text_page.dimensions;
+  assert.deepEqual(dimensions, { width: 1664, height: 2432 });
+  const previewRatio = await artwork.evaluate(element => element.clientWidth / element.clientHeight);
+  assert.ok(Math.abs(previewRatio - dimensions.width / dimensions.height) < .002, "预览采用实际 recipe 的成品比例");
+  const output = await browser.newPage({ viewport: dimensions });
+  await output.goto(`${origin}/finished-render.html`);
+  await output.waitForFunction(() => typeof window.renderFinishedLettering === "function");
+  const payload = { page_kind: "text", display_title: saved.display_title, body: saved.body, text_layout: saved.text_layout, settings: defaultLetteringSettings(), canvas: "2:3" };
+  await output.evaluate(value => window.renderFinishedLettering(value), payload);
+  const exported = await output.locator(".text-page-artwork").evaluate(geometry);
+  for (const field of ["center", "x", "bodySize"]) assert.ok(Math.abs(preview[field] - exported[field]) < .005, `${field} 的预览与输出比例一致`);
+  assert.equal(exported.align, "left");
+  await output.evaluate(value => window.renderFinishedLettering(value), { ...payload, body: Array(12).fill("长文的段落。").join("\n") });
+  const adjusted = await output.locator(".text-page-artwork").evaluate(element => {
+    const frame = element.getBoundingClientRect(), text = element.querySelector(".text-page-artwork__content").getBoundingClientRect();
+    return { bottom: (text.bottom - frame.top) / frame.height, center: (text.top + text.height / 2 - frame.top) / frame.height, overflow: element.dataset.overflow };
+  });
+  assert.ok(Math.abs(adjusted.bottom - .92) < .005, "长文向内收并保留底部留白");
+  assert.ok(adjusted.center < 2 / 3, "整组因接近边缘向上移动");
+  assert.equal(adjusted.overflow, "false");
+  await page.getByLabel("显示标题", { exact: true }).fill("写在最后");
+  await artwork.locator("h1").waitFor();
+  assert.equal(await artwork.locator("h1").evaluate(el => getComputedStyle(el).textAlign), "right");
+  const screenshots = fileURLToPath(new URL("../../runtime/", import.meta.url));
+  await mkdir(screenshots, { recursive: true });
+  await page.screenshot({ path: path.join(screenshots, "text-page-ui.png") });
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, "窄屏控件不撑破页面");
+  await page.screenshot({ path: path.join(screenshots, "text-page-mobile.png"), fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  // 27 行在项目 2:3 画布上能放下，在真实 recipe 比例下会溢出；两端必须一致。
+  const edgeBody = Array(27).fill("正文").join("\n");
+  await page.getByLabel("显示标题", { exact: true }).fill("");
+  await page.getByLabel("正文字号", { exact: true }).fill("28");
+  await page.getByLabel("正文", { exact: true }).fill(edgeBody);
+  await page.getByRole("alert").filter({ hasText: "文字超出画布" }).waitFor();
+  await assert.rejects(output.evaluate(value => window.renderFinishedLettering(value), { ...payload, body: edgeBody, text_layout: { ...payload.text_layout, body_font_size: 28 } }), /文字超出画布/);
+  const longBody = Array.from({ length: 100 }, () => "这是一段需要缩小字号的长正文。").join("\n");
+  await page.getByLabel("正文", { exact: true }).fill(longBody);
+  await page.getByRole("alert").filter({ hasText: "文字超出画布" }).waitFor();
+  await assert.rejects(output.evaluate(value => window.renderFinishedLettering(value), { ...payload, body: longBody }), /文字超出画布/);
+  await page.getByLabel("正文", { exact: true }).fill("短正文");
+  await page.waitForFunction(() => document.querySelector(".text-page-artwork")?.dataset.overflow === "false");
+  assert.deepEqual(errors, []);
+});
+
+// 剧情总览的文字页卡渲染迷你排版：保存后切换标签立即反映，且被 F9 隐藏图片覆盖。
+test("剧情总览文字页缩略图实时反映保存内容并纳入隐藏图片", async t => {
+  const f = await fixture(t);
+  const file = path.join(f.directory, `pages/${key.page_id}.content.json`);
+  await json(file, { $schema: "https://storyvisualizer.local/schemas/story-page-narrative.schema.json", title: "过渡页", scene_description: "", characters: [], dialogue: [], page_kind: "text", display_title: "旧标题", body: "旧正文第一行。", text_layout: { ...defaultTextPageLayout } });
+  const server = await createStoryCanvasServer({ projectRoot: f.root, appRoot: fileURLToPath(new URL("../../", import.meta.url)), production: true, localConfig: { comfyui_urls: [] }, hardwareStatusReader: async () => ({ cpu: { available: false }, memory: { available: false }, gpu: { available: false }, comfyui: { connected: false, status: "offline" } }) });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  const browser = await chromium.launch({ headless: true, channel: process.platform === "win32" ? "msedge" : undefined });
+  t.after(async () => { await browser.close(); await new Promise(resolve => server.close(resolve)); });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  page.setDefaultTimeout(10000);
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  await page.goto(`${origin}/?project=demo&tab=story&page=${key.page_id}`);
+  await page.getByLabel("显示标题", { exact: true }).fill("新的标题");
+  await page.getByLabel("正文", { exact: true }).fill("更新后的第一行。\n第二行。");
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await page.waitForFunction(() => !document.querySelector("[data-page-content-dirty=true]"));
+  await page.getByRole("button", { name: "系列", exact: true }).click({button:"right"});
+  await page.getByRole("menuitem", { name: "故事总览", exact: true }).click();
+  const thumbnail = page.locator(".story-page-thumbnail--text .text-page-artwork");
+  await thumbnail.locator("h1").waitFor();
+  assert.equal(await thumbnail.locator("h1").textContent(), "新的标题", "不刷新页面即显示最新显示标题");
+  assert.equal(await thumbnail.locator(".text-page-artwork__body").textContent(), "更新后的第一行。\n第二行。", "缩略图显示最新正文");
+  await page.keyboard.press("F9");
+  await page.waitForFunction(() => document.documentElement.dataset.imagePrivacy === "hidden");
+  assert.equal(await thumbnail.evaluate(element => getComputedStyle(element).visibility), "hidden", "隐藏图片覆盖总览文字页缩略图");
+  await page.keyboard.press("F9");
+  await page.waitForFunction(() => document.documentElement.dataset.imagePrivacy === "visible");
+  assert.equal(await thumbnail.evaluate(element => getComputedStyle(element).visibility), "visible");
+});
