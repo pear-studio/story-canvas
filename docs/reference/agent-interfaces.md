@@ -4,6 +4,16 @@
 命令从 `Config/local.json` 的 `port` 连接本机服务，缺省为 3000；连接失败返回 `workbench_unavailable`，
 不自动切换为离线写入，不自动重放失败请求。
 
+## 查询关联项目的 Git
+
+`GET /api/project-library/:id/git` 为剧情与训练项目共用的只读查询；ID 来自 `GET /api/project-library`。
+
+```powershell
+npm --silent --prefix C:/Workspace/story-canvas/app run workbench:api -- GET /api/project-library/<project-id>/git
+```
+
+返回分支、改动文件、已配置远程和本地 upstream 领先／落后计数，具体字段见[本地项目管理](local-projects.md#项目-git-状态)。不连接远程、不修改 Git。提交或同步须有用户授权，使用返回的登记路径执行 Git CLI；不要把未初始化的临时项目当成工具仓库的一部分提交。
+
 ## 操作分类
 
 | 操作 | 唯一业务入口 | 规则 |

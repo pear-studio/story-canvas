@@ -1,4 +1,5 @@
 import { projectLibrary, openProjectDirectory, manageRegisteredProject } from "./project-library.mjs";
+import { readProjectGit } from "./project-git.mjs";
 import { registeredProjectPath, listRegisteredProjects, registerProject, unregisterProject, readProjectRegistry } from "./project-registry.mjs";
 import { readdir } from "node:fs/promises";
 import path from "node:path";
@@ -124,6 +125,8 @@ export async function handleProjectRequest({
   sendOperation,
 }) {
   if (decodedPath === "/api/project-library" && request.method === "GET") { sendJson(response, 200, projectLibrary(projectRoot)); return true; }
+  const libraryGit = /^\/api\/project-library\/([^/]+)\/git$/.exec(decodedPath);
+  if (libraryGit && request.method === "GET") { sendJson(response, 200, await readProjectGit(projectRoot, libraryGit[1])); return true; }
   if (decodedPath === "/api/project-library/open" && request.method === "POST") { const body = await readJsonBody(request); sendJson(response, 201, await openProjectDirectory(projectRoot, body.path)); return true; }
   const libraryAction = /^\/api\/project-library\/([^/]+)\/(copy|forget|relocate|promote|delete)$/.exec(decodedPath);
   if (libraryAction && request.method === "POST") {

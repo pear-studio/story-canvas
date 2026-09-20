@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Modal } from "./Modal";
 import { useFeedback } from "./feedback";
+import { ProjectGitStatus } from "./ProjectGitStatus";
 
 type Entry = { id: string; title?: string; type: "story" | "training"; path: string; temporary: boolean; available: boolean };
 
@@ -42,7 +43,7 @@ export function ProjectLibraryDialog({ onClose, onOpen }: { onClose: () => void;
     {error && <p role="alert">{error}</p>}
     {entries.map(entry => <section key={entry.id} className="lora-panel">
       <header><b>{entry.title ?? entry.id}</b><span>{entry.type === "training" ? "训练" : "剧情"} · {entry.temporary ? "临时项目" : "正式项目"}{!entry.available ? " · 路径不可用" : ""}</span></header>
-      <p>{entry.path}</p><div className="lora-actions">
+      <p>{entry.path}</p><ProjectGitStatus id={entry.id} path={entry.path} /><div className="lora-actions">
         <button className="button" disabled={busy || !entry.available} onClick={() => onOpen(entry)}>打开</button>
         <button className="button" disabled={busy || !entry.available} onClick={() => void action(entry, "copy")}>创建临时副本</button>
         {entry.temporary && <button className="button" disabled={busy || !entry.available} onClick={() => { setTarget({ entry, action: "promote" }); setDirectory(""); }}>保留为正式项目</button>}

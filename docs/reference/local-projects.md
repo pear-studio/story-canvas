@@ -33,6 +33,14 @@
 
 接口为 `GET /api/project-library`、`POST /api/project-library/open`（`{ "path": "绝对目录" }`），以及 `POST /api/project-library/:id/{copy|promote|relocate|forget|delete}`；提升和重新定位携带 `path`。项目生命周期操作与事实操作串行，活动任务未结束时不复制、提升或删除项目。
 
+## 项目 Git 状态
+
+项目管理列表显示每个项目是否为独立 Git 仓库、有无改动、是否关联远程；展开后查看分支、远程链接和改动文件，并可手动刷新。忽略文件不列入改动；未初始化、路径不可用和 Git 读取失败分别显示。临时项目不会借用上级工具仓库的 Git 状态。
+
+页面与 Agent 共用 `GET /api/project-library/:id/git`，按登记路径只读查询，不初始化仓库、不 fetch、不提交或同步。成功返回 `status: ready`、`branch`、`commit`、`upstream`、`ahead`、`behind`、`dirty`、`changes`、`remotes`；没有仓库为 `not_repository`，读取失败为 `unavailable` 并带 `message`。未登记 ID 返回 404。改动状态为 Git porcelain 两列（暂存区、工作区，`.` 表示无变化，`??` 表示未跟踪）；重命名带 `original_path`。远程 URL 不回传内嵌凭据。
+
+领先／落后仅相对本机保存的 upstream 引用，不能据此断言远程服务器最新状态。提交、拉取和推送由用户委托 Agent 后通过现有 Git CLI 完成；工作台不提供 Git 写操作按钮或接口。
+
 ## 训练项目
 
 一个训练项目拥有一份素材集合和唯一当前 `settings.json`。创建素材项目时一并建立默认设置，编辑设置不创建新方案；启动训练时冻结当时的素材、Caption 和设置，形成新的 run。以后修改当前设置不改变旧 run。

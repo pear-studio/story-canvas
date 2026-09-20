@@ -2594,3 +2594,7 @@ label:has(> input:is([type="checkbox"], [type="radio"]):disabled) { cursor: not-
   .resource-picker-actions .button, .resource-picker-selected .button { min-height: 44px; padding: 8px 10px; font-size: 14px; }
   .resource-picker-selected .button { max-width: 100%; white-space: normal; text-align: left; }
 }
+/* 项目 Git 为按需展开的只读状态，长路径与改动列表限制在面板内。 */
+.project-git-status { margin-block: 0.75rem; overflow-wrap: anywhere; }
+.project-git-status summary { cursor: pointer; }
+.project-git-changes { max-height: 16rem; overflow: auto; white-space: pre-wrap; }
