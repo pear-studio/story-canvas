@@ -1,7 +1,8 @@
-import { ProjectLibraryDialog } from "./ProjectLibraryDialog";
+import { ProjectDirectoryDialog, type RegisteredProject } from "./ProjectDirectoryDialog";
+import { ProjectListEntry } from "./ProjectListEntry";
 import { useTooltips } from "./use-tooltips";
 import { NavigationSearch } from "./NavigationSearch";
-import { ProjectNavigationHome } from "./ProjectNavigationHome";
+import { ProjectMenu, type ProjectAction } from "./ProjectMenu";
 import { navigationIdentity, navigationSection, rememberNavigation, type NavigationSection, type NavigationHistory } from "./navigation-history";
 import { InheritedPromptEditor } from './InheritedPromptEditor';
 import { PageMoveDialog } from './PageMoveDialog';
@@ -55,9 +56,7 @@ import { useFeedback } from "./feedback";
 import { applyImagePrivacy, persistImagePrivacy } from "./image-privacy.mjs";
 import { useLongPressContextMenu } from "./use-long-press-context-menu";
 import {
-  copyProject as copyProjectRequest,
   mutateFacts,
-  renameProject as renameProjectRequest,
   getProjectWriteRevision,
   isProjectRefreshRequired,
   isProjectWritePending,
@@ -854,7 +853,18 @@ export default function StoryWorkbench({ initialImagesHidden, imagePrivacyStorag
   const globalArea = activeTab === "comparison" || activeTab.startsWith("lora-") || activeTab.startsWith("resource-");
   const projectLocation = useRef<NavigationState | null>(null);
   const selectedKey = navigation.activePageKey ? pageKeyId(navigation.activePageKey) : null;
-  const [showProjectLibrary, setShowProjectLibrary] = useState(false);
+  const [directoryDialog, setDirectoryDialog] = useState<"add" | RegisteredProject | null>(null);
+  const [registeredProjects, setRegisteredProjects] = useState<RegisteredProject[]>([]);
+  const [projectFilter, setProjectFilter] = useState("");
+  const [libraryError, setLibraryError] = useState("");
+  const [libraryVersion, setLibraryVersion] = useState(0);
+  async function refreshLibrary() {
+    try {
+      const result = await responseJson<{ projects: RegisteredProject[] }>(await fetch("/api/project-library"));
+      setRegisteredProjects(result.projects); setLibraryError(""); return result.projects;
+    } catch (cause) { setLibraryError(cause instanceof Error ? cause.message : String(cause)); throw cause; }
+  }
+  useEffect(() => { void refreshLibrary().catch(() => undefined); }, []);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const projectRequestGuard = useRef(createProjectRequestGuard(projectId));
   const [view, setView] = useState<ProjectWorkbenchView | null>(null);
@@ -1606,46 +1616,42 @@ export default function StoryWorkbench({ initialImagesHidden, imagePrivacyStorag
     }
   }
 
-  async function copyCurrentProject() {
-    const projectScope = projectRequestGuard.current.scope(projectId);
-    if (!await leaveCurrentAllowed()) return;
-    if (!projectRequestGuard.current.isProjectCurrent(projectScope)) return;
-    if (!await confirm({ kind: "warning", title: "复制项目", message: "将建立独立项目副本；仅复制项目事实与输入；候选、输出、任务和缓存不会复制。是否继续？" })) return;
-    if (!projectRequestGuard.current.isProjectCurrent(projectScope)) return;
-    setUtilityBusy(true);
-    try {
-      const result = await responseJson<{ project: { id: string } }>(await copyProjectRequest(`/api/projects/${encodeURIComponent(projectId)}/copy`, { method: "POST", headers: { accept: "application/json" } }));
-      const collection = await responseJson<ProjectCollection>(await fetch("/api/projects", { headers: { accept: "application/json" } }));
-      if (!projectRequestGuard.current.isProjectCurrent(projectScope)) return;
-      setProjects(collection.projects); activateProject(result.project.id);
-      notify({ kind: "success", message: `项目已复制为 workspace/${result.project.id}` });
-    } catch (cause) {
-      if (projectRequestGuard.current.isProjectCurrent(projectScope)) notify({ kind: "error", message: `复制项目失败：${cause instanceof Error ? cause.message : String(cause)}` });
-    } finally {
-      if (projectRequestGuard.current.isProjectCurrent(projectScope)) setUtilityBusy(false);
-    }
+  async function reloadProjectLists() {
+    const [entries, collection] = await Promise.all([refreshLibrary(), responseJson<ProjectCollection>(await fetch("/api/projects"))]);
+    setProjects(collection.projects); setLibraryVersion(version => version + 1); return entries;
   }
-
-  async function renameCurrentProject() {
-    const projectScope = projectRequestGuard.current.scope(projectId);
-    const nextId = window.prompt("新的项目目录名", projectId)?.trim();
-    if (!nextId || nextId === projectId || !await leaveCurrentAllowed()) return;
-    if (!projectRequestGuard.current.isProjectCurrent(projectScope)) return;
-    if (!/^[a-z0-9][a-z0-9_-]{0,79}$/.test(nextId)) { notify({ kind: "warning", message: "目录名只能包含小写字母、数字、连字符和下划线，长度不超过 80 个字符" }); return; }
-    if (!await confirm({ kind: "warning", title: "重命名项目", message: `将 workspace/${projectId} 重命名为 workspace/${nextId}？`, danger: true })) return;
-    if (!projectRequestGuard.current.isProjectCurrent(projectScope)) return;
+  async function selectRegisteredProject(entry: RegisteredProject) {
+    if (entry.type === "training") await openLoraDataset(entry.id);
+    else await switchProject(entry.id);
+  }
+  async function saveProjectDirectory(directory: string) {
+    const target = directoryDialog;
+    if (!target) return;
+    if (!await leaveCurrentAllowed()) return;
+    const endpoint = target === "add" ? "/api/project-library/open" : "/api/project-library/" + target.id + "/promote";
+    const entry = await responseJson<RegisteredProject>(await fetch(endpoint, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: directory }) }));
+    await reloadProjectLists(); setDirectoryDialog(null);
+    if (entry.type === "training") { setLoraDatasetId(entry.id); navigate(openNavigationTab(navigationRef.current, "lora-datasets", view)); }
+    else activateProject(entry.id);
+  }
+  async function manageCurrentProject(action: ProjectAction) {
+    const entry = currentRegisteredProject;
+    if (!entry) return;
+    setNavigationOpen(false);
+    if (action === "promote") { setDirectoryDialog(entry); return; }
+    if (!await leaveCurrentAllowed()) return;
+    if (action !== "copy" && !await confirm({ kind: "warning", title: action === "delete" ? "删除临时项目" : "从列表移除", message: action === "delete" ? "将删除这个临时项目及其中全部素材和成果。" : "只取消登记，磁盘文件和 Git 历史保留。", danger: action === "delete", confirmLabel: "确认" })) return;
     setUtilityBusy(true);
     try {
-      const result = await responseJson<{ project: { id: string } }>(await renameProjectRequest(`/api/projects/${encodeURIComponent(projectId)}/rename`, { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ id: nextId }) }));
-      const collection = await responseJson<ProjectCollection>(await fetch("/api/projects", { headers: { accept: "application/json" } }));
-      if (!projectRequestGuard.current.isProjectCurrent(projectScope)) return;
-      setProjects(collection.projects); activateProject(result.project.id);
-      notify({ kind: "success", message: `项目目录已重命名为 workspace/${result.project.id}` });
-    } catch (cause) {
-      if (projectRequestGuard.current.isProjectCurrent(projectScope)) notify({ kind: "error", message: `重命名失败：${cause instanceof Error ? cause.message : String(cause)}` });
-    } finally {
-      if (projectRequestGuard.current.isProjectCurrent(projectScope)) setUtilityBusy(false);
-    }
+      const result = await responseJson<RegisteredProject>(await fetch("/api/project-library/" + entry.id + "/" + action, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }));
+      const entries = await reloadProjectLists();
+      if (action === "copy") {
+        if (entry.type === "story") activateProject(result.id);
+        else { setLoraDatasetId(result.id); navigate(openNavigationTab(navigationRef.current, "lora-datasets", view)); }
+      } else if (entry.type === "story") activateProject(entries.find(item => item.type === "story" && item.available)?.id ?? "");
+      else { setLoraDatasetId(""); navigate(openNavigationTab(navigationRef.current, "lora-datasets", view)); }
+    } catch (cause) { notify({ kind: "error", message: cause instanceof Error ? cause.message : String(cause) }); }
+    finally { setUtilityBusy(false); }
   }
 
   function changeDirectorySection(section: NavigationSection) {
@@ -1684,12 +1690,11 @@ export default function StoryWorkbench({ initialImagesHidden, imagePrivacyStorag
     if (!state) return undefined;
     if (state.activePageKey) return locations.find(item => samePageKey(item.page.page_key, state.activePageKey))?.page.title ?? '页面';
     if (state.activeTab === 'characters') { const character = view?.characters.find(c => c.id === state.activeCharacterId); return character?.visual.variants.find(v => v.id === state.activeCharacterSettingId)?.name ?? character?.name; }
-    return ({ 'project-home': '项目', 'project-settings': '基础设置', 'project-render-profile': '生成设置', 'project-lettering': '项目嵌字样式', 'project-materials': '参考材料', 'project-tasks': '任务历史', 'project-story': '故事总览', 'scenes': '场景', 'finished': '成品', 'comparison': '对比实验' } as Record<string, string>)[state.activeTab] ?? '页面';
+    return ({ 'project-settings': '基本信息', 'project-render-profile': '生成设置', 'project-lettering': '项目嵌字样式', 'project-materials': '参考材料', 'project-tasks': '任务历史', 'project-story': '故事总览', 'scenes': '场景', 'finished': '成品', 'comparison': '对比实验' } as Record<string, string>)[state.activeTab] ?? '页面';
   }
 
   const paneStyle = { ...(sidebarWidth !== null ? { "--sidebar-width": `${sidebarWidth}px` } : {}), "--story-editor-width": `${editorWidth}%`, "--candidate-width": `${candidateWidth}px`, ...(view?.project.canvas ? { "--canvas-aspect": view.project.canvas.replace(":", " / ") } : {}) } as CSSProperties;
 
-  const projectSectionActive = (activeTab.startsWith("project-") && activeTab !== "project-story");
   const resourceSectionActive = activeTab.startsWith("resource-");
   const loraSectionActive = activeTab.startsWith("lora-");
   const workspaceTitle = activeTab === "comparison" ? "对比实验" : loraSectionActive ? "LoRA 训练" : resourceSectionActive ? "资源" : selectedProject?.title ?? view?.project.title ?? "项目";
@@ -1697,23 +1702,27 @@ export default function StoryWorkbench({ initialImagesHidden, imagePrivacyStorag
   const storySectionActive = activeTab === "story" || activeTab === "project-story" || activeTab === "prompt-overview";
   const baseResourceCount = globalResources?.models.filter((model) => model.kind !== "lora").length;
   const loraResourceCount = globalResources?.models.filter((model) => model.kind === "lora").length;
+  const currentRegisteredProject = registeredProjects.find(entry => entry.id === (activeTab === "lora-history" ? null : activeTab.startsWith("lora-") ? loraDatasetId : !globalArea ? projectId : null));
   const renderedProjectScope = projectRequestGuard.current.scope(projectId);
   const storyNavRevealKeys = view ? storyRevealBranchKeys(view.outline, selectedKey) : [];
   if (view && activeTab === "project-story" && storyOverviewTarget?.kind === "sequence") { const chapter = view.outline.chapters.find(c => c.sequences.some(s => s.id === storyOverviewTarget.id)); if (chapter) storyNavRevealKeys.push(`chapter:${chapter.id}`); }
   const characterNavRevealKeys = view ? characterRevealBranchKeys(view.characters, selectedKey, activeCharacterId, activeCharacterSettingId) : [];
 
   return <main className={`workbench-shell is-full-layout ${navigationDrawer ? "is-drawer-navigation" : ""} workbench-shell--${activeTab === "comparison" ? "comparison" : activeTab === "story" || activeTab === "characters" ? "page" : "utility"}`} style={paneStyle}>
-    {showProjectLibrary && <ProjectLibraryDialog onClose={() => { setShowProjectLibrary(false); void fetch("/api/projects").then(response => responseJson<ProjectCollection>(response)).then(result => setProjects(result.projects)); }} onOpen={entry => { setShowProjectLibrary(false); void fetch("/api/projects").then(response => responseJson<ProjectCollection>(response)).then(result => setProjects(result.projects)); if (entry.type === "training") void openLoraDataset(entry.id); else void switchProject(entry.id); }} />}
+    {directoryDialog && <ProjectDirectoryDialog promote={directoryDialog === "add" ? undefined : directoryDialog} onClose={() => setDirectoryDialog(null)} onSave={saveProjectDirectory} />}
     <header className="topbar">
       {navigationDrawer && <button type="button" className="navigation-drawer-toggle" aria-label="目录" title="目录" aria-expanded={navigationOpen} aria-controls="workbench-navigation" onClick={() => setNavigationOpen((open) => !open)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg></button>}
-      <Popover className="project-switcher">{(close) => <>
+      <Popover className="project-switcher" onOpenChange={open => { if (open) void refreshLibrary().catch(() => undefined); }}>{(close) => <>
         <summary className="brand-lockup" aria-label="切换项目或工具"><h1>{workspaceTitle}</h1><span className="project-switcher-chevron" aria-hidden="true" /></summary>
         <div className="project-switcher-menu"><small className="workspace-switcher-label">项目</small>
-          {projects.map(project => !globalArea && project.id === projectId
-            ? <div className="project-switcher-current" key={project.id}><b>{project.title}</b><i>✓</i></div>
-            : <button type="button" key={project.id} onClick={() => { close(); void switchProject(project.id); }}><b>{project.title}</b></button>)}
-          {!projects.length && <small className="workspace-switcher-label">暂无项目</small>}
-          <button type="button" onClick={() => { close(); setShowProjectLibrary(true); }}><b>打开与管理项目…</b></button>
+          <input aria-label="筛选项目" placeholder="搜索项目" value={projectFilter} onChange={event => setProjectFilter(event.target.value)} />
+          {libraryError && <small role="alert">{libraryError}</small>}
+          <div className="project-switcher-list">{([['story', '剧情项目'], ['training', 'LoRA 训练项目']] as const).map(([type, label]) => {
+            const entries = registeredProjects.filter(entry => entry.type === type && (entry.title ?? entry.id).toLowerCase().includes(projectFilter.toLowerCase()));
+            return entries.length > 0 && <section className="project-list-group" aria-label={label} key={type}><h2>{label}</h2>{entries.map(entry => <ProjectListEntry key={entry.id} entry={entry} active={entry.id === currentRegisteredProject?.id} onOpen={() => { close(); void selectRegisteredProject(entry); }} />)}</section>;
+          })}</div>
+          {!registeredProjects.length && !libraryError && <small>暂无项目</small>}
+          <button type="button" className="project-list-add" onClick={() => { close(); setDirectoryDialog("add"); }}><span aria-hidden="true">＋</span>添加项目</button>
           <hr />
           <button type="button" aria-current={activeTab === "comparison" ? "page" : undefined} onClick={() => { close(); void openTab("comparison"); }}><b>对比实验</b></button>
           <button type="button" aria-current={activeTab.startsWith("lora-") ? "page" : undefined} onClick={() => { close(); void openTab("lora-datasets"); }}><b>LoRA 训练</b></button>
@@ -1774,18 +1783,18 @@ export default function StoryWorkbench({ initialImagesHidden, imagePrivacyStorag
                 <button type="button" aria-label="训练项目" onClick={() => void openTab('lora-datasets')}>训练项目</button><small className="navigation-child-count">{loraCounts.datasets ?? '—'}</small>
               </div>
               {loraDatasetsExpanded && loraDatasets.length > 0 && <div className="lora-dataset-nav-tree">{loraDatasets.map(dataset => <button type="button" key={dataset.id} className={`lora-dataset-nav-item ${activeTab === 'lora-datasets' && loraDatasetId === dataset.id ? 'is-active' : ''}`} onClick={() => void openLoraDataset(dataset.id)}><b>{dataset.name ?? dataset.id}</b><span>{dataset.error ? '记录无效' : `训练 ${dataset.effective_item_count ?? 0} 张 / 共 ${dataset.item_count ?? 0} 张`}</span></button>)}</div>}
+              <button type="button" className={activeTab === 'lora-history' ? 'is-active' : ''} aria-current={activeTab === 'lora-history' ? 'page' : undefined} onClick={() => void openTab('lora-history')}>全部训练记录</button>
             </div>}
           </div>
-          {!globalArea && <div className="navigation-project-entry"><button type="button" className={projectSectionActive && activeTab !== 'project-lettering' ? 'is-active' : ''} onClick={() => void openTab('project-home')}>项目</button></div>}
+          {(!globalArea || currentRegisteredProject) && <ProjectMenu activeTab={activeTab} project={currentRegisteredProject} busy={utilityBusy} onManage={action => void manageCurrentProject(action)} onOpen={tab => { setNavigationOpen(false); void openTab(tab); }} />}
         </nav>
       </WorkbenchNavigation>
       <PaneResizeHandle className="pane-resizer--workspace" label="调整左侧导航宽度" value={sidebarWidth ?? autoSidebarWidth()} defaultValue={272} min={SIDEBAR_MIN} max={SIDEBAR_MAX} onChange={setSidebarWidth} onReset={() => setSidebarWidth(null)} />
-      <section className="project-main">{view?.project.canvas && <LetteringCanvasProbe canvas={view.project.canvas} onWidthChange={setLetteringCanvasWidth} />}{loraSectionActive ? <LoraTrainingView section={activeTab.slice("lora-".length) as "datasets" | "tasks" | "runs"} datasetId={loraDatasetId} createDatasetRequest={loraCreateDatasetRequest} onSectionChange={(section) => void openTab(`lora-${section}` as ActiveTab)} onDatasetSelected={setLoraDatasetId} onDatasetsChange={datasets => { setLoraDatasets(datasets); setLoraCounts(c => ({ ...c, datasets: datasets.length })); }} onTaskCountsChange={(tasks, runs) => setLoraCounts(c => ({ ...c, tasks, runs }))} onDirtyChange={setLoraDirty} />
+      <section className="project-main">{view?.project.canvas && <LetteringCanvasProbe canvas={view.project.canvas} onWidthChange={setLetteringCanvasWidth} />}{loraSectionActive ? <LoraTrainingView key={libraryVersion} allRuns={activeTab === "lora-history"} section={activeTab === "lora-history" ? "runs" : activeTab.slice("lora-".length) as "datasets" | "tasks" | "runs"} datasetId={loraDatasetId} createDatasetRequest={loraCreateDatasetRequest} onSectionChange={(section) => void openTab(`lora-${section}` as ActiveTab)} onDatasetSelected={setLoraDatasetId} onDatasetsChange={datasets => { setLoraDatasets(datasets); setLoraCounts(c => ({ ...c, datasets: datasets.length })); }} onTaskCountsChange={(tasks, runs) => setLoraCounts(c => ({ ...c, tasks, runs }))} onDirtyChange={setLoraDirty} />
         : resourceSectionActive ? <GlobalModelsView resources={globalResources} kind={activeTab === "resource-base" ? "base" : "lora"} />
         : activeTab === "comparison" ? <ComparisonExperimentsView resources={globalResources} runtimeTasks={runtimeTasks} />
         : !view ? <div className="empty-state"><h3>{error ? "项目加载失败" : projects.length ? "正在加载" : "还没有项目"}</h3><p>{error ?? (projects.length ? "正在读取项目事实。" : "在 workspace 中创建项目后刷新工作台。")}</p></div>
-        : activeTab === "project-home" ? <ProjectNavigationHome onOpen={tab => void openTab(tab)} />
-          : activeTab === "project-settings" && view.project.canvas && view.project.default_render_profile ? <ProjectSettingsView projectId={projectId} project={{ ...view.project, canvas: view.project.canvas, default_render_profile: view.project.default_render_profile }} busy={utilityBusy} onSave={(settings) => saveProjectSettings({ ...view.project, ...settings }, "基础设置")} onCopy={copyCurrentProject} onRename={renameCurrentProject} />
+          : activeTab === "project-settings" && view.project.canvas && view.project.default_render_profile ? <ProjectSettingsView projectId={projectId} project={{ ...view.project, canvas: view.project.canvas, default_render_profile: view.project.default_render_profile }} busy={utilityBusy} onSave={(settings) => saveProjectSettings({ ...view.project, ...settings }, "基础设置")} directory={currentRegisteredProject?.path} />
           : activeTab === "project-render-profile" && view.project.canvas && view.project.default_render_profile ? <ProjectGenerationSettingsView projectId={projectId} project={{ ...view.project, canvas: view.project.canvas, default_render_profile: view.project.default_render_profile }} busy={utilityBusy} onSaveProject={(settings) => saveProjectSettings({ ...view.project, ...settings }, "生成设置")} />
           : activeTab === "project-lettering" && view.project.lettering_settings && view.project.lettering_settings_sha256 ? <ProjectLetteringSettingsView projectId={projectId} settings={view.project.lettering_settings} settingsSha256={view.project.lettering_settings_sha256} characters={view.characters.map(({ id, name }) => ({ id, name }))} previewCanvasWidth={letteringCanvasWidth} busy={utilityBusy} onSave={saveProjectLetteringSettings} />
           : activeTab === "project-story" ? <StoryOverview key={projectId} projectId={projectId} view={view} focusTarget={storyOverviewTarget} onSelectTarget={target => void openStoryOverview(target)} busy={loading} onReload={reload} onOpenPage={(page) => void choosePage(page)} onSaved={(result) => {

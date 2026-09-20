@@ -2,12 +2,12 @@ import { pageKeyId, samePageKey, type PageKey } from "./page-key.ts";
 import { pageKeyBelongsToTab, readNavigationUrlState, type NavigationUrlState } from "./navigation-restoration.ts";
 import type { ProjectWorkbenchView, WorkbenchPage } from "./project-workbench-client.ts";
 
-const tabs = ["project-home", "scenes", "orphan-pages", "prompt-overview", "finished", "project-story", "project-settings", "project-render-profile", "project-lettering", "project-tasks", "project-materials", "comparison", "resource-base", "resource-loras", "lora-datasets", "lora-tasks", "lora-runs", "characters", "story"] as const;
+const tabs = ["scenes", "orphan-pages", "prompt-overview", "finished", "project-story", "project-settings", "project-render-profile", "project-lettering", "project-tasks", "project-materials", "comparison", "resource-base", "resource-loras", "lora-datasets", "lora-tasks", "lora-runs", "lora-history", "characters", "story"] as const;
 export type ActiveTab = typeof tabs[number];
 export type NavigationState = Omit<NavigationUrlState, "activeTab"> & { activeTab: ActiveTab; editorTab?: "visual" | "lettering" | "flow"; overviewTarget?: { kind: "overview" } | { kind: "chapter" | "sequence"; id: string } };
 
 export function projectNavigation(projectId: string): NavigationState {
-  return { projectId, activeTab: "project-home", activePageKey: null, activeCharacterId: "", activeCharacterSettingId: "profile", sceneId: "", sceneSettingId: "profile" };
+  return { projectId, activeTab: "project-settings", activePageKey: null, activeCharacterId: "", activeCharacterSettingId: "profile", sceneId: "", sceneSettingId: "profile" };
 }
 
 export function initialWorkbenchNavigation(search: string): NavigationState {

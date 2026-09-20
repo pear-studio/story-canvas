@@ -590,7 +590,7 @@ function MarkdownGuide({ markdown }: { markdown: string }) {
   return <article className="lora-activation-guide">{blocks}</article>;
 }
 
-export default function LoraTrainingView({ section, datasetId, createDatasetRequest = 0, onSectionChange, onDatasetSelected, onDatasetsChange, onTaskCountsChange, onDirtyChange }: { section: SectionKey; datasetId?: string; createDatasetRequest?: number; onSectionChange: (section: SectionKey) => void; onDatasetSelected?: (datasetId: string) => void; onDatasetsChange?: (datasets: LoraDatasetSummary[]) => void; onTaskCountsChange?: (tasks: number, runs: number) => void; onDirtyChange?: (dirty: boolean) => void }) {
+export default function LoraTrainingView({ section, allRuns = false, datasetId, createDatasetRequest = 0, onSectionChange, onDatasetSelected, onDatasetsChange, onTaskCountsChange, onDirtyChange }: { section: SectionKey; allRuns?: boolean; datasetId?: string; createDatasetRequest?: number; onSectionChange: (section: SectionKey) => void; onDatasetSelected?: (datasetId: string) => void; onDatasetsChange?: (datasets: LoraDatasetSummary[]) => void; onTaskCountsChange?: (tasks: number, runs: number) => void; onDirtyChange?: (dirty: boolean) => void }) {
   const { confirm, notify } = useFeedback();
   const base = "/api/lora-training";
   const [client] = useState(() => createTrainingClient());
@@ -839,14 +839,15 @@ export default function LoraTrainingView({ section, datasetId, createDatasetRequ
     setSelectedRunId(current => value.some(run => run.id === current) ? current : value[0]?.id ?? "");
     setRunsLoading(false);
   };
-  const loadRuns = async () => acceptRuns(selectedDatasetId ? (await api<{ runs: Run[] }>(`${base}/tasks/${selectedDatasetId}`)).runs : []);
+  const loadRuns = async () => acceptRuns(allRuns ? (await api<{ runs: Run[] }>(`${base}/runs`)).runs : selectedDatasetId ? (await api<{ runs: Run[] }>(`${base}/tasks/${selectedDatasetId}`)).runs : []);
   useEffect(() => {
     if (section !== "runs") return;
+    setRuns([]); setSelectedRunId(""); setRunsLoading(true);
     let stopped = false;
     let timer: number;
     const poll = async () => {
       try {
-        const value = selectedDatasetId ? await api<{ runs: Run[] }>(`${base}/tasks/${selectedDatasetId}`) : { runs: [] };
+        const value = allRuns ? await api<{ runs: Run[] }>(`${base}/runs`) : selectedDatasetId ? await api<{ runs: Run[] }>(`${base}/tasks/${selectedDatasetId}`) : { runs: [] };
         if (!stopped) acceptRuns(value.runs);
       } catch (error) {
         if (!stopped) { setRunsLoading(false); notify({ kind: "error", message: error instanceof Error ? error.message : String(error) }); }
@@ -855,7 +856,7 @@ export default function LoraTrainingView({ section, datasetId, createDatasetRequ
     };
     void poll();
     return () => { stopped = true; window.clearTimeout(timer); };
-  }, [section, selectedDatasetId]);
+  }, [section, selectedDatasetId, allRuns]);
   useEffect(() => {
     const active = taskDetail?.runs.some((run) => ["starting", "running", "stopping"].includes(run.status.status));
     if (section === "runs" || !active || !selectedTaskId) return;
@@ -1168,7 +1169,7 @@ export default function LoraTrainingView({ section, datasetId, createDatasetRequ
   const captionMatchFor = (value: string) => captionDictionary.get(captionDictionaryKey(value));
 
   return <section className="utility-page lora-training-page" data-project-write-section={section === "runs" ? "derived" : "facts"} data-project-fact-dirty={factDraftDirty ? "true" : undefined}>
-    <nav className="lora-actions" aria-label="训练项目内容"><button className="button" aria-current={section === "datasets" ? "page" : undefined} onClick={() => onSectionChange("datasets")}>素材与 Caption</button><button className="button" disabled={!selectedDatasetId} aria-current={section === "tasks" ? "page" : undefined} onClick={() => onSectionChange("tasks")}>训练设置</button><button className="button" aria-current={section === "runs" ? "page" : undefined} onClick={() => onSectionChange("runs")}>训练记录</button></nav>
+    {!allRuns && <nav className="lora-actions" aria-label="训练项目内容"><button className="button" aria-current={section === "datasets" ? "page" : undefined} onClick={() => onSectionChange("datasets")}>素材与 Caption</button><button className="button" disabled={!selectedDatasetId} aria-current={section === "tasks" ? "page" : undefined} onClick={() => onSectionChange("tasks")}>训练设置</button><button className="button" aria-current={section === "runs" ? "page" : undefined} onClick={() => onSectionChange("runs")}>训练记录</button></nav>}
     {section === "datasets" && <>
       <WorkspaceHeader actions={refreshAction} title={datasetDetail?.dataset.name || selectedDatasetSummary?.name || "训练项目"} meta={datasetDetail ? `已确认 ${datasetDetail.captioning.summary.confirmed}/${datasetDetail.captioning.summary.total} · 待确认 ${datasetDetail.captioning.summary.unconfirmed}` : undefined} />
       {showCreateDataset && <form className="lora-create-card" onSubmit={(event) => void createDataset(event)}><header><div><h3>新建训练项目</h3><p>创建后再加入图片和 Caption。</p></div></header><div className="lora-form-grid"><label><span>名称</span><input autoFocus required value={newDataset.name} onChange={(event) => setNewDataset({ name: event.target.value })} /></label></div><footer><button type="button" className="button" onClick={() => setShowCreateDataset(false)}>取消</button><button className="button button--primary" disabled={Boolean(busy) || !newDataset.name.trim()}>创建训练项目</button></footer></form>}
@@ -1272,7 +1273,7 @@ export default function LoraTrainingView({ section, datasetId, createDatasetRequ
     </>}
 
     {section === "runs" && <>
-      <WorkspaceHeader actions={refreshAction} title="训练记录" />
+      <WorkspaceHeader actions={refreshAction} title={allRuns ? "全部训练记录" : "训练记录"} />
       <div className={`lora-training-layout ${runs.length ? "" : "is-empty"}`}>
         {runs.length > 0 && <aside className="lora-task-list"><header><h3>运行记录</h3><span>{runs.length}</span></header><div>{runs.map(run => <button key={run.id} className={run.id === currentRun?.id ? "is-active" : ""} onClick={() => setSelectedRunId(run.id)}><b>{run.manifest.task_name}</b><span>{new Date(run.status.completed_at ?? run.status.interrupted_at ?? run.manifest.created_at).toLocaleString()}</span><small>{statusText(run.status.status)} · {run.status.step}/{run.manifest.config.max_train_steps} step</small></button>)}</div></aside>}
         {!currentRun ? <EmptyState title={runsLoading ? "正在读取训练记录" : "暂无训练记录"} detail="每次启动训练独立记录，最近运行优先显示。" /> : <div className="lora-task-workspace"><section className="lora-panel"><header><div><h3>{currentRun.manifest.task_name}</h3><p>{currentRun.manifest.dataset_name} · {currentRun.id}</p><p>{currentRun.manifest.config.resolution} px · Rank {currentRun.manifest.config.network_dim} · 学习率 {currentRun.manifest.config.learning_rate}</p></div></header>

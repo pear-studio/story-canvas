@@ -38,7 +38,7 @@ test("切项目回项目管理，深链和任务跳转仍打开指定页且 URL 
   const task = openNavigationPage(projectNavigation("alpha"), story("c").page_key, null);
   assert.deepEqual(reconcileNavigation(task, null, view()).activePageKey, story("c").page_key);
   const url = new URL(syncNavigationUrl(new URL("http://local/?project=alpha&tab=story&page=c"), projectNavigation("beta")), "http://local");
-  assert.equal(url.search, "?project=beta&tab=project-home");
+  assert.equal(url.search, "?project=beta&tab=project-settings");
   assert.equal(reconcileNavigation(projectNavigation("beta"), null, view()).projectId, "beta", "其他项目的快照不能改变导航");
 });
 

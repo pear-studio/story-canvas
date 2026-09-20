@@ -2457,11 +2457,56 @@ label.button > input[type="file"] { width: 1px; height: 1px; position: absolute;
 .navigation-search-results button { width: 100%; padding: 8px; display: grid; gap: 4px; text-align: left; border: 0; border-radius: 5px; background: transparent; cursor: pointer; font-size: var(--text-label); }
 .navigation-search-results button[aria-selected="true"], .navigation-search-results button:hover { background: var(--green-soft); }
 .navigation-search-results small, .navigation-search-results p { color: var(--muted); font-size: var(--text-meta); }
-.project-navigation-home { max-width: 760px; }
-.project-navigation-home h3 { margin: 25px 0 8px; color: var(--muted); font-size: var(--text-label); }
-.project-navigation-home section > button { width: 100%; display: flex; align-items: center; justify-content: space-between; text-align: left; padding: 14px 8px; border: 0; border-bottom: 1px solid var(--line); background: transparent; cursor: pointer; }
-.project-navigation-home section > button:hover { background: var(--green-soft); }
-.project-navigation-home small { display: block; margin-top: 5px; color: var(--muted); font-size: var(--text-label); }
+.project-settings-menu > summary { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: var(--text-label); list-style: none; }
+.project-settings-menu > summary small { color: var(--muted); font-size: var(--text-meta); padding-left: 10px; border-left: 1px solid var(--line); }
+.project-settings-menu > summary::-webkit-details-marker { display: none; }
+.project-settings-menu > summary:hover { background: var(--green-soft); }
+.project-settings-menu > summary.is-active { color: var(--green); }
+.project-settings-menu__options { width: 200px; padding: 5px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper, white); box-shadow: 0 8px 24px rgba(20,35,28,.1); }
+.project-settings-menu__options button { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 34px; padding: 7px 10px; font-weight: 400; border-radius: 5px; }
+.project-settings-menu__options button[aria-current="page"] { color: var(--green); background: var(--green-soft); }
+.project-settings-menu__options hr { margin: 6px 0; border: 0; border-top: 1px solid var(--line); }
+.project-switcher-list { max-height: 45vh; overflow-y: auto; }
+.project-switcher-list small { color: var(--muted); white-space: nowrap; }
+.project-switcher-list button:disabled { opacity: .65; cursor: default; }
+.project-list-group + .project-list-group { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.project-list-group h2 { margin: 5px 10px 7px; color: var(--muted); font-size: 11px; font-weight: 500; }
+.project-switcher-menu .project-list-entry { margin: 3px 0; min-height: 42px; border: 1px solid transparent; }
+.project-switcher-menu .project-list-entry.is-temporary { background: #fbf5e9; }
+.project-switcher-menu .project-list-entry:hover { background: #edf3ef; }
+.project-switcher-menu .project-list-entry[aria-current="page"] { border-color: var(--green); box-shadow: inset 3px 0 var(--green); }
+.project-list-name { display: grid; min-width: 0; gap: 2px; }
+.project-list-name small { font-size: 10px; }
+.project-list-git { flex: none; position: relative; display: inline-flex; align-items: center; gap: 3px; padding: 3px 4px; border-radius: 5px; color: var(--muted); }
+.project-list-git svg { width: 16px; height: 16px; }
+.project-list-git.is-local { color: var(--muted); }
+.project-list-git.is-local small { color: inherit; font-size: 10px; }
+.project-list-git.is-clean { color: var(--green); }
+.project-list-git.is-changed { color: #ad7520; }
+.project-list-git-dot { width: 4px; height: 4px; border-radius: 50%; background: currentColor; }
+.project-switcher-menu .project-list-add { justify-content: flex-start; gap: 6px; margin-top: 2px; min-height: 30px; padding: 6px 10px; color: var(--muted); font-size: var(--text-label); border: 0; }
+.project-git-status .project-git-header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.project-git-header h3 { margin: 0; font-size: var(--text-body); font-weight: 600; }
+.git-status-tag { display: inline-flex; align-items: center; padding: 3px 7px; border-radius: 5px; background: #f0f3f1; color: var(--muted); font-size: var(--text-meta); white-space: nowrap; }
+.git-status-tag.is-clean { background: var(--green-soft); color: var(--green); }
+.git-refresh { margin-left: auto; display: inline-flex; padding: 5px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); cursor: pointer; }
+.git-refresh:hover { background: var(--green-soft); color: var(--green); }
+.git-refresh svg { width: 17px; height: 17px; }
+.project-git-facts { display: grid; gap: 13px; margin: 0; font-size: var(--text-label); }
+.project-git-facts > div { display: grid; grid-template-columns: 64px minmax(0,1fr); gap: 12px; align-items: baseline; }
+.project-git-facts dt, .git-muted { color: var(--muted); }
+.project-git-facts dd { margin: 0; display: flex; flex-wrap: wrap; gap: 8px; overflow-wrap: anywhere; min-width: 0; }
+.project-git-facts a { color: var(--green); text-decoration: none; }
+.project-git-facts a:hover { text-decoration: underline; }
+.project-git-files { margin-top: 15px; padding-top: 12px; border-top: 1px solid var(--line); font-size: var(--text-label); }
+.project-git-files summary { color: var(--muted); }
+.project-git-files ul { padding: 0; list-style: none; }
+.project-git-files li { display: flex; gap: 10px; padding: 5px 0; }
+.project-git-files code { color: var(--muted); flex: none; }
+.project-directory-form { display: grid; gap: 16px; min-width: min(380px, 75vw); }
+.project-directory-form label { display: grid; gap: 8px; }
+.project-directory-form footer { display: flex; justify-content: flex-end; gap: 8px; }
+@media (pointer: coarse) { .project-settings-menu > summary, .project-settings-menu__options button { min-height: 44px; } }
 .lettering-settings-link { align-self: start; margin: 4px 0; }
 @media (max-width: 1100px) { .navigation-sections { grid-template-columns: repeat(2,minmax(0,1fr)); } .navigation-search { flex-basis: 170px; } }
 @media (max-width: 680px) {

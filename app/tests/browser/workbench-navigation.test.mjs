@@ -46,6 +46,8 @@ async function setup(t, { character = false, mobile = false, visualPages = false
     const url = new URL(route.request().url()), pathname = url.pathname;
     const reply = json => route.fulfill({ json, headers: { "x-story-canvas-revision": String(revision) } });
     if (pathname === "/api/projects") return reply({ projects: ["alpha", "beta"].map(id => ({ id, title: id, pages: 3 })) });
+    if (pathname === "/api/project-library") return reply({ projects: ["alpha", "beta"].map(id => ({ id, title: id, type: 'story', path: `C:/Projects/${id}`, temporary: id === 'beta', available: true })) });
+    if (pathname.startsWith('/api/project-library/') && pathname.endsWith('/git')) return reply({ status: 'ready', branch: 'main', dirty: false, changes: [], remotes: [] });
     if (pathname === "/api/health") return reply({ instance_id: "test" });
     if (pathname === "/api/hardware-status") return reply({ cpu: { available: false }, memory: { available: false }, gpu: { available: false }, comfyui: { connected: false, status: "offline" } });
     if (pathname === "/api/tasks") return reply({ tasks: [], history: [] });
@@ -94,8 +96,8 @@ test("全局训练入口保留手机状态与项目翻页，返回项目恢复�
   assert.equal(await page.locator('.page-turn-navigation').count(), 0);
   assert.equal(await page.locator('.topbar-statuses > details').count(), 2);
   await page.getByRole('button', { name: '目录', exact: true }).click();
-  await page.locator('.navigation-drawer').getByRole('button', { name: '训练记录', exact: true }).click();
-  await page.getByRole('heading', { name: '训练记录', exact: true }).waitFor();
+  await page.locator('.navigation-drawer').getByRole('button', { name: '全部训练记录', exact: true }).click();
+  await page.getByRole('heading', { name: '全部训练记录', exact: true }).waitFor();
   assert.equal(await page.title(), 'LoRA 训练');
   await page.setViewportSize({ width: 320, height: 844 });
   assert.equal(await page.locator('.project-switcher h1').evaluate(node => node.scrollWidth <= node.clientWidth), true);
@@ -157,7 +159,7 @@ test("训练记录独立列出、轮询保留选择并实时绘制 loss", async 
   await page.route('**/api/lora-training/tasks', route => route.fulfill({ json: { tasks: [{ id, name: "测试训练", runs: [{ id: "run-0", status: "running" }] }] } }));
   await page.route(`**/api/lora-training/tasks/${id}`, route => route.fulfill({ json: { id, task: { name: "测试训练", target: { base: { dit: { relative_path: "test.safetensors" } } }, training_recipe: { id: "test", overrides: {} }, run_defaults: {} }, dataset: { name: "测试素材", effective_item_count: 194 }, runs: Array.from({ length: count }, (_, i) => run(i)) } }));
   await page.route(`**/api/lora-training/tasks/${id}/run-settings`, route => route.fulfill({ json: { values: {}, recommendations: {} } }));
-  await page.goto(`${origin}/?tab=lora-runs`);
+  await page.goto(`${origin}/?tab=lora-history`);
   await page.locator('.lora-task-list button').filter({hasText:'冻结名称1'}).waitFor();
   assert.equal(await page.locator('.lora-task-list button').count(), 2);
   await page.locator('.lora-task-list button').filter({hasText:'冻结名称1'}).click();
@@ -171,13 +173,12 @@ test("训练记录独立列出、轮询保留选择并实时绘制 loss", async 
   assert.equal(await page.locator('.lora-loss-chart').evaluate(node => node.scrollWidth <= node.clientWidth), true);
 });
 
-test("项目切换进入管理页，拒绝放弃草稿时保留当前项目和输入", async t => {
+test("项目切换直接进入基本信息，拒绝放弃草稿时保留当前项目和输入", async t => {
   const { page, switchTo } = await setup(t);
   await page.reload();
   await page.locator('.tree-page.is-active').filter({ hasText: "页面b" }).waitFor();
   await switchTo("beta");
-  await page.getByRole('heading', { name: '项目', exact: true }).waitFor();
-  await page.locator('.project-navigation-home').getByRole('button', { name: '基础设置', exact: false }).click();
+  await page.getByRole('heading', { name: '基本信息', exact: true }).waitFor();
   assert.equal(new URL(page.url()).search, '?project=beta&tab=project-settings');
   const title = page.getByLabel('项目名称', { exact: true });
   await title.fill('未保存名称');
@@ -187,10 +188,68 @@ test("项目切换进入管理页，拒绝放弃草稿时保留当前项目和�
   assert.equal(new URL(page.url()).searchParams.get('project'), 'beta');
   await switchTo('alpha');
   await page.getByRole('dialog').getByRole('button', { name: '确认', exact: true }).click();
-  await page.waitForURL('**/?project=alpha&tab=project-home');
-  await page.getByRole('heading', { name: '项目', exact: true }).waitFor();
-  await page.locator('.project-navigation-home').getByRole('button', { name: '基础设置', exact: false }).click();
+  await page.waitForURL('**/?project=alpha&tab=project-settings');
+  await page.getByRole('heading', { name: '基本信息', exact: true }).waitFor();
   assert.equal(await title.inputValue(), 'alpha');
+});
+
+for (const mobile of [false, true]) test(`项目弹出菜单直接切换设置，保护草稿与视口边界（${mobile ? '手机' : '桌面'}）`, async t => {
+  const { page } = await setup(t, { mobile });
+  await page.route('**/api/projects/*/render-profile', route => route.fulfill({ json: { render_profiles: [] }, headers: { 'x-story-canvas-revision': '1' } }));
+  await page.route('**/api/projects/*/render-profile-override', route => route.fulfill({ json: { override: null }, headers: { 'x-story-canvas-revision': '1' } }));
+  await page.route('**/api/lora-resources', route => route.fulfill({ json: { resources: [], raw: [] } }));
+  const showMenu = async () => {
+    if (mobile && !await page.locator('.navigation-drawer').isVisible()) await page.getByRole('button', { name: '目录', exact: true }).click();
+    await page.getByLabel('项目选项', { exact: true }).click();
+    await page.getByLabel('项目选项列表').waitFor();
+  };
+  await showMenu();
+  const menu = page.getByLabel('项目选项列表');
+  assert.deepEqual(await menu.getByRole('button').allTextContents(), ['基本信息', '生成设置', '参考材料', '任务历史', '创建临时副本', '从列表移除']);
+  assert.equal(await menu.evaluate(node => { const r = node.getBoundingClientRect(); return r.top >= 0 && r.left >= 0 && r.bottom <= innerHeight && r.right <= innerWidth; }), true);
+  await page.keyboard.press('Escape');
+  await menu.waitFor({ state: 'hidden' });
+  await showMenu();
+  await menu.getByRole('button', { name: '基本信息', exact: true }).click();
+  await page.getByRole('heading', { name: '基本信息', exact: true }).waitFor();
+  const title = page.getByLabel('项目名称', { exact: true });
+  await title.fill('保留这份草稿');
+  await showMenu();
+  await menu.getByRole('button', { name: '生成设置', exact: true }).click();
+  await page.getByRole('dialog', { name: '放弃未保存修改' }).getByRole('button', { name: '取消', exact: true }).click();
+  assert.equal(await title.inputValue(), '保留这份草稿');
+  assert.equal(new URL(page.url()).searchParams.get('tab'), 'project-settings');
+  await showMenu();
+  await menu.getByRole('button', { name: '生成设置', exact: true }).click();
+  await page.getByRole('dialog', { name: '放弃未保存修改' }).getByRole('button', { name: '确认', exact: true }).click();
+  await page.getByRole('heading', { name: '生成设置', exact: true }).waitFor();
+  assert.equal(new URL(page.url()).searchParams.get('tab'), 'project-render-profile');
+  await showMenu();
+  assert.equal(await menu.getByRole('button', { name: '生成设置', exact: false }).getAttribute('aria-current'), 'page');
+  await page.screenshot({ path: fileURLToPath(new URL(`../../../Saved/Tests/project-menu-${mobile ? 'mobile' : 'desktop'}.png`, import.meta.url)) });
+});
+
+test("添加入口与当前项目管理分开，取消移除不发送修改请求", async t => {
+  const { page, switchTo } = await setup(t);
+  const mutations = [];
+  page.on('request', request => { if (request.method() === 'POST' && request.url().includes('/project-library')) mutations.push(request.url()); });
+  await page.locator('.project-switcher > summary').click();
+  await page.getByRole('button', { name: '添加项目', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '添加项目', exact: true });
+  await dialog.getByLabel('项目文件夹').waitFor();
+  assert.equal(await dialog.getByText('从列表移除', { exact: true }).count(), 0);
+  await dialog.getByRole('button', { name: '取消', exact: true }).click();
+  await switchTo('beta');
+  await page.getByRole('heading', { name: '基本信息', exact: true }).waitFor();
+  assert.equal(await page.getByLabel('项目目录', { exact: true }).inputValue(), 'C:/Projects/beta');
+  assert.equal(await page.getByRole('button', { name: '重命名目录', exact: true }).count(), 0);
+  await page.getByLabel('项目选项', { exact: true }).click();
+  const menu = page.getByLabel('项目选项列表');
+  await menu.getByRole('button', { name: '保留为正式项目', exact: true }).waitFor();
+  await menu.getByRole('button', { name: '删除临时项目', exact: true }).waitFor();
+  await menu.getByRole('button', { name: '从列表移除', exact: true }).click();
+  await page.getByRole('dialog', { name: '从列表移除', exact: true }).getByRole('button', { name: '取消', exact: true }).click();
+  assert.deepEqual(mutations, []);
 });
 
 test("Ctrl 和 Shift 点击只打开一个页面，生成只提交当前页", async t => {
@@ -267,9 +326,8 @@ test("同角色切换子设定保留共享草稿不提示放弃，离开角色�
   assert.equal(await name.textContent(), '礼服未保存修改');
   await switchTo('beta');
   await page.getByRole('dialog', { name: '放弃未保存修改' }).getByRole('button', { name: '确认', exact: true }).click();
-  await page.waitForURL('**/?project=beta&tab=project-home');
-  await page.getByRole('heading', { name: '项目', exact: true }).waitFor();
-  await page.locator('.project-navigation-home').getByRole('button', { name: '基础设置', exact: false }).click();
+  await page.waitForURL('**/?project=beta&tab=project-settings');
+  await page.getByRole('heading', { name: '基本信息', exact: true }).waitFor();
 });
 
 test("Ctrl+S 保存包含词条输入框中未提交的草稿", async t => {

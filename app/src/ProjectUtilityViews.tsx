@@ -1,3 +1,4 @@
+import { ProjectGitStatus } from "./ProjectGitStatus";
 import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
 
 import { responseJson } from "./api-response";
@@ -57,24 +58,23 @@ function NarrationSample({ style, canvasWidth }: { style: LetteringStyle; canvas
   </article>;
 }
 
-export function ProjectSettingsView({ projectId, project, busy, onSave, onCopy, onRename }: {
+export function ProjectSettingsView({ projectId, project, busy, onSave, directory }: {
   projectId: string;
   project: ProjectSettings;
   busy: boolean;
   onSave: (settings: ProjectSettings) => Promise<void>;
-  onCopy: () => Promise<void>;
-  onRename: () => Promise<void>;
+  directory?: string;
 }) {
   const [titleDraft, setTitleDraft] = useState(project.title);
   useEffect(() => setTitleDraft(project.title), [projectId, project.title]);
   const dirty = titleDraft !== project.title;
-  return <UtilityPage title="基础设置" description="项目名称与目录">
+  return <UtilityPage title="基本信息" description="项目名称与目录">
     <section className="settings-card" data-project-fact-dirty={dirty ? "true" : undefined}><div className="settings-grid">
       <label><span>项目名称</span><input value={titleDraft} disabled={busy} onChange={(event) => setTitleDraft(event.target.value)} /></label>
       <label className="settings-readonly"><span>项目 ID</span><input value={projectId} readOnly /></label>
-      <label className="settings-readonly"><span>项目目录</span><input value={`workspace/${projectId}`} readOnly /></label>
+      <label className="settings-readonly"><span>项目目录</span><input value={directory ?? "正在读取登记路径…"} readOnly /></label>
     </div><footer><button className="button button--primary" type="button" disabled={busy || !dirty || !titleDraft.trim()} onClick={() => void onSave({ ...project, title: titleDraft })}>{busy ? "正在保存…" : "保存基础设置"}</button>{dirty && <span>有未保存修改</span>}</footer></section>
-    <section className="settings-card project-lifecycle-settings"><header><div><h3>项目副本与目录</h3><p>复制会建立独立项目；重命名只改变目录名。</p></div></header><div className="lifecycle-actions"><article><div><b>复制项目</b><p>仅复制项目事实与输入；候选、输出、任务和缓存不会复制。</p></div><button className="button" disabled={busy} onClick={() => void onCopy()}>复制项目</button></article><article><div><b>重命名项目目录</b><p>目录名就是项目 ID，活动生成任务期间不能重命名。</p></div><button className="button" disabled={busy} onClick={() => void onRename()}>重命名目录</button></article></div></section>
+    {directory && <section className="settings-card"><ProjectGitStatus id={projectId} path={directory} /></section>}
   </UtilityPage>;
 }
 

@@ -8,7 +8,7 @@ type GitStatus = {
   remotes?: { name: string; url: string; web_url: string | null }[];
 };
 
-export function ProjectGitStatus({ id, path }: { id: string; path: string }) {
+export function useProjectGit(id: string, path: string, refreshKey?: object) {
   const [value, setValue] = useState<GitStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [revision, setRevision] = useState(0);
@@ -21,18 +21,22 @@ export function ProjectGitStatus({ id, path }: { id: string; path: string }) {
       .catch(() => { if (!controller.signal.aborted) setValue({ status: "unavailable", message: "Git 状态读取失败" }); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [id, path, revision]);
+  }, [id, path, revision, refreshKey]);
+  return { value, loading, refresh: () => setRevision(current => current + 1) };
+}
+
+export function ProjectGitStatus({ id, path }: { id: string; path: string }) {
+  const { value, loading, refresh } = useProjectGit(id, path);
+  const ready = value?.status === "ready";
+  const local = ready && !value.remotes?.length;
+  const status = loading ? "读取中…" : !ready ? value?.message ?? "状态未知" : value.dirty ? (value.changes?.length ?? 0) + " 项改动" : "无改动";
   return <div className="project-git-status">
-    <details>
-      <summary>Git · {loading ? "读取中…" : value?.status !== "ready" ? value?.message : `${value.dirty ? `${value.changes?.length} 个文件有改动` : "无改动"} · ${value.remotes?.length ? "已关联远程" : "未关联远程"}`}</summary>
-      {value?.status === "ready" && <>
-        <p>分支：{value.branch === "(detached)" ? "分离 HEAD" : value.branch}{!value.commit ? " · 尚无提交" : ""}</p>
-        {value.remotes?.map(remote => <p key={remote.name}>{remote.name}：{remote.web_url ? <a href={remote.web_url} target="_blank" rel="noreferrer">{remote.url}</a> : remote.url}</p>)}
-        {value.upstream && <p>上游：{value.upstream} · 领先 {value.ahead ?? "未知"} / 落后 {value.behind ?? "未知"}（本地记录，未联网刷新）</p>}
-        <ul className="project-git-changes">{value.changes?.map(change => <li key={change.path}><code>{change.status}</code> {change.original_path ? `${change.original_path} → ` : ""}{change.path}</li>)}</ul>
-        {!!value.changes?.length && <small>状态两列分别为暂存区和工作区；?? 为未跟踪，M 修改，A 新增，D 删除，R 重命名，U 冲突。</small>}
-      </>}
-      <p><button type="button" className="button" disabled={loading} onClick={() => setRevision(current => current + 1)}>刷新 Git 状态</button></p>
-    </details>
+    <header className="project-git-header"><h3>Git 仓库</h3><span className={ready && !value.dirty ? "git-status-tag is-clean" : "git-status-tag"}>{status}</span><button type="button" className="git-refresh" disabled={loading} aria-label="刷新 Git 状态" data-tooltip="刷新" onClick={refresh}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M5.5 7a7.5 7.5 0 0 1 12-1L20 9M4 15l2.5 3a7.5 7.5 0 0 0 12-1"/></svg></button></header>
+    {ready && <dl className="project-git-facts">
+      <div><dt>分支</dt><dd><code>{value.branch === "(detached)" ? "分离 HEAD" : value.branch}</code>{!value.commit && <span className="git-status-tag">尚无提交</span>}</dd></div>
+      {local ? <div><dt>远程</dt><dd><span className="git-status-tag">本地</span><span className="git-muted">未关联远程仓库</span></dd></div> : value.remotes?.map(remote => <div key={remote.name}><dt>{value.remotes?.length === 1 ? "远程" : remote.name}</dt><dd>{remote.web_url ? <a href={remote.web_url} target="_blank" rel="noreferrer">{remote.web_url.replace(/^https?:\/\//, "")}</a> : remote.url}</dd></div>)}
+      {value.upstream && Boolean(value.ahead || value.behind) && <div><dt>提交差异</dt><dd data-tooltip="相对本机上游记录，未联网刷新">{value.ahead ? <span>↑ {value.ahead} 领先</span> : null}{value.behind ? <span>↓ {value.behind} 落后</span> : null}</dd></div>}
+    </dl>}
+    {!!value?.changes?.length && <details className="project-git-files"><summary>查看改动文件</summary><ul className="project-git-changes">{value.changes.map(change => <li key={change.path}><code data-tooltip="Git 暂存区 / 工作区状态">{change.status}</code><span>{change.original_path ? change.original_path + " → " : ""}{change.path}</span></li>)}</ul></details>}
   </div>;
 }
