@@ -38,11 +38,11 @@ npm --prefix <仓库根>/app run setup
       "args": [
         "app/scripts/lora-caption-anime-eva02.py",
         "--model",
-        "app/data.local/lora-training/captioning/animetimm-eva02-db4-full/model.onnx",
+        "D:/Models/ComfyUI/captioning/animetimm-eva02-db4-full/model.onnx",
         "--labels",
-        "app/data.local/lora-training/captioning/animetimm-eva02-db4-full/selected_tags.csv",
+        "D:/Models/ComfyUI/captioning/animetimm-eva02-db4-full/selected_tags.csv",
         "--thresholds",
-        "app/data.local/lora-training/captioning/animetimm-eva02-db4-full/thresholds.csv",
+        "D:/Models/ComfyUI/captioning/animetimm-eva02-db4-full/thresholds.csv",
         "--batch-size",
         "4",
         "--providers",
@@ -84,6 +84,33 @@ npm --prefix <仓库根>/app run setup
 
 `Saved/` 只保存 StoryCanvas 自己的日志和状态。不要将外部 ComfyUI 或模型目录放进
 仓库，也不要让清理命令递归进入外部目录。
+
+## 模型目录规范
+
+以下是正式目录规范，不是设备上的临时约定。所有供工作台使用的正式权重及必需配套文件统一安装在外部 `models_root`，由 ComfyUI、训练器和素材处理工具按需共用；目录名字含 ComfyUI 不表示只能供 ComfyUI 使用。
+
+| 相对 `models_root` 的目录 | 内容 |
+|---|---|
+| `checkpoints/` | 完整生成模型 checkpoint |
+| `diffusion_models/` | 分体 diffusion / DiT 权重，如 Anima、Wan |
+| `text_encoders/`、`vae/` | 文本编码器与 VAE |
+| `clip_vision/`、`controlnet/`、`embeddings/` | 视觉编码器、控制模型与嵌入 |
+| `loras/` | LoRA；未登记训练权重放 `loras/training/<task-id>/<run-id>/` |
+| `upscale_models/` | 超分权重；素材准备使用 Real-ESRGAN Anime 6B，成品超分使用 AnimeSharp V4 2× |
+| `quality_assessment/` | 图像质量评分权重，如 MUSIQ |
+| `background-removal/` | 抠图权重，如 IS-Net |
+| `captioning/<captioner-id>/` | 打标权重及对应标签、阈值、预处理等配套文件 |
+
+打标器的 `model.onnx`、`selected_tags.csv`、`thresholds.csv`、`preprocess.json` 和 `categories.json` 作为同一模型包保存，不能混用不同版本。当前 ID 为 `animetimm-eva02-db4-full`，文件身份以 `library/lora-training/captioners/animetimm-eva02-db4-full.json` 为准。
+
+环境诊断默认从 `models_root/captioning/<captioner-id>/` 校验模型包，不再回退到工具目录。若显式填写 `lora_training.captioning.model_root`，它必须与命令 `args` 中实际使用的模型包目录一致，并遵循上述分类规范。
+
+- 工具 Git 只保存模型清单、来源、SHA-256、配置示例和受管安全预览。权重不进入工具或项目 Git，也不放在 `app/data.local/`、Python 环境、项目 `captioning/` 或 `Saved/` 中。项目 `captioning/` 保存的是审核事实，不是打标模型。
+- 设备实际路径只写入 `Config/local.json` 及外部 ComfyUI 自己的路径配置。上方 JSON 是示例，使用时把 `D:/Models/ComfyUI` 替换为实际 `models_root`。打标命令的 `args` 当前不展开 `${models_root}`，应填写实际绝对文件路径。
+- ComfyUI 通过 `extra_model_paths.yaml` 映射所需分类；不能因根目录已配置，就假定所有分类都已映射。MUSIQ、IS-Net 和打标器直接读取模型库，不要求 ComfyUI 注册这些分类。
+- Hugging Face、Torch 等下载缓存不作为正式权重的唯一安装位置。需要的 tokenizer 等辅助缓存可保留或重新获取，但不与已登记模型包混为一谈；新增下载按清单校验后安装到上述分类。
+- 迁移采用“复制、核对大小和 SHA-256、更新配置、验证加载、清理原安装文件”的顺序；不创建工具目录到模型库的链接。修改打标命令路径后，在相关任务空闲时重启工作台，避免服务继续使用启动时读取的旧配置。
+- 备份模型库与 `Config/`；重建 Python 环境只安装依赖，不复制或重新下载已有正式权重。
 
 ## Python 环境维护（uv）
 

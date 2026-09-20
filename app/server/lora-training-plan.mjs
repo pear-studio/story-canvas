@@ -113,7 +113,7 @@ export async function loraEnvironmentDependencyFingerprint(projectRoot, config) 
   const captioning = config?.lora_training?.captioning;
   const captionerManifestPathValue = captionerManifestPath(projectRoot, captioning);
   const captionerManifest = captionerManifestPathValue ? await readJson(captionerManifestPathValue, { optional: true }) : null;
-  const captionerRoot = captionerModelRoot(projectRoot, captioning, captionerManifest);
+  const captionerRoot = captionerModelRoot(projectRoot, captioning, captionerManifest, config?.models_root);
   const upscalerManifestPath = path.join(projectRoot, upscaleModelManifestRelativePath);
   const modelsRoot = configuredPath(projectRoot, config?.models_root);
   const dependencies = new Set();

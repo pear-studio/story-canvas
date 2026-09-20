@@ -45,6 +45,7 @@
 - Agent 临时脚本、下载中转、API 回包与审阅页统一放在根 `Saved/Agent/<任务名>/`。测试临时文件放在 `Saved/Tests/`。任务空闲后 `Saved/` 可删除；不要把唯一素材、当前项目配置或必需成果放进去。正式素材导入项目，剧情成果在项目 `Outputs/`，训练归档在项目 `Training/`，均独立备份。
 
 - 本机路径和凭据只保存在被忽略的 `Config/local.json`；使用前按 `docs/reference/setup.md` 验证配置，不猜测缺失路径，不回显 `civitai_api_key`。
+- 正式模型权重及其必需配套文件统一放在外部 `models_root`，按 `docs/reference/setup.md` 的“模型目录规范”分类；不得放入工具代码、Python 环境、项目或 `Saved/`。Git 只保存清单、来源和校验信息；下载缓存不作为正式模型安装位置。
 - 不递归删除本机配置指向的外部 ComfyUI、模型、训练器或词库目录；不在未核对范围内执行递归清理。
 - 不使用 `git clean -fdx`。读取被忽略的 `workspace/` 时不要依赖忽略感知的搜索，并排除子项目 `.git/`。
 - 项目设置、角色、剧情、Prompt、用户原文、参考图和训练素材均纳入项目 Git；不提交凭据、API 密钥、模型权重、Outputs/ 生成媒体、Saved/ 或运行时链接；仅资源目录明确登记的可提交安全预览图例外。

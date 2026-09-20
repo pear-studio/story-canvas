@@ -1,8 +1,10 @@
 # LoRA 自动打标器
 
 本目录登记可复现的自动打标器身份和输入输出语义，不存放模型权重。本机权重放在
-`app/data.local/lora-training/captioning/<captioner-id>/`，并按清单中的文件大小和 SHA-256
+`models_root/captioning/<captioner-id>/`，并按清单中的文件大小和 SHA-256
 核验；权重和 `Config/local.json` 都不进入 Git。
+
+统一位置与迁移要求见[模型目录规范](../../../docs/reference/setup.md#模型目录规范)。下方命令参数中的 `D:/Models/ComfyUI` 是示例模型根目录，必须替换为本机 `models_root`；命令参数不会自动展开配置变量。不要把权重安装回 `app/data.local/` 或 Python 环境。
 
 ## AnimeTimm EVA02 dbv4-full
 
@@ -39,11 +41,11 @@ version 1 JSON 读取图片清单，并只向标准输出写入 Captioning 协�
       "args": [
         "app/scripts/lora-caption-anime-eva02.py",
         "--model",
-        "app/data.local/lora-training/captioning/animetimm-eva02-db4-full/model.onnx",
+        "D:/Models/ComfyUI/captioning/animetimm-eva02-db4-full/model.onnx",
         "--labels",
-        "app/data.local/lora-training/captioning/animetimm-eva02-db4-full/selected_tags.csv",
+        "D:/Models/ComfyUI/captioning/animetimm-eva02-db4-full/selected_tags.csv",
         "--thresholds",
-        "app/data.local/lora-training/captioning/animetimm-eva02-db4-full/thresholds.csv",
+        "D:/Models/ComfyUI/captioning/animetimm-eva02-db4-full/thresholds.csv",
         "--batch-size",
         "4",
         "--providers",

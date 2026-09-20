@@ -268,7 +268,7 @@ test("删除数据集图片时同步清理最新基础 Prompt 记录", async (co
 test("打标器环境诊断校验命令与模型文件身份", async (context) => {
   const { root } = await fixture(context);
   const captionerId = "fixture-captioner";
-  const modelRoot = path.join(root, "app", "data.local", "lora-training", "captioning", captionerId);
+  const modelRoot = path.join(root, "models", "captioning", captionerId);
   const manifestRoot = path.join(root, "library", "lora-training", "captioners");
   await mkdir(modelRoot, { recursive: true });
   await mkdir(manifestRoot, { recursive: true });
@@ -290,6 +290,7 @@ test("打标器环境诊断校验命令与模型文件身份", async (context) =
   };
   await writeFile(path.join(manifestRoot, `${captionerId}.json`), JSON.stringify(manifest));
   const baseConfig = {
+    models_root: path.join(root, "models"),
     lora_training: {
       captioning: {
         id: captionerId,
@@ -303,6 +304,7 @@ test("打标器环境诊断校验命令与模型文件身份", async (context) =
   assert.equal(ready.captioning.configured, true);
   assert.equal(ready.captioning.ready, true);
   assert.equal(ready.captioning.message, "打标器可用");
+  assert.equal(ready.captioning.model_root, modelRoot);
   assert.equal(ready.captioning.files[0].matches, true);
   manifest.runtime = {
     required_providers: ["CUDAExecutionProvider"],
@@ -326,7 +328,7 @@ test("打标器环境诊断校验命令与模型文件身份", async (context) =
 test("环境诊断缓存按依赖变化失效而不依赖时间", async (context) => {
   const { root } = await fixture(context);
   const captionerId = "fixture-cache-captioner";
-  const modelRoot = path.join(root, "app", "data.local", "lora-training", "captioning", captionerId);
+  const modelRoot = path.join(root, "models", "captioning", captionerId);
   const manifestRoot = path.join(root, "library", "lora-training", "captioners");
   await mkdir(modelRoot, { recursive: true });
   await mkdir(manifestRoot, { recursive: true });
@@ -340,7 +342,7 @@ test("环境诊断缓存按依赖变化失效而不依赖时间", async (context
   };
   const manifestPath = path.join(manifestRoot, `${captionerId}.json`);
   await writeFile(manifestPath, JSON.stringify(manifest));
-  const config = { lora_training: { captioning: { id: captionerId, version: "test", command: process.execPath, check_args: ["-e", "process.stdout.write(JSON.stringify({ok:true,onnxruntime:'fixture'}))"] } } };
+  const config = { models_root: path.join(root, "models"), lora_training: { captioning: { id: captionerId, version: "test", command: process.execPath, check_args: ["-e", "process.stdout.write(JSON.stringify({ok:true,onnxruntime:'fixture'}))"] } } };
   const first = await readCachedLoraTrainingEnvironment(root, config);
   const second = await readCachedLoraTrainingEnvironment(root, config);
   assert.strictEqual(first, second);

@@ -668,8 +668,9 @@ export function captionerManifestPath(projectRoot, provider) {
   return id ? path.join(projectRoot, "library", "lora-training", "captioners", `${id}.json`) : null;
 }
 
-export function captionerModelRoot(projectRoot, provider, manifest) {
-  const fallback = manifest?.id ? `app/data.local/lora-training/captioning/${manifest.id}` : null;
+export function captionerModelRoot(projectRoot, provider, manifest, modelsRoot) {
+  const root = configuredPath(projectRoot, modelsRoot);
+  const fallback = root && manifest?.id ? path.join(root, "captioning", manifest.id) : null;
   return configuredPath(projectRoot, provider?.model_root, fallback);
 }
 
@@ -753,7 +754,7 @@ export async function inspectCaptioningProvider(projectRoot, config) {
   const manifestOk = Boolean(manifest && manifest.version === 1 && manifest.id);
   checks.push({ id: "captioner_manifest", ok: manifestOk, message: manifestOk ? "打标器清单可读取" : "打标器清单缺失或无效" });
 
-  const modelRoot = manifestOk ? captionerModelRoot(projectRoot, provider, manifest) : null;
+  const modelRoot = manifestOk ? captionerModelRoot(projectRoot, provider, manifest, config?.models_root) : null;
   const resolvedFiles = [];
   if (manifestOk) {
     for (const key of ["model", "labels", "thresholds"]) {
