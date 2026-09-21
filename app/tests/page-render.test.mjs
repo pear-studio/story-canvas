@@ -52,6 +52,7 @@ import { capturePagePromptSnapshot, compilePageRenderInspectionContext } from ".
 import { auditSavedPagePrompt, preparePromptWriteAudit } from "../server/prompt-write-audit.mjs";
 import { handleWorkbenchRequest } from "../server/workbench-http.mjs";
 import { inspectStoryCandidates, executeStoryCandidateRefresh } from "../server/story-candidate-refresh.mjs";
+import { inspectionGenerationSignature, taskGenerationSignature } from "../server/generation-signature.mjs";
 
 const sourceRepositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -86,8 +87,14 @@ test("Qwen 的 AVOID、单图路由和冻结输入贯通；源材料变化不改
   assert.deepEqual(workflow["10"].inputs.model, ["1", 0]);
   assert.equal(workflow["6"].inputs.width, 832);
   const identity = task.items[0].reference_image;
+  const inspectSignature = async () => inspectionGenerationSignature(await compilePageRenderInspectionContext({
+    repositoryRoot: sourceRepositoryRoot, projectDirectory: fixture.projectDirectory, pageKey: task.items[0].page_key,
+    dictionaryEntries: dictionarySnapshot.entries,
+  }));
+  assert.equal(await inspectSignature(), taskGenerationSignature(task, task.items[0]));
   const frozen = await readFile(path.join(task_directory, "inputs", `${identity.sha256}.png`));
   await writeProjectMaterial(fixture.projectDirectory, { file: "reference.png", title: "替换", encoding: "base64", content: (await sharp(bytes).negate().png().toBuffer()).toString("base64") });
+  assert.notEqual(await inspectSignature(), taskGenerationSignature(task, task.items[0]), "同名参考图内容变化使旧候选不再匹配");
   let received;
   const server = createServer(async (request, response) => {
     const buffers = []; for await (const buffer of request) buffers.push(buffer);
@@ -146,35 +153,6 @@ test("圈选标签保存原文，冻结任务与复验使用无花括号的加�
   });
 });
 
-test("两步页面设置经事实保存和读取后进入冻结任务，中间图不进入候选输出", async context => {
-  const fixture = await createFixture(context);
-  const { savePagePrompt } = await import("../server/project-workbench.mjs");
-  const { hashCanonicalJson } = await import("../server/workflow-definition.mjs");
-  const { compileFrozenExecutionUnits, validateFrozenRenderTask } = await import("../server/render-task-contract.mjs");
-  const dictionarySnapshot = await dictionary();
-  const pageKey = { page_id: "page-001" };
-  const { task } = await compileAndPersistWorkbenchRenderTask(fixture.repositoryRoot, fixture.projectId, { page_key: pageKey, count: 2 }, { repositoryRoot: sourceRepositoryRoot });
-  const document = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
-  const { $schema, ...fields } = document.document;
-  const saved = await savePagePrompt(fixture.repositoryRoot, fixture.projectId, {
-    kind: "story", page_id: "page-001", expected_sha256: document.expected_sha256, expected_context_sha256: document.expected_context_sha256,
-    prompt: { ...fields, two_step: { enabled: true, strength: 0.8 } },
-  });
-  assert.deepEqual(saved.prompt.two_step, { enabled: true, strength: 0.8 });
-  assert.equal(Object.hasOwn((await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001")).document.two_step, "draft"), false);
-  const resolved = await compilePageRenderTarget({ repositoryRoot: sourceRepositoryRoot, projectDirectory: fixture.projectDirectory, pageKey, dictionaryEntries: dictionarySnapshot.entries });
-  assert.equal(resolved.compiled_page.two_step.positive, resolved.compiled_page.positive_prompt);
-  for (const [index, item] of task.items.entries()) item.two_step = { ...resolved.compiled_page.two_step, seed: 51001 + index };
-  task.snapshot.execution_units = compileFrozenExecutionUnits({ items: task.items, purpose: "candidate", snapshot: task.snapshot, profile: task.snapshot.profile, canvas: task.snapshot.canvas, candidateBatch: false, taskId: task.id });
-  task.snapshot.execution_units_sha256 = hashCanonicalJson(task.snapshot.execution_units);
-  validateFrozenRenderTask(task, { dictionaryEntries: dictionarySnapshot.entries, dictionaryIdentity: dictionarySnapshot.identity });
-  assert.deepEqual(task.snapshot.execution_units.map(unit => unit.two_step.seed), [51001, 51002]);
-  for (const unit of task.snapshot.execution_units) {
-    assert.deepEqual(unit.outputs.map(output => output.kind), ["candidate"]);
-    assert.deepEqual(unit.intermediate_outputs.map(output => output.kind), ["draft", "depth"]);
-    assert.match(unit.intermediate_outputs[0].file, /^Outputs\/tasks\//);
-  }
-});
 
 async function writeJson(target, value) {
   await mkdir(path.dirname(target), { recursive: true });
@@ -321,7 +299,7 @@ test("剧情批量刷新只删除确认过的不符候选，Prompt 变化时拒�
   assert.deepEqual(new Set(preview.candidate_ids), new Set(task.items.slice(0, 2).map((item) => item.candidate_id)));
   const request = { action: "clean", scope: "mismatch", page_key: key, expected_signature: preview.signature, candidate_ids: preview.candidate_ids };
   await writeJson(promptPath, { ...changed, camera: [{ description: "wide shot" }] });
-  await assert.rejects(executeStoryCandidateRefresh(options, request), { code: "candidate_prompt_signature_stale" });
+  await assert.rejects(executeStoryCandidateRefresh(options, request), { code: "candidate_generation_signature_stale" });
   assert.equal((await readGenerationCandidateRecords(fixture.projectDirectory)).length, 2);
   await writeJson(promptPath, changed);
   await publishCandidateResult(fixture.projectDirectory, task, task.items[2], png);
@@ -1198,7 +1176,7 @@ test("编辑上下文展开各层覆盖和关闭项，使用项目有效配置�
   await assert.rejects(save(fresh.draft), error => error.code === "fact_upstream_conflict");
 });
 
-test("编辑上下文覆盖角色页、自定义和两步实际来源，配置缺失明确返回不完整", async t => {
+test("编辑上下文覆盖角色页和自定义实际来源，配置缺失明确返回不完整", async t => {
   const fixture = await createFixture(t);
   const { readPromptEditContext } = await import("../server/prompt-edit-context.mjs");
   const { structuredPromptBase } = await import("../server/current-page-prompt.mjs");
@@ -1214,17 +1192,7 @@ test("编辑上下文覆盖角色页、自定义和两步实际来源，配置�
   const free = await readPromptEditContext(options);
   assert.equal(free.context.final.positive, "a quiet portrait");
   assert.equal(free.context.final.mode, "free");
-  page.two_step = { enabled: true, strength: 0.5 };
-  await writeJson(path.join(fixture.projectDirectory, "pages/page-101.prompt.json"), page);
-  const two = await readPromptEditContext(options);
-  assert.equal(two.context.final.draft_stage.positive, "a quiet portrait");
-  assert.equal(two.context.final.positive, "a quiet portrait");
-  assert.equal(two.context.inherited_usage, "structured_base_only");
-  page.two_step.draft = { positive: "simple silhouette", base_sha256: two.context.final.draft_base.base_sha256 };
-  await writeJson(path.join(fixture.projectDirectory, "pages/page-101.prompt.json"), page);
-  const changedStage = await readPromptEditContext(options);
-  assert.equal(changedStage.context.final.draft_stage.positive, "simple silhouette");
-  assert.equal(changedStage.context.final.positive, "a quiet portrait");
+  assert.equal(free.context.inherited_usage, "structured_base_only");
   const { readResolvedRenderProfile } = await import("../server/render-profile-compiler.mjs");
   const base = await readResolvedRenderProfile(sourceRepositoryRoot, "anima-base-v1");
   const fragmentId = Object.keys(base.resolved_profile.prompt.fragments)[0];

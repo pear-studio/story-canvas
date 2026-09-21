@@ -51,12 +51,3 @@
   .task-card__title { flex: 1 1 100%; }
   .task-card__result { margin-left: auto; }
 }
-
-.task-two-step-images { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 12px 0; }
-.task-two-step-images figure { margin: 0; min-width: 0; }
-.task-two-step-images img { width: 100%; max-height: 320px; object-fit: contain; background: #edf2ee; border-radius: 6px; }
-.task-two-step-images figure > div { min-height: 100px; display: grid; place-items: center; background: #edf2ee; }
-.task-two-step-images figcaption { text-align: center; margin-top: 6px; font-size: 12px; color: var(--muted); }
-.task-two-step-prompt { margin: 12px 0; font-size: 12px; }
-.task-two-step-prompt summary { cursor: pointer; }
-.task-two-step-prompt pre { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }

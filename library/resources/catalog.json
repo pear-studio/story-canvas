@@ -3,16 +3,6 @@
   "version": 1,
   "models": [
     {
-      "id": "anima-vace-depth",
-      "name": "Anima VACE Depth",
-      "kind": "other",
-      "architecture_family": "anima",
-      "filename": "anima-vace-depth.safetensors",
-      "relative_path": "controlnet/anima-vace-depth.safetensors",
-      "sha256": "29762e7037bd74b70abaa832c79d10159d5e7e0612045961318e304eb50e802d",
-      "source": "https://huggingface.co/TaihoC/Anima-ControlNet-VACE-Depth"
-    },
-    {
       "id": "anima-base-v1-dit",
       "name": "Anima Base v1.0",
       "kind": "dit",

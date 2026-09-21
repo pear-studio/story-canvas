@@ -98,8 +98,7 @@
 | `app/server/character-files.mjs` | 角色 profile、visual、Prompt 与视觉页当前契约 |
 | `app/server/lettering-settings.mjs` | 项目排版预设与角色文字颜色的统一契约 |
 | `app/server/page-render-resolver.mjs` | 按当前 index 精确解析完整 PageKey，并为普通生成与实验一次性导入编译唯一页面生成目标 |
-| `app/server/two-step-generation.mjs` / `two-step-runtime.mjs` | 页面两步实验的草稿来源、固定配方展开、模型预检和中间结果保存 |
-| `app/src/TwoStepPromptPanel.tsx` / `SourcePromptEditor.tsx` | 页面实验面板，以及与自定义模式共用的来源标签、重置和文本编辑控件 |
+| `app/src/SourcePromptEditor.tsx` | 自定义模式的来源标签、重置和文本编辑控件 |
 | `app/server/prompt-inheritance-facts.mjs` | 继承检查、连带影响计划、确认指纹和原子写入；共享规则在 `app/shared/prompt-inheritance.mjs`，重复检查与编译共用覆盖后生效片段投影；生成解析只预检引用，由编译器统一检查生效重复 |
 | `app/server/scene-facts.mjs` | 项目场景 read/save、环境分类约束与连带修改 |
 | `app/src/InheritedPromptEditor.tsx` / `SceneEditor.tsx` | 继承行权重/开关与项目场景管理 |

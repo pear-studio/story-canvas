@@ -1,3 +1,4 @@
+import { taskGenerationSignature } from "./generation-signature.mjs";
 import { persistReferenceImage } from "./reference-image.mjs";
 import { encodePageKey } from "./page-key.mjs";
 import { createHash, randomUUID } from "node:crypto";
@@ -171,11 +172,6 @@ async function withTaskLock(projectDirectory, taskId, operation, options = {}) {
   finally { await release(); }
 }
 
-export function promptSignature(item) {
-  if (typeof item.positive_prompt !== "string" || typeof item.negative_prompt !== "string") return null;
-  return createHash("sha256").update(JSON.stringify({ positive_prompt: item.positive_prompt, negative_prompt: item.negative_prompt, ...(item.two_step ? { two_step: { positive: item.two_step.positive, negative: item.two_step.negative, strength: item.two_step.strength, recipe: item.two_step.recipe, loras: item.two_step.loras } } : {}) })).digest("hex");
-}
-
 function createState(task, display, revision = 1) {
   return {
     version: 1,
@@ -202,7 +198,7 @@ function createState(task, display, revision = 1) {
       generated_at: item.generated_at ?? null,
       prompt_id: item.prompt_id ?? null,
       discarded_at: item.discarded_at ?? null,
-      prompt_signature: promptSignature(item),
+      generation_signature: taskGenerationSignature(task, item),
     })),
   };
 }

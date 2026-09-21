@@ -82,15 +82,6 @@
 .custom-prompt-status.is-conflict { color: #9b6c24; background: #fbf3e6; border-color: #e8d0a7; }
 .free-prompt-import { align-items: center; flex-wrap: wrap; }
 
-.two-step-panel { margin-top: 18px; border: 1px solid var(--line); border-radius: 8px; background: #f8faf8; }
-.two-step-panel > summary { padding: 12px; cursor: pointer; font-size: 13px; font-weight: 600; }
-.two-step-panel > summary .custom-prompt-status { margin-left: 8px; font-weight: 400; }
-.two-step-panel__body { padding: 0 12px 12px; }
-.two-step-controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 12px; }
-.two-step-controls > label { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
-.two-step-controls input[type=checkbox] { width: 16px; height: 16px; min-height: 0; padding: 0; margin: 0; flex: none; accent-color: var(--green); }
-.two-step-controls input[type=number] { width: 64px; padding: 6px; }
-.two-step-note { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 10px 0; }
 .page-save-fields { display: contents; margin: 0; padding: 0; border: 0; min-width: 0; }
 
 .workbench-page-editor .lettering-text-source {

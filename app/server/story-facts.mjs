@@ -69,16 +69,12 @@ async function assertRealPathWithin(root, target, label) {
 }
 
 async function assertProjectTargetBoundary(projectRoot, projectDirectory, target) {
-  const repositoryRoot = path.resolve(projectRoot);
   const pagesRoot = path.join(projectDirectory, "pages");
-  await assertRealPathWithin(repositoryRoot, projectDirectory, "project directory");
   await assertRealPathWithin(projectDirectory, pagesRoot, "pages");
   await assertRealPathWithin(pagesRoot, target, "story page target");
 }
 
 async function assertProjectFactBoundary(projectRoot, projectDirectory, target, label) {
-  const repositoryRoot = path.resolve(projectRoot);
-  await assertRealPathWithin(repositoryRoot, projectDirectory, "project directory");
   const targetInfo = await lstat(target);
   if (targetInfo.isSymbolicLink()) fail("unsafe_story_edit_path", [`${label} 不能是链接：${target}`]);
   await assertRealPathWithin(projectDirectory, target, label);

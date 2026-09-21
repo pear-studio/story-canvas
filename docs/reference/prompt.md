@@ -338,4 +338,4 @@ npm --prefix <仓库根>/app run visual:produce -- render page <project-id> <pag
 node app/scripts/prompt-person-migration.mjs <project-id> --offline
 ```
 
-工具只转换当前 Prompt、场景和配置调整事实，合并顺序为旧外观后接旧动作，保留片段内容、ID、权重和开关；备份写入被忽略的 `Saved/prompt-person-migration/`，失败恢复已写入事实。运行前检查活动任务，重跑已迁移项目不改文件。运行时按身份人物词、子设定人物词编译，允许由分类合并造成的预期词序与分段变化。旧候选和冻结任务不改写；自定义／两步草稿若基础文本变化，沿用原有冲突处理，不自动确认。
+工具只转换当前 Prompt、场景和配置调整事实，合并顺序为旧外观后接旧动作，保留片段内容、ID、权重和开关；备份写入被忽略的 `Saved/prompt-person-migration/`，失败恢复已写入事实。运行前检查活动任务，重跑已迁移项目不改文件。运行时按身份人物词、子设定人物词编译，允许由分类合并造成的预期词序与分段变化。旧候选和冻结任务不改写；自定义文本若基础文本变化，沿用原有冲突处理，不自动确认。

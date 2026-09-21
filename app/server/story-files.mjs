@@ -1,7 +1,6 @@
 import { isReferenceImageFile } from "./reference-image.mjs";
 import { validateCameraSettings } from "../shared/camera-prompt.mjs";
 import { validateAdjustments } from '../shared/prompt-inheritance.mjs';
-import { validateTwoStep } from "./two-step-generation.mjs";
 import { validateLoraDefinition } from "./lora-config.mjs";
 import { NARRATION_CHARACTER_LIMIT } from "../shared/story-content-guidance.mjs";
 export const STORY_OUTLINE_SCHEMA_ID = "https://storyvisualizer.local/schemas/story-outline.schema.json";
@@ -249,7 +248,6 @@ export function preparePromptForPersistence(prompt, { baselinePrompt, createFrag
 export function validateStoryPagePromptDocument(prompt) {
   const errors = [];
   if (!isRecord(prompt)) return ["prompt 必须是 JSON 对象"];
-  errors.push(...validateTwoStep(prompt.two_step));
   if (prompt.scene_id !== undefined && !storyIdPattern.test(prompt.scene_id)) errors.push('scene_id 无效');
   if (prompt.scene_variant_id !== undefined && (!storyIdPattern.test(prompt.scene_variant_id) || prompt.scene_variant_id === 'main')) errors.push('scene_variant_id 无效');
   if ((prompt.scene_id === undefined) !== (prompt.scene_variant_id === undefined)) errors.push('scene_id 和 scene_variant_id 必须同时提供');
@@ -260,7 +258,7 @@ export function validateStoryPagePromptDocument(prompt) {
       errors.push(...validateAdjustments(adjustments, source));
     }
   }
-  checkExactKeys(prompt, ["$schema", "mode", "free", "two_step", "reference_image", "scene_id", "scene_variant_id", "inheritance", ...storyPromptCategories], "prompt", errors);
+  checkExactKeys(prompt, ["$schema", "mode", "free", "reference_image", "scene_id", "scene_variant_id", "inheritance", ...storyPromptCategories], "prompt", errors);
   if (prompt.reference_image !== undefined && !isReferenceImageFile(prompt.reference_image)) errors.push("prompt.reference_image 必须是材料中的 PNG、JPEG 或 WebP 文件名");
   if (prompt.mode !== undefined && !["structured", "free"].includes(prompt.mode)) errors.push("prompt.mode 无效");
   if (prompt.free !== undefined) {

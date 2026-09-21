@@ -58,7 +58,6 @@ export async function readPromptEditContext({ projectRoot, repositoryRoot = proj
       text: part.text, origin: part.origin, origin_id: part.origin_id, path: part.path,
       category: part.category, scope: part.scope,
     }))])),
-    ...(compiled.two_step ? { draft_stage: { positive: compiled.two_step.positive, negative: compiled.two_step.negative, loras: compiled.two_step.loras }, draft_base: compiled.draft_base } : {}),
   } : null;
   return {
     page_key: key,

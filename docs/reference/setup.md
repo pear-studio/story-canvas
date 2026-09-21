@@ -347,26 +347,6 @@ comfy-cli 的后台 PID 在进程异常退出后可能被 Windows 复用，导�
 阶段是 `torch` 或 `requirements`，应调整对应代理／包源后再次调用安装，完整仓库会自动走
 `--restore`。工作台不进行无限自动重试，也不会把 `doctor` 变成日常启动门禁。
 
-## 两步生成实验
-
-当前只支持本机 ComfyUI 上的 Anima Base v1.0。每个页面在 Prompt 下方打开「两步生成实验」启用，
-项目全局生成设置不增加开关。合并的端点列表同时包含远端与本机时，实验只从已配置的本机端点选择。依赖由 Agent 按 `comfyui-runtime` 一次安装；点击生成不会下载模型。
-
-固定身份、来源及验证过的节点提交记录在 `library/generation-experiments/anima-base-depth-v1.json`：
-
-- `models_root/controlnet/anima-vace-depth.safetensors`；在 ComfyUI 的外部模型映射中加入 `controlnet: controlnet`。
-- `comfyui_root/custom_nodes/ComfyUI-Advanced-ControlNet-Anima`，使用 TaihoC 仓库的 `feat/anima-vace-controlnet` 分支。
-- `comfyui_root/custom_nodes/comfyui_controlnet_aux`，提供 `DepthAnythingV2Preprocessor`。
-- 深度估计权重放在 `comfyui_root/custom_nodes/comfyui_controlnet_aux/ckpts/depth-anything/Depth-Anything-V2-Small/depth_anything_v2_vits.pth`。
-
-预检校验两个权重的 SHA-256、草稿风格 LoRA 和 ComfyUI 节点。缺失、模型不符或来源变化时阻止生成，
-不会退回普通生成。安装节点后需重启 ComfyUI。草稿固定 16 步；两阶段使用 shift 5，普通生成保持原设置。
-
-草稿正向默认跟随当前最终正向 Prompt，首次编辑后才保存覆盖及原文指纹。标签为「无修改／已修改／来源已变化」，
-来源变化后由用户选择重置或保留草稿。负向沿用最终负向；草稿只加载项目风格 LoRA，不继承角色或自定义 LoRA。
-每张候选都联动重跑。任务详情显示草稿、深度图、成片及冻结的草稿设置；中间图存于
-`Outputs/tasks/<task-id>/<candidate-id>/`，不进入候选选择和项目材料。最终阶段失败时保留已产出的中间图。
-
 ## Prompt 词库
 
 首版兼容 A1111 Tag Autocomplete：

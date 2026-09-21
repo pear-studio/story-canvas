@@ -117,7 +117,7 @@ type Stage = { phase: string; item_id: string | null; started_at: string; ended_
 type TaskItem = { url?: string | null; id: string; status: string; seed?: number; prompt_id?: string; candidate_id?: string; page_key: RuntimePageKey };
 type TaskDetail = GlobalTask & {
   items: TaskItem[];
-  execution_units: Array<{ two_step?: { positive: string; negative: string; seed: number; strength: number; recipe: { steps: number; shift: number }; loras: Array<{ filename: string; weight: number }> }; intermediates?: Array<{ kind: string; url: string | null }>; id: string; item_ids: string[]; submission: { api_url?: string; prompt_id?: string; stages?: Stage[] } | null }>;
+  execution_units: Array<{ id: string; item_ids: string[]; submission: { api_url?: string; prompt_id?: string; stages?: Stage[] } | null }>;
 };
 const phases: Record<string, string> = { submit: "提交请求", remote_wait: "等待远端结果", download: "下载图片", save: "本地保存" };
 function moment(value: string | null | undefined) {
@@ -164,7 +164,6 @@ export function TaskDetailDialog({ selected, onClose, onOpenPage }: { selected: 
           <header><h3>第 {index + 1} 张</h3><span>{taskStatusLabel(item.status)}</span></header>
           <dl className="task-detail__facts"><div><dt>Seed</dt><dd>{item.seed ?? "—"}</dd></div><div><dt>Prompt ID</dt><dd>{unit?.submission?.prompt_id ?? item.prompt_id ?? "—"}</dd></div>{item.candidate_id && <div><dt>候选 ID</dt><dd>{item.candidate_id}</dd></div>}{unit?.submission?.api_url && <div><dt>ComfyUI</dt><dd>{unit.submission.api_url}</dd></div>}</dl>
           {unit && unit.item_ids.length > 1 && <p className="task-muted">同批 {unit.item_ids.length} 张共享提交与远端等待阶段。</p>}
-          {unit?.two_step && <><div className="task-two-step-images">{[...(unit.intermediates ?? []).map(image => ({ ...image, label: image.kind === "draft" ? "草稿" : "深度图" })), { kind: "final", label: "成片", url: item.url }].map(image => <figure key={image.kind}>{image.url ? <a href={image.url} target="_blank" rel="noreferrer"><img src={image.url} alt={image.label} /></a> : <div className="task-muted">尚无结果</div>}<figcaption>{image.label}</figcaption></figure>)}</div><details className="task-two-step-prompt"><summary>草稿设置 · 深度 {unit.two_step.strength} · {unit.two_step.recipe.steps} 步 · shift {unit.two_step.recipe.shift}</summary><p>草稿 Seed：{unit.two_step.seed} · 草稿 LoRA：{unit.two_step.loras.map(lora => `${lora.filename} ×${lora.weight}`).join("、") || "无"}</p><pre>{unit.two_step.positive}</pre><b>负向 Prompt</b><pre>{unit.two_step.negative || "（空）"}</pre></details></>}
           {stages.length ? <div className="task-stage-list">{stages.map((stage, stageIndex) => <div className="task-stage" key={stageIndex}><div><b>{phases[stage.phase] ?? stage.phase}</b><span>{stage.status === "completed" ? stageDuration(stage.duration_ms) : stage.status === "failed" ? `失败 · ${stageDuration(stage.duration_ms)}` : terminal ? "未记录结束" : "进行中"}</span></div><small>{moment(stage.started_at)} → {moment(stage.ended_at)}</small>{stage.error && <p className="task-error">{stage.error}</p>}</div>)}</div> : <p className="task-muted">未记录阶段耗时</p>}
         </section>;
       })}

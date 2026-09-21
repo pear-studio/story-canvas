@@ -1,5 +1,3 @@
-import { assertDepthDependencies } from "./two-step-runtime.mjs";
-import { randomInt } from "node:crypto";
 import path from "node:path";
 import { readFile } from "node:fs/promises";
 
@@ -89,7 +87,6 @@ function compileTask({ resolved, projectDirectory, projectId, taskId, count, see
       page_key: structuredClone(resolved.page_key),
       seed: seeds[index],
       ...(resolved.reference_image ? { reference_image: structuredClone(resolved.reference_image) } : {}),
-      ...(compiled.two_step ? { two_step: { ...structuredClone(compiled.two_step), seed: randomInt(2147483647) } } : {}),
       positive_prompt: compiled.positive_prompt,
       negative_prompt: compiled.negative_prompt,
       prompt_parts: structuredClone(compiled.prompt_parts),
@@ -168,7 +165,6 @@ async function compileAndPersistExactPageRenderTask(
     pageKey: identity.page_key,
     dictionaryEntries: promptDictionary.entries,
   });
-  if (resolved.compiled_page.two_step) await assertDepthDependencies(resolved.compiled_page.two_step, repositoryRoot, localConfig);
 
   const task = compileTask({
     resolved,

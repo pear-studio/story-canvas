@@ -1,9 +1,10 @@
+import { inspectionGenerationSignature } from "./generation-signature.mjs";
 import { deletePageCandidates } from "./candidate-delete.mjs";
 import { readPageMedia } from "./page-media.mjs";
 import { encodePageKey, validatePageKey } from "./page-key.mjs";
 import { compilePageRenderInspectionContext, resolveExactPageIdentity, PageRenderError } from "./page-render-resolver.mjs";
 import { loadPromptDictionaryForRender } from "./prompt-dictionary-loader.mjs";
-import { isActiveRenderTaskState, listProjectRenderTaskStates, promptSignature } from "./render-task-storage.mjs";
+import { isActiveRenderTaskState, listProjectRenderTaskStates } from "./render-task-storage.mjs";
 
 function requireStoryKey(key) {
   if (validatePageKey(key).length) {
@@ -39,10 +40,11 @@ export async function inspectStoryCandidates({ projectRoot, projectDirectory, pr
       const context = await compilePageRenderInspectionContext({ repositoryRoot: projectRoot, projectDirectory,
         pageKey, dictionaryEntries: dictionary?.entries }).catch(() => null);
       if (!context?.compiled_page || context.blockers.length) continue;
+      result.signature = inspectionGenerationSignature(context);
+      if (!result.signature) continue;
       result.status = "ready";
-      result.signature = promptSignature(context.compiled_page);
-      result.matched = media.candidates.filter((item) => item.prompt_signature === result.signature).length;
-      result.candidate_ids = media.candidates.filter((item) => item.prompt_signature !== result.signature).map((item) => item.candidate_id);
+      result.matched = media.candidates.filter((item) => item.generation_signature === result.signature).length;
+      result.candidate_ids = media.candidates.filter((item) => item.generation_signature !== result.signature).map((item) => item.candidate_id);
     }
   }));
   return results;
@@ -63,7 +65,7 @@ export async function executeStoryCandidateRefresh(context, value, startRender) 
   const [current] = await inspectStoryCandidates({ ...context, pageKeys: [value.page_key] });
   if (current.status === "active" || (current.status !== "ready" && !(value.action === "clean" && all))) return { status: "skipped" };
   if (!(value.action === "clean" && all) && current.signature !== value.expected_signature) {
-    throw new PageRenderError("candidate_prompt_signature_stale", ["当前 Prompt 已变化，请重新扫描后确认"], 409);
+    throw new PageRenderError("candidate_generation_signature_stale", ["当前生成条件已变化，请重新扫描后确认"], 409);
   }
   if (value.action === "generate") {
     if (!all && current.matched) return { status: "skipped" };

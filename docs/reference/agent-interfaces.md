@@ -64,7 +64,7 @@ npm --silent --prefix D:/Workplace/story-canvas/app run visual:produce -- contex
 - `save` 给出原有保存接口的 domain/kind；`draft` 是可直接提交的原有 read/save 草稿。只修改 `draft.document`。
 - `context` 只读，不能写回本页。`inherited` 按来源列出原始片段、身份调整后的权重／开关、页面调整后的最终值；关闭项仍保留。组内保留原始调整映射，方便发现失效键。
 - `profile` 包含有效基础词、风格 LoRA、项目配置覆盖及冲突，已经应用 render-profile.override.json；不返回模型可用性扫描或完整工作流。
-- `final` 为当前模式实际编译的正负向文本、LoRA 与来源；两步模式另列 `draft_stage`。自由模式的 `inherited_usage` 为 `structured_base_only`，继承区解释结构化基础，不代表这些词仍参与自由文本生成。
+- `final` 为当前模式实际编译的正负向文本、LoRA 与来源。自由模式的 `inherited_usage` 为 `structured_base_only`，继承区解释结构化基础，不代表这些词仍参与自由文本生成。
 - `status: complete` 表示读取和审计可完成，不代表没有内容错误或本机可以生成；同时阅读 `audit` 和 `diagnostics`。缺少有效配置／词库等依赖时为 `incomplete`；配置覆盖冲突时 `final` 为 null，不冒充有效配置。事实文件损坏、引用对象缺失等无法读取的情况直接返回明确错误。
 
 读取在同一 `readFacts` 一致性边界内完成，不新增持久化上下文。正常读取不要求模型文件或 ComfyUI 在线；生成前仍用 `preview page` 检查生成条件。同轮未变内容不用重复读，发生目标或依赖冲突后重新读取判断。

@@ -147,41 +147,6 @@
         "free"
       ]
     },
-    "two_step": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "enabled",
-        "strength"
-      ],
-      "properties": {
-        "enabled": {
-          "type": "boolean"
-        },
-        "strength": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1
-        },
-        "draft": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "positive",
-            "base_sha256"
-          ],
-          "properties": {
-            "positive": {
-              "type": "string"
-            },
-            "base_sha256": {
-              "type": "string",
-              "pattern": "^[a-f0-9]{64}$"
-            }
-          }
-        }
-      }
-    },
     "free": {
       "type": "object",
       "required": [

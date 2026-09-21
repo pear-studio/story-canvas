@@ -4,7 +4,7 @@ import { readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 
 import { encodePageKey, pageKeyPathSegments } from "./page-key.mjs";
 import { warmMediaVariants } from "./media-variants.mjs";
-import { promptSignature } from "./render-task-storage.mjs";
+import { taskGenerationSignature } from "./generation-signature.mjs";
 import { isCompletePng, resolveExistingProjectMedia, resolveProjectMediaTarget } from "./render-media.mjs";
 import { candidateGenerationDetail } from "./candidate-generation.mjs";
 
@@ -123,7 +123,7 @@ export async function publishCandidateResult(projectDirectory, task, item, image
   const result = { version: 1, candidate_id: item.candidate_id, page_key: structuredClone(item.page_key), file,
     status: "available", task_id: task.id, item_id: item.id, seed: item.seed ?? null,
     generated_at: item.generated_at ?? task.completed_at ?? new Date().toISOString(),
-    prompt_signature: item.prompt_signature ?? promptSignature({ positive_prompt: item.positive_prompt ?? "", negative_prompt: item.negative_prompt ?? "" }) };
+    generation_signature: taskGenerationSignature(task, item) };
   const detail = { ...candidateGenerationDetail(task, { ...item, generated_at: result.generated_at }),
     submission: submission ?? { availability: "unavailable", reason: "历史任务未记录实际提交请求" }, evidence: evidence ?? { task_snapshot: structuredClone(task) } };
   const staging = path.join(projectDirectory, "Saved", "staging", "candidate-" + randomUUID());

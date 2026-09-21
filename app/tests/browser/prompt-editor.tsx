@@ -1,5 +1,3 @@
-import { TwoStepPromptPanel } from "../../src/TwoStepPromptPanel";
-import type { TwoStepPrompt } from "../../src/project-workbench-client";
 import "../../src/WorkbenchPageEditor.css";
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -11,8 +9,6 @@ import { persistFragmentList } from "../../src/prompt-fragment-draft";
 function Harness() {
   const roleMode = new URLSearchParams(location.search).has("roles");
   const cameraMode = new URLSearchParams(location.search).has("camera");
-  const [twoStep, setTwoStep] = useState<TwoStepPrompt>();
-  const [source, setSource] = useState("three adults standing apart");
   const [fragments, setFragments] = useState<Record<string, PromptFragment[]>>({
     setting: [{ id: "probe", prompt_type: "custom_description", prompt_text: "quiet hallway under dim lights with a window and soft evening shadows" }],
     ...(cameraMode ? { camera: [{ id: "token-123456789abc", prompt_type: "custom_description" as const, prompt_text: "from side", camera_settings: { ...CAMERA_DEFAULTS, direction: "side" as const } }] } : {}),
@@ -23,9 +19,6 @@ function Harness() {
       createFragment={() => ({ id: "new", prompt_type: "custom_description", prompt_text: "" })} />
     <output>{JSON.stringify(fragments)}</output>
     {cameraMode && <pre id="persisted-camera">{JSON.stringify(persistFragmentList(fragments.camera))}</pre>}
-    <TwoStepPromptPanel base={{ positive: source, base_sha256: source.includes("sitting") ? "b".repeat(64) : "a".repeat(64) }} value={twoStep} source={source} supported disabled={false} onChange={setTwoStep} />
-    <button onClick={() => setSource("three adults sitting apart")}>更改最终 Prompt</button>
-    <pre id="two-step-value">{JSON.stringify(twoStep ?? null)}</pre>
   </div>;
 }
 createRoot(document.getElementById("root")!).render(<Harness />);

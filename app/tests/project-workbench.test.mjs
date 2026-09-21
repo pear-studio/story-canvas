@@ -25,7 +25,7 @@ import { candidateFileRelativePath, publishCandidateResult } from "../server/can
 import { warmMediaVariants } from "../server/media-variants.mjs";
 import { deletePageCandidateById, deletePageCandidates } from "../server/candidate-delete.mjs";
 import { compilePageRenderInspectionContext, compilePageRenderTarget } from "../server/page-render-resolver.mjs";
-import { promptSignature } from "../server/render-task-storage.mjs";
+import { inspectionGenerationSignature } from "../server/generation-signature.mjs";
 import { createCharacterPageKey, createStoryPageKey } from "../server/page-key.mjs";
 import { createRenderTask, readRenderTask, updateRenderTask } from "../server/render-task-storage.mjs";
 import { copyProject } from "../server/project-management.mjs";
@@ -668,25 +668,30 @@ test("候选详情可读且清理与当前 Prompt 不符的候选，不再存在
   for (const directory of ["render-profiles", "prompt-policies", "render-recipes", "workflows"]) {
     await cp(path.join(sourceRepositoryRoot, "library", directory), path.join(current.root, "library", directory), { recursive: true });
   }
-  const compiled = (await compilePageRenderInspectionContext({
+  const renderContext = await compilePageRenderInspectionContext({
     repositoryRoot: current.root, projectDirectory: current.directory, pageKey: page.page_key,
-  })).compiled_page;
+  });
+  const compiled = renderContext.compiled_page;
   assert.ok(compiled, "当前页面 Prompt 应能编译");
   const matchingId = "candidate-33333333-3333-4333-8333-333333333333";
   const matchingFile = candidateFileRelativePath(page.page_key, matchingId);
   await createRenderTask(current.directory, {
     version: 2, id: "render-20260830T010203Z", project: current.projectId, purpose: "candidate", status: "queued",
-    created_at: "2026-08-30T01:02:03.000Z", render_profile: "anima-base-v1", snapshot: {},
+    created_at: "2026-08-30T01:02:03.000Z", render_profile: "anima-base-v1", snapshot: {
+      profile: renderContext.active_profile, canvas: renderContext.project.canvas,
+      recipes: { [renderContext.candidate_route.recipe_instance_id]: { parameters: renderContext.candidate_recipe } },
+      workflows: { [renderContext.candidate_route.workflow_id]: renderContext.candidate_workflow },
+    },
     items: [{
-      id: "item-001", candidate_id: matchingId, page_key: page.page_key, file: matchingFile, status: "queued", seed: 23,
+      id: "item-001", render_route: renderContext.candidate_route, loras: compiled.loras, candidate_id: matchingId, page_key: page.page_key, file: matchingFile, status: "queued", seed: 23,
       positive_prompt: compiled.positive_prompt, negative_prompt: compiled.negative_prompt,
     }],
   }, { project_title: "短篇", pages: [] });
   await updateRenderTask(current.directory, "render-20260830T010203Z", (task) => { task.status = "completed"; task.items[0].status = "available"; });
   const matchingTask = (await readRenderTask(current.directory, "render-20260830T010203Z")).task;
   const published = await publishCandidateResult(current.directory, matchingTask, matchingTask.items[0], Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aJXkAAAAASUVORK5CYII=", "base64"));
-  assert.equal(published.prompt_signature, promptSignature({ positive_prompt: compiled.positive_prompt, negative_prompt: compiled.negative_prompt }));
-  assert.notEqual(published.prompt_signature, promptSignature({ positive_prompt: "ellen, warm light", negative_prompt: "low quality" }), "两个候选的 Prompt 签名应不同");
+  assert.equal(published.generation_signature, inspectionGenerationSignature(renderContext));
+  assert.notEqual(published.generation_signature, "stale-generation-signature", "两个候选的 Prompt 签名应不同");
 
   await assert.rejects(
     deletePageCandidates(current.root, current.projectId, { page_key: page.page_key, all: true }),
@@ -694,22 +699,36 @@ test("候选详情可读且清理与当前 Prompt 不符的候选，不再存在
   );
   await assert.rejects(
     deletePageCandidates(current.root, current.projectId, {
-      page_key: page.page_key, prompt_mismatch: true,
-      expected_signature: promptSignature({ positive_prompt: "ellen, warm light", negative_prompt: "low quality" }),
+      page_key: page.page_key, generation_mismatch: true,
+      expected_signature: "stale-generation-signature",
     }),
-    (error) => error?.code === "candidate_prompt_signature_stale" && error.status === 409,
+    (error) => error?.code === "candidate_generation_signature_stale" && error.status === 409,
     "计数签名与服务端重算结果不一致时拒绝删除",
   );
+  const overridePath = path.join(current.directory, "render-profile.override.json");
+  const model = renderContext.active_profile.models.dit;
+  const change = { target: "models.dit", original: { exists: true, value: model },
+    project: { exists: true, value: { ...model, sha256: "f".repeat(64) } } };
+  await writeFile(overridePath, JSON.stringify({ version: 1, profiles: { "anima-base-v1": { changes: [change] } } }));
+  await assert.rejects(deletePageCandidates(current.root, current.projectId, {
+    page_key: page.page_key, generation_mismatch: true, expected_signature: inspectionGenerationSignature(renderContext),
+  }), { code: "candidate_generation_signature_stale" }, "模型变化而 Prompt 不变也不能沿用旧清理确认");
+  change.original.value = { ...model, sha256: "e".repeat(64) };
+  await writeFile(overridePath, JSON.stringify({ version: 1, profiles: { "anima-base-v1": { changes: [change] } } }));
+  await assert.rejects(deletePageCandidates(current.root, current.projectId, {
+    page_key: page.page_key, generation_mismatch: true, expected_signature: inspectionGenerationSignature(renderContext),
+  }), { code: "current_prompt_unavailable" }, "配置冲突时不能用基础预览清理候选");
+  await rm(overridePath);
   const cleanup = await deletePageCandidates(current.root, current.projectId, {
-    page_key: page.page_key, prompt_mismatch: true,
-    expected_signature: promptSignature({ positive_prompt: compiled.positive_prompt, negative_prompt: compiled.negative_prompt }),
+    page_key: page.page_key, generation_mismatch: true,
+    expected_signature: inspectionGenerationSignature(renderContext),
   });
   assert.deepEqual(cleanup.deleted_candidate_ids, [current.candidateId]);
   assert.deepEqual(
     (await readPageMedia(current.root, current.projectId, { page_key: page.page_key })).media.candidates.map((candidate) => candidate.candidate_id),
     [matchingId],
   );
-  const idle = await deletePageCandidates(current.root, current.projectId, { page_key: page.page_key, prompt_mismatch: true });
+  const idle = await deletePageCandidates(current.root, current.projectId, { page_key: page.page_key, generation_mismatch: true });
   assert.deepEqual(idle.deleted_candidate_ids, [], "没有不符候选时不删除任何图片");
 });
 

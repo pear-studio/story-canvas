@@ -39,8 +39,8 @@ http://127.0.0.1:3000/?project=<project-id>&tab=story
 
 剧情总览提供“清理候选”和“生成候选”，操作收在阅读栏“更多”中，范围为当前全文、章节或情节单元，不含角色视觉页；弹窗显示范围名称，页码保持全故事编号。
 清理可选“清理不符候选”（默认）或“清理全部候选”；生成可选“缺失候选的页面”（默认）或
-“所有页面”，并选择每页生成 1、2、3 张（默认 1 张）。缺失指没有与当前 Prompt 相符的候选。
-匹配规则沿用单页：只比较最终正向、负向 Prompt 文本，生成配置变化但文本未变时不会视为不符。
+“所有页面”，并选择每页生成 1、2、3 张（默认 1 张）。缺失指没有与当前生成条件相符的候选。
+匹配规则沿用单页：比较最终正负向文本、模型 SHA-256、LoRA SHA-256／权重／顺序、参考图内容、当前尺寸、采样参数和工作流身份；不比较种子与显示名称。
 两个操作先扫描，再通过可滚动的确认清单显示页面序号、标题及删除／保留数量；无法编译或已有
 活动生成任务的页面跳过，只列标题；清理全部不依赖 Prompt 编译，可清理无法编译页面的候选。
 清理不可撤销；生成按指定范围和每页张数，按剧情
@@ -187,9 +187,9 @@ Esc 只关闭最上层临时浮层；右键菜单在外部滚动时收起，内�
   Prompt、LoRA、seed、route、recipe 与 workflow 身份；不依赖任务里的陈旧绝对路径。
 - `DELETE /api/projects/:id/workbench/candidates/:candidateId`：以完整 `PageKey` 删除候选，尽力把仍存在的
   任务历史条目标记为 discarded；历史更新失败不恢复已删除成果，活动任务的候选会被拒绝。
-- `DELETE /api/projects/:id/workbench/candidates`：批量接收 `candidate_ids`；或以 `prompt_mismatch: true`
-  清理与当前编译 Prompt 签名不符的全部候选（缺签名视为不符），可携带前端计数时使用的
-  `expected_signature`，与服务端重算结果不一致时返回 409 `candidate_prompt_signature_stale`；
+- `DELETE /api/projects/:id/workbench/candidates`：批量接收 `candidate_ids`；或以 `generation_mismatch: true`
+  清理与当前生成条件签名不符的全部候选（缺签名视为不符），可携带前端计数时使用的
+  `expected_signature`，与服务端重算结果不一致时返回 409 `candidate_generation_signature_stale`；
   当前 Prompt 无法编译时返回 422 `current_prompt_unavailable`。生成详情随成果保留，不依赖任务历史。
 - `PUT /api/projects/:id/workbench/lettering-settings`：携带目标 SHA 完整替换
   `lettering/settings.json`，一次保存字体、字号、文案框预设和全部角色颜色。

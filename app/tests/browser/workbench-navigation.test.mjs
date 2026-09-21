@@ -61,7 +61,7 @@ async function setup(t, { character = false, mobile = false, visualPages = false
     if (pathname.endsWith("/workbench")) return reply(views[id]);
     if (pathname.endsWith("/candidate-counts")) return reply({ revision: "media", counts: {} });
     if (pathname.endsWith("/page-media")) return reply({ revision: "media", media: { candidates: [] } });
-    if (pathname.endsWith("/page-render-inspection")) return reply({ inspection: { ready: true, blockers: [], warnings: [], structured_import: null, two_step_supported: false, draft_base: null, audit: { status: "complete", errors: [], warnings: [] }, prompt: { signature: "test", positive: "", negative: "" } } });
+    if (pathname.endsWith("/page-render-inspection")) return reply({ inspection: { ready: true, blockers: [], warnings: [], structured_import: null, generation_signature: "test", audit: { status: "complete", errors: [], warnings: [] }, prompt: { positive: "", negative: "" } } });
     if (pathname.endsWith("/render")) { renders.push(route.request().postDataJSON()); return reply({ task: { task_id: "render-test" } }); }
     if (pathname.endsWith("/navigation/delete-page")) {
       const { page_id } = route.request().postDataJSON();

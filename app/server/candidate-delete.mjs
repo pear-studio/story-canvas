@@ -1,3 +1,4 @@
+import { inspectionGenerationSignature } from "./generation-signature.mjs";
 import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, realpath, rename, rm } from "node:fs/promises";
 import path from "node:path";
@@ -7,7 +8,7 @@ import { withCandidateMutationLock } from "./candidate-mutation-lock.mjs";
 import { encodePageKey } from "./page-key.mjs";
 import { resolveProjectLocation } from "./project-operations.mjs";
 import { PageRenderError, compilePageRenderInspectionContext, resolveExactPageIdentity, resolvePageIdentity } from "./page-render-resolver.mjs";
-import { listActiveProjectTaskIds, promptSignature, updateRenderTask } from "./render-task-storage.mjs";
+import { listActiveProjectTaskIds, updateRenderTask } from "./render-task-storage.mjs";
 import { factStorage as storage } from "./story-facts.mjs";
 
 function fail(code, details = [], status = 422) {
@@ -97,9 +98,9 @@ export async function deletePageCandidateById(projectRoot, projectId, pageKey, c
 export async function deletePageCandidates(projectRoot, projectId, value) {
   if (!value || typeof value !== "object" || Array.isArray(value) || !value.page_key) fail("invalid_candidate_delete_request", [], 400);
   const hasIds = Array.isArray(value.candidate_ids);
-  const promptMismatch = value.prompt_mismatch === true;
-  const allowed = hasIds ? new Set(["page_key", "candidate_ids"]) : new Set(["page_key", "prompt_mismatch", "expected_signature"]);
-  if (hasIds === promptMismatch || Object.keys(value).some((key) => !allowed.has(key))) fail("invalid_candidate_delete_request", [], 400);
+  const generationMismatch = value.generation_mismatch === true;
+  const allowed = hasIds ? new Set(["page_key", "candidate_ids"]) : new Set(["page_key", "generation_mismatch", "expected_signature"]);
+  if (hasIds === generationMismatch || Object.keys(value).some((key) => !allowed.has(key))) fail("invalid_candidate_delete_request", [], 400);
   if (!hasIds && value.expected_signature !== undefined && typeof value.expected_signature !== "string") fail("invalid_candidate_delete_request", [], 400);
   if (hasIds && (!value.candidate_ids.length || new Set(value.candidate_ids).size !== value.candidate_ids.length
     || value.candidate_ids.some((candidateId) => typeof candidateId !== "string"))) {
@@ -121,11 +122,12 @@ export async function deletePageCandidates(projectRoot, projectId, value) {
     });
     const compiled = context.compiled_page;
     if (!compiled) fail("current_prompt_unavailable", context.blockers.map((blocker) => blocker.message));
-    const currentSignature = promptSignature({ positive_prompt: compiled.positive_prompt ?? "", negative_prompt: compiled.negative_prompt ?? "" });
+    const currentSignature = inspectionGenerationSignature(context);
+    if (!currentSignature) fail("current_prompt_unavailable", ["无法取得完整生成条件"]);
     if (value.expected_signature !== undefined && value.expected_signature !== currentSignature) {
-      fail("candidate_prompt_signature_stale", [], 409);
+      fail("candidate_generation_signature_stale", [], 409);
     }
-    requestedIds = available.filter((record) => record.prompt_signature !== currentSignature).map((record) => record.candidate_id);
+    requestedIds = available.filter((record) => record.generation_signature !== currentSignature).map((record) => record.candidate_id);
   }
   const byId = new Map(available.map((record) => [record.candidate_id, record]));
   const missing = requestedIds.filter((candidateId) => !byId.has(candidateId));

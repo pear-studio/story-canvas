@@ -21,9 +21,9 @@ export function StoryCandidateDifference({ projectId, row, onClose }: { projectI
   }, [projectId, row.page_key, candidateId]);
   const labels = { same: '完全一致', format: '仅空格或换行不同', order: '词条相同，顺序或排版不同', content: '词句或权重有变化' };
   return <Modal size="workspace" className="candidate-difference-modal" title="候选差异详情" subtitle={row.title} onClose={onClose} footer={<button type="button" className="button" onClick={onClose}>关闭</button>}>
-    <p>比较候选生成时的记录与当前已保存的 Prompt；没有候选也会列入补齐范围。</p>
+    <p>比较候选生成时的记录与当前已保存的生成条件；没有候选也会列入补齐范围。</p>
     <p>{row.all_candidate_ids.length ? `共 ${row.all_candidate_ids.length} 张候选，扫描时 ${row.matched} 张相符、${row.candidate_ids.length} 张不符。` : '本页没有候选图，没有旧 Prompt 可比较。'}</p>
-    {current && current.prompt.signature !== row.signature && <p>扫描后页面状态已变化，请关闭并重新扫描后再生成或清理。</p>}
+    {current && current.generation_signature !== row.signature && <p>扫描后页面状态已变化，请关闭并重新扫描后再生成或清理。</p>}
     {error && <p role="alert">{error}</p>}
     {!current && !error && <p role="status">正在读取当前 Prompt…</p>}
     {current?.blockers.map((issue, index) => <p key={index}>{issue.message}</p>)}
@@ -46,6 +46,6 @@ export function StoryCandidateDifference({ projectId, row, onClose }: { projectI
         </div></details>
       </section>;
     })}
-    {current && candidate && row.candidate_ids.includes(candidateId) && current.prompt.positive === candidate.generation.prompt.positive && current.prompt.negative === candidate.generation.prompt.negative && <p>正负向文本一致；扫描签名仍不符，需核对两步生成设置或旧候选签名记录。</p>}
+    {current && candidate && row.candidate_ids.includes(candidateId) && current.prompt.positive === candidate.generation.prompt.positive && current.prompt.negative === candidate.generation.prompt.negative && <p>正负向文本一致；扫描签名仍不符，差异来自模型、LoRA、参考图、采样配置或缺失的历史记录。</p>}
   </Modal>;
 }

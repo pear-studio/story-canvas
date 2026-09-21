@@ -1,5 +1,4 @@
 import { referenceImageFilename, uploadFrozenReferenceImage } from "./reference-image.mjs";
-import { assertDepthDependencies, saveDepthIntermediates, depthComfyUiUrls } from "./two-step-runtime.mjs";
 import { resolveExactPageIdentity } from "./page-render-resolver.mjs";
 import { publishCandidateResult, readCandidateResult } from "./candidate-storage.mjs";
 import { withCandidateMutationLock } from "./candidate-mutation-lock.mjs";
@@ -250,8 +249,7 @@ async function runRender(options, assignedTaskId) {
   const { task, execution, localConfig, taskDirectory } = await loadPersistedRenderTask(options.projectRoot, assignedTaskId);
   let apiUrl = String(options.apiUrl ?? "").trim().replace(/\/$/, "");
   if (!apiUrl) {
-    const configuredUrls = task.items.some(item => item.two_step) ? depthComfyUiUrls(localConfig) : configuredComfyUiUrls(localConfig);
-    if (task.items.some(item => item.two_step) && !configuredUrls.length) throw new Error("两步生成需要已配置的本机 ComfyUI 地址");
+    const configuredUrls = configuredComfyUiUrls(localConfig);
     if (configuredUrls.length) {
       const selector = createComfyEndpointSelector({ urls: configuredUrls, probe: queryComfySystemStats });
       await selector.refresh();
@@ -306,7 +304,6 @@ async function runRender(options, assignedTaskId) {
       profile,
       localConfig: runtimeConfig,
     });
-    for (const unit of units) if (unit.plan.two_step) await assertDepthDependencies(unit.plan.two_step, options.repositoryRoot ?? repositoryRoot, runtimeConfig, apiUrl);
     await fetchJson(`${apiUrl}/system_stats`);
     const startedAt = new Date().toISOString();
     if (!queueReference) await commit((current) => {
@@ -448,7 +445,6 @@ async function runRender(options, assignedTaskId) {
           (history?.outputs && Object.keys(history.outputs).length)
           || history?.status?.status_str === "error",
         );
-        await saveDepthIntermediates(options.projectRoot, unit.plan.intermediate_outputs, history, image => downloadImage(apiUrl, image));
         const mappedOutputs = unit.plan.outputs.map(output => ({ output, image: history?.outputs?.[output.node_id]?.images?.[output.image_index] }));
         const missing = [];
         const itemById = new Map(unit.items.map((item) => [item.id, item]));

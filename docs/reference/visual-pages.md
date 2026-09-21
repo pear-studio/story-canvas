@@ -21,7 +21,7 @@ npm --prefix <仓库根绝对路径>/app run visual:produce -- preview page <pro
 npm --prefix <仓库根绝对路径>/app run visual:produce -- render page <project-id> <page-id> --count 3 --wait
 ```
 
-preview 返回最终正负向、来源、审计与配置诊断。当前 inspection.prompt.signature 与候选 result.json 的 prompt_signature 相同，说明候选对应当前编译输入。渲染从提交时的最新稳定事实冻结，不携带项目 revision，不接受临时 Prompt 覆盖。固定种子 --seed 仅用于受控对照。
+preview 返回最终正负向、来源、审计与配置诊断。当前 inspection.generation_signature 与候选 result.json 的 generation_signature 相同，说明候选对应当前生成条件。渲染从提交时的最新稳定事实冻结，不携带项目 revision，不接受临时 Prompt 覆盖。固定种子 --seed 仅用于受控对照。
 
 render 默认排队后返回；需要等待结果时加 --wait。任务返回完整 task_directory 与 candidate_paths，直接按路径查看，不拼文件名。当前范围内已准备好的独立页面可并发提交，依赖当前结果的改法不得预排；切换方案前确认旧任务已冻结。
 

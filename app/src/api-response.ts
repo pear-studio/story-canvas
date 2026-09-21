@@ -24,7 +24,7 @@ export async function workbenchResponseJson<T>(response: Response): Promise<T> {
     const code = typeof payload?.error === "string" && payload.error.trim() ? payload.error.trim() : null;
     if (code === "story_edit_target_busy") throw new Error("操作正在进行，请稍后再试");
     if (code === "candidate_task_active") throw new Error("该候选所属任务仍在运行，请等待任务结束后再删除");
-    if (code === "candidate_prompt_signature_stale") throw new Error("当前 Prompt 已变化，请重新扫描后确认");
+    if (code === "candidate_generation_signature_stale") throw new Error("当前生成条件已变化，请重新扫描后确认");
     if (code === "page_content_prompt_reference_conflict") {
       throw new Error("页面 Prompt 仍引用待移除的出场角色；请先在 Prompt 中解除对应角色绑定并保存");
     }

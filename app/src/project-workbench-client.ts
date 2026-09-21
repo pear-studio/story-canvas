@@ -24,12 +24,11 @@ export type PromptFragment = {
   enabled?: boolean;
 };
 export type FreePrompt = { base_sha256?: string; positive: string; negative: string; loras: CharacterLora[] };
-export type TwoStepPrompt = { enabled: boolean; strength: number; draft?: { positive: string; base_sha256: string } };
 export type InheritedAdjustments = Record<string, { weight?: number; enabled?: boolean }>;
 export type SettingKind = 'character' | 'scene';
 export type Scene = WorkbenchCharacter;
 export type PageOwner = { page_id: string; owner_kind: 'story' | 'character' | 'scene'; sequence_id?: string; character_id?: string; scene_id?: string; variant_id?: string };
-export type PagePrompt = Record<PromptCategory, PromptFragment[]> & { mode?: "structured" | "free"; free?: FreePrompt; two_step?: TwoStepPrompt; reference_image?: string; scene_id?: string; scene_variant_id?: string; inheritance?: Record<string, InheritedAdjustments> };
+export type PagePrompt = Record<PromptCategory, PromptFragment[]> & { mode?: "structured" | "free"; free?: FreePrompt; reference_image?: string; scene_id?: string; scene_variant_id?: string; inheritance?: Record<string, InheritedAdjustments> };
 export type CharacterLora = { filename: string; sha256: string; weight: number; trigger?: string };
 export type CharacterPromptSetting = {
   prompt: PagePrompt;
@@ -57,7 +56,7 @@ export type Candidate = {
   task_id: string;
   seed: number | null;
   generated_at: string | null;
-  prompt_signature: string | null;
+  generation_signature: string | null;
 };
 export type PageMedia = {
   candidates: Candidate[];
@@ -433,9 +432,8 @@ export type GenerationDetails = {
 };
 
 export type PageRenderInspection = {
+  generation_signature: string | null;
   structured_import: FreePrompt | null;
-  two_step_supported: boolean;
-  draft_base: { positive: string; base_sha256: string } | null;
   version: 1;
   page_key: WorkbenchPage["page_key"];
   title: string;
@@ -446,7 +444,6 @@ export type PageRenderInspection = {
   prompt: {
     positive: string;
     negative: string;
-    signature: string | null;
     separator: string;
     parts: {
       positive: PageRenderPromptPart[];
@@ -550,7 +547,7 @@ export async function deleteCandidate(projectId: string, pageKey: WorkbenchPage[
 export async function deleteCandidates(
   projectId: string,
   pageKey: WorkbenchPage["page_key"],
-  request: { candidate_ids: string[] } | { prompt_mismatch: true; expected_signature?: string },
+  request: { candidate_ids: string[] } | { generation_mismatch: true; expected_signature?: string },
 ) {
   return workbenchResponseJson<{
     page_key: WorkbenchPage["page_key"];

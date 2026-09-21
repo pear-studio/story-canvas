@@ -1,8 +1,7 @@
-import { assertDepthDependencies } from "./two-step-runtime.mjs";
 import { diagnoseRenderProfile, diagnoseResolvedLoras } from "./render-profile-diagnostics.mjs";
 import { inspectRenderProfile } from "./render-profile-inspection.mjs";
 import { compilePageRenderInspectionContext } from "./page-render-resolver.mjs";
-import { promptSignature } from "./render-task-storage.mjs";
+import { inspectionGenerationSignature } from "./generation-signature.mjs";
 import { storyPromptCategories } from "./story-files.mjs";
 import { hashCanonicalJson } from "./workflow-definition.mjs";
 import { loadPromptDictionaryForRender } from "./prompt-dictionary-loader.mjs";
@@ -48,7 +47,7 @@ async function diagnoseProfileContext(context, repositoryRoot, config) {
   if (!context.active_profile || !context.compiled_profile) {
     return { diagnosis: null, inspection: null, blockers: [], warnings: [] };
   }
-  const diagnosis = await diagnoseRenderProfile(context.snapshot.page_prompt.mode === "free" && !context.snapshot.page_prompt.two_step?.enabled ? { ...context.active_profile, style_loras: {} } : context.active_profile, repositoryRoot, config);
+  const diagnosis = await diagnoseRenderProfile(context.snapshot.page_prompt.mode === "free" ? { ...context.active_profile, style_loras: {} } : context.active_profile, repositoryRoot, config);
   const baseBundle = context.compiled_profile.base_bundle ?? context.compiled_profile;
   const activeSha = context.compiled_profile.blocked
     ? baseBundle.resolved_profile_sha256
@@ -140,16 +139,10 @@ export async function inspectPageRender({
       errors: [error?.message ?? String(error)],
     }));
   }
-  const depthBlockers = [];
-  if (context.compiled_page?.two_step && context.compiled_page.two_step_supported) {
-    try { await assertDepthDependencies(context.compiled_page.two_step, repositoryRoot, config); }
-    catch (error) { depthBlockers.push(issue("two_step_dependencies_unavailable", error.message, "two_step")); }
-  }
   const auditWarnings = context.audit.warnings ?? [];
   const blockers = uniqueIssues([
     ...context.blockers,
-    ...depthBlockers,
-    ...profile.blockers.filter(item => context.snapshot.page_prompt.mode !== "free" || context.snapshot.page_prompt.two_step?.enabled || !String(item.source ?? "").includes("style_loras")),
+    ...profile.blockers.filter(item => context.snapshot.page_prompt.mode !== "free" || !String(item.source ?? "").includes("style_loras")),
     ...loraBlockers(diagnosedLoras),
   ]);
   const warnings = uniqueIssues([...profile.warnings, ...auditWarnings]);
@@ -183,8 +176,7 @@ export async function inspectPageRender({
   } catch { /* 当前结构化配置不完整时仍可自由编辑。 */ }
   return {
     structured_import: structuredImport,
-    two_step_supported: compiled?.two_step_supported ?? false,
-    draft_base: compiled?.draft_base ?? null,
+    generation_signature: inspectionGenerationSignature(context),
     version: 1,
     page_key: structuredClone(context.snapshot.page_key),
     title: context.snapshot.title,
@@ -196,7 +188,6 @@ export async function inspectPageRender({
     prompt: {
       positive: compiled?.positive_prompt ?? "",
       negative: compiled?.negative_prompt ?? "",
-      signature: compiled ? promptSignature({ positive_prompt: compiled.positive_prompt ?? "", negative_prompt: compiled.negative_prompt ?? "" }) : null,
       separator: compiled?.prompt_parts?.separator ?? ", ",
       parts: {
         positive: structuredClone(compiled?.prompt_parts?.positive ?? []),

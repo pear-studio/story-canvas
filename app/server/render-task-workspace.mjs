@@ -163,7 +163,6 @@ export async function readWorkspaceTaskDetail(projectRoot, projectId, taskId, pu
   if (!stored) throw Object.assign(new Error("任务不存在"), { status: 404, code: "task_not_found" });
   const units = await Promise.all((stored.task.snapshot.execution_units ?? []).map(async unit => ({
     id: unit.id, item_ids: unit.item_ids,
-    ...(unit.two_step ? { two_step: unit.two_step, intermediates: await Promise.all((unit.intermediate_outputs ?? []).map(async output => ({ kind: output.kind, url: await resolveExistingProjectMedia(projectDirectory, output.file) ? mediaUrl(projectId, output.file) : null }))) } : {}),
     submission: await readJsonOptional(path.join(projectDirectory, "Saved", "render", "submissions", taskId, `${unit.id}.json`)),
   })));
   return { ...await publicRenderTaskState(projectDirectory, projectId, stored.state, { detail: true }), execution_units: units, snapshot: stored.task.snapshot };

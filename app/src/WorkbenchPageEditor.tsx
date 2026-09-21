@@ -5,7 +5,6 @@ import { InheritedPromptEditor } from './InheritedPromptEditor';
 import { variantPrompt, characterSource, sceneSource } from '../shared/prompt-inheritance.mjs';
 import type { Scene } from './project-workbench-client';
 import type { ImageOverlayTarget } from "./ImageLightbox";
-import { TwoStepPromptPanel } from "./TwoStepPromptPanel";
 import {
   type CSSProperties,
   Fragment,
@@ -752,7 +751,7 @@ export default function WorkbenchPageEditor({
   const incomingPrompt = useMemo(() => displayPromptDraft(page.prompt), [page.prompt_sha256]);
   const [promptBaseline, setPromptBaseline] = useState(incomingPrompt);
   const [promptDraft, setPromptDraft] = useState(incomingPrompt);
-  const incomingOptions = useMemo(() => ({ mode: page.prompt.mode ?? "structured", free: page.prompt.free, two_step: page.prompt.two_step, reference_image: page.prompt.reference_image, scene_id: page.prompt.scene_id, scene_variant_id: page.prompt.scene_variant_id, inheritance: page.prompt.inheritance }), [page.prompt_sha256]);
+  const incomingOptions = useMemo(() => ({ mode: page.prompt.mode ?? "structured", free: page.prompt.free, reference_image: page.prompt.reference_image, scene_id: page.prompt.scene_id, scene_variant_id: page.prompt.scene_variant_id, inheritance: page.prompt.inheritance }), [page.prompt_sha256]);
   const [promptOptions, setPromptOptions] = useState(incomingOptions);
   const [optionsBaseline, setOptionsBaseline] = useState(incomingOptions);
   const customBase = flowPreview?.structured_import ?? null;
@@ -848,8 +847,8 @@ export default function WorkbenchPageEditor({
         const content = contentFromPage({ ...page, ...saved.content });
         editBaseline.current = saved.page; setExternalConflict(false);
         setContentBaseline(clone(content)); setContentDraft(clone(content)); setDialogueDraft(editableDialogue(content.dialogue));
-        const { mode, free, two_step, reference_image, scene_id, scene_variant_id, inheritance } = saved.prompt;
-        const options = { mode: mode ?? 'structured' as const, free, two_step, reference_image, scene_id, scene_variant_id, inheritance };
+        const { mode, free, reference_image, scene_id, scene_variant_id, inheritance } = saved.prompt;
+        const options = { mode: mode ?? 'structured' as const, free, reference_image, scene_id, scene_variant_id, inheritance };
         const fragments = displayPromptDraft(saved.prompt);
         setPromptDraft(fragments); setPromptBaseline(clone(fragments)); setPromptOptions(options); setOptionsBaseline(clone(options));
         setLayoutDraft(clone(saved.items)); setLayoutBaseline(clone(saved.items));
@@ -938,7 +937,6 @@ export default function WorkbenchPageEditor({
       {scenes.filter(scene => scene.id === promptOptions.scene_id && scene.prompt.variants[promptOptions.scene_variant_id ?? '']).map(scene => <InheritedPromptEditor key={scene.id} title={'场景 · ' + scene.name} source={sceneSource(scene.id, promptOptions.scene_variant_id ?? '')} prompt={variantPrompt(scene.prompt.identity, scene.prompt.variants[promptOptions.scene_variant_id ?? '']) as PagePrompt} adjustments={promptOptions.inheritance?.[sceneSource(scene.id, promptOptions.scene_variant_id ?? '')]} onChange={value => setPromptOptions(current => ({ ...current, inheritance: { ...current.inheritance, [sceneSource(scene.id, promptOptions.scene_variant_id ?? '')]: value } }))} />)}
       <PromptFragmentEditor categories={promptCategories.filter(category => category !== "subject" || (promptDraft.subject ?? []).some(fragment => !isPopulationFragment(fragment))).map((category) => ({ id: category, label: category === "subject" ? "主体补充" : categoryLabels[category] }))} scope="page" fragments={{ ...promptDraft, subject: (promptDraft.subject ?? []).filter(fragment => !isPopulationFragment(fragment)) }} roles={promptRoles} createFragment={createPromptDraftFragment} onChange={next => setPromptDraft(current => ({ ...next, subject: [...(current.subject ?? []).filter(isPopulationFragment), ...(next.subject ?? [])] }))} historyScopeKey={`${pageIdentity}:${page.prompt_sha256}`} /></>}
       {promptOptions.mode === "structured" && <div className="prompt-camera-actions"><button type="button" className="button" disabled={busy || promptPhase === "saving"} onClick={() => setCameraOpen(true)}>机位控制</button>{onOpenPromptOverview && <button type="button" className="button" disabled={busy || saving} onClick={onOpenPromptOverview}>Prompt 总览</button>}</div>}
-      <TwoStepPromptPanel base={flowPreview?.draft_base ?? null} value={promptOptions.two_step} source={customBase ? (promptOptions.mode === "free" ? promptOptions.free?.positive ?? customBase.positive : customBase.positive) : null} supported={flowPreview?.two_step_supported ?? false} disabled={busy || promptPhase === "saving"} onChange={two_step => setPromptOptions(current => ({ ...current, two_step }))} />
     </section>}
 
     {!isTextPage && visibleTab === "lettering" && letteringStyle && <>

@@ -1,5 +1,4 @@
 import { referenceImageFilename } from "./reference-image.mjs";
-import { expandDepthWorkflow, depthIntermediateOutputs } from "./two-step-generation.mjs";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -35,7 +34,7 @@ const frozenSnapshotFields = new Set([
 ]);
 const frozenItemFields = new Set([
   "id", "task", "page_key", "seed", "candidate_id", "file", "positive_prompt", "negative_prompt", "prompt_parts",
-  "loras", "status", "two_step", "reference_image",
+  "loras", "status", "reference_image",
   "render_route", "prompt_id", "generated_at", "discarded_at", "absolute_file",
 ]);
 function clone(value) { return structuredClone(value); }
@@ -555,7 +554,7 @@ export function buildWorkflow(definition, profile, recipe, item) {
     const binding = bindings[name];
     if (binding && value != null) setPath(workflow, binding, value);
   }
-  return expandDepthWorkflow(workflow, item);
+  return workflow;
 }
 
 /**
@@ -626,7 +625,7 @@ function workflowOutputNodeId(definition) {
 
 export function compileFrozenExecutionUnits({ items, purpose, snapshot, profile, canvas, candidateBatch, taskId }) {
   const executableItems = items.filter((item) => item.status !== "skipped" && item.status !== "discarded");
-  const units = buildRenderUnits(executableItems, { candidateBatch: candidateBatch && purpose === "candidate" && !items.some(item => item.two_step || item.reference_image) });
+  const units = buildRenderUnits(executableItems, { candidateBatch: candidateBatch && purpose === "candidate" && !items.some(item => item.reference_image) });
   const outputAdapter = createRenderOutputAdapter(purpose);
   return units.map((unit, index) => {
     const unitId = `unit-${String(index + 1).padStart(4, "0")}`;
@@ -689,7 +688,6 @@ export function compileFrozenExecutionUnits({ items, purpose, snapshot, profile,
           },
         },
       },
-      ...(runtimeItem.two_step ? { two_step: clone(runtimeItem.two_step), intermediate_outputs: depthIntermediateOutputs(api, runtimeItem) } : {}),
       outputs: unit.items.map((item, imageIndex) => ({
         node_id: outputNodeId,
         image_index: imageIndex,
@@ -728,10 +726,6 @@ function assertFrozenExecutionPlan(task) {
     const workflow = task.snapshot.workflows?.[unit.workflow?.source_id];
     if (!workflow || workflow.template_sha256 !== unit.workflow.template_sha256 || workflow.manifest_sha256 !== unit.workflow.manifest_sha256
       || unit.workflow.canonical_sha256 !== hashCanonicalJson(unit.workflow.api)) throw new Error(`${unit.id} workflow 身份无效`);
-    if (unitItems[0].two_step) {
-      if (unitItems.length !== 1 || unit.batch || hashCanonicalJson(unit.two_step) !== hashCanonicalJson(unitItems[0].two_step)
-        || hashCanonicalJson(unit.intermediate_outputs) !== hashCanonicalJson(depthIntermediateOutputs(unit.workflow.api, unitItems[0]))) throw new Error(`${unit.id} 两步生成冻结配置或中间输出无效`);
-    } else if (unit.two_step || unit.intermediate_outputs) throw new Error(`${unit.id} 意外的两步生成输出`);
     const outputNodeId = workflowOutputNodeId(workflow);
     if (unit.outputs.some((output) => output.node_id !== outputNodeId)) throw new Error(`${unit.id} 输出节点映射无效`);
     const provenanceOutputs = unit.extra_data?.extra_pnginfo?.storyvisualizer?.outputs;

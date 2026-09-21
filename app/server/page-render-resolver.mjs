@@ -2,7 +2,6 @@ import { readReferenceImage } from "./reference-image.mjs";
 import { readPageIndex } from './pages-store.mjs';
 import { resolveSceneConfiguration } from './scene-files.mjs';
 import { readScenes, readInheritanceSources, checkPageInheritanceReferences } from './prompt-inheritance-facts.mjs';
-import { attachTwoStep } from "./two-step-generation.mjs";
 import { createHash } from "node:crypto";
 import { lstat, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
@@ -66,7 +65,7 @@ function inspectionBlocker(code, message, details = []) {
 
 function normalizeInspectionPromptDraft(value) {
   const source = isRecord(value) ? value : {};
-  const prompt = { $schema: STORY_PAGE_PROMPT_SCHEMA_ID, ...(source.reference_image === undefined ? {} : { reference_image: source.reference_image }), ...(source.scene_id ? { scene_id: source.scene_id, scene_variant_id: source.scene_variant_id } : {}), ...(source.inheritance ? { inheritance: structuredClone(source.inheritance) } : {}), ...(source.mode === undefined ? {} : { mode: source.mode }), ...(source.free === undefined ? {} : { free: structuredClone(source.free) }), ...(source.two_step === undefined ? {} : { two_step: structuredClone(source.two_step) }) };
+  const prompt = { $schema: STORY_PAGE_PROMPT_SCHEMA_ID, ...(source.reference_image === undefined ? {} : { reference_image: source.reference_image }), ...(source.scene_id ? { scene_id: source.scene_id, scene_variant_id: source.scene_variant_id } : {}), ...(source.inheritance ? { inheritance: structuredClone(source.inheritance) } : {}), ...(source.mode === undefined ? {} : { mode: source.mode }), ...(source.free === undefined ? {} : { free: structuredClone(source.free) }) };
   for (const category of storyPromptCategories) {
     prompt[category] = Array.isArray(source[category])
       ? source[category].filter(isRecord).map((fragment) => structuredClone(fragment))
@@ -265,7 +264,7 @@ export function compilePagePromptSnapshot(snapshot, profile, dictionaryEntries, 
   compiled.errors.push(...(snapshot.inheritance_errors ?? []));
   if (profile.architecture_family === "qwen-image-2-1" && compiled.loras.length) compiled.errors.push("当前 Qwen 配置暂不支持 LoRA；请使用无 LoRA 的页面或保留 Anima 配置");
   compiled.ready = compiled.ready && !compiled.errors.length;
-  return attachTwoStep(compiled, snapshot.page_prompt.two_step, profile);
+  return compiled;
 }
 
 export function pagePromptDiagnostics(compiled) {
@@ -482,8 +481,9 @@ export async function compilePageRenderInspectionContext({
     blockers.push(diagnostic);
   }
 
+  let referenceImage = null;
   if (snapshot.page_prompt.reference_image) {
-    try { await readReferenceImage(projectDirectory, snapshot.page_prompt.reference_image); }
+    try { referenceImage = (await readReferenceImage(projectDirectory, snapshot.page_prompt.reference_image)).identity; }
     catch (error) { blockers.push(inspectionBlocker("reference_image_unavailable", error.message)); }
   }
   let candidateRoute = null;
@@ -520,6 +520,7 @@ export async function compilePageRenderInspectionContext({
     snapshot,
     compiled_profile: compiledProfile,
     active_profile: activeProfile,
+    reference_image: referenceImage,
     compiled_page: compiledPage,
     audit,
     candidate_route: candidateRoute,

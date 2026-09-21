@@ -108,8 +108,8 @@ export function StoryCandidateRefresh({ projectId, pages, busy, scopeLabel = "�
           </select></label>}
         </div>
         <p className="story-candidate-refresh-help">{session.action === "clean"
-          ? cleanAll ? "删除以下页面的全部候选，无法撤销。" : "仅删除与当前已保存的 Prompt 不符的候选，无法撤销。"
-          : scope === "missing" ? "缺失包括：尚无候选图，以及已有候选但都与当前 Prompt 不符。" : "为所有可生成的页面新增候选。"}</p>
+          ? cleanAll ? "删除以下页面的全部候选，无法撤销。" : "仅删除与当前已保存的生成条件不符的候选，无法撤销。"
+          : scope === "missing" ? "缺失包括：尚无候选图，以及已有候选但都与当前生成条件不符。" : "为所有可生成的页面新增候选。"}</p>
         <div className="story-candidate-refresh-summary" role="status">
           <span>{targets.length ? `${targets.length} 页${session.action === "generate" ? ` · 每页 ${perPage} 张` : ""}` : "没有需要处理的页面"}</span>
           {targets.length > 0 && <strong>{session.action === "clean" ? "删除" : "生成"} {count} 张</strong>}

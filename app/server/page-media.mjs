@@ -32,7 +32,7 @@ async function projectCandidate(record, projectDirectory, projectId) {
     task_id: record.task_id,
     seed: Number.isSafeInteger(record.seed) ? record.seed : null,
     generated_at: record.generated_at ?? null,
-    prompt_signature: record.prompt_signature ?? null,
+    generation_signature: record.generation_signature ?? null,
   };
 }
 

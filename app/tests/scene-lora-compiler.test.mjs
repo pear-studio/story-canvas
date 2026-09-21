@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import { compileCurrentPagePrompt, structuredPromptBase } from "../server/current-page-prompt.mjs";
 import { freezePageLorasForTask } from "../server/render-task-helpers.mjs";
 import { diagnoseResolvedLoras } from "../server/render-profile-diagnostics.mjs";
-import { attachTwoStep, depthRecipe } from "../server/two-step-generation.mjs";
 
 const prompt = (setting = []) => ({ subject: [], person: [], setting, camera: [], avoid: [] });
 const lora = (name, trigger, weight = 1) => ({ filename: `${name}.safetensors`, sha256: "a".repeat(64), weight, trigger });
@@ -17,7 +16,7 @@ function fixture() {
   return { pageId: "page-001", pageKey: { page_id: "page-001" }, scenes: [scene],
     pagePrompt: { ...prompt(), scene_id: "station", scene_variant_id: "night",
       inheritance: { "scene:station:night": { "moonlit platform": { weight: 1.2 } } } },
-    profile: { id: "test", style_loras: {}, models: { dit: { sha256: depthRecipe.base_sha256 } },
+    profile: { id: "test", style_loras: {}, models: { dit: { sha256: "a".repeat(64) } },
       prompt: { family: "anima", category_order: ["subject", "person", "setting", "camera"], avoidance_strategy: "negative_prompt", fragments: {} } },
   };
 }
@@ -51,14 +50,9 @@ test("场景 LoRA 和角色同文件配置冲突不静默覆盖", () => {
   assert.match(compileCurrentPagePrompt(args).errors.join(" "), /character:alice 与 scene:station 之间配置冲突/);
 });
 
-test("场景 LoRA 使用共同文件诊断；两步最终分支保留场景 LoRA", async () => {
+test("场景 LoRA 使用共同文件诊断", async () => {
   const args = fixture();
   const compiled = compileCurrentPagePrompt(args);
   const diagnosis = await diagnoseResolvedLoras(compiled.loras, process.cwd(), { comfyui_urls: ["http://192.0.2.1:8188"] });
   assert.deepEqual(diagnosis.map(value => value.kind), ["scene", "scene"]);
-  const twoStep = attachTwoStep(compiled, { enabled: true, strength: 0.5 }, args.profile);
-  assert.deepEqual(twoStep.loras, compiled.loras);
-  assert.match(twoStep.two_step.positive, /station_token/);
-  // 草稿与已有角色行为一致，只加载风格 LoRA；最终分支加载全部页面 LoRA。
-  assert.deepEqual(twoStep.two_step.loras, []);
 });

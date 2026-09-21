@@ -24,7 +24,7 @@ npm --prefix <仓库根>/app run visual:produce -- render page <project-id> <pag
 npm --prefix <仓库根>/app run visual:produce -- preview page <project-id> <page-id>
 ```
 
-输出中的 `inspection.prompt.signature` 与候选 `result.json` 的 `prompt_signature` 使用同一签名，可直接比对候选是否对应当前 Prompt 编译结果。
+输出中的 `inspection.generation_signature` 与候选 `result.json` 的 `generation_signature` 使用同一签名，可直接比对候选是否对应当前生成条件。
 
 删除一张不需要的候选：
 

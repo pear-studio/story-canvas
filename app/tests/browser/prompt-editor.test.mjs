@@ -267,27 +267,6 @@ test("可见视口缩小和偏移时候选保持在可见范围内", async t => 
 });
 
 
-test("两步草稿不产生默认覆盖，编辑后显示来源变化，保留与重置准确恢复状态", async t => {
-  const { page } = await editor(t);
-  await page.locator(".two-step-panel summary").click();
-  const field = page.getByRole("textbox", { name: "草稿正向 Prompt" });
-  await page.waitForFunction(() => !document.querySelector('[aria-label="草稿正向 Prompt"]').disabled);
-  assert.equal(await field.evaluate(promptText), "three adults standing apart");
-  assert.equal(await page.locator("#two-step-value").textContent(), "null");
-  await field.fill("simple silhouettes");
-  assert.equal(await page.locator(".two-step-panel").getByRole("status").textContent(), "已修改");
-  await page.getByRole("button", { name: "更改最终 Prompt" }).click();
-  await page.waitForFunction(() => document.querySelector('[role="status"]').textContent === "来源已变化");
-  assert.equal(await field.evaluate(promptText), "simple silhouettes");
-  await page.getByRole("button", { name: "保留草稿" }).click();
-  assert.equal(await page.locator(".two-step-panel").getByRole("status").textContent(), "已修改");
-  await page.getByRole("button", { name: "重置", exact: true }).click();
-  assert.equal(await field.evaluate(promptText), "three adults sitting apart");
-  assert.equal(await page.locator("#two-step-value").textContent(), "null");
-  await page.getByRole("checkbox", { name: "启用两步生成" }).check();
-  await page.getByRole("button", { name: "0.8", exact: true }).click();
-  assert.deepEqual(JSON.parse(await page.locator("#two-step-value").textContent()), { enabled: true, strength: 0.8 });
-});
 
 test("人物词条拖入空角色区绑定，拖回解除，保存属性和原有操作控件保留", async t => {
   const { page } = await editor(t);

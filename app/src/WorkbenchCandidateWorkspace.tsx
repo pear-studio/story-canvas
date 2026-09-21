@@ -29,12 +29,12 @@ import { useLongPressContextMenu } from "./use-long-press-context-menu";
 
 export type WorkbenchCandidate = Candidate & {
   created_at?: string | null;
-  prompt_signature?: string | null;
+  generation_signature?: string | null;
 };
 
 export type CandidateDeleteRequest =
   | { candidate_ids: string[] }
-  | { prompt_mismatch: true; expected_signature?: string };
+  | { generation_mismatch: true; expected_signature?: string };
 
 export type CandidateWorkspaceDetail = {
   title?: ReactNode;
@@ -56,7 +56,7 @@ export type WorkbenchCandidateWorkspaceProps = {
   onReloadMedia?: () => void | Promise<unknown>;
   candidateWidth: number;
   factReady: boolean;
-  currentPromptSignature?: string | null;
+  currentGenerationSignature?: string | null;
   mediaReady?: boolean;
   generationReady: boolean;
   busy?: boolean;
@@ -299,9 +299,9 @@ function CandidateGrid({ candidates, selectedIds, previewFile, disabled, layout,
   return <div ref={host} className={`candidate-grid ${layout === "history" ? "candidate-grid--history" : ""}`.trim()} tabIndex={0} role="listbox" aria-label={layout === "history" ? "历史候选列表" : "候选列表"} aria-multiselectable={!browse} onKeyDown={selectAll} onPointerDown={beginDrag} onPointerMove={updateDrag} onPointerUp={endDrag} onPointerCancel={endDrag} {...longPress.captureProps}>
     {candidates.map((candidate, index) => {
       const selected = browse ? previewFile === candidate.file : selectedIds.has(candidate.candidate_id);
-      const separated = layout === "rail" && index > 0 && candidates[index - 1].prompt_signature !== candidate.prompt_signature;
+      const separated = layout === "rail" && index > 0 && candidates[index - 1].generation_signature !== candidate.generation_signature;
       return <div className="candidate-entry" data-long-press-context-menu key={candidateKey(candidate)} onPointerDown={(event) => longPress.start(event, (point) => onContextMenu(point, candidate))} onContextMenu={(event) => onContextMenu(event, candidate)}>
-        {separated && <div className="candidate-separator" title="Prompt 变化"><span>Prompt 变化</span></div>}
+        {separated && <div className="candidate-separator" title="生成条件变化"><span>生成条件变化</span></div>}
         <div ref={(node) => { const key = candidateKey(candidate); if (node) items.current.set(key, node); else items.current.delete(key); }} className={`candidate-item ${selected ? "is-selected" : ""} ${previewFile === candidate.file ? "is-preview" : ""}`.trim()}>
           <button type="button" role="option" className="candidate-select" disabled={disabled} aria-selected={selected} aria-label={`候选 Seed ${candidate.seed ?? "未知"}`} onClick={(event) => selectCandidate(event, candidate)} onDoubleClick={(event) => { if (!(event.ctrlKey || event.metaKey || event.shiftKey)) void onChoose(candidate); }}>
             <QueuedCandidateImage url={mediaVariantUrl(candidate.url, 320)} alt={`候选 ${candidate.seed ?? "未知"}`} />
@@ -333,7 +333,7 @@ function CandidatePaneResizeHandle({ value, onChange }: { value: number; onChang
 
 export function WorkbenchCandidateWorkspace({
   finishedOutput,
-  pageIdentity, pageTitle, canvas, onPreviewCanvasChange, ownerLabel, media, mediaStatus = "ready", mediaError, onReloadMedia, candidateWidth, factReady, currentPromptSignature = null, mediaReady = true, generationReady, busy = false, busyReason, generationDisabledReason, generationProblems = [], onLetteringTarget, onFullscreenLetteringTarget, onCandidateWidthChange, onGenerate, onSaveAndGenerate, generationCount = 3, onGenerationCountChange, pageDirty = false, onSaveAll, onDiscardAll, onDeleteCandidates, onLoadCandidateDetail }: WorkbenchCandidateWorkspaceProps) {
+  pageIdentity, pageTitle, canvas, onPreviewCanvasChange, ownerLabel, media, mediaStatus = "ready", mediaError, onReloadMedia, candidateWidth, factReady, currentGenerationSignature = null, mediaReady = true, generationReady, busy = false, busyReason, generationDisabledReason, generationProblems = [], onLetteringTarget, onFullscreenLetteringTarget, onCandidateWidthChange, onGenerate, onSaveAndGenerate, generationCount = 3, onGenerationCountChange, pageDirty = false, onSaveAll, onDiscardAll, onDeleteCandidates, onLoadCandidateDetail }: WorkbenchCandidateWorkspaceProps) {
   const { confirm } = useFeedback();
   const candidates = media.candidates as WorkbenchCandidate[];
   const [previewCandidate, setPreviewCandidate] = useState<WorkbenchCandidate | null>(null);
@@ -351,7 +351,7 @@ export function WorkbenchCandidateWorkspace({
   const visibleCandidate = candidates.find((candidate) => candidate.candidate_id === previewCandidate?.candidate_id) ?? candidates[0] ?? null;
   const ids = candidates.map((candidate) => candidate.candidate_id).filter(Boolean);
   const commonDisabledReason = busyReason || (!factReady && !onSaveAndGenerate ? "有未保存修改，请先保存后生成" : "");
-  const mismatchedCount = currentPromptSignature ? candidates.filter((candidate) => candidate.prompt_signature !== currentPromptSignature).length : 0;
+  const mismatchedCount = currentGenerationSignature ? candidates.filter((candidate) => candidate.generation_signature !== currentGenerationSignature).length : 0;
   const generationReason = commonDisabledReason || generationDisabledReason || (!generationReady ? "当前页面尚未满足生成条件" : "");
   const generationDisabled = operationBusy || !generationReady || (!factReady && !onSaveAndGenerate);
   const [canvasWidth, canvasHeight] = (canvas ?? "2:3").split(":").map(Number);
@@ -445,12 +445,12 @@ export function WorkbenchCandidateWorkspace({
   }
 
   async function clearMismatched() {
-    if (!currentPromptSignature || candidateOperationBusy) return;
-    const removable = candidates.filter((candidate) => candidate.prompt_signature !== currentPromptSignature).map((candidate) => candidate.candidate_id).filter(Boolean);
+    if (!currentGenerationSignature || candidateOperationBusy) return;
+    const removable = candidates.filter((candidate) => candidate.generation_signature !== currentGenerationSignature).map((candidate) => candidate.candidate_id).filter(Boolean);
     if (!removable.length) return;
-    if (!await confirm({ kind: "warning", title: "清理候选", message: `清理与当前 Prompt 不符的候选？\n将删除 ${removable.length} 张，保留 ${candidates.length - removable.length} 张。此操作无法撤销。`, danger: true })) return;
+    if (!await confirm({ kind: "warning", title: "清理候选", message: `清理与当前生成条件不符的候选？\n将删除 ${removable.length} 张，保留 ${candidates.length - removable.length} 张。此操作无法撤销。`, danger: true })) return;
     await guarded(async () => {
-      if (await onDeleteCandidates({ prompt_mismatch: true, expected_signature: currentPromptSignature })) {
+      if (await onDeleteCandidates({ generation_mismatch: true, expected_signature: currentGenerationSignature })) {
         setSelectedIds((current) => new Set([...current].filter((id) => !removable.includes(id))));
         if (previewCandidate && removable.includes(previewCandidate.candidate_id)) setPreviewCandidate(null);
       }
@@ -505,7 +505,7 @@ export function WorkbenchCandidateWorkspace({
     <div className="candidate-rail">
       <div className="candidate-heading">
         <button type="button" className="candidate-history-trigger" onClick={() => setHistoryOpen(true)} aria-haspopup="dialog" aria-label={`打开历史候选，共 ${candidates.length} 张`}><b>候选</b><small>{candidates.length}</small></button>
-        {<span className="candidate-heading-actions">{onReloadMedia && <button type="button" className="candidate-refresh-button" disabled={mediaStatus === "loading" || mutationBusy} aria-label="刷新当前页候选" aria-busy={mediaStatus === "loading"} title="重新读取当前页候选和数量" onClick={() => void onReloadMedia()}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 7a6.5 6.5 0 1 0 .2 5M16 3v4h-4" /></svg></button>}<button type="button" className="candidate-clear-button" disabled={candidateOperationBusy || !mismatchedCount} aria-label="清理与当前 Prompt 不符的候选" title="清理与当前 Prompt 不符的候选" onClick={() => void clearMismatched()}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 5.5h13M8 3.5h4M6 5.5l.7 11h6.6l.7-11M8.2 8v5.7M11.8 8v5.7" /></svg></button></span>}
+        {<span className="candidate-heading-actions">{onReloadMedia && <button type="button" className="candidate-refresh-button" disabled={mediaStatus === "loading" || mutationBusy} aria-label="刷新当前页候选" aria-busy={mediaStatus === "loading"} title="重新读取当前页候选和数量" onClick={() => void onReloadMedia()}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 7a6.5 6.5 0 1 0 .2 5M16 3v4h-4" /></svg></button>}<button type="button" className="candidate-clear-button" disabled={candidateOperationBusy || !mismatchedCount} aria-label="清理与当前生成条件不符的候选" title="清理与当前生成条件不符的候选" onClick={() => void clearMismatched()}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 5.5h13M8 3.5h4M6 5.5l.7 11h6.6l.7-11M8.2 8v5.7M11.8 8v5.7" /></svg></button></span>}
       </div>
       <CandidateGrid candidates={candidates} selectedIds={selectedIds} previewFile={visibleCandidate?.file} disabled={mutationBusy} layout="rail" selectionAnchor={selectionAnchor} onSelectionChange={setSelectedIds} onPreview={setPreviewCandidate} onChoose={setFullscreen} onContextMenu={openMenu} />
     </div>
@@ -517,7 +517,7 @@ export function WorkbenchCandidateWorkspace({
           <button type="button" className="button button--quiet" disabled={!ids.length || selectedIds.size === ids.length} onClick={() => setSelectedIds(new Set(ids))}>全选</button>
           <button type="button" className="button button--quiet" disabled={!selectedIds.size} onClick={() => { setSelectedIds(new Set()); selectionAnchor.current = ""; }}>取消选择</button>
           <button type="button" className="button button--danger" disabled={candidateOperationBusy || !removableIds(ids.filter((id) => selectedIds.has(id))).length} onClick={() => void deleteIds(ids.filter((id) => selectedIds.has(id)))}>删除所选</button>
-          <button type="button" className="button button--quiet" disabled={candidateOperationBusy || !mismatchedCount} title="清理与当前 Prompt 不符的候选" onClick={() => void clearMismatched()}>清理不符候选</button>
+          <button type="button" className="button button--quiet" disabled={candidateOperationBusy || !mismatchedCount} title="清理与当前生成条件不符的候选" onClick={() => void clearMismatched()}>清理不符候选</button>
         </div>
       </div>}
       <CandidateGrid candidates={candidates} selectedIds={selectedIds} previewFile={visibleCandidate?.file} disabled={mutationBusy} layout="history" selectionAnchor={selectionAnchor} onSelectionChange={setSelectedIds} onPreview={setPreviewCandidate} onChoose={(candidate) => setFullscreen(candidate)} onContextMenu={openMenu} />

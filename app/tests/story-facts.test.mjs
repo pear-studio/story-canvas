@@ -8,7 +8,8 @@ const { read: readStoryPagesIndexDraft, save: saveStoryPagesIndexDraft } = factF
 const { read: readStoryNarrativeDraft, save: saveStoryNarrativeDraft } = factFixture("story", "narrative");
 const { read: readStoryPromptDraft, save: saveStoryPromptDraft } = factFixture("story", "prompt");
 import assert from "node:assert/strict";
-import { access, mkdir, mkdtemp, readFile, rm, unlink, utimes, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rename, rm, symlink, unlink, utimes, writeFile } from "node:fs/promises";
+import { registerProject } from "../server/project-registry.mjs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -622,4 +623,37 @@ test("页面 Prompt 只依赖所引场景子设定，场景缺失与恢复会使
   const restored = await readStoryPromptDraft(root, id, "page-001");
   await writeJson(sceneIndexPath, { $schema: SCENE_INDEX_SCHEMA_ID, scenes: ["station", "street"] });
   await assert.rejects(saveStoryPromptDraft(root, restored), { code: "fact_upstream_conflict" });
+});
+
+test("外部登记项目可保存 Prompt 和 outline，仍拒绝越界 pages junction", async context => {
+  const f = await createFixture(context);
+  const root = path.join(f.repositoryRoot, 'tool');
+  await mkdir(root);
+  registerProject(root, { id: f.projectId, type: 'story', path: f.projectDirectory });
+  const prompt = await readStoryPromptDraft(root, f.projectId, 'page-001');
+  prompt.document.camera = [{ description: 'close up' }];
+  await saveStoryPromptDraft(root, prompt);
+  assert.equal((await readStoryPromptDraft(root, f.projectId, 'page-001')).document.camera[0].description, 'close up');
+  const outline = await readStoryOutlineDraft(root, f.projectId);
+  outline.document.synopsis = '外部项目正常保存。';
+  await saveStoryOutlineDraft(root, outline);
+  assert.equal((await readStoryOutlineDraft(root, f.projectId)).document.synopsis, '外部项目正常保存。');
+  const pages = path.join(f.projectDirectory, 'pages'), outside = path.join(f.repositoryRoot, 'outside-pages');
+  await rename(pages, outside);
+  await symlink(outside, pages, process.platform === 'win32' ? 'junction' : 'dir');
+  await assert.rejects(readStoryPromptDraft(root, f.projectId, 'page-001'), { code: 'unsafe_story_edit_path' });
+  await unlink(pages);
+  await rename(outside, pages);
+});
+
+test("外部项目仍拒绝事实文件链接", async context => {
+  const f = await createFixture(context), root = path.join(f.repositoryRoot, 'tool');
+  await mkdir(root);
+  registerProject(root, { id: f.projectId, type: 'story', path: f.projectDirectory });
+  const target = path.join(f.projectDirectory, 'story/outline.json'), outside = path.join(f.repositoryRoot, 'outside-outline.json');
+  await rename(target, outside);
+  try { await symlink(outside, target, 'file'); }
+  catch (error) { if (error.code === 'EPERM') { context.skip('当前 Windows 不允许文件符号链接'); return; } throw error; }
+  await assert.rejects(readStoryOutlineDraft(root, f.projectId), { code: 'unsafe_story_edit_path' });
+  await unlink(target);
 });
