@@ -1,3 +1,4 @@
+import { PromptPopulationEditor } from "./PromptPopulationEditor";
 import { useFactDraft } from './use-fact-draft';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { InheritedPromptEditor } from './InheritedPromptEditor';
@@ -10,7 +11,7 @@ import { rawLoraResourceDefinition, useProjectLoraResources, type LoraResourceLi
 import { InlineTitleEditor, SectionHeader, WorkspaceHeader } from './WorkspaceHeader';
 import { useFeedback } from './feedback';
 import { promptCategories, saveSettingProfile, saveSettingVisual, saveSettingPrompt, renameSettingVariant, type SettingKind, type CharacterLora, type CharacterPromptDocument, type CharacterPromptSetting, type CharacterProfileDraft, type CharacterVisualDraft, type InheritedAdjustments, type WorkbenchCharacter } from './project-workbench-client';
-const promptLabels = { subject: '主体', person: '人物', setting: '场景', camera: '镜头', avoid: '避免' };
+const promptLabels = { subject: '人数', person: '人物', setting: '场景', camera: '镜头', avoid: '避免' };
 const characterVariantIdPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const sameJson = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
 
@@ -116,7 +117,7 @@ function CharacterLoraCard({ lora, resources, onChange, onReplace, onRemove }: {
 export function SettingView({ kind = 'character', projectId, character, initialSettingId, busy, onSaved, onSettingChange }: { kind?: SettingKind; projectId: string; character: WorkbenchCharacter; initialSettingId: string; busy: boolean; onSaved: (replacement: Partial<WorkbenchCharacter>) => void; onSettingChange?: (settingId: string) => void }) {
   const { confirm, notify } = useFeedback();
   const label = kind === 'scene' ? '场景' : '角色';
-  const categories = kind === 'scene' ? promptCategories.filter(c => c === 'setting' || c === 'avoid') : promptCategories;
+  const categories = kind === 'scene' ? promptCategories.filter(c => c === 'setting' || c === 'avoid') : promptCategories.filter(c => c !== 'subject');
   const characterViewRef = useRef<HTMLElement>(null);
   const [settingId, setSettingId] = useState(initialSettingId);
   const sourceProfile = useMemo<CharacterProfileDraft>(() => ({ name: character.name, description: character.description }), [character.id, character.profile_sha256]);
@@ -260,7 +261,8 @@ export function SettingView({ kind = 'character', projectId, character, initialS
           </div>
           <section className="resource-form--wide character-fact-section character-generation-section">
             <SectionHeader title="基础设定" description="所有子设定共享的 Prompt" actions={<button type="button" aria-label="保存基础设定" className="button button--quiet character-section-save" disabled={busy || savingSection !== null || !promptDirty} onClick={() => void savePrompt()}>{savingSection === "prompt" ? "保存中…" : "保存"}</button>} />
-            <PromptFragmentEditor categories={categories.map((category) => ({ id: category, label: promptLabels[category] }))} scope="character" fragments={promptDraft.identity.prompt} createFragment={createPromptDraftFragment} onChange={(prompt) => updateIdentity((identity) => ({ ...identity, prompt }))} historyScopeKey={`${character.id}:identity:${character.prompt_sha256}`} />
+            {kind === "character" && <PromptPopulationEditor fragments={promptDraft.identity.prompt.subject} disabled={busy || savingSection !== null} onChange={subject => updateIdentity(identity => ({ ...identity, prompt: { ...identity.prompt, subject } }))} />}
+          <PromptFragmentEditor categories={categories.map((category) => ({ id: category, label: promptLabels[category] }))} scope="character" fragments={promptDraft.identity.prompt} createFragment={createPromptDraftFragment} onChange={(prompt) => updateIdentity((identity) => ({ ...identity, prompt }))} historyScopeKey={`${character.id}:identity:${character.prompt_sha256}`} />
             <div className="lora-heading"><div><b>基础 LoRA</b><small>所有子设定共享</small></div>{!promptDraft.identity.lora && <button type="button" className="button button--quiet" onClick={() => setLoraPickerTarget({ kind: "identity" })}>选择 LoRA</button>}</div>
             {promptDraft.identity.lora ? <div className="project-lora-current-list"><CharacterLoraCard lora={promptDraft.identity.lora} resources={loraResources} onChange={(lora) => updateIdentity((identity) => ({ ...identity, lora }))} onReplace={() => setLoraPickerTarget({ kind: "identity" })} onRemove={() => updateIdentity((identity) => ({ ...identity, lora: null }))} /></div> : <div className="character-lora-empty">没有基础 LoRA。</div>}
 
@@ -271,6 +273,7 @@ export function SettingView({ kind = 'character', projectId, character, initialS
         {!hasSelectedSetting ? <section className="resource-form--wide character-fact-section character-generation-section"><SectionHeader title="生成配置" description="尚未建立" /><div className="character-generation-empty character-generation-empty--action"><button type="button" className="button button--quiet" onClick={() => updateSelectedSetting(() => editableCharacterSetting())}>建立 Prompt 与 LoRA</button></div></section> : <section className="resource-form--wide character-fact-section character-generation-section">
           <SectionHeader title="生成配置" description="子设定 Prompt 与附加 LoRA" actions={<button type="button" aria-label="保存 Prompt 与 LoRA" className="button button--quiet character-section-save" disabled={busy || savingSection !== null || !promptDirty} onClick={() => void savePrompt()}>{savingSection === "prompt" ? "保存中…" : "保存"}</button>} />
           <InheritedPromptEditor title="基础 Prompt" source={character.id + ':' + settingId + ':' + character.prompt_sha256} prompt={persistPromptDraft(promptDraft.identity.prompt)} adjustments={selectedSetting.identityOverrides} disabled={selectedSetting.identityDisabled} defaultOpen onChange={value => updateSelectedSetting(setting => ({ ...setting, identityDisabled: [], identityOverrides: value }))} />
+          {kind === "character" && <PromptPopulationEditor fragments={selectedSetting.prompt.subject} disabled={busy || savingSection !== null} onChange={subject => updateSelectedSetting(setting => ({ ...setting, prompt: { ...setting.prompt, subject } }))} />}
           <PromptFragmentEditor categories={categories.map((category) => ({ id: category, label: promptLabels[category] }))} scope="character" fragments={selectedSetting.prompt} createFragment={createPromptDraftFragment} onChange={(prompt) => updateSelectedSetting((setting) => ({ ...setting, prompt }))} historyScopeKey={`${character.id}:${settingId}:${character.prompt_sha256}`} />
           <div className="lora-heading"><div><b>子设定 LoRA</b></div><button type="button" className="button button--quiet" onClick={() => setLoraPickerTarget({ kind: "setting", index: null })}>选择 LoRA</button></div>
           {selectedSetting.loras.length === 0 ? <div className="character-lora-empty">当前子设定没有附加 LoRA。</div> : <div className="project-lora-current-list">{selectedSetting.loras.map((lora, loraIndex) => <CharacterLoraCard key={loraIndex} lora={lora} resources={loraResources} onChange={(next) => updateSelectedSetting((setting) => ({ ...setting, loras: setting.loras.map((entry, index) => index === loraIndex ? next : entry) }))} onReplace={() => setLoraPickerTarget({ kind: "setting", index: loraIndex })} onRemove={() => updateSelectedSetting((setting) => ({ ...setting, loras: setting.loras.filter((_, index) => index !== loraIndex) }))} />)}</div>}

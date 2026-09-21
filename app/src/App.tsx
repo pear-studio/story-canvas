@@ -110,7 +110,7 @@ type PageLocation = {
   breadcrumb: string[];
 };
 
-const promptLabels: Record<(typeof promptCategories)[number], string> = { subject: "主体", person: "人物",  setting: "场景", camera: "镜头", avoid: "避免" };
+const promptLabels: Record<(typeof promptCategories)[number], string> = { subject: "人数", person: "人物",  setting: "场景", camera: "镜头", avoid: "避免" };
 
 function pageKey(page: WorkbenchPage) {
   return pageKeyId(page.page_key);

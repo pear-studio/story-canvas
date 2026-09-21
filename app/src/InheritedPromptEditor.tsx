@@ -3,7 +3,7 @@ import { displayPromptDraft, createPromptDraftFragment } from './prompt-fragment
 import { promptCategories, type PagePrompt, type InheritedAdjustments } from './project-workbench-client';
 import { applyInheritedPrompt, adjustmentKey } from '../shared/prompt-inheritance.mjs';
 
-const labels = { subject: '主体', person: "人物",  setting: '场景', camera: '镜头', avoid: '避免' };
+const labels = { subject: '人数', person: "人物",  setting: '场景', camera: '镜头', avoid: '避免' };
 
 export function InheritedPromptEditor({ title, source, prompt, adjustments = {}, disabled = [], defaultOpen = false, onChange }: {
   title: string; source: string; prompt: PagePrompt; adjustments?: InheritedAdjustments; disabled?: string[]; defaultOpen?: boolean;

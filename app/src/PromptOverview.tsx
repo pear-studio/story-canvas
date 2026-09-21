@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { PromptFragmentEditor } from "./PromptFragmentEditor";
 import { PromptPopulationEditor } from "./PromptPopulationEditor";
-import { isPopulationFragment } from "./prompt-population";
 import { createPromptDraftFragment, displayPromptDraft, persistPromptDraft } from "./prompt-fragment-draft";
 import { GenerateSplitButton } from "./GenerateSplitButton";
 import { savePagePrompt, startPageRender, type ProjectWorkbenchView, type WorkbenchPage } from "./project-workbench-client";
@@ -13,8 +12,8 @@ type Entry = { page: WorkbenchPage; chapter: string; sequence: string };
 const columnWidth = 375;
 const categories = [{ id: "person", label: "人物" }, { id: "setting", label: "场景" }, { id: "camera", label: "镜头" }, { id: "avoid", label: "避免" }];
 
-function PromptColumn({ projectId, entry, characters, scenes, selected, busy, supplement, visible, onSelect, onOpenPage, onSaved, handles }: {
-  projectId: string; entry: Entry; characters: ProjectWorkbenchView["characters"]; scenes: NonNullable<ProjectWorkbenchView["scenes"]>["scenes"]; selected: boolean; busy: boolean; supplement: boolean;
+function PromptColumn({ projectId, entry, characters, scenes, selected, busy, visible, onSelect, onOpenPage, onSaved, handles }: {
+  projectId: string; entry: Entry; characters: ProjectWorkbenchView["characters"]; scenes: NonNullable<ProjectWorkbenchView["scenes"]>["scenes"]; selected: boolean; busy: boolean;
   onSelect: () => void; onOpenPage: () => void; onSaved: (page: WorkbenchPage) => void;
   handles: Map<string, ColumnHandle>; visible: boolean;
 }) {
@@ -55,7 +54,7 @@ function PromptColumn({ projectId, entry, characters, scenes, selected, busy, su
     </header>
     {(visible || focused) && <><fieldset className="prompt-overview-population" disabled={busy || free}><PromptPopulationEditor fragments={draft.subject} disabled={busy || free} onChange={subject => setDraft(current => ({ ...current, subject }))} /></fieldset>
     <div className="prompt-overview-editor" inert={busy || free}>
-      <PromptFragmentEditor showEmptyCategories categories={supplement ? [{ id: "subject", label: "主体补充" }, ...categories] : categories} scope="page" fragments={{ ...draft, subject: draft.subject.filter(fragment => !isPopulationFragment(fragment)) }} roles={roles} createFragment={createPromptDraftFragment} onChange={next => setDraft(current => ({ ...next, subject: [...current.subject.filter(isPopulationFragment), ...(next.subject ?? [])] }))} historyScopeKey={`${page.page_id}:${base.prompt_sha256}`} />
+      <PromptFragmentEditor showEmptyCategories categories={categories} scope="page" fragments={draft} roles={roles} createFragment={createPromptDraftFragment} onChange={next => setDraft(current => ({ ...next, subject: current.subject }))} historyScopeKey={`${page.page_id}:${base.prompt_sha256}`} />
     </div></>}
   </article>;
 }
@@ -84,7 +83,6 @@ export function PromptOverview({ projectId, view, focus, busy = false, onOpenPag
   }
   const active = useRef(true);
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
-  const supplement = entries.some(({ page }) => displayPromptDraft(page.prompt).subject.some(fragment => !isPopulationFragment(fragment)));
   useLayoutEffect(() => {
     const container = scroller.current;
     const column = container?.querySelector<HTMLElement>(`[data-overview-page="${CSS.escape(focus?.pageId ?? "")}"]`);
@@ -123,8 +121,8 @@ export function PromptOverview({ projectId, view, focus, busy = false, onOpenPag
 
   return <section className="prompt-overview" aria-label="Prompt 总览">
     <header className="prompt-overview-toolbar"><h2>Prompt 总览</h2><small>{entries.length} 页 · 已选 {selected.size} 页</small><button type="button" className="button" disabled={busy || working} onClick={() => void run(false)}>保存全部修改</button><GenerateSplitButton dirty={true} count={count} pageCount={selected.size} disabled={busy || working || !selected.size || !view.render_capabilities.candidates.available} reason={view.render_capabilities.candidates.blocker ?? ""} onSubmit={() => void run(true)} onCountChange={setCount} /></header>
-    <div className="prompt-overview-scroll" ref={scroller} onScroll={updateWindow}><div className="prompt-overview-grid" style={{ gridAutoColumns: columnWidth, gridTemplateRows: `auto auto auto repeat(${supplement ? 5 : 4}, auto)` } as CSSProperties}>
-      {entries.map((entry, index) => <PromptColumn projectId={projectId} key={entry.page.page_id} entry={entry} characters={view.characters} scenes={view.scenes?.scenes ?? []} supplement={supplement} visible={index >= window.start && index < window.end} selected={selected.has(entry.page.page_id)} busy={busy || working} onSelect={() => setSelected(current => { const next = new Set(current); next.has(entry.page.page_id) ? next.delete(entry.page.page_id) : next.add(entry.page.page_id); return next; })} onOpenPage={() => onOpenPage(entry.page)} onSaved={onSaved} handles={handles.current} />)}
+    <div className="prompt-overview-scroll" ref={scroller} onScroll={updateWindow}><div className="prompt-overview-grid" style={{ gridAutoColumns: columnWidth, gridTemplateRows: "auto auto auto repeat(4, auto)" } as CSSProperties}>
+      {entries.map((entry, index) => <PromptColumn projectId={projectId} key={entry.page.page_id} entry={entry} characters={view.characters} scenes={view.scenes?.scenes ?? []} visible={index >= window.start && index < window.end} selected={selected.has(entry.page.page_id)} busy={busy || working} onSelect={() => setSelected(current => { const next = new Set(current); next.has(entry.page.page_id) ? next.delete(entry.page.page_id) : next.add(entry.page.page_id); return next; })} onOpenPage={() => onOpenPage(entry.page)} onSaved={onSaved} handles={handles.current} />)}
     </div></div>
   </section>;
 }

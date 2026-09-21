@@ -217,7 +217,7 @@ export const promptTypeShortLabels: Record<PromptType, string> = {
   custom_description: "描述",
 };
 
-const categoryShortLabels: Record<string, string> = { subject: "主体", person: "人物", appearance: "外观", action: "动作",  setting: "场景", camera: "镜头", avoid: "避免", identity: "身份", hair: "发型", face: "面部", body: "身体", clothing: "服装", accessories: "配饰", equipment: "装备" };
+const categoryShortLabels: Record<string, string> = { subject: "人数", person: "人物", appearance: "外观", action: "动作",  setting: "场景", camera: "镜头", avoid: "避免", identity: "身份", hair: "发型", face: "面部", body: "身体", clothing: "服装", accessories: "配饰", equipment: "装备" };
 
 function frequencyLabel(postCount: number | null | undefined) {
   if (!Number.isFinite(postCount)) return null;

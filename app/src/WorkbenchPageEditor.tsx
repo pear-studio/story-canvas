@@ -19,7 +19,6 @@ import {
 import { createPortal } from "react-dom";
 import { countStoryCharacters, storyContentWarnings, SCENE_DESCRIPTION_CHARACTER_LIMIT, NARRATION_CHARACTER_LIMIT } from "../shared/story-content-guidance.mjs";
 import { PromptPopulationEditor } from "./PromptPopulationEditor";
-import { isPopulationFragment } from "./prompt-population";
 import { FreePromptEditor } from "./FreePromptEditor";
 import { PromptFragmentEditor } from "./PromptFragmentEditor";
 import { GenerationDetailsPanel } from "./GenerationDetailsPanel";
@@ -67,7 +66,7 @@ import { TextPageArtwork } from "./TextPageArtwork";
 import "./WorkbenchPageEditor.css";
 import { HeartLettering, DiceIcon, heartSettings, resolveHeart, useHeartFont, type HeartSettings } from "./HeartLettering";
 
-const defaultPromptLabels: Record<PromptCategory, string> = { subject: "主体", person: "人物",  setting: "场景", camera: "镜头", avoid: "避免" };
+const defaultPromptLabels: Record<PromptCategory, string> = { subject: "人数", person: "人物",  setting: "场景", camera: "镜头", avoid: "避免" };
 
 function clone<T>(value: T): T {
   return structuredClone(value);
@@ -935,7 +934,7 @@ export default function WorkbenchPageEditor({
         return <InheritedPromptEditor key={source} title={character.name + ' · ' + (character.visual.variants.find(v => v.id === reference.variant_id)?.name ?? reference.variant_id)} source={source + ':' + character.prompt_sha256} prompt={variantPrompt(character.prompt.identity, variant) as PagePrompt} adjustments={promptOptions.inheritance?.[source]} onChange={value => setPromptOptions(current => ({ ...current, inheritance: { ...current.inheritance, [source]: value } }))} />;
       })}
       {scenes.filter(scene => scene.id === promptOptions.scene_id && scene.prompt.variants[promptOptions.scene_variant_id ?? '']).map(scene => <InheritedPromptEditor key={scene.id} title={'场景 · ' + scene.name} source={sceneSource(scene.id, promptOptions.scene_variant_id ?? '')} prompt={variantPrompt(scene.prompt.identity, scene.prompt.variants[promptOptions.scene_variant_id ?? '']) as PagePrompt} adjustments={promptOptions.inheritance?.[sceneSource(scene.id, promptOptions.scene_variant_id ?? '')]} onChange={value => setPromptOptions(current => ({ ...current, inheritance: { ...current.inheritance, [sceneSource(scene.id, promptOptions.scene_variant_id ?? '')]: value } }))} />)}
-      <PromptFragmentEditor categories={promptCategories.filter(category => category !== "subject" || (promptDraft.subject ?? []).some(fragment => !isPopulationFragment(fragment))).map((category) => ({ id: category, label: category === "subject" ? "主体补充" : categoryLabels[category] }))} scope="page" fragments={{ ...promptDraft, subject: (promptDraft.subject ?? []).filter(fragment => !isPopulationFragment(fragment)) }} roles={promptRoles} createFragment={createPromptDraftFragment} onChange={next => setPromptDraft(current => ({ ...next, subject: [...(current.subject ?? []).filter(isPopulationFragment), ...(next.subject ?? [])] }))} historyScopeKey={`${pageIdentity}:${page.prompt_sha256}`} /></>}
+      <PromptFragmentEditor categories={promptCategories.filter(category => category !== "subject").map((category) => ({ id: category, label: categoryLabels[category] }))} scope="page" fragments={promptDraft} roles={promptRoles} createFragment={createPromptDraftFragment} onChange={next => setPromptDraft(current => ({ ...next, subject: current.subject }))} historyScopeKey={`${pageIdentity}:${page.prompt_sha256}`} /></>}
       {promptOptions.mode === "structured" && <div className="prompt-camera-actions"><button type="button" className="button" disabled={busy || promptPhase === "saving"} onClick={() => setCameraOpen(true)}>机位控制</button>{onOpenPromptOverview && <button type="button" className="button" disabled={busy || saving} onClick={onOpenPromptOverview}>Prompt 总览</button>}</div>}
     </section>}
 
