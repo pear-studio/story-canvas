@@ -118,6 +118,31 @@ function loraRegistry() {
   };
 }
 
+test("Qwen 对比预检和共用构建器拒绝裸 LoRA，Anima 保持支持", async () => {
+  const { buildWorkflow, resolveRenderRecipe } = await import("../server/render-task-contract.mjs");
+  for (const profileId of ["qwen-image-2-1", "anima-base-v1"]) {
+    const input = await createBlankComparisonInput(sourceRepositoryRoot, profileId);
+    input.prompt.positive = "anime portrait";
+    const manifest = createComparisonExperiment({ id: "lora-support", registries: loraRegistry(), axes: [
+      { type: "input", values: [{ value_id: input.id, label: "测试", value: input.id }] },
+      { type: "lora_config", values: [{ value_id: "baseline", label: "基线", value: "baseline" }, { value_id: "raw", label: "裸 LoRA", value: "test" }] },
+      { type: "lora_weight", values: [{ value_id: "weight", label: "0.7", value: 0.7 }] },
+    ] });
+    const route = input.render.profile.operations.candidates.routes.empty_latent;
+    const definition = input.render.workflows[route.workflow];
+    const item = { positive_prompt: input.prompt.positive, negative_prompt: "", seed: 1, output_prefix: "test",
+      loras: [{ filename: "test.safetensors", sha256: "a".repeat(64), weight: 0.7 }] };
+    const preflight = () => preflightComparisonExperiment({ manifest, inputs: [input] });
+    const build = () => buildWorkflow(definition, input.render.profile, resolveRenderRecipe(route.recipe, input.render.canvas), item);
+    if (profileId === "qwen-image-2-1") {
+      assert.throws(preflight, /不支持 LoRA/); assert.throws(build, /不支持 LoRA/);
+      input.loras = item.loras;
+      const baseline = createComparisonExperiment({ id: "input-lora", axes: [{ type: "input", values: [{ value_id: input.id, label: "测试", value: input.id }] }] });
+      assert.throws(() => preflightComparisonExperiment({ manifest: baseline, inputs: [input] }), /不支持 LoRA/);
+    } else { assert.doesNotThrow(preflight); assert.ok(Object.values(build()).some(node => node.class_type === "LoraLoaderModelOnly")); }
+  }
+});
+
 test("剧情和角色页一次性导入为可编辑文本，之后预检不读项目", async context => {
   const fixture = await createFixture(context);
   const inputs = await Promise.all([storyPageKey, characterPageKey].map(pageKey => importComparisonPage({ repositoryRoot: fixture.root, projectDirectory: fixture.projectRoot, projectId: "fixture", pageKey, localConfig: { models_root: "models" } })));

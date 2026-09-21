@@ -88,6 +88,7 @@ function compileTask({ resolved, projectDirectory, projectId, taskId, count, see
       task: taskId,
       page_key: structuredClone(resolved.page_key),
       seed: seeds[index],
+      ...(resolved.reference_image ? { reference_image: structuredClone(resolved.reference_image) } : {}),
       ...(compiled.two_step ? { two_step: { ...structuredClone(compiled.two_step), seed: randomInt(2147483647) } } : {}),
       positive_prompt: compiled.positive_prompt,
       negative_prompt: compiled.negative_prompt,
@@ -179,7 +180,7 @@ async function compileAndPersistExactPageRenderTask(
     promptDictionary,
   });
   let persisted;
-  try { persisted = await createRenderTask(project.projectDirectory, task, await taskDisplay(resolved, project.projectDirectory)); }
+  try { persisted = await createRenderTask(project.projectDirectory, task, await taskDisplay(resolved, project.projectDirectory), { referenceImage: resolved.reference_image_bytes }); }
   catch (error) {
     if (error?.code === "render_task_exists") fail("render_task_exists", [taskId], 409);
     throw error;

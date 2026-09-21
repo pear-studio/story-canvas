@@ -112,6 +112,48 @@
           }
         ]
       }
+    },
+    {
+      "id": "qwen-image-2-1-dit",
+      "name": "Qwen-Image-2.1 dit",
+      "kind": "dit",
+      "architecture_family": "qwen-image-2-1",
+      "prompt_family": "qwen-image-2-1",
+      "filename": "qwen_image_2.1_int8_convrot.safetensors",
+      "relative_path": "diffusion_models/qwen_image_2.1_int8_convrot.safetensors",
+      "sha256": "cb74113cb03faecd79611b01fd7fd642f0aa60d6f0b95086abee214d75eaa57d",
+      "source": "https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/diffusion_models/qwen_image_2.1_int8_convrot.safetensors",
+      "preview": {
+        "images": [
+          {
+            "src": "/resource-previews/qwen-image-2-1-dit.jpg",
+            "alt": "Qwen-Image-2.1 本机生成的二次元插画示例",
+            "source": "https://huggingface.co/Comfy-Org/Qwen-Image-2.1"
+          }
+        ]
+      }
+    },
+    {
+      "id": "qwen-image-2-1-text-encoder",
+      "name": "Qwen-Image-2.1 text_encoder",
+      "kind": "text_encoder",
+      "architecture_family": "qwen-image-2-1",
+      "prompt_family": "qwen-image-2-1",
+      "filename": "qwen3vl_8b_int8_convrot.safetensors",
+      "relative_path": "text_encoders/qwen3vl_8b_int8_convrot.safetensors",
+      "sha256": "8bfd0f6e12abf2d2d697ecc888e5e90b0d6741d6708f05799f53afa560452e8f",
+      "source": "https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/text_encoders/qwen3vl_8b_int8_convrot.safetensors"
+    },
+    {
+      "id": "qwen-image-2-1-vae",
+      "name": "Qwen-Image-2.1 vae",
+      "kind": "vae",
+      "architecture_family": "qwen-image-2-1",
+      "prompt_family": "qwen-image-2-1",
+      "filename": "qwen_image_2.1_vae_bf16.safetensors",
+      "relative_path": "vae/qwen_image_2.1_vae_bf16.safetensors",
+      "sha256": "bb21f7473051e1ac368515dd3f2e15cd44d7a11748ee8823e1ddca3e4876b7c9",
+      "source": "https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/vae/qwen_image_2.1_vae_bf16.safetensors"
     }
   ]
 }

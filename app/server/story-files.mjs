@@ -1,3 +1,4 @@
+import { isReferenceImageFile } from "./reference-image.mjs";
 import { validateCameraSettings } from "../shared/camera-prompt.mjs";
 import { validateAdjustments } from '../shared/prompt-inheritance.mjs';
 import { validateTwoStep } from "./two-step-generation.mjs";
@@ -259,7 +260,8 @@ export function validateStoryPagePromptDocument(prompt) {
       errors.push(...validateAdjustments(adjustments, source));
     }
   }
-  checkExactKeys(prompt, ["$schema", "mode", "free", "two_step", "scene_id", "scene_variant_id", "inheritance", ...storyPromptCategories], "prompt", errors);
+  checkExactKeys(prompt, ["$schema", "mode", "free", "two_step", "reference_image", "scene_id", "scene_variant_id", "inheritance", ...storyPromptCategories], "prompt", errors);
+  if (prompt.reference_image !== undefined && !isReferenceImageFile(prompt.reference_image)) errors.push("prompt.reference_image 必须是材料中的 PNG、JPEG 或 WebP 文件名");
   if (prompt.mode !== undefined && !["structured", "free"].includes(prompt.mode)) errors.push("prompt.mode 无效");
   if (prompt.free !== undefined) {
     if (!isRecord(prompt.free)) errors.push("prompt.free 必须是对象");

@@ -148,7 +148,7 @@ export default function ProjectGenerationSettingsView({ projectId, project, busy
     void fetch("/api/lora-resources", { headers: { accept: "application/json" } }).then((response) => responseJson<LoraResourceList>(response)).then((result) => { if (!cancelled) setLoraResources(result); }).catch((error) => { if (!cancelled) setLoraNotice(`LoRA 资源读取失败：${error instanceof Error ? error.message : String(error)}`); });
     return () => { cancelled = true; };
   }, [projectId]);
-  const ordered = useMemo(() => [...profiles].filter((profile) => profile.architecture_family === "anima").sort((left, right) => Number(right.id === project.default_render_profile) - Number(left.id === project.default_render_profile) || left.name.localeCompare(right.name, "zh-CN")), [profiles, project.default_render_profile]);
+  const ordered = useMemo(() => [...profiles].sort((left, right) => Number(right.id === project.default_render_profile) - Number(left.id === project.default_render_profile) || left.name.localeCompare(right.name, "zh-CN")), [profiles, project.default_render_profile]);
   const current = profiles.find((profile) => profile.id === project.default_render_profile) ?? null;
   const selectedAdjustment = profiles.find((profile) => profile.id === selectedAdjustmentId) ?? current;
   const selectedAdjustmentCurrent = selectedAdjustment?.id === current?.id;

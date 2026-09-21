@@ -4,7 +4,7 @@ export type GlobalModelResource = {
   id: string;
   name: string;
   kind: string;
-  architecture_family: "sd15" | "sdxl" | "anima" | "sd3" | "flux" | "other";
+  architecture_family: "sd15" | "sdxl" | "anima" | "qwen-image-2-1" | "sd3" | "flux" | "other";
   prompt_family?: string;
   filename: string;
   relative_path: string;

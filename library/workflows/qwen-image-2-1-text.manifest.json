@@ -1,0 +1,30 @@
+{
+  "$schema": "../schemas/workflow-manifest.schema.json",
+  "id": "qwen-image-2-1-text",
+  "template": "qwen-image-2-1-text.api.json",
+  "architecture_families": [
+    "qwen-image-2-1"
+  ],
+  "operations": [
+    "candidates"
+  ],
+  "input_sources": [
+    "empty_latent"
+  ],
+  "modifiers": [],
+  "bindings": {
+    "dit": "1.inputs.unet_name",
+    "text_encoder": "2.inputs.clip_name",
+    "vae": "3.inputs.vae_name",
+    "positive_prompt": "4.inputs.prompt",
+    "negative_prompt": "4.inputs.negative_prompt",
+    "width": "6.inputs.width",
+    "height": "6.inputs.height",
+    "filename_prefix": "9.inputs.filename_prefix",
+    "seed": "7.inputs.seed",
+    "steps": "7.inputs.steps",
+    "cfg": "7.inputs.cfg",
+    "sampler": "7.inputs.sampler_name",
+    "scheduler": "7.inputs.scheduler"
+  }
+}

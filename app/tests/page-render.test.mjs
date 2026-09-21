@@ -55,6 +55,74 @@ import { inspectStoryCandidates, executeStoryCandidateRefresh } from "../server/
 
 const sourceRepositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
+test("Qwen 的 AVOID、单图路由和冻结输入贯通；源材料变化不改变排队输入", async context => {
+  const fixture = await createFixture(context);
+  const sharp = (await import("sharp")).default;
+  const { saveMaterial } = await import("../server/project-materials.mjs");
+  const writeProjectMaterial = (directory, value) => saveMaterial(directory, fixture.projectId, value);
+  const { uploadFrozenReferenceImage } = await import("../server/reference-image.mjs");
+  const { validateFrozenRenderTask } = await import("../server/render-task-contract.mjs");
+  await writeJson(path.join(fixture.projectDirectory, "project.json"), { title: "Qwen", canvas: "2:3", default_render_profile: "qwen-image-2-1" });
+  const narrativeFile = path.join(fixture.projectDirectory, "pages/page-001.content.json");
+  const narrative = await readJson(narrativeFile); narrative.characters = [];
+  await writeJson(narrativeFile, narrative);
+  const bytes = await sharp({ create: { width: 64, height: 96, channels: 3, background: "#123456" } }).png().toBuffer();
+  await writeProjectMaterial(fixture.projectDirectory, { file: "reference.png", title: "参考", encoding: "base64", content: bytes.toString("base64") });
+  const draft = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
+  draft.document.reference_image = "reference.png";
+  await saveStoryPromptDraft(fixture.repositoryRoot, draft);
+  const { task, task_directory } = await compileAndPersistPageRenderTask(fixture.repositoryRoot, fixture.projectId, "page-001", { count: 3, repositoryRoot: sourceRepositoryRoot });
+  const dictionarySnapshot = await dictionary();
+  validateFrozenRenderTask(task, { dictionaryEntries: dictionarySnapshot.entries, dictionaryIdentity: dictionarySnapshot.identity });
+  assert.equal(task.items.length, 3);
+  assert.equal(task.snapshot.execution_units.length, 3);
+  assert.match(task.items[0].positive_prompt, /AVOID: crowded background/);
+  assert.equal(task.items[0].negative_prompt, "");
+  assert.equal(task.items[0].render_route.input_source, "reference_image");
+  const workflow = task.snapshot.execution_units[0].workflow.api;
+  assert.equal(workflow["4"].inputs.prompt, task.items[0].positive_prompt);
+  assert.equal(workflow["4"].inputs.negative_prompt, "");
+  assert.deepEqual(workflow["7"].inputs.model, ["10", 0]);
+  assert.deepEqual(workflow["10"].inputs.model, ["1", 0]);
+  assert.equal(workflow["6"].inputs.width, 832);
+  const identity = task.items[0].reference_image;
+  const frozen = await readFile(path.join(task_directory, "inputs", `${identity.sha256}.png`));
+  await writeProjectMaterial(fixture.projectDirectory, { file: "reference.png", title: "替换", encoding: "base64", content: (await sharp(bytes).negate().png().toBuffer()).toString("base64") });
+  let received;
+  const server = createServer(async (request, response) => {
+    const buffers = []; for await (const buffer of request) buffers.push(buffer);
+    received = Buffer.concat(buffers);
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify({ subfolder: "StoryCanvas/references", name: `${identity.sha256}.png` }));
+  });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  context.after(() => new Promise(resolve => server.close(resolve)));
+  const url = `http://127.0.0.1:${server.address().port}`;
+  assert.equal(await uploadFrozenReferenceImage(url, task_directory, identity), workflow["20"].inputs.image);
+  assert.ok(received.includes(frozen), "上传任务冻结图片，而非后来替换的材料");
+  const tampered = structuredClone(task); tampered.items[0].reference_image.sha256 = "f".repeat(64);
+  assert.throws(() => validateFrozenRenderTask(tampered, { dictionaryEntries: dictionarySnapshot.entries, dictionaryIdentity: dictionarySnapshot.identity }), /指纹|变化|不一致/);
+  await writeFile(path.join(task_directory, "inputs", `${identity.sha256}.png`), "broken");
+  await assert.rejects(uploadFrozenReferenceImage(url, task_directory, identity), /校验失败/);
+  await writeJson(path.join(fixture.projectDirectory, "project.json"), { title: "Anima", canvas: "2:3", default_render_profile: "anima-base-v1" });
+  await assert.rejects(compileAndPersistPageRenderTask(fixture.repositoryRoot, fixture.projectId, "page-001", { repositoryRoot: sourceRepositoryRoot }), /不支持参考图/);
+});
+
+test("Qwen 自定义负向转 AVOID 且不改变 Anima 的负向输入", async () => {
+  const { readResolvedRenderProfile } = await import("../server/render-profile-compiler.mjs");
+  const { compileCurrentPagePrompt, structuredPromptBase } = await import("../server/current-page-prompt.mjs");
+  for (const family of ["qwen-image-2-1", "anima-base-v1"]) {
+    const { resolved_profile: profile } = await readResolvedRenderProfile(sourceRepositoryRoot, family);
+    const args = { pageId: "page-001", pageKey: { page_id: "page-001" }, pagePrompt: { ...prompt(), subject: [{ description: "anime portrait" }] }, profile };
+    const structured = compileCurrentPagePrompt(args);
+    const base = structuredPromptBase(structured, profile);
+    const free = compileCurrentPagePrompt({ ...args, pagePrompt: { ...args.pagePrompt, mode: "free", free: { ...base, positive: "anime portrait", negative: "text, watermark", loras: [] } } });
+    assert.equal(free.positive_prompt, family === "qwen-image-2-1" ? "anime portrait\n\nAVOID: text, watermark" : "anime portrait");
+    assert.equal(free.negative_prompt, family === "qwen-image-2-1" ? "" : "text, watermark");
+    assert.equal(free.ready, true);
+  }
+});
+
 test("圈选标签保存原文，冻结任务与复验使用无花括号的加权 Prompt；未知圈选只阻止生成", async context => {
   const fixture = await createFixture(context);
   const draft = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");

@@ -11,7 +11,7 @@
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
-      "items": { "const": "anima" }
+      "items": { "enum": ["anima", "qwen-image-2-1"] }
     },
     "operations": {
       "type": "array",
@@ -23,7 +23,7 @@
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
-      "items": { "enum": ["empty_latent"] }
+      "items": { "enum": ["empty_latent", "reference_image"] }
     },
     "modifiers": {
       "type": "array",
@@ -41,7 +41,7 @@
           "seed", "steps", "cfg", "sampler", "scheduler",
           "final_width", "final_height",
           "second_pass_seed", "second_pass_steps", "second_pass_cfg", "second_pass_sampler", "second_pass_scheduler",
-          "denoise", "filename_prefix"
+          "denoise", "filename_prefix", "reference_image"
         ]
       },
       "additionalProperties": {

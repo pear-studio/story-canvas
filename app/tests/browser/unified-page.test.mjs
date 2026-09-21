@@ -14,6 +14,7 @@ async function open(t,query){
  const page=await browser.newPage({viewport:{width:1400,height:1000}});page.setDefaultTimeout(8000);
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
  t.after(async()=>{assert.deepEqual(errors,[]);await page.close();});
+ await page.route('**/api/projects/test/materials', route => route.fulfill({json:{materials:[{file:'reference.png',title:'角色参考',available:true,url:null}]}}));
  await page.goto(`${origin}/tests/browser/unified-page.html?${query}`);return page;
 }
 for(const kind of ['story','character','scene'])test(`${kind} 页面均可编辑人物、场景、嵌字并移除默认引用`,async t=>{
@@ -30,6 +31,17 @@ for(const kind of ['story','character','scene'])test(`${kind} 页面均可编辑
  assert.deepEqual(saved.content.characters,[]);assert.equal(saved.prompt.scene_id,undefined);assert.equal(saved.prompt.scene_variant_id,undefined);
  assert.equal(saved.content.dialogue[0].text,'统一文案');
  assert.equal(await page.getByRole('button',{name:'保存',exact:true}).isDisabled(),true);
+});
+test('参考图与场景一样选择、保存、移除',async t=>{
+ const page=await open(t,'kind=story');
+ await page.getByLabel('页面参考图').selectOption('reference.png');
+ await page.getByRole('button',{name:'保存',exact:true}).click();
+ await page.waitForFunction(()=>JSON.parse(localStorage.getItem('saved-page')??'null')?.prompt.reference_image==='reference.png');
+ assert.equal(await page.getByLabel('页面参考图').inputValue(),'reference.png');
+ await page.getByRole('button',{name:'移除参考图',exact:true}).click();
+ await page.getByRole('button',{name:'保存',exact:true}).click();
+ await page.waitForFunction(()=>JSON.parse(localStorage.getItem('saved-page')??'null')?.prompt.reference_image===undefined);
+ assert.equal(await page.getByLabel('页面参考图').inputValue(),'');
 });
 test('场景子设定切换后失败保留全部草稿，重试提交新引用并清除旧继承调整',async t=>{
  const page=await open(t,'kind=scene&fail-once');
@@ -74,4 +86,3 @@ test('同页外部刷新保留人物、场景和内容草稿，保存提交编�
  const reloaded=await page.evaluate(()=>JSON.parse(localStorage.getItem('submitted-baseline')));
  assert.equal(reloaded.content_sha256,'external-content');
 });
-

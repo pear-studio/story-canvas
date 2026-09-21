@@ -15,7 +15,7 @@
           "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
           "name": { "type": "string", "minLength": 1 },
           "kind": { "enum": ["checkpoint", "dit", "text_encoder", "lora", "vae", "embedding", "other"] },
-          "architecture_family": { "enum": ["anima", "other"] },
+          "architecture_family": { "enum": ["anima", "qwen-image-2-1", "other"] },
           "prompt_family": { "type": "string", "minLength": 1 },
           "filename": { "type": "string", "minLength": 1 },
           "relative_path": { "type": "string", "minLength": 1 },

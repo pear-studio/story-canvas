@@ -1,3 +1,4 @@
+import { persistReferenceImage } from "./reference-image.mjs";
 import { encodePageKey } from "./page-key.mjs";
 import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, open, readFile, readdir, realpath, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
@@ -275,6 +276,7 @@ export async function createRenderTask(projectDirectory, task, display, options 
     const staging = path.join(storeRoot, `.create-${task.id}-${(options.uniqueId ?? randomUUID)()}`);
     try {
       await mkdir(staging, { recursive: false });
+      await persistReferenceImage(staging, task.items, options.referenceImage);
       await writeFile(path.join(staging, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
       await writeFile(path.join(staging, "state.json"), `${JSON.stringify(state, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
       await rename(staging, destination);

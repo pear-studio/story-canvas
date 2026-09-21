@@ -1,3 +1,4 @@
+import { readReferenceImage } from "./reference-image.mjs";
 import { readPageIndex } from './pages-store.mjs';
 import { resolveSceneConfiguration } from './scene-files.mjs';
 import { readScenes, readInheritanceSources, checkPageInheritanceReferences } from './prompt-inheritance-facts.mjs';
@@ -65,7 +66,7 @@ function inspectionBlocker(code, message, details = []) {
 
 function normalizeInspectionPromptDraft(value) {
   const source = isRecord(value) ? value : {};
-  const prompt = { $schema: STORY_PAGE_PROMPT_SCHEMA_ID, ...(source.scene_id ? { scene_id: source.scene_id, scene_variant_id: source.scene_variant_id } : {}), ...(source.inheritance ? { inheritance: structuredClone(source.inheritance) } : {}), ...(source.mode === undefined ? {} : { mode: source.mode }), ...(source.free === undefined ? {} : { free: structuredClone(source.free) }), ...(source.two_step === undefined ? {} : { two_step: structuredClone(source.two_step) }) };
+  const prompt = { $schema: STORY_PAGE_PROMPT_SCHEMA_ID, ...(source.reference_image === undefined ? {} : { reference_image: source.reference_image }), ...(source.scene_id ? { scene_id: source.scene_id, scene_variant_id: source.scene_variant_id } : {}), ...(source.inheritance ? { inheritance: structuredClone(source.inheritance) } : {}), ...(source.mode === undefined ? {} : { mode: source.mode }), ...(source.free === undefined ? {} : { free: structuredClone(source.free) }), ...(source.two_step === undefined ? {} : { two_step: structuredClone(source.two_step) }) };
   for (const category of storyPromptCategories) {
     prompt[category] = Array.isArray(source[category])
       ? source[category].filter(isRecord).map((fragment) => structuredClone(fragment))
@@ -262,6 +263,7 @@ export function compilePagePromptSnapshot(snapshot, profile, dictionaryEntries, 
     profilePromptFragmentSources,
   });
   compiled.errors.push(...(snapshot.inheritance_errors ?? []));
+  if (profile.architecture_family === "qwen-image-2-1" && compiled.loras.length) compiled.errors.push("当前 Qwen 配置暂不支持 LoRA；请使用无 LoRA 的页面或保留 Anima 配置");
   compiled.ready = compiled.ready && !compiled.errors.length;
   return attachTwoStep(compiled, snapshot.page_prompt.two_step, profile);
 }
@@ -314,7 +316,8 @@ export async function compilePageRenderTarget({
       loras: structuredClone(character.loras),
     })),
   });
-  const routed = freezeRenderRoutes([{ id: `target.${encodePageKey(snapshot.page_key).replaceAll("/", ".")}`, page_key: snapshot.page_key }], {
+  const referenceImage = snapshot.page_prompt.reference_image ? await readReferenceImage(projectDirectory, snapshot.page_prompt.reference_image) : null;
+  const routed = freezeRenderRoutes([{ reference_image: referenceImage?.identity, id: `target.${encodePageKey(snapshot.page_key).replaceAll("/", ".")}`, page_key: snapshot.page_key }], {
     purpose: "candidate",
     resolvedProfile: compiledProfile.effective_profile,
   })[0];
@@ -342,6 +345,8 @@ export async function compilePageRenderTarget({
     project_source: projectSource,
     compiled_profile: compiledProfile,
     compiled_page: compiledPage,
+    reference_image: referenceImage?.identity ?? null,
+    reference_image_bytes: referenceImage?.bytes ?? null,
     participant_ids: participants,
     page_loras: pageLoras,
     render_identity: renderIdentity,
@@ -362,6 +367,7 @@ export async function compilePageRenderTarget({
     participant_ids: target.participant_ids,
     page_loras: target.page_loras,
     render_identity: target.render_identity,
+    reference_image: target.reference_image,
     candidate_route: target.candidate_route,
     candidate_recipe: target.candidate_recipe,
     candidate_workflow: target.candidate_workflow,
@@ -476,6 +482,10 @@ export async function compilePageRenderInspectionContext({
     blockers.push(diagnostic);
   }
 
+  if (snapshot.page_prompt.reference_image) {
+    try { await readReferenceImage(projectDirectory, snapshot.page_prompt.reference_image); }
+    catch (error) { blockers.push(inspectionBlocker("reference_image_unavailable", error.message)); }
+  }
   let candidateRoute = null;
   let candidateRecipe = null;
   let candidateWorkflow = null;
@@ -484,6 +494,7 @@ export async function compilePageRenderInspectionContext({
       const routed = freezeRenderRoutes([{
         id: `target.${encodePageKey(snapshot.page_key).replaceAll("/", ".")}`,
         page_key: snapshot.page_key,
+        reference_image: snapshot.page_prompt.reference_image,
       }], { purpose: "candidate", resolvedProfile: activeProfile })[0];
       candidateRoute = routed.render_route;
       const profileRoute = activeProfile.operations?.candidates?.routes?.[candidateRoute.input_source];

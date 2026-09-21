@@ -3,9 +3,9 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 const idPattern = /^[a-z0-9][a-z0-9-]*$/;
-const architectureFamilies = new Set(["anima"]);
+const architectureFamilies = new Set(["anima", "qwen-image-2-1"]);
 const operations = new Set(["candidates"]);
-const inputSources = new Set(["empty_latent"]);
+const inputSources = new Set(["empty_latent", "reference_image"]);
 const modifiers = new Set(["lora.model_only"]);
 const manifestFields = new Set(["$schema", "id", "template", "architecture_families", "operations", "input_sources", "modifiers", "bindings"]);
 const bindingNames = new Set([
@@ -15,10 +15,10 @@ const bindingNames = new Set([
   "seed", "steps", "cfg", "sampler", "scheduler",
   "final_width", "final_height",
   "second_pass_seed", "second_pass_steps", "second_pass_cfg", "second_pass_sampler", "second_pass_scheduler",
-  "denoise", "filename_prefix",
+  "denoise", "filename_prefix", "reference_image",
 ]);
 const bindingInputNames = new Map([
-  ["dit", "unet_name"], ["text_encoder", "clip_name"], ["vae", "vae_name"],
+  ["reference_image", "image"], ["dit", "unet_name"], ["text_encoder", "clip_name"], ["vae", "vae_name"],
   ["positive_prompt", "text"], ["negative_prompt", "text"],
   ["width", "width"], ["height", "height"], ["seed", "seed"], ["steps", "steps"], ["cfg", "cfg"],
   ["sampler", "sampler_name"], ["scheduler", "scheduler"], ["final_width", "width"], ["final_height", "height"],
@@ -74,7 +74,8 @@ function assertBindingPath(template, name, dottedPath) {
   if (typeof dottedPath !== "string" || !/^[A-Za-z0-9_-]+\.inputs\.[A-Za-z0-9_]+$/.test(dottedPath)) throw new Error(`工作流绑定 ${name} 不是节点输入叶子：${String(dottedPath)}`);
   const [nodeId, inputsKey, inputName] = dottedPath.split(".");
   if ([nodeId, inputName].some((part) => unsafePathParts.has(part))) throw new Error(`工作流绑定 ${name} 包含不安全路径`);
-  if (bindingInputNames.get(name) !== inputName) {
+  const expectedInput = template[nodeId]?.class_type === "TextEncodeQwenImage21" && ["positive_prompt", "negative_prompt"].includes(name) ? (name === "positive_prompt" ? "prompt" : "negative_prompt") : bindingInputNames.get(name);
+  if (expectedInput !== inputName) {
     throw new Error(`工作流绑定 ${name} 必须指向 inputs.${bindingInputNames.get(name)}`);
   }
   if (!Object.hasOwn(template, nodeId)
@@ -145,17 +146,23 @@ export function validateWorkflowDefinition(definition) {
   }
 
   requireBindings(manifest, ["positive_prompt", "negative_prompt", "filename_prefix"], "基础生成");
-  requireBindingNodeType(template, manifest, "positive_prompt", ["CLIPTextEncode"]);
-  requireBindingNodeType(template, manifest, "negative_prompt", ["CLIPTextEncode"]);
-  requireBindingNodeType(template, manifest, "filename_prefix", ["SaveImage"]);
+  const qwen = manifest.architecture_families.includes("qwen-image-2-1");
+  const encoderTypes = qwen ? ["TextEncodeQwenImage21"] : ["CLIPTextEncode"];
+  requireBindingNodeType(template, manifest, "positive_prompt", encoderTypes);
+  requireBindingNodeType(template, manifest, "negative_prompt", encoderTypes);
+  requireBindingNodeType(template, manifest, "filename_prefix", qwen ? ["SaveImageAdvanced"] : ["SaveImage"]);
   requireNodeType(template, manifest, "KSampler", "生成");
 
-  requireBindings(manifest, ["dit", "text_encoder", "vae"], "Anima 架构");
+  requireBindings(manifest, ["dit", "text_encoder", "vae"], "模型架构");
   requireBindingNodeType(template, manifest, "dit", ["UNETLoader"]);
   requireBindingNodeType(template, manifest, "text_encoder", ["CLIPLoader"]);
   requireBindingNodeType(template, manifest, "vae", ["VAELoader"]);
 
-  if (manifest.input_sources.includes("empty_latent")) {
+  if (manifest.input_sources.includes("reference_image")) {
+    requireBindings(manifest, ["reference_image"], "参考图输入");
+    requireBindingNodeType(template, manifest, "reference_image", ["LoadImage"]);
+  }
+  if (manifest.input_sources.some(source => ["empty_latent", "reference_image"].includes(source))) {
     requireBindings(manifest, ["width", "height", ...primarySamplingBindings], "empty_latent 输入");
     requireBindingNodeType(template, manifest, "width", ["EmptyLatentImage"]);
     requireBindingNodeType(template, manifest, "height", ["EmptyLatentImage"]);

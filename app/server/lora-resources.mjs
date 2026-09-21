@@ -175,7 +175,7 @@ export function validateLoraResource(value) {
   if (!isRecord(value.file) || typeof value.file.relative_path !== "string" || path.isAbsolute(value.file.relative_path) || value.file.relative_path.includes("..") || value.file.relative_path.includes("\\") || !sha256Pattern.test(value.file.sha256 ?? "") || !Number.isInteger(value.file.size_bytes) || value.file.size_bytes < 0) errors.push("file 必须包含 LoRA 权重的确切路径、SHA-256 和大小");
   if (typeof value.file?.relative_path === "string" && !value.file.relative_path.startsWith("loras/")) errors.push("file.relative_path 必须位于 models_root/loras 下");
   if (sha256Pattern.test(value.file?.sha256 ?? "") && value.id !== `lora-${value.file.sha256.slice(0, 16)}`) errors.push("id 必须与 LoRA 权重 SHA-256 一致");
-  if (!isRecord(value.architecture) || !["sd15", "sdxl", "anima", "sd3", "flux", "other"].includes(value.architecture.family)) errors.push("architecture.family 无效");
+  if (!isRecord(value.architecture) || !["sd15", "sdxl", "anima", "qwen-image-2-1", "sd3", "flux", "other"].includes(value.architecture.family)) errors.push("architecture.family 无效");
   if (typeof value.architecture?.prompt_family !== "string" || !value.architecture.prompt_family) errors.push("architecture.prompt_family 不能为空");
   if (!Array.isArray(value.base_models) || !value.base_models.length) errors.push("base_models 至少包含一项底座说明");
   else value.base_models.forEach((model, index) => validateModelIdentity(model, `base_models[${index}]`, errors));

@@ -8,7 +8,7 @@ import { readSafeTensorsMetadataFromHandle, SAFE_TENSORS_METADATA_LIMITS } from 
 const idPattern = /^[a-z0-9][a-z0-9_-]{0,79}$/;
 const sha256Pattern = /^[a-f0-9]{64}$/;
 const resourceIdPattern = /^lora-[a-f0-9]{16}$/;
-const allowedArchitectureFamilies = new Set(["sd15", "sdxl", "anima", "sd3", "flux", "other"]);
+const allowedArchitectureFamilies = new Set(["sd15", "sdxl", "anima", "qwen-image-2-1", "sd3", "flux", "other"]);
 const modelIdentityStatuses = new Set(["exact", "declared", "unknown"]);
 
 export class ComparisonLoraIdentityError extends Error {

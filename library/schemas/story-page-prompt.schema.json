@@ -282,6 +282,10 @@
       "not": {
         "const": "main"
       }
+    },
+    "reference_image": {
+      "type": "string",
+      "pattern": "^[^/\\\\]+\\.(?:png|jpe?g|webp|PNG|JPE?G|WEBP)$"
     }
   },
   "additionalProperties": false,

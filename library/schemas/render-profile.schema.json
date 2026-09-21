@@ -42,7 +42,8 @@
           "type": "object",
           "required": ["empty_latent"],
           "properties": {
-            "empty_latent": { "$ref": "#/$defs/route" }
+            "empty_latent": { "$ref": "#/$defs/route" },
+            "reference_image": { "$ref": "#/$defs/route" }
           },
           "additionalProperties": false
         }
@@ -58,7 +59,7 @@
     "name": { "type": "string", "minLength": 1 },
     "description": { "type": "string", "minLength": 1 },
     "tags": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
-    "architecture_family": { "const": "anima" },
+    "architecture_family": { "enum": ["anima", "qwen-image-2-1"] },
     "models": {
       "type": "object",
       "minProperties": 1,

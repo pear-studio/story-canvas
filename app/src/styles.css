@@ -621,6 +621,11 @@ html:has(.story-overview) { scrollbar-gutter: stable; }
 
 
 .character-reference-editor { position: relative; display: flex; align-items: center; gap: 5px; }
+.reference-image-editor { flex-wrap: wrap; min-width: 0; }
+.reference-image-editor > img { width: 48px; height: 48px; object-fit: contain; border-radius: 6px; flex: none; }
+.reference-image-editor > select { flex: 1 1 150px; min-width: 0; max-width: 100%; }
+.reference-image-editor > button { flex: none; white-space: nowrap; }
+.reference-image-editor > p, .reference-image-editor > small { flex-basis: 100%; margin: 0; }
 .reference-chips { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; }
 .reference-chips button { padding: 5px 7px; display: flex; align-items: center; gap: 6px; border: 0; border-radius: 6px; color: var(--green); background: var(--green-soft); cursor: pointer; font-size: 9px; }
 .reference-chips button i { color: var(--muted); font-style: normal; }

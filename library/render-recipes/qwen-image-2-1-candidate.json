@@ -1,0 +1,28 @@
+{
+  "$schema": "../schemas/render-recipe.schema.json",
+  "id": "qwen-image-2-1-candidate",
+  "name": "Qwen-Image-2.1 · 约 1MP 候选",
+  "resolutions": {
+    "2:3": {
+      "width": 832,
+      "height": 1248
+    },
+    "3:4": {
+      "width": 864,
+      "height": 1152
+    },
+    "9:16": {
+      "width": 768,
+      "height": 1344
+    },
+    "4:3": {
+      "width": 1152,
+      "height": 864
+    }
+  },
+  "steps": 25,
+  "cfg": 1,
+  "sampler": "euler",
+  "scheduler": "simple",
+  "clip_skip": 1
+}

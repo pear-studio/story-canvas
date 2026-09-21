@@ -6,7 +6,7 @@ import { isDeepStrictEqual } from "node:util";
 const stableIdPattern = /^[a-z0-9][a-z0-9-]*$/;
 const modelRolePattern = /^[a-z0-9][a-z0-9_-]*$/;
 const operationInputs = Object.freeze({
-  candidates: new Set(["empty_latent"]),
+  candidates: new Set(["empty_latent", "reference_image"]),
 });
 const recipeParameters = new Set([
   "steps",
@@ -95,7 +95,7 @@ function parseTarget(target) {
   if (wholeStyleLora && stableIdPattern.test(wholeStyleLora[1])) return { kind: "style_lora", id: wholeStyleLora[1] };
   const styleLora = /^style_loras\.([a-z0-9][a-z0-9-]*)\.weight$/.exec(target);
   if (styleLora && stableIdPattern.test(styleLora[1])) return { kind: "style_lora_weight", id: styleLora[1] };
-  const route = /^operations\.(candidates)\.routes\.(empty_latent)\.(.+)$/.exec(target);
+  const route = /^operations\.(candidates)\.routes\.(empty_latent|reference_image)\.(.+)$/.exec(target);
   if (!route) return null;
   const base = { operation: route[1], inputSource: route[2], valid: operationInputs[route[1]]?.has(route[2]) === true };
   if (route[3] === "workflow") return { kind: "route_workflow", ...base };

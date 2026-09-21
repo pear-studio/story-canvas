@@ -29,7 +29,7 @@ export type InheritedAdjustments = Record<string, { weight?: number; enabled?: b
 export type SettingKind = 'character' | 'scene';
 export type Scene = WorkbenchCharacter;
 export type PageOwner = { page_id: string; owner_kind: 'story' | 'character' | 'scene'; sequence_id?: string; character_id?: string; scene_id?: string; variant_id?: string };
-export type PagePrompt = Record<PromptCategory, PromptFragment[]> & { mode?: "structured" | "free"; free?: FreePrompt; two_step?: TwoStepPrompt; scene_id?: string; scene_variant_id?: string; inheritance?: Record<string, InheritedAdjustments> };
+export type PagePrompt = Record<PromptCategory, PromptFragment[]> & { mode?: "structured" | "free"; free?: FreePrompt; two_step?: TwoStepPrompt; reference_image?: string; scene_id?: string; scene_variant_id?: string; inheritance?: Record<string, InheritedAdjustments> };
 export type CharacterLora = { filename: string; sha256: string; weight: number; trigger?: string };
 export type CharacterPromptSetting = {
   prompt: PagePrompt;

@@ -50,7 +50,7 @@
       "type": "object",
       "required": ["family", "prompt_family"],
       "properties": {
-        "family": { "enum": ["sd15", "sdxl", "anima", "sd3", "flux", "other"] },
+        "family": { "enum": ["sd15", "sdxl", "anima", "qwen-image-2-1", "sd3", "flux", "other"] },
         "prompt_family": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": false

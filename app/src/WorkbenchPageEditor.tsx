@@ -1,3 +1,4 @@
+import { ReferenceImageEditor } from "./ReferenceImageEditor";
 import { defaultTextPageLayout, type TextPageLayout } from "../shared/text-page-layout.mjs";
 import { SceneReferenceEditor } from './SceneReferenceEditor';
 import { InheritedPromptEditor } from './InheritedPromptEditor';
@@ -751,7 +752,7 @@ export default function WorkbenchPageEditor({
   const incomingPrompt = useMemo(() => displayPromptDraft(page.prompt), [page.prompt_sha256]);
   const [promptBaseline, setPromptBaseline] = useState(incomingPrompt);
   const [promptDraft, setPromptDraft] = useState(incomingPrompt);
-  const incomingOptions = useMemo(() => ({ mode: page.prompt.mode ?? "structured", free: page.prompt.free, two_step: page.prompt.two_step, scene_id: page.prompt.scene_id, scene_variant_id: page.prompt.scene_variant_id, inheritance: page.prompt.inheritance }), [page.prompt_sha256]);
+  const incomingOptions = useMemo(() => ({ mode: page.prompt.mode ?? "structured", free: page.prompt.free, two_step: page.prompt.two_step, reference_image: page.prompt.reference_image, scene_id: page.prompt.scene_id, scene_variant_id: page.prompt.scene_variant_id, inheritance: page.prompt.inheritance }), [page.prompt_sha256]);
   const [promptOptions, setPromptOptions] = useState(incomingOptions);
   const [optionsBaseline, setOptionsBaseline] = useState(incomingOptions);
   const customBase = flowPreview?.structured_import ?? null;
@@ -847,8 +848,8 @@ export default function WorkbenchPageEditor({
         const content = contentFromPage({ ...page, ...saved.content });
         editBaseline.current = saved.page; setExternalConflict(false);
         setContentBaseline(clone(content)); setContentDraft(clone(content)); setDialogueDraft(editableDialogue(content.dialogue));
-        const { mode, free, two_step, scene_id, scene_variant_id, inheritance } = saved.prompt;
-        const options = { mode: mode ?? 'structured' as const, free, two_step, scene_id, scene_variant_id, inheritance };
+        const { mode, free, two_step, reference_image, scene_id, scene_variant_id, inheritance } = saved.prompt;
+        const options = { mode: mode ?? 'structured' as const, free, two_step, reference_image, scene_id, scene_variant_id, inheritance };
         const fragments = displayPromptDraft(saved.prompt);
         setPromptDraft(fragments); setPromptBaseline(clone(fragments)); setPromptOptions(options); setOptionsBaseline(clone(options));
         setLayoutDraft(clone(saved.items)); setLayoutBaseline(clone(saved.items));
@@ -906,6 +907,7 @@ export default function WorkbenchPageEditor({
         setPromptOptions(current => ({ ...current, inheritance: Object.fromEntries(Object.entries(current.inheritance ?? {}).filter(([key]) => !key.startsWith('character:') || keep.has(key))) }));
         setContentDraft(current => ({ ...current, characters: value }));
       }} /></div>
+      <div className="participant-editor"><span>参考图</span><ReferenceImageEditor key={`${projectId}:${page.page_id}`} projectId={projectId} value={promptOptions.reference_image} disabled={busy || promptPhase === "saving"} onChange={reference_image => setPromptOptions(current => ({ ...current, reference_image }))} /></div>
       <div className="participant-editor"><span>场景设定</span><SceneReferenceEditor scenes={scenes} value={promptOptions.scene_id} variantId={promptOptions.scene_variant_id} onChange={(id, variantId) => setPromptOptions(current => ({ ...current, scene_id: id, scene_variant_id: variantId, inheritance: Object.fromEntries(Object.entries(current.inheritance ?? {}).filter(([key]) => !key.startsWith('scene:'))) }))} /></div>
     </div>}
     <div className="page-storyboard-fields">

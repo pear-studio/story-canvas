@@ -6,7 +6,7 @@ import {
 } from "./workflow-definition.mjs";
 
 const operations = new Set(["candidates"]);
-const inputSources = new Set(["empty_latent"]);
+const inputSources = new Set(["empty_latent", "reference_image"]);
 const idPattern = /^[a-z0-9][a-z0-9-]*$/;
 const sha256Pattern = /^[0-9a-f]{64}$/;
 const routeFields = ["operation", "input_source", "workflow_id", "recipe_source_id", "recipe_instance_id"];
@@ -30,7 +30,7 @@ function operationForPurpose(purpose) {
 function resolvedProfileRoute(resolvedProfile, operation, inputSource, label) {
   if (!isRecord(resolvedProfile)) throw new Error("缺少已解析 render profile");
   const route = resolvedProfile.operations?.[operation]?.routes?.[inputSource];
-  if (!isRecord(route)) throw new Error(`${label} 的 render profile 缺少 route：${operation}/${inputSource}`);
+  if (!isRecord(route)) throw new Error(inputSource === "reference_image" ? "当前生成配置不支持参考图，请移除参考图或切换至 Qwen-Image-2.1" : `${label} 的 render profile 缺少 route：${operation}/${inputSource}`);
   if (typeof route.workflow !== "string" || !idPattern.test(route.workflow)) {
     throw new Error(`${label} 的 ${operation}/${inputSource} workflow 无效`);
   }
@@ -47,7 +47,7 @@ function recipeInstanceId(sourceId, parameters) {
 function expectedRoute(item, { purpose, resolvedProfile }) {
   if (!isRecord(item)) throw new Error("渲染条目无效");
   const operation = operationForPurpose(purpose);
-  const inputSource = "empty_latent";
+  const inputSource = item.reference_image ? "reference_image" : "empty_latent";
   const profileRoute = resolvedProfileRoute(resolvedProfile, operation, inputSource, itemLabel(item));
   return {
     operation,

@@ -28,7 +28,7 @@ test("资源目录为生成配置模型登记结构家族并保持同一精确�
   assert.equal(catalog.version, 1);
   assert.equal(new Set(catalog.models.map((model) => model.id)).size, catalog.models.length);
   for (const model of catalog.models) {
-    assert.equal(model.architecture_family, model.relative_path.startsWith("upscale_models/") ? "other" : "anima");
+    assert.ok(["anima", "qwen-image-2-1", "other"].includes(model.architecture_family));
     assert.match(model.sha256, /^[a-f0-9]{64}$/);
   }
   const profileFiles = (await readdir(path.join(repositoryRoot, "library", "render-profiles"))).filter((file) => file.endsWith(".json"));

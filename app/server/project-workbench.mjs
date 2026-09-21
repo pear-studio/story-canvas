@@ -69,7 +69,7 @@ function validated(value, validate, relativePath) {
 }
 
 function publicPrompt(prompt) {
-  return { ...(prompt.scene_id ? { scene_id: prompt.scene_id, scene_variant_id: prompt.scene_variant_id } : {}), ...(prompt.inheritance ? { inheritance: structuredClone(prompt.inheritance) } : {}), ...Object.fromEntries(storyPromptCategories.map((category) => [category, structuredClone(prompt[category])])), ...(prompt.mode === undefined ? {} : { mode: prompt.mode }), ...(prompt.free === undefined ? {} : { free: structuredClone(prompt.free) }), ...(prompt.two_step === undefined ? {} : { two_step: structuredClone(prompt.two_step) }) };
+  return { ...(prompt.reference_image ? { reference_image: prompt.reference_image } : {}), ...(prompt.scene_id ? { scene_id: prompt.scene_id, scene_variant_id: prompt.scene_variant_id } : {}), ...(prompt.inheritance ? { inheritance: structuredClone(prompt.inheritance) } : {}), ...Object.fromEntries(storyPromptCategories.map((category) => [category, structuredClone(prompt[category])])), ...(prompt.mode === undefined ? {} : { mode: prompt.mode }), ...(prompt.free === undefined ? {} : { free: structuredClone(prompt.free) }), ...(prompt.two_step === undefined ? {} : { two_step: structuredClone(prompt.two_step) }) };
 }
 
 function publicCharacterPrompt(prompt) {
@@ -382,7 +382,7 @@ export async function savePagePrompt(projectRoot, projectId, value) {
   requireExactObject(value, ["kind", "page_id", "prompt", "expected_sha256", "expected_context_sha256", "confirmation_sha256"], "invalid_page_prompt_update");
   const { kind, page_id: pageId, prompt, expected_sha256: expectedSha256 } = value;
   if (!promptKinds.has(kind) || typeof pageId !== "string" || !isRecord(prompt) || !/^[a-f0-9]{64}$/.test(expectedSha256 ?? "")) fail("invalid_page_prompt_update", [], 400);
-  if (Object.keys(prompt).some(key => ![...storyPromptCategories, "mode", "free", "two_step", "scene_id", "scene_variant_id", "inheritance"].includes(key))) fail("invalid_page_prompt_update", [], 400);
+  if (Object.keys(prompt).some(key => ![...storyPromptCategories, "mode", "free", "two_step", "reference_image", "scene_id", "scene_variant_id", "inheritance"].includes(key))) fail("invalid_page_prompt_update", [], 400);
   if (!/^[a-f0-9]{64}$/.test(value.expected_context_sha256 ?? "")) fail("invalid_page_prompt_update", [], 400);
   const saved = await saveFactDraft(projectRoot, {
     expectedContextSha256: value.expected_context_sha256,

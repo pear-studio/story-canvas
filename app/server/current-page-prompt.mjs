@@ -153,6 +153,12 @@ function deduplicateCompiledParts(parts) {
   });
 }
 
+export function applyPromptAvoidance(positive, negative, profile) {
+  return profile.prompt.avoidance_strategy === "positive_avoid"
+    ? { positive_prompt: positive + (negative.trim() ? `\n\nAVOID: ${negative}` : ""), negative_prompt: "" }
+    : { positive_prompt: positive, negative_prompt: negative };
+}
+
 export function formatPromptParagraphs(parts, separator, profileId) {
   const paragraphs = [];
   let previousGroup;
@@ -252,6 +258,7 @@ export function compileCurrentPagePrompt({
     if (!base) compiled.errors.push("结构化基础不可用，无法检查自定义内容");
     else if (pagePrompt.free && pagePrompt.free.base_sha256 !== base.base_sha256) compiled.errors.push("自定义内容冲突：结构化基础已变化，请重置或保留自定义");
     compiled.ready = !compiled.errors.length && !compiled.missing.length;
+    Object.assign(compiled, applyPromptAvoidance(compiled.positive_prompt, compiled.negative_prompt, profile));
     return compiled;
   }
   const rules = profilePromptRules(profile);
@@ -322,10 +329,10 @@ export function compileCurrentPagePrompt({
   }
   const resolvedLoras = resolveParticipantLoras(profile, participantIds, characters, pageId, scenes);
   errors.push(...resolvedLoras.errors);
-  if ((categoryPrompts.avoid.length || characterNegativeParts.length) && rules.avoidanceStrategy !== "negative_prompt") {
+  if ((categoryPrompts.avoid.length || characterNegativeParts.length) && !["negative_prompt", "positive_avoid"].includes(rules.avoidanceStrategy)) {
     errors.push(`${profile?.id ?? "当前生成配置"} 不支持 avoid token`);
   }
-  if (rules.family !== "anima") errors.push(`${profile?.id ?? "当前生成配置"} 使用了未知 Prompt 家族：${rules.family}`);
+  if (!["anima", "qwen-image-2-1"].includes(rules.family)) errors.push(`${profile?.id ?? "当前生成配置"} 使用了未知 Prompt 家族：${rules.family}`);
 
   const populationParts = (categoryParts.subject ?? [])
     .filter((part) => part.role === null && isPromptPopulationControl(part.prompt_text));
@@ -342,7 +349,7 @@ export function compileCurrentPagePrompt({
   ];
   const negativeAuditParts = [
     ...rules.negativeFragments.map((entry) => profileFragmentPart(profile, entry, "negative", profilePromptFragmentSources)),
-    ...(rules.avoidanceStrategy === "negative_prompt" ? [...characterNegativeParts, ...(categoryParts.avoid ?? [])] : []),
+    ...(["negative_prompt", "positive_avoid"].includes(rules.avoidanceStrategy) ? [...characterNegativeParts, ...(categoryParts.avoid ?? [])] : []),
   ];
   for (const part of [...positiveAuditParts, ...negativeAuditParts]) {
     part.text = encodePromptFragment(part);
@@ -364,8 +371,7 @@ export function compileCurrentPagePrompt({
     ready: missing.length === 0 && errors.length === 0 && audit.valid && positiveParts.length > 0,
     missing,
     errors: [...new Set(errors)],
-    positive_prompt: formatPromptParagraphs(positiveParts, rules.separator, profile.id),
-    negative_prompt: formatPromptParagraphs(negativeParts, rules.separator, profile.id),
+    ...applyPromptAvoidance(formatPromptParagraphs(positiveParts, rules.separator, profile.id), formatPromptParagraphs(negativeParts, rules.separator, profile.id), profile),
     prompt_parts: {
       separator: rules.separator,
       positive: positiveParts.map(({ audit_record: _record, ...part }) => part),

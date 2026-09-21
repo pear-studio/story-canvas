@@ -19,7 +19,7 @@
 - 图片生成由 `app/server/page-render-resolver.mjs` 直接读取当前页面、Prompt、角色与生成配置，
   `app/server/page-render.mjs` 原子保存正式任务并排队；`app/server/render-project-runtime.mjs` 只读取
   已冻结的 task ID、执行预检并调用 ComfyUI。Agent 使用 `visual:produce` 生成一至三张候选；当前
-  Anima profile 当前只支持 candidates；浏览器单页生成入口真实建立同一任务，不再提供选用入口；
+  Anima 与 Qwen profile 支持 candidates；Qwen 另支持页面单参考图，见 [Qwen 接入](qwen-image.md)；浏览器单页生成入口真实建立同一任务，不再提供选用入口；
 - LoRA 训练由 `app/server/lora-training-module.mjs` 组合四个深 Module：`lora-training-facts.mjs`
   负责全局训练事实与 Caption，`lora-training-plan.mjs` 负责环境、方案和 frozen manifest，
   `lora-training-runtime.mjs` 负责只消费 manifest 的运行时，`lora-training-media.mjs` 负责图片后处理；

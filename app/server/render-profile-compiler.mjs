@@ -19,16 +19,16 @@ const profileIdPattern = /^[a-z0-9][a-z0-9-]*$/;
 const stableIdPattern = /^[a-z0-9][a-z0-9_-]*$/;
 const fragmentIdPattern = /^[a-z0-9][a-z0-9-]*$/;
 const sha256Pattern = /^[0-9a-f]{64}$/;
-const architectures = new Set(["anima"]);
-const promptFamilies = new Set(["anima"]);
+const architectures = new Set(["anima", "qwen-image-2-1"]);
+const promptFamilies = new Set(["anima", "qwen-image-2-1"]);
 const promptTypes = new Set(["danbooru", "custom_description"]);
 const polarities = new Set(["positive", "negative"]);
 const placements = new Set(["prefix", "suffix"]);
-const avoidanceStrategies = new Set(["negative_prompt", "unsupported"]);
+const avoidanceStrategies = new Set(["negative_prompt", "positive_avoid", "unsupported"]);
 const pageCategories = ["subject","person","setting","camera"];
 const canvases = new Set(["2:3", "3:4", "9:16", "4:3"]);
 const operationInputs = Object.freeze({
-  candidates: new Set(["empty_latent"]),
+  candidates: new Set(["empty_latent", "reference_image"]),
 });
 const requiredOperations = new Set(["candidates"]);
 const profileFields = new Set(["$schema", "id", "name", "description", "tags", "architecture_family", "models", "prompt", "operations", "style_loras"]);
@@ -283,7 +283,7 @@ function materializeRecipe(recipe, definition, { architectureFamily, operation, 
   for (const [field, consumed] of topologyConsumers) {
     if (value[field] !== undefined && !consumed) fail(`${recipe.id} 提供了 ${definition.id} 不消费的参数：${field}`);
   }
-  if (architectureFamily === "anima" && value.clip_skip !== 1) fail(`${recipe.id} 的 Anima clip_skip 必须为 1`);
+  if (["anima", "qwen-image-2-1"].includes(architectureFamily) && value.clip_skip !== 1) fail(`${recipe.id} 的 clip_skip 必须为 1`);
   assertWorkflowSupports(definition, { architectureFamily, operation, inputSource });
   return value;
 }

@@ -9,6 +9,7 @@ import { ApiError } from "./http-support.mjs";
 export async function importComparisonPage({ repositoryRoot, projectDirectory, projectId, pageKey, localConfig }) {
   const dictionary = await loadPromptDictionaryForRender(localConfig, repositoryRoot);
   const target = await compilePageRenderTarget({ repositoryRoot, projectDirectory, pageKey, dictionaryEntries: dictionary.entries });
+  if (target.reference_image) throw new ApiError(422, "reference_image_comparison_unsupported", ["带参考图页面请使用普通候选生成；对比实验尚不支持导入参考图"]);
   const bundle = target.compiled_profile;
   return {
     id: `input-${randomUUID()}`, label: target.title ?? target.page_id,

@@ -1,3 +1,4 @@
+import { referenceImageFilename } from "./reference-image.mjs";
 import { expandDepthWorkflow, depthIntermediateOutputs } from "./two-step-generation.mjs";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -5,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { encodePageKey } from "./page-key.mjs";
-import { encodePromptFragment, formatPromptParagraphs } from "./current-page-prompt.mjs";
+import { applyPromptAvoidance, encodePromptFragment, formatPromptParagraphs } from "./current-page-prompt.mjs";
 import { auditPromptContext, hasInlinePromptWeight, isAsciiPromptText } from "./prompt-audit.mjs";
 import { CHARACTER_PROMPT_CATEGORIES, PAGE_PROMPT_CATEGORIES, PROMPT_TYPES } from "./prompt-contract.mjs";
 import { lookupPromptDictionaryEntry, promptDictionaryCategory } from "./prompt-dictionary.mjs";
@@ -34,7 +35,7 @@ const frozenSnapshotFields = new Set([
 ]);
 const frozenItemFields = new Set([
   "id", "task", "page_key", "seed", "candidate_id", "file", "positive_prompt", "negative_prompt", "prompt_parts",
-  "loras", "status", "two_step",
+  "loras", "status", "two_step", "reference_image",
   "render_route", "prompt_id", "generated_at", "discarded_at", "absolute_file",
 ]);
 function clone(value) { return structuredClone(value); }
@@ -203,6 +204,7 @@ function promptItemBindingFingerprint(item) {
     negative_prompt: typeof item?.negative_prompt === "string" ? item.negative_prompt : null,
     prompt_parts: item?.prompt_parts ?? null,
     loras: item?.loras ?? null,
+    ...(item?.reference_image ? { reference_image: item.reference_image } : {}),
   });
 }
 
@@ -384,8 +386,7 @@ function assertPromptProjection(pageKey, evidence, profile, dictionaryEntries, i
   };
   assertParts(positiveParts, positiveRecords, "positive");
   assertParts(negativeParts, negativeRecords, "negative");
-  const positivePrompt = formatPromptParagraphs(positiveParts, separator, profile.id);
-  const negativePrompt = formatPromptParagraphs(negativeParts, separator, profile.id);
+  const { positive_prompt: positivePrompt, negative_prompt: negativePrompt } = applyPromptAvoidance(formatPromptParagraphs(positiveParts, separator, profile.id), formatPromptParagraphs(negativeParts, separator, profile.id), profile);
   return { positivePrompt, negativePrompt, promptParts: item.prompt_parts };
 }
 
@@ -466,8 +467,8 @@ function profileModelFilename(profile, kind) {
 function prepareModelAndClip(workflow, profile, loras = [], clipSkip = 1) {
   const unetEntry = Object.entries(workflow).find(([, node]) => node.class_type === "UNETLoader");
   const clipEntry = Object.entries(workflow).find(([, node]) => node.class_type === "CLIPLoader");
-  if (!unetEntry || !clipEntry) throw new Error("Anima 工作流缺少 UNETLoader 或 CLIPLoader 节点");
-  if (clipSkip !== 1) throw new Error("Anima 不支持 CLIP skip，请使用 1");
+  if (!unetEntry || !clipEntry) throw new Error("工作流缺少 UNETLoader 或 CLIPLoader 节点");
+  if (clipSkip !== 1) throw new Error("当前配置不支持 CLIP skip，请使用 1");
   let modelSource = [unetEntry[0], 0];
   const clipSource = [clipEntry[0], 0];
   let nextNode = Math.max(...Object.keys(workflow).map(Number).filter(Number.isFinite)) + 1;
@@ -479,8 +480,10 @@ function prepareModelAndClip(workflow, profile, loras = [], clipSkip = 1) {
     };
     modelSource = [nodeId, 0];
   }
+  const cache = Object.entries(workflow).find(([, node]) => node.class_type === "QwenImage21Cache");
+  if (cache) { cache[1].inputs.model = modelSource; modelSource = [cache[0], 0]; }
   for (const node of Object.values(workflow)) {
-    if (node.class_type === "CLIPTextEncode") node.inputs.clip = clipSource;
+    if (["CLIPTextEncode", "TextEncodeQwenImage21"].includes(node.class_type)) node.inputs.clip = clipSource;
     if (node.class_type === "KSampler") node.inputs.model = modelSource;
   }
   return { modelSource, clipSource };
@@ -516,14 +519,15 @@ export function buildWorkflow(definition, profile, recipe, item) {
   const manifest = definition.manifest;
   const profileStyleLoras = Object.keys(profile.style_loras ?? {}).sort(compareStableIds).map((id) => profile.style_loras[id]);
   const actualLoras = item.loras ?? profileStyleLoras;
+  if (actualLoras.length && !manifest.modifiers.includes("lora.model_only")) throw new Error(`${definition.id} 不支持 LoRA`);
   prepareModelAndClip(workflow, profile, actualLoras, recipe.clip_skip);
   const { dimensions } = recipe;
   const values = {
     dit: profileModelFilename(profile, "dit"),
     text_encoder: profileModelFilename(profile, "text_encoder"),
     vae: profileModelFilename(profile, "vae"),
-    positive_prompt: item.positive_prompt,
-    negative_prompt: item.negative_prompt,
+    ...applyPromptAvoidance(item.positive_prompt, item.negative_prompt, profile),
+    reference_image: item.reference_image ? referenceImageFilename(item.reference_image) : null,
     width: dimensions.width,
     height: dimensions.height,
     seed: item.seed,
@@ -622,7 +626,7 @@ function workflowOutputNodeId(definition) {
 
 export function compileFrozenExecutionUnits({ items, purpose, snapshot, profile, canvas, candidateBatch, taskId }) {
   const executableItems = items.filter((item) => item.status !== "skipped" && item.status !== "discarded");
-  const units = buildRenderUnits(executableItems, { candidateBatch: candidateBatch && purpose === "candidate" && !items.some(item => item.two_step) });
+  const units = buildRenderUnits(executableItems, { candidateBatch: candidateBatch && purpose === "candidate" && !items.some(item => item.two_step || item.reference_image) });
   const outputAdapter = createRenderOutputAdapter(purpose);
   return units.map((unit, index) => {
     const unitId = `unit-${String(index + 1).padStart(4, "0")}`;

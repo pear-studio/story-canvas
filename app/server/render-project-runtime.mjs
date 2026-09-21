@@ -1,3 +1,4 @@
+import { referenceImageFilename, uploadFrozenReferenceImage } from "./reference-image.mjs";
 import { assertDepthDependencies, saveDepthIntermediates, depthComfyUiUrls } from "./two-step-runtime.mjs";
 import { resolveExactPageIdentity } from "./page-render-resolver.mjs";
 import { publishCandidateResult, readCandidateResult } from "./candidate-storage.mjs";
@@ -242,11 +243,11 @@ export async function loadPersistedRenderTask(projectRoot, taskId, {
   const config = localConfig ?? await loadLocalConfig(path.join(repository, "app"));
   const promptDictionary = await loadPromptDictionaryForRender(config, repository);
   const validated = validateFrozenRenderTask(task, { dictionaryEntries: promptDictionary.entries, dictionaryIdentity: promptDictionary.identity });
-  return { task: validated.task, execution: validated.execution, localConfig: config };
+  return { task: validated.task, execution: validated.execution, localConfig: config, taskDirectory: persisted.task_directory };
 }
 
 async function runRender(options, assignedTaskId) {
-  const { task, execution, localConfig } = await loadPersistedRenderTask(options.projectRoot, assignedTaskId);
+  const { task, execution, localConfig, taskDirectory } = await loadPersistedRenderTask(options.projectRoot, assignedTaskId);
   let apiUrl = String(options.apiUrl ?? "").trim().replace(/\/$/, "");
   if (!apiUrl) {
     const configuredUrls = task.items.some(item => item.two_step) ? depthComfyUiUrls(localConfig) : configuredComfyUiUrls(localConfig);
@@ -258,6 +259,7 @@ async function runRender(options, assignedTaskId) {
     }
     apiUrl = apiUrl || primaryComfyUiUrl(localConfig) || "http://127.0.0.1:8188";
   }
+  const uploadedReferences = new Map();
   const runtimeConfig = { ...localConfig, comfyui_urls: [apiUrl] };
   const purpose = task.purpose;
   const profile = task.snapshot.profile;
@@ -384,6 +386,12 @@ async function runRender(options, assignedTaskId) {
           unit.plan.workflow.api,
           await comfyLoraOptionsForWorkflow(apiUrl, unit.plan.workflow.api, comfyLoraOptions),
         );
+        const reference = items[0].reference_image;
+        if (reference) {
+          if (!uploadedReferences.has(reference.sha256)) uploadedReferences.set(reference.sha256, uploadFrozenReferenceImage(apiUrl, taskDirectory, reference));
+          const uploaded = await uploadedReferences.get(reference.sha256);
+          for (const node of Object.values(resolvedPrompt)) if (node.class_type === "LoadImage" && node.inputs.image === referenceImageFilename(reference)) node.inputs.image = uploaded;
+        }
         unit.submission = { availability: "recorded", api_url: apiUrl, submitted_at: new Date().toISOString(), request: { client_id: clientId, prompt: resolvedPrompt, extra_data: unit.plan.extra_data }, prompt_id: null };
         const submissionFile = path.join(options.projectRoot, "Saved", "render", "submissions", task.id, unit.plan.id + ".json");
         await mkdir(path.dirname(submissionFile), { recursive: true });

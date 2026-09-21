@@ -70,7 +70,10 @@
       "minLength": 1
     },
     "family": {
-      "const": "anima"
+      "enum": [
+        "anima",
+        "qwen-image-2-1"
+      ]
     },
     "separator": {
       "type": "string"
@@ -78,7 +81,8 @@
     "avoidance_strategy": {
       "enum": [
         "negative_prompt",
-        "unsupported"
+        "unsupported",
+        "positive_avoid"
       ]
     },
     "category_order": {
