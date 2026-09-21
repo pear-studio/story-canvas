@@ -141,64 +141,6 @@
     "$schema": {
       "const": "https://storyvisualizer.local/schemas/story-page-prompt.schema.json"
     },
-    "mode": {
-      "enum": [
-        "structured",
-        "free"
-      ]
-    },
-    "free": {
-      "type": "object",
-      "required": [
-        "positive",
-        "negative",
-        "loras",
-        "base_sha256"
-      ],
-      "properties": {
-        "positive": {
-          "type": "string"
-        },
-        "negative": {
-          "type": "string"
-        },
-        "loras": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": [
-              "filename",
-              "sha256",
-              "weight"
-            ],
-            "properties": {
-              "filename": {
-                "type": "string"
-              },
-              "sha256": {
-                "type": "string",
-                "pattern": "^[0-9a-f]{64}$"
-              },
-              "weight": {
-                "type": "number",
-                "minimum": -2,
-                "maximum": 2
-              },
-              "trigger": {
-                "type": "string",
-                "minLength": 1
-              }
-            },
-            "additionalProperties": false
-          }
-        },
-        "base_sha256": {
-          "type": "string",
-          "pattern": "^[a-f0-9]{64}$"
-        }
-      },
-      "additionalProperties": false
-    },
     "subject": {
       "$ref": "#/$defs/fragments"
     },
@@ -248,9 +190,43 @@
         "const": "main"
       }
     },
-    "reference_image": {
-      "type": "string",
-      "pattern": "^[^/\\\\]+\\.(?:png|jpe?g|webp|PNG|JPE?G|WEBP)$"
+    "reference_images": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "file",
+          "title"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^ref-[a-f0-9-]{36}$"
+          },
+          "file": {
+            "type": "string",
+            "pattern": "^reference-[a-f0-9-]+\\.png$"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        }
+      }
+    },
+    "reference_overrides": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "uniqueItems": true,
+        "items": {
+          "type": "string",
+          "pattern": "^ref-[a-f0-9-]{36}$"
+        }
+      }
     }
   },
   "additionalProperties": false,

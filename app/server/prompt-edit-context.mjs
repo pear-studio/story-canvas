@@ -67,7 +67,7 @@ export async function readPromptEditContext({ projectRoot, repositoryRoot = proj
       status: complete ? "complete" : "incomplete",
       title: snapshot.title,
       mode: snapshot.page_prompt.mode ?? "structured",
-      inherited_usage: snapshot.page_prompt.mode === "free" ? "structured_base_only" : "generation",
+      inherited_usage: "generation",
       inherited,
       profile: {
         id: snapshot.project.default_render_profile,

@@ -1,3 +1,4 @@
+import { validateReferenceEntries } from "../shared/reference-images.mjs";
 import { validateCameraSettings } from "../shared/camera-prompt.mjs";
 import { adjustmentKey, validateAdjustments, promptWord } from '../shared/prompt-inheritance.mjs';
 import {
@@ -140,7 +141,8 @@ export function validateCharacterPromptDocument(promptDocument) {
     for (const [variantId, configuration] of Object.entries(promptDocument.variants)) {
       const valuePath = `character prompt.variants.${variantId}`;
       if (!isRecord(configuration)) { errors.push(`${valuePath} 必须是对象`); continue; }
-      checkExactKeys(configuration, ["prompt", "loras", "identity_disabled", "identity_overrides"], valuePath, errors);
+      checkExactKeys(configuration, ["prompt", "loras", "identity_disabled", "identity_overrides", "reference_images"], valuePath, errors);
+      errors.push(...validateReferenceEntries(configuration.reference_images));
       validatePrompt(configuration.prompt, `${valuePath}.prompt`, errors);
       if (!Array.isArray(configuration.loras)) errors.push(`${valuePath}.loras 必须是数组`);
       else configuration.loras.forEach((lora, index) => {

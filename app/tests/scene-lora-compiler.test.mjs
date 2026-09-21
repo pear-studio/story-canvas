@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { compileCurrentPagePrompt, structuredPromptBase } from "../server/current-page-prompt.mjs";
+import { compileCurrentPagePrompt } from "../server/current-page-prompt.mjs";
 import { freezePageLorasForTask } from "../server/render-task-helpers.mjs";
 import { diagnoseResolvedLoras } from "../server/render-profile-diagnostics.mjs";
 
@@ -21,7 +21,7 @@ function fixture() {
   };
 }
 
-test("场景基础与子设定 Prompt/LoRA 编译、来源冻结、自定义基础一致", () => {
+test("场景基础与子设定 Prompt/LoRA 编译、来源冻结", () => {
   const args = fixture();
   const compiled = compileCurrentPagePrompt(args);
   assert.deepEqual(compiled.errors, []);
@@ -34,13 +34,7 @@ test("场景基础与子设定 Prompt/LoRA 编译、来源冻结、自定义基�
   assert.match(compiled.prompt_parts.positive.find(part => part.prompt_text === "station platform").path, /identity.prompt.setting/);
   const frozen = freezePageLorasForTask(compiled, { active_scene_settings: [{ scene_id: "station", loras: args.scenes[0].loras }] });
   assert.deepEqual(frozen[0].activation_triggers, [{ text: "station_token", kind: "scene", owner: "station" }]);
-  const base = structuredPromptBase(compiled, args.profile, [], args.scenes);
-  assert.equal(base.loras[1].trigger, "night_token");
-  args.pagePrompt.mode = "free";
-  args.pagePrompt.free = base;
-  assert.deepEqual(compileCurrentPagePrompt(args).errors, []);
-  args.scenes[0].loras[1].trigger = "new_night_token";
-  assert.match(compileCurrentPagePrompt(args).errors.join(" "), /结构化基础已变化/);
+
 });
 
 test("场景 LoRA 和角色同文件配置冲突不静默覆盖", () => {

@@ -243,6 +243,33 @@
             },
             "additionalProperties": false
           }
+        },
+        "reference_images": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "file",
+              "title"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^ref-[a-f0-9-]{36}$"
+              },
+              "file": {
+                "type": "string",
+                "pattern": "^reference-[a-f0-9-]+\\.png$"
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              }
+            }
+          }
         }
       },
       "additionalProperties": false

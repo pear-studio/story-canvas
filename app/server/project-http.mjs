@@ -1,3 +1,4 @@
+import { promptDocuments } from './reference-materials.mjs';
 import { projectLibrary, openProjectDirectory, manageRegisteredProject } from "./project-library.mjs";
 import { readProjectGit } from "./project-git.mjs";
 import { registeredProjectPath, listRegisteredProjects, registerProject, unregisterProject, readProjectRegistry } from "./project-registry.mjs";
@@ -194,7 +195,11 @@ export async function handleProjectRequest({
     return true;
   }
   if (request.method === "DELETE" && materialItemMatch) {
-    const result = await mutateFacts(materialItemMatch[1], ({ projectDirectory }) => deleteMaterial(projectDirectory, requestUrl.searchParams.get("file")));
+    const result = await mutateFacts(materialItemMatch[1], async ({ projectDirectory }) => {
+      const file = requestUrl.searchParams.get("file");
+      if (file?.startsWith('reference-') && (await promptDocuments(projectDirectory)).some(({ document }) => JSON.stringify(document).includes(JSON.stringify(file)))) throw new ApiError(409, 'reference_material_in_use', ['该图片正在作为参考图使用，请在设定或页面的参考图管理中删除']);
+      return deleteMaterial(projectDirectory, file);
+    });
     sendOperation(200, result);
     return true;
   }

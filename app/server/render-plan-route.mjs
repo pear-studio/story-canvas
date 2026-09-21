@@ -47,7 +47,7 @@ function recipeInstanceId(sourceId, parameters) {
 function expectedRoute(item, { purpose, resolvedProfile }) {
   if (!isRecord(item)) throw new Error("渲染条目无效");
   const operation = operationForPurpose(purpose);
-  const inputSource = item.reference_image ? "reference_image" : "empty_latent";
+  const inputSource = item.reference_images?.length ? "reference_image" : "empty_latent";
   const profileRoute = resolvedProfileRoute(resolvedProfile, operation, inputSource, itemLabel(item));
   return {
     operation,

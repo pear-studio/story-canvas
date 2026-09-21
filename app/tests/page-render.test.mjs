@@ -68,9 +68,9 @@ test("Qwen 的 AVOID、单图路由和冻结输入贯通；源材料变化不改
   const narrative = await readJson(narrativeFile); narrative.characters = [];
   await writeJson(narrativeFile, narrative);
   const bytes = await sharp({ create: { width: 64, height: 96, channels: 3, background: "#123456" } }).png().toBuffer();
-  await writeProjectMaterial(fixture.projectDirectory, { file: "reference.png", title: "参考", encoding: "base64", content: bytes.toString("base64") });
+  await writeProjectMaterial(fixture.projectDirectory, { file: "reference-11111111-1111-4111-8111-111111111111.png", title: "参考", encoding: "base64", content: bytes.toString("base64") });
   const draft = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
-  draft.document.reference_image = "reference.png";
+  draft.document.reference_images = [{ id: "ref-11111111-1111-4111-8111-111111111111", file: "reference-11111111-1111-4111-8111-111111111111.png", title: "参考" }];
   await saveStoryPromptDraft(fixture.repositoryRoot, draft);
   const { task, task_directory } = await compileAndPersistPageRenderTask(fixture.repositoryRoot, fixture.projectId, "page-001", { count: 3, repositoryRoot: sourceRepositoryRoot });
   const dictionarySnapshot = await dictionary();
@@ -86,14 +86,14 @@ test("Qwen 的 AVOID、单图路由和冻结输入贯通；源材料变化不改
   assert.deepEqual(workflow["7"].inputs.model, ["10", 0]);
   assert.deepEqual(workflow["10"].inputs.model, ["1", 0]);
   assert.equal(workflow["6"].inputs.width, 832);
-  const identity = task.items[0].reference_image;
+  const identity = task.items[0].reference_images[0];
   const inspectSignature = async () => inspectionGenerationSignature(await compilePageRenderInspectionContext({
     repositoryRoot: sourceRepositoryRoot, projectDirectory: fixture.projectDirectory, pageKey: task.items[0].page_key,
     dictionaryEntries: dictionarySnapshot.entries,
   }));
   assert.equal(await inspectSignature(), taskGenerationSignature(task, task.items[0]));
   const frozen = await readFile(path.join(task_directory, "inputs", `${identity.sha256}.png`));
-  await writeProjectMaterial(fixture.projectDirectory, { file: "reference.png", title: "替换", encoding: "base64", content: (await sharp(bytes).negate().png().toBuffer()).toString("base64") });
+  await writeProjectMaterial(fixture.projectDirectory, { file: "reference-11111111-1111-4111-8111-111111111111.png", title: "替换", encoding: "base64", content: (await sharp(bytes).negate().png().toBuffer()).toString("base64") });
   assert.notEqual(await inspectSignature(), taskGenerationSignature(task, task.items[0]), "同名参考图内容变化使旧候选不再匹配");
   let received;
   const server = createServer(async (request, response) => {
@@ -107,27 +107,12 @@ test("Qwen 的 AVOID、单图路由和冻结输入贯通；源材料变化不改
   const url = `http://127.0.0.1:${server.address().port}`;
   assert.equal(await uploadFrozenReferenceImage(url, task_directory, identity), workflow["20"].inputs.image);
   assert.ok(received.includes(frozen), "上传任务冻结图片，而非后来替换的材料");
-  const tampered = structuredClone(task); tampered.items[0].reference_image.sha256 = "f".repeat(64);
+  const tampered = structuredClone(task); tampered.items[0].reference_images[0].sha256 = "f".repeat(64);
   assert.throws(() => validateFrozenRenderTask(tampered, { dictionaryEntries: dictionarySnapshot.entries, dictionaryIdentity: dictionarySnapshot.identity }), /指纹|变化|不一致/);
   await writeFile(path.join(task_directory, "inputs", `${identity.sha256}.png`), "broken");
   await assert.rejects(uploadFrozenReferenceImage(url, task_directory, identity), /校验失败/);
   await writeJson(path.join(fixture.projectDirectory, "project.json"), { title: "Anima", canvas: "2:3", default_render_profile: "anima-base-v1" });
   await assert.rejects(compileAndPersistPageRenderTask(fixture.repositoryRoot, fixture.projectId, "page-001", { repositoryRoot: sourceRepositoryRoot }), /不支持参考图/);
-});
-
-test("Qwen 自定义负向转 AVOID 且不改变 Anima 的负向输入", async () => {
-  const { readResolvedRenderProfile } = await import("../server/render-profile-compiler.mjs");
-  const { compileCurrentPagePrompt, structuredPromptBase } = await import("../server/current-page-prompt.mjs");
-  for (const family of ["qwen-image-2-1", "anima-base-v1"]) {
-    const { resolved_profile: profile } = await readResolvedRenderProfile(sourceRepositoryRoot, family);
-    const args = { pageId: "page-001", pageKey: { page_id: "page-001" }, pagePrompt: { ...prompt(), subject: [{ description: "anime portrait" }] }, profile };
-    const structured = compileCurrentPagePrompt(args);
-    const base = structuredPromptBase(structured, profile);
-    const free = compileCurrentPagePrompt({ ...args, pagePrompt: { ...args.pagePrompt, mode: "free", free: { ...base, positive: "anime portrait", negative: "text, watermark", loras: [] } } });
-    assert.equal(free.positive_prompt, family === "qwen-image-2-1" ? "anime portrait\n\nAVOID: text, watermark" : "anime portrait");
-    assert.equal(free.negative_prompt, family === "qwen-image-2-1" ? "" : "text, watermark");
-    assert.equal(free.ready, true);
-  }
 });
 
 test("圈选标签保存原文，冻结任务与复验使用无花括号的加权 Prompt；未知圈选只阻止生成", async context => {
@@ -777,8 +762,6 @@ test("流程预览临时编译无ID Prompt草稿，并把本机依赖缺失作�
 
   assert.match(inspection.prompt.positive, /1girl.*ellen_uniform.*ellen identity.*school uniform.*standing/s);
   assert.match(inspection.prompt.positive, /standing,\nwarm sunset light,\nfull_body$/);
-  assert.equal(inspection.structured_import.positive, inspection.prompt.positive, "自由模式导入保留实际编译的分段文本");
-  assert.equal(inspection.structured_import.negative, inspection.prompt.negative);
   assert.deepEqual(inspection.prompt.parts.by_category.person.map(part => part.prompt_text), ["school uniform", "standing"]);
   assert.deepEqual(inspection.characters.map(({ character_id, variant_id }) => ({ character_id, variant_id })), [
     { character_id: "ellen", variant_id: "uniform" },
@@ -1028,103 +1011,6 @@ test("候选删除共享锁且忽略旧选择缓存，同步discarded metadata",
 });
 
 
-test("自由模式保存双份内容并将原文和独立 LoRA 冻结到真实工作流，缺触发词仅警告", async context => {
-  const fixture = await createFixture(context);
-  const { savePagePrompt } = await import("../server/project-workbench.mjs");
-  const { hashCanonicalJson } = await import("../server/workflow-definition.mjs");
-  const { validateFrozenRenderTask } = await import("../server/render-task-contract.mjs");
-  const dictionarySnapshot = await dictionary();
-  const target = path.join(fixture.projectDirectory, "pages/page-001.prompt.json");
-  const original = await readJson(target);
-  const { $schema, ...fields } = original;
-  const baseRequest = { repositoryRoot: sourceRepositoryRoot, projectDirectory: fixture.projectDirectory, pageKey: { page_id: "page-001" }, dictionaryEntries: dictionarySnapshot.entries };
-  const base = (await inspectPageRender({ ...baseRequest, config: {} })).structured_import;
-  const free = { base_sha256: base.base_sha256, positive: "三个角色互相搀扶。\n(arbitrary prose:1.2), entirely_unknown_tag", negative: "不要额外的手臂\n自由负向", loras: [{ filename: "custom.safetensors", sha256: "b".repeat(64), weight: 0.65, trigger: "custom_trigger" }] };
-  const saved = await savePagePrompt(fixture.repositoryRoot, fixture.projectId, { kind: "story", page_id: "page-001", expected_sha256: hashCanonicalJson(original), expected_context_sha256: await pagePromptContextSha256(fixture.projectDirectory, "story", "page-001"), prompt: { ...fields, mode: "free", free } });
-  assert.deepEqual(saved.prompt.free, free);
-  assert.deepEqual(saved.prompt.subject.map(({ id, ...fragment }) => fragment), original.subject);
-  const request = { repositoryRoot: sourceRepositoryRoot, projectDirectory: fixture.projectDirectory, pageKey: { page_id: "page-001" }, dictionaryEntries: dictionarySnapshot.entries };
-  const compiled = await compilePageRenderTarget(request);
-  assert.equal(compiled.compiled_page.positive_prompt, free.positive);
-  assert.equal(compiled.compiled_page.negative_prompt, free.negative);
-  assert.deepEqual(compiled.page_loras, [{ ...free.loras[0], kind: "free", owner: "page-001" }]);
-  assert.deepEqual(compiled.compiled_page.audit.errors, []);
-  assert.equal(compiled.compiled_page.audit.warnings[0].code, "free_lora_trigger_missing");
-  const taskResult = await compileAndPersistWorkbenchRenderTask(fixture.repositoryRoot, fixture.projectId,
-    { page_key: request.pageKey, operation: "candidates", count: 1 }, { repositoryRoot: sourceRepositoryRoot });
-  const task = taskResult.task;
-  assert.equal(task.items[0].positive_prompt, free.positive);
-  assert.deepEqual(task.items[0].loras, compiled.page_loras);
-  validateFrozenRenderTask(task, { dictionaryEntries: dictionarySnapshot.entries, dictionaryIdentity: dictionarySnapshot.identity });
-  const serialized = JSON.stringify(task.snapshot.execution_units);
-  assert.ok(serialized.includes("custom.safetensors"));
-  assert.ok(!serialized.includes("ellen-uniform.safetensors"));
-  const tampered = structuredClone(task);
-  tampered.items[0].positive_prompt = "changed";
-  assert.throws(() => validateFrozenRenderTask(tampered, { dictionaryEntries: dictionarySnapshot.entries, dictionaryIdentity: dictionarySnapshot.identity }), /自由 Prompt|变化|不一致/);
-  const inspection = await inspectPageRender({ ...request, config: {} });
-  assert.equal(inspection.generation.prompt_mode, "free");
-  assert.ok(inspection.structured_import.positive.includes("ellen identity"));
-  assert.ok(inspection.structured_import.loras.some(lora => lora.filename === "characters/ellen-uniform.safetensors"));
-  const switched = await savePagePrompt(fixture.repositoryRoot, fixture.projectId, { kind: "story", page_id: "page-001", expected_sha256: saved.prompt_sha256, expected_context_sha256: await pagePromptContextSha256(fixture.projectDirectory, "story", "page-001"), prompt: { ...saved.prompt, mode: "structured" } });
-  assert.deepEqual(switched.prompt.free, free);
-  assert.ok((await compilePageRenderTarget(request)).compiled_page.positive_prompt.includes("ellen identity"));
-});
-
-
-test("自定义默认不存重复内容，来源变化阻止生成，确认与重置分别保留或移除覆盖", async context => {
-  const fixture = await createFixture(context);
-  const { savePagePrompt } = await import("../server/project-workbench.mjs");
-  const { hashCanonicalJson } = await import("../server/workflow-definition.mjs");
-  const dictionarySnapshot = await dictionary();
-  const target = path.join(fixture.projectDirectory, "pages/page-001.prompt.json");
-  const request = { repositoryRoot: sourceRepositoryRoot, projectDirectory: fixture.projectDirectory, pageKey: { page_id: "page-001" }, dictionaryEntries: dictionarySnapshot.entries };
-  const inspect = () => inspectPageRender({ ...request, config: {} });
-  let current = await readJson(target);
-  async function save(patch) {
-    const { $schema, ...prompt } = current;
-    await savePagePrompt(fixture.repositoryRoot, fixture.projectId, { kind: "story", page_id: "page-001", expected_sha256: hashCanonicalJson(current), expected_context_sha256: await pagePromptContextSha256(fixture.projectDirectory, "story", "page-001"), prompt: JSON.parse(JSON.stringify({ ...prompt, ...patch })) });
-    current = await readJson(target);
-  }
-  const base = (await inspect()).structured_import;
-  await save({ mode: "free" });
-  assert.equal(Object.hasOwn(current, "free"), false);
-  assert.equal((await compilePageRenderTarget(request)).compiled_page.positive_prompt, base.positive);
-  const custom = { positive: "a custom composition", negative: "", loras: [] };
-  await assert.rejects(save({ free: custom }), error => JSON.stringify(error.details).includes("base_sha256"));
-  await save({ free: { ...custom, base_sha256: base.base_sha256 } });
-  assert.equal((await compilePageRenderTarget(request)).compiled_page.positive_prompt, custom.positive);
-  const subject = [...current.subject, { description: "beside a quiet river" }];
-  await save({ subject });
-  await assert.rejects(compilePageRenderTarget(request), error => JSON.stringify(error.details).includes("结构化基础已变化"));
-  const changed = (await inspect()).structured_import;
-  assert.notEqual(changed.base_sha256, base.base_sha256);
-  assert.equal(current.free.positive, custom.positive);
-  await save({ mode: "structured" });
-  assert.ok((await compilePageRenderTarget(request)).compiled_page.positive_prompt.includes("beside a quiet river"));
-  await save({ mode: "free", free: { ...custom, base_sha256: changed.base_sha256 } });
-  assert.equal((await compilePageRenderTarget(request)).compiled_page.positive_prompt, custom.positive);
-  // 重置已保存的覆盖需要保存删除，模式和结构化编辑均保留。
-  await save({ free: undefined });
-  assert.equal(current.mode, "free");
-  assert.equal(Object.hasOwn(current, "free"), false);
-  assert.ok(current.subject.some(fragment => fragment.description === "beside a quiet river"));
-  assert.equal((await compilePageRenderTarget(request)).compiled_page.positive_prompt, changed.positive);
-});
-
-
-test("自定义基础指纹只跟随最终文本和 LoRA，不跟随片段来源说明", async () => {
-  const { structuredPromptBase } = await import("../server/current-page-prompt.mjs");
-  const compiled = { missing: [], errors: [], positive_prompt: "a scene", negative_prompt: "blur", loras: [{ filename: "style.safetensors", sha256: "a".repeat(64), weight: 1 }], prompt_parts: { id: "first" } };
-  const profile = { style_loras: { style: { ...compiled.loras[0], trigger: "style_token" } } };
-  const base = structuredPromptBase(compiled, profile);
-  assert.equal(structuredPromptBase({ ...compiled, prompt_parts: { id: "renamed" } }, profile).base_sha256, base.base_sha256);
-  assert.notEqual(structuredPromptBase({ ...compiled, negative_prompt: "noise" }, profile).base_sha256, base.base_sha256);
-  assert.notEqual(structuredPromptBase({ ...compiled, loras: [{ ...compiled.loras[0], weight: 0.8 }] }, profile).base_sha256, base.base_sha256);
-  assert.notEqual(structuredPromptBase(compiled, { style_loras: { style: { ...profile.style_loras.style, trigger: "new_token" } } }).base_sha256, base.base_sha256);
-});
-
-
 test("编辑上下文展开各层覆盖和关闭项，使用项目有效配置，草稿可保存且拒绝过期依赖", async t => {
   const fixture = await createFixture(t);
   const { readPromptEditContext } = await import("../server/prompt-edit-context.mjs");
@@ -1176,23 +1062,14 @@ test("编辑上下文展开各层覆盖和关闭项，使用项目有效配置�
   await assert.rejects(save(fresh.draft), error => error.code === "fact_upstream_conflict");
 });
 
-test("编辑上下文覆盖角色页和自定义实际来源，配置缺失明确返回不完整", async t => {
+test("编辑上下文覆盖角色页实际来源，配置缺失明确返回不完整", async t => {
   const fixture = await createFixture(t);
   const { readPromptEditContext } = await import("../server/prompt-edit-context.mjs");
-  const { structuredPromptBase } = await import("../server/current-page-prompt.mjs");
   const options = { projectRoot: fixture.repositoryRoot, repositoryRoot: sourceRepositoryRoot, projectDirectory: fixture.projectDirectory, projectId: fixture.projectId, pageKey: "v3/page-101" };
   const initial = await readPromptEditContext(options);
   assert.deepEqual(initial.save, { domain: "page", kind: "prompt" });
   assert.equal(initial.draft.target_id, "page-101");
-  const c = await compilePageRenderInspectionContext({ repositoryRoot: sourceRepositoryRoot, projectDirectory: fixture.projectDirectory, pageKey: options.pageKey, dictionaryEntries: (await dictionary()).entries });
-  const page = initial.draft.document;
-  page.mode = "free";
-  page.free = { ...structuredPromptBase(c.compiled_page, c.active_profile, c.snapshot.characters), positive: "a quiet portrait", negative: "", loras: [] };
-  await writeJson(path.join(fixture.projectDirectory, "pages/page-101.prompt.json"), page);
-  const free = await readPromptEditContext(options);
-  assert.equal(free.context.final.positive, "a quiet portrait");
-  assert.equal(free.context.final.mode, "free");
-  assert.equal(free.context.inherited_usage, "structured_base_only");
+  assert.equal(initial.context.inherited_usage, "generation");
   const { readResolvedRenderProfile } = await import("../server/render-profile-compiler.mjs");
   const base = await readResolvedRenderProfile(sourceRepositoryRoot, "anima-base-v1");
   const fragmentId = Object.keys(base.resolved_profile.prompt.fragments)[0];
@@ -1208,5 +1085,45 @@ test("编辑上下文覆盖角色页和自定义实际来源，配置缺失明�
   assert.equal(incomplete.context.status, "incomplete");
   assert.equal(incomplete.context.final, null);
   assert.ok(incomplete.context.diagnostics.some(item => item.code === "prompt_audit_unavailable"));
-  assert.equal(incomplete.draft.document.free.positive, "a quiet portrait");
+});
+
+test('Qwen 十张参考图按角色、场景、本页顺序冻结并连接，十一张拒绝', async t => {
+  const fixture = await createFixture(t);
+  const sharp = (await import('sharp')).default;
+  const { saveMaterial } = await import('../server/project-materials.mjs');
+  const { defaultSceneFacts } = await import('../server/scene-files.mjs');
+  const refs = [];
+  for (let i = 0; i < 10; i++) {
+    const id = `11111111-1111-4111-8111-${String(i).padStart(12, '0')}`;
+    const file = `reference-${id}.png`;
+    const bytes = await sharp({ create: { width: 16, height: 24, channels: 3, background: { r: i * 20, g: 100, b: 50 } } }).png().toBuffer();
+    await saveMaterial(fixture.projectDirectory, fixture.projectId, { file, title: '参考', encoding: 'base64', content: bytes.toString('base64') });
+    refs.push({ id: 'ref-' + id, file, title: '参考' });
+  }
+  await writeJson(path.join(fixture.projectDirectory, 'project.json'), { title: 'Qwen', canvas: '2:3', default_render_profile: 'qwen-image-2-1' });
+  const character = await readJson(path.join(fixture.projectDirectory, 'characters/ellen.prompt.json'));
+  character.identity.lora = null;
+  character.variants.uniform.loras = [];
+  character.variants.uniform.reference_images = refs.slice(0, 5);
+  await writeJson(path.join(fixture.projectDirectory, 'characters/ellen.prompt.json'), character);
+  const scene = defaultSceneFacts('room', '房间');
+  scene.prompt.variants.default.reference_images = refs.slice(5, 9);
+  for (const kind of ['profile', 'visual', 'prompt']) await writeJson(path.join(fixture.projectDirectory, `scenes/room.${kind}.json`), scene[kind]);
+  await writeJson(path.join(fixture.projectDirectory, 'scenes/index.json'), { $schema: 'https://storyvisualizer.local/schemas/scene-index.schema.json', scenes: ['room'] });
+  const draft = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, 'page-001');
+  Object.assign(draft.document, { scene_id: 'room', scene_variant_id: 'default', reference_images: refs.slice(9), reference_overrides: { 'character:ellen:uniform': refs.slice(0,5).map(r=>r.id), 'scene:room:default': refs.slice(5,9).map(r=>r.id) } });
+  await saveStoryPromptDraft(fixture.repositoryRoot, draft);
+  const { task, task_directory } = await compileAndPersistPageRenderTask(fixture.repositoryRoot, fixture.projectId, 'page-001', { count: 1, repositoryRoot: sourceRepositoryRoot });
+  assert.deepEqual(task.items[0].reference_images.map(r=>r.material_file), refs.map(r=>r.file));
+  const workflow = task.snapshot.execution_units[0].workflow.api;
+  for (let i = 0; i < 10; i++) {
+    const node = workflow['4'].inputs[`images.image_${i+1}`][0];
+    assert.equal(workflow[node].inputs.image, `StoryCanvas/references/${task.items[0].reference_images[i].sha256}.png`);
+    await access(path.join(task_directory, 'inputs', task.items[0].reference_images[i].sha256 + '.png'));
+  }
+  const { validateFrozenRenderTask } = await import('../server/render-task-contract.mjs');
+  const dict = await dictionary(); validateFrozenRenderTask(task, { dictionaryEntries: dict.entries, dictionaryIdentity: dict.identity });
+  const next = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, 'page-001');
+  next.document.reference_images.push(refs[0]); await saveStoryPromptDraft(fixture.repositoryRoot, next);
+  await assert.rejects(compileAndPersistPageRenderTask(fixture.repositoryRoot, fixture.projectId, 'page-001', { repositoryRoot: sourceRepositoryRoot }), /最多支持 10/);
 });

@@ -1,7 +1,6 @@
-import { isReferenceImageFile } from "./reference-image.mjs";
+import { validateReferenceEntries, validateReferenceOverrides } from "../shared/reference-images.mjs";
 import { validateCameraSettings } from "../shared/camera-prompt.mjs";
 import { validateAdjustments } from '../shared/prompt-inheritance.mjs';
-import { validateLoraDefinition } from "./lora-config.mjs";
 import { NARRATION_CHARACTER_LIMIT } from "../shared/story-content-guidance.mjs";
 export const STORY_OUTLINE_SCHEMA_ID = "https://storyvisualizer.local/schemas/story-outline.schema.json";
 export const STORY_PAGES_INDEX_SCHEMA_ID = "https://storyvisualizer.local/schemas/story-pages-index.schema.json";
@@ -258,22 +257,8 @@ export function validateStoryPagePromptDocument(prompt) {
       errors.push(...validateAdjustments(adjustments, source));
     }
   }
-  checkExactKeys(prompt, ["$schema", "mode", "free", "reference_image", "scene_id", "scene_variant_id", "inheritance", ...storyPromptCategories], "prompt", errors);
-  if (prompt.reference_image !== undefined && !isReferenceImageFile(prompt.reference_image)) errors.push("prompt.reference_image 必须是材料中的 PNG、JPEG 或 WebP 文件名");
-  if (prompt.mode !== undefined && !["structured", "free"].includes(prompt.mode)) errors.push("prompt.mode 无效");
-  if (prompt.free !== undefined) {
-    if (!isRecord(prompt.free)) errors.push("prompt.free 必须是对象");
-    else {
-      checkExactKeys(prompt.free, ["positive", "negative", "loras", "base_sha256"], "prompt.free", errors);
-      if (!/^[a-f0-9]{64}$/.test(prompt.free.base_sha256 ?? "")) errors.push("prompt.free.base_sha256 无效");
-      for (const key of ["positive", "negative"]) if (typeof prompt.free[key] !== "string") errors.push(`prompt.free.${key} 必须是文本`);
-      if (!Array.isArray(prompt.free.loras)) errors.push("prompt.free.loras 必须是数组");
-      else {
-        prompt.free.loras.forEach((lora, index) => errors.push(...validateLoraDefinition(lora, `prompt.free.loras[${index}]`)));
-        if (new Set(prompt.free.loras.map(lora => lora?.filename)).size !== prompt.free.loras.length) errors.push("自由模式 LoRA 不得重复");
-      }
-    }
-  }
+  checkExactKeys(prompt, ["$schema", "reference_images", "reference_overrides", "scene_id", "scene_variant_id", "inheritance", ...storyPromptCategories], "prompt", errors);
+  errors.push(...validateReferenceEntries(prompt.reference_images), ...validateReferenceOverrides(prompt.reference_overrides));
   if (prompt.$schema !== STORY_PAGE_PROMPT_SCHEMA_ID) errors.push("prompt.$schema 不匹配");
   for (const category of storyPromptCategories) {
     if (!Array.isArray(prompt[category])) errors.push(`prompt.${category} 必须是数组`);

@@ -1,3 +1,4 @@
+import { cleanRemovedReferences } from './reference-materials.mjs';
 import { readPageIndex, validatePagesIndexDocument } from "./pages-store.mjs";
 import { duplicatePromptWords, variantPrompt } from '../shared/prompt-inheritance.mjs';
 import { planPromptPropagation, requireImpactConfirmation, commitFactChanges } from './prompt-inheritance-facts.mjs';
@@ -555,6 +556,7 @@ export async function deleteCharacterVariant(projectRoot, projectId, characterId
     }
     throw error;
   }
+  await cleanRemovedReferences(project.projectDirectory, prompt);
   return {
     character_id: characterId,
     variant_id: variantId,
@@ -644,10 +646,12 @@ export async function renameCharacterVariant(projectRoot, projectId, characterId
       const relativePath = storage.projectRelativePath('pages', pageId + '.prompt.json');
       const previous = await storage.readJson(storage.targetPath(project.projectDirectory, relativePath), relativePath);
       const oldSource = 'character:' + characterId + ':' + oldId;
-      if (!previous.inheritance?.[oldSource]) continue;
+      if (!previous.inheritance?.[oldSource] && !previous.reference_overrides?.[oldSource]) continue;
       const next = structuredClone(previous);
-      next.inheritance['character:' + characterId + ':' + newId] = next.inheritance[oldSource];
-      delete next.inheritance[oldSource];
+      for (const field of ['inheritance', 'reference_overrides']) if (next[field]?.[oldSource]) {
+        next[field]['character:' + characterId + ':' + newId] = next[field][oldSource];
+        delete next[field][oldSource];
+      }
       writes.push({ relativePath, next, previous });
   }
   await Promise.all(writes.map((write) => (
@@ -726,6 +730,7 @@ export async function deleteCharacter(projectRoot, projectId, characterId, { bef
     deleted_at: new Date().toISOString(),
     archived_paths: sources.map((source) => source.relative_path),
   };
+  const removedReferences = await readCharacterPrompt(project.projectDirectory, characterId);
   const moved = [];
   if (beforeCommit !== undefined && typeof beforeCommit !== "function") {
     fail("invalid_character_edit_option", ["beforeCommit 必须是函数"]);
@@ -747,6 +752,7 @@ export async function deleteCharacter(projectRoot, projectId, characterId, { bef
     }
     throw error;
   }
+  await cleanRemovedReferences(project.projectDirectory, removedReferences);
   return {
     deletion_id: archive.deletionId,
     archive_directory: path.resolve(archive.directory),

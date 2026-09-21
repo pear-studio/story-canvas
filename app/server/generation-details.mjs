@@ -55,7 +55,6 @@ export function generationDetailsProjection({ profile = null, models = null, rec
   const allParts = [...positiveParts, ...negativeParts];
   const dimensions = recipe?.dimensions ?? (typeof canvas === "string" ? recipe?.resolutions?.[canvas] : null);
   return {
-    prompt_mode: rawPromptParts?.mode === "free" ? "free" : "structured",
     profile_name: typeof profile?.name === "string" && profile.name ? profile.name : null,
     canvas: typeof canvas === "string" && canvas ? canvas : null,
     parameters: recipe && typeof recipe === "object" ? {

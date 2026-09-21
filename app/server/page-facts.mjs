@@ -1,3 +1,4 @@
+import { cleanRemovedReferences, removeUnusedFile, savePageReferenceInputs } from './reference-materials.mjs';
 // 调用方持有项目写锁。本模块统一页面生命周期及整页提交，归属不参与生成引用推导。
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -102,6 +103,7 @@ export async function deletePage(root,projectId,pageId,{beforeCommit}={}) {
   const index=await readPageIndex(directory),entry=await requirePage(directory,pageId);
   await assertNoActivePageRender(directory,{page_id:pageId});
   if((await listFinishedJobs(directory)).some(job=>job.page_id===pageId&&finishedBusyStatuses.has(job.status)))fail('page_finished_output_busy',[pageId]);
+  const removedReferences = await optionalJson(directory, pageRelativePath(pageId, 'prompt'));
   const deletionId=`deleted-${randomBytes(6).toString('hex')}`,archive=path.join(path.resolve(root),'Saved/state/deleted-pages',project.projectId,deletionId);
   const descriptors=[...['content','prompt','text-sources'].map(kind=>pageRelativePath(pageId,kind)),`Outputs/pages/${pageId}`];
   const siblings=index.pages.filter(page=>sameOwner(page,entry)),ordinal=siblings.findIndex(page=>page.page_id===pageId);
@@ -116,12 +118,13 @@ export async function deletePage(root,projectId,pageId,{beforeCommit}={}) {
     await storage.writeJsonAtomic(path.join(archive,'deletion.json'),{version:1,deletion_id:deletionId,project_id:project.projectId,...entry,...position,deleted_at:new Date().toISOString(),archived_paths:moved.map(item=>item.relative)});
     await commitFactChanges(directory,writes);
   } catch(error){for(const item of moved.reverse())await rename(item.target,item.source);throw error;}
+  await cleanRemovedReferences(directory, removedReferences);
   return {page_id:pageId,deletion_id:deletionId,archive_directory:archive,archived_paths:moved.map(item=>item.relative)};
 }
 function checkHash(document,expected,code) {if(!/^[a-f0-9]{64}$/.test(expected??'')||hashCanonicalJson(document)!==expected)fail(code);}
 // 所有验证和引用切换确认先完成，再通过同一事实提交一次落盘；失败回滚由 commitFactChanges 负责。
 export async function savePage(root,projectId,value) {
-  const allowed=new Set(['page_key','content','prompt','expected_content_sha256','expected_prompt_sha256','expected_context_sha256','lettering','expected_layout_sha256','text_sources','expected_text_sources_sha256','confirmation_sha256']);
+  const allowed=new Set(['page_key','content','prompt','reference_inputs','expected_content_sha256','expected_prompt_sha256','expected_context_sha256','lettering','expected_layout_sha256','text_sources','expected_text_sources_sha256','confirmation_sha256']);
   if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(key=>!allowed.has(key))||!value.content||typeof value.content!=='object'||Array.isArray(value.content)||!value.prompt||typeof value.prompt!=='object'||Array.isArray(value.prompt))fail('invalid_page_document',['整页保存需要 content 和 prompt 对象']);
   const pageKey=decodePageKey(value.page_key),pageId=pageKey.page_id;
   const {projectDirectory:directory}=await projectAt(root,projectId);await requirePage(directory,pageId);
@@ -140,6 +143,7 @@ export async function savePage(root,projectId,value) {
   const keep=new Set(content.characters.map(ref=>`character:${ref.character_id}:${ref.variant_id}`));
   const old=new Set(beforeContent.characters.map(ref=>`character:${ref.character_id}:${ref.variant_id}`));
   const removed=[...old].filter(source=>!keep.has(source));for(const source of removed)if(prompt.inheritance)delete prompt.inheritance[source];
+  for (const source of Object.keys(prompt.reference_overrides ?? {})) if (source.startsWith('character:') && !keep.has(source)) delete prompt.reference_overrides[source];
   const impacts=await sourceSwitchImpacts(directory,beforePrompt,prompt,beforeContent.characters,content.characters,removed);
   const scenePlan=await applySceneSwitch(directory,beforePrompt,prompt,content.characters);impacts.push(...scenePlan.impacts);
   const sources=await readInheritanceSources(directory,content.characters,prompt.scene_id,prompt.scene_variant_id,{allowMissing:true});
@@ -172,7 +176,14 @@ export async function savePage(root,projectId,value) {
     writes.push({relative:pageRelativePath(pageId,'text-sources'),before:oldSources,after:textSources});
   }
   const auditPrepared=await preparePromptWriteAudit(root);
-  await commitFactChanges(directory,writes);
+  const createdReferences = [];
+  try {
+    await savePageReferenceInputs(directory, projectId, prompt, value.reference_inputs ?? [], createdReferences);
+    await commitFactChanges(directory,writes);
+  } catch (error) {
+    for (const file of createdReferences) await removeUnusedFile(directory, file);
+    throw error;
+  }
   const captured=await capturePromptAuditInput(()=>capturePagePromptSnapshot(directory,pageId,pageKey));
   const audit=await auditSavedPagePrompt(root,directory,auditPrepared,captured);
   return {page_key:pageKey,content:publicDocument(content),prompt:publicDocument(prompt),content_sha256:hashCanonicalJson(content),prompt_sha256:hashCanonicalJson(prompt),prompt_context_sha256:hashCanonicalJson(await readStoryPromptUpstream(directory,pageId)),...(lettering?{lettering,layout_sha256:layoutSha}:{}),warnings:storyContentWarnings(content),downstream_diagnostics:await narrativeDownstreamDiagnostics(directory,pageId,content),audit};

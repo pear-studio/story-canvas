@@ -34,7 +34,7 @@ const frozenSnapshotFields = new Set([
 ]);
 const frozenItemFields = new Set([
   "id", "task", "page_key", "seed", "candidate_id", "file", "positive_prompt", "negative_prompt", "prompt_parts",
-  "loras", "status", "reference_image",
+  "loras", "status", "reference_images",
   "render_route", "prompt_id", "generated_at", "discarded_at", "absolute_file",
 ]);
 function clone(value) { return structuredClone(value); }
@@ -203,7 +203,7 @@ function promptItemBindingFingerprint(item) {
     negative_prompt: typeof item?.negative_prompt === "string" ? item.negative_prompt : null,
     prompt_parts: item?.prompt_parts ?? null,
     loras: item?.loras ?? null,
-    ...(item?.reference_image ? { reference_image: item.reference_image } : {}),
+    reference_images: item?.reference_images ?? [],
   });
 }
 
@@ -419,16 +419,8 @@ export function assertRenderTaskPromptAudit(task, { dictionaryEntries = null, di
     const evidence = revalidationPages[pageKey];
     if (!evidence) throw new Error(`${pageKey} 缺少冻结的 Prompt 重审记录`);
     if (!sameJson(task.snapshot.loras?.[item.id], item.loras)) throw new Error(`${item.id} 的 LoRA 绑定与任务快照不一致`);
-    let projection;
-    if (item.prompt_parts?.mode === "free") {
-      if (!item.positive_prompt.trim() || !sameJson(item.prompt_parts, evidence.prompt_parts)
-        || item.positive_prompt !== evidence.positive_prompt || item.negative_prompt !== evidence.negative_prompt
-        || item.loras.some(lora => lora.kind !== "free")) throw new Error(`${pageKey} 的自由 Prompt 快照不一致`);
-      projection = { positivePrompt: evidence.positive_prompt, negativePrompt: evidence.negative_prompt, promptParts: evidence.prompt_parts };
-    } else {
-      const allowedLoraTriggers = expectedLoraTriggers(task.snapshot.profile, item, dictionaryEntries);
-      projection = assertPromptProjection(pageKey, evidence, task.snapshot.profile, dictionaryEntries, item, allowedLoraTriggers);
-    }
+    const allowedLoraTriggers = expectedLoraTriggers(task.snapshot.profile, item, dictionaryEntries);
+    const projection = assertPromptProjection(pageKey, evidence, task.snapshot.profile, dictionaryEntries, item, allowedLoraTriggers);
     if (item.positive_prompt !== projection.positivePrompt || item.negative_prompt !== projection.negativePrompt
       || !sameJson(item.prompt_parts, projection.promptParts)) {
       throw new Error(`${item.id} 的 Prompt 与当前重审投影不一致，拒绝恢复生成`);
@@ -526,7 +518,7 @@ export function buildWorkflow(definition, profile, recipe, item) {
     text_encoder: profileModelFilename(profile, "text_encoder"),
     vae: profileModelFilename(profile, "vae"),
     ...applyPromptAvoidance(item.positive_prompt, item.negative_prompt, profile),
-    reference_image: item.reference_image ? referenceImageFilename(item.reference_image) : null,
+    reference_image: item.reference_images?.length ? referenceImageFilename(item.reference_images[0]) : null,
     width: dimensions.width,
     height: dimensions.height,
     seed: item.seed,
@@ -553,6 +545,18 @@ export function buildWorkflow(definition, profile, recipe, item) {
   for (const [name, value] of Object.entries(values)) {
     const binding = bindings[name];
     if (binding && value != null) setPath(workflow, binding, value);
+  }
+  if (item.reference_images?.length) {
+    if (item.reference_images.length > 10) throw new Error("最多支持 10 张参考图");
+    const encoder = Object.values(workflow).find(node => node.class_type === "TextEncodeQwenImage21");
+    if (!encoder) throw new Error("工作流不支持多参考图");
+    for (const key of Object.keys(encoder.inputs)) if (key.startsWith("images.image_")) delete encoder.inputs[key];
+    const loadId = bindings.reference_image.split('.')[0];
+    item.reference_images.forEach((identity, index) => {
+      const id = index === 0 ? loadId : 'reference-' + (index + 1);
+      workflow[id] = { class_type: "LoadImage", inputs: { image: referenceImageFilename(identity) } };
+      encoder.inputs['images.image_' + (index + 1)] = [id, 0];
+    });
   }
   return workflow;
 }
@@ -625,7 +629,7 @@ function workflowOutputNodeId(definition) {
 
 export function compileFrozenExecutionUnits({ items, purpose, snapshot, profile, canvas, candidateBatch, taskId }) {
   const executableItems = items.filter((item) => item.status !== "skipped" && item.status !== "discarded");
-  const units = buildRenderUnits(executableItems, { candidateBatch: candidateBatch && purpose === "candidate" && !items.some(item => item.reference_image) });
+  const units = buildRenderUnits(executableItems, { candidateBatch: candidateBatch && purpose === "candidate" && !items.some(item => item.reference_images?.length) });
   const outputAdapter = createRenderOutputAdapter(purpose);
   return units.map((unit, index) => {
     const unitId = `unit-${String(index + 1).padStart(4, "0")}`;

@@ -34,7 +34,6 @@ export function candidateSeedSequence(count, startSeed = null, nextSeed = () => 
 
 export function freezePageLorasForTask(page, projection) {
   const frozen = (page?.loras ?? []).map((lora) => clone(lora));
-  if (page?.prompt_parts?.mode === "free") return frozen;
   const byFilename = new Map(frozen.map((lora) => [lora.filename, lora]));
   const sources = [
     ...(projection?.active_character_settings ?? []).map(setting => ({ ...setting, owner: setting.character_id, kind: "character" })),

@@ -1,3 +1,4 @@
+import { resolveReferenceEntries } from "../shared/reference-images.mjs";
 import { readReferenceImage } from "./reference-image.mjs";
 import { readPageIndex } from './pages-store.mjs';
 import { resolveSceneConfiguration } from './scene-files.mjs';
@@ -65,7 +66,7 @@ function inspectionBlocker(code, message, details = []) {
 
 function normalizeInspectionPromptDraft(value) {
   const source = isRecord(value) ? value : {};
-  const prompt = { $schema: STORY_PAGE_PROMPT_SCHEMA_ID, ...(source.reference_image === undefined ? {} : { reference_image: source.reference_image }), ...(source.scene_id ? { scene_id: source.scene_id, scene_variant_id: source.scene_variant_id } : {}), ...(source.inheritance ? { inheritance: structuredClone(source.inheritance) } : {}), ...(source.mode === undefined ? {} : { mode: source.mode }), ...(source.free === undefined ? {} : { free: structuredClone(source.free) }) };
+  const prompt = { $schema: STORY_PAGE_PROMPT_SCHEMA_ID, reference_images: source.reference_images, reference_overrides: source.reference_overrides, ...(source.scene_id ? { scene_id: source.scene_id, scene_variant_id: source.scene_variant_id } : {}), ...(source.inheritance ? { inheritance: structuredClone(source.inheritance) } : {}) };
   for (const category of storyPromptCategories) {
     prompt[category] = Array.isArray(source[category])
       ? source[category].filter(isRecord).map((fragment) => structuredClone(fragment))
@@ -139,6 +140,7 @@ async function readCharacter(projectDirectory, characterIndex, reference) {
     prompt: structuredClone(configuration.prompt),
     identity_disabled: structuredClone(configuration.identity_disabled),
     identity_overrides: structuredClone(configuration.identity_overrides ?? {}),
+    reference_images: structuredClone(configuration.reference_images ?? []),
     configuration_id: reference.variant_id,
     configuration_path: `variants.${reference.variant_id}`,
     loras: [
@@ -315,8 +317,8 @@ export async function compilePageRenderTarget({
       loras: structuredClone(character.loras),
     })),
   });
-  const referenceImage = snapshot.page_prompt.reference_image ? await readReferenceImage(projectDirectory, snapshot.page_prompt.reference_image) : null;
-  const routed = freezeRenderRoutes([{ reference_image: referenceImage?.identity, id: `target.${encodePageKey(snapshot.page_key).replaceAll("/", ".")}`, page_key: snapshot.page_key }], {
+  const referenceImages = await resolvePageReferenceImages(projectDirectory, snapshot);
+  const routed = freezeRenderRoutes([{ reference_images: referenceImages.map(r => r.identity), id: `target.${encodePageKey(snapshot.page_key).replaceAll("/", ".")}`, page_key: snapshot.page_key }], {
     purpose: "candidate",
     resolvedProfile: compiledProfile.effective_profile,
   })[0];
@@ -344,8 +346,8 @@ export async function compilePageRenderTarget({
     project_source: projectSource,
     compiled_profile: compiledProfile,
     compiled_page: compiledPage,
-    reference_image: referenceImage?.identity ?? null,
-    reference_image_bytes: referenceImage?.bytes ?? null,
+    reference_images: referenceImages.map(r => r.identity),
+    reference_image_bytes: referenceImages,
     participant_ids: participants,
     page_loras: pageLoras,
     render_identity: renderIdentity,
@@ -366,7 +368,7 @@ export async function compilePageRenderTarget({
     participant_ids: target.participant_ids,
     page_loras: target.page_loras,
     render_identity: target.render_identity,
-    reference_image: target.reference_image,
+    reference_images: target.reference_images,
     candidate_route: target.candidate_route,
     candidate_recipe: target.candidate_recipe,
     candidate_workflow: target.candidate_workflow,
@@ -458,7 +460,7 @@ export async function compilePageRenderInspectionContext({
 
   let compiledPage = null;
   let audit = { status: "unavailable", diagnostics: [] };
-  const auditUnavailableReason = (snapshot.page_prompt.mode === "free" ? null : dictionaryError
+  const auditUnavailableReason = (dictionaryError
     || (!Array.isArray(dictionaryEntries) || !dictionaryEntries.length ? "Prompt 审计词库不可用" : null))
     || (compiledProfile?.blocked ? "项目生成配置调整存在冲突，无法审计有效 Prompt" : null)
     || (!activeProfile ? "无法取得有效生成配置" : null);
@@ -481,11 +483,9 @@ export async function compilePageRenderInspectionContext({
     blockers.push(diagnostic);
   }
 
-  let referenceImage = null;
-  if (snapshot.page_prompt.reference_image) {
-    try { referenceImage = (await readReferenceImage(projectDirectory, snapshot.page_prompt.reference_image)).identity; }
-    catch (error) { blockers.push(inspectionBlocker("reference_image_unavailable", error.message)); }
-  }
+  let referenceImages = null;
+  try { referenceImages = await resolvePageReferenceImages(projectDirectory, snapshot); }
+  catch (error) { blockers.push(inspectionBlocker("reference_image_unavailable", error.message)); }
   let candidateRoute = null;
   let candidateRecipe = null;
   let candidateWorkflow = null;
@@ -494,7 +494,7 @@ export async function compilePageRenderInspectionContext({
       const routed = freezeRenderRoutes([{
         id: `target.${encodePageKey(snapshot.page_key).replaceAll("/", ".")}`,
         page_key: snapshot.page_key,
-        reference_image: snapshot.page_prompt.reference_image,
+        reference_images: referenceImages?.map(r => r.identity),
       }], { purpose: "candidate", resolvedProfile: activeProfile })[0];
       candidateRoute = routed.render_route;
       const profileRoute = activeProfile.operations?.candidates?.routes?.[candidateRoute.input_source];
@@ -520,7 +520,7 @@ export async function compilePageRenderInspectionContext({
     snapshot,
     compiled_profile: compiledProfile,
     active_profile: activeProfile,
-    reference_image: referenceImage,
+    reference_images: referenceImages?.map(r => r.identity) ?? null,
     compiled_page: compiledPage,
     audit,
     candidate_route: candidateRoute,
@@ -533,4 +533,13 @@ export async function compilePageRenderInspectionContext({
 export async function resolvePageForRender({ repositoryRoot, projectDirectory, pageId, dictionaryEntries = null }) {
   const identity = await resolvePageIdentity(projectDirectory, pageId);
   return compilePageRenderTarget({ repositoryRoot, projectDirectory, pageKey: identity.page_key, dictionaryEntries });
+}
+
+export async function resolvePageReferenceImages(projectDirectory, snapshot) {
+  const groups = [
+    ...snapshot.characters.map(c => ({ source: 'character:' + c.id + ':' + c.configuration_id, entries: c.reference_images ?? [] })),
+    ...snapshot.scenes.map(c => ({ source: 'scene:' + c.id + ':' + c.configuration_id, entries: c.reference_images ?? [] })),
+  ];
+  const entries = resolveReferenceEntries(groups, snapshot.page_prompt.reference_overrides, snapshot.page_prompt.reference_images);
+  return Promise.all(entries.map(async entry => ({ ...await readReferenceImage(projectDirectory, entry.file), entry })));
 }

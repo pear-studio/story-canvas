@@ -33,7 +33,6 @@ function PromptColumn({ projectId, entry, characters, scenes, selected, busy, vi
     const character = characters.find(character => character.id === reference.character_id);
     return character ? [{ id: character.id, label: character.name, color: character.style?.display_color }] : [];
   });
-  const free = base.prompt.mode === "free";
   const handle: ColumnHandle = { dirty: () => dirty, save: async () => {
     if (!dirty) return page;
     if (conflict) { setError("页面已变化，请重新载入后编辑。"); return null; }
@@ -50,10 +49,9 @@ function PromptColumn({ projectId, entry, characters, scenes, selected, busy, vi
     <header className="prompt-overview-column-header"><label><input type="checkbox" checked={selected} disabled={busy} onChange={onSelect} /><b>{page.title}</b></label><small>{entry.chapter} / {entry.sequence}</small><div><span>{dirty ? "● 未保存" : "已保存"}</span><button type="button" className="button button--quiet" disabled={busy} onClick={onOpenPage}>打开单页</button></div>
       {(error || conflict && dirty) && <p role="alert">{error || "页面或角色已变化，草稿保留；请重新载入后编辑。"}<button type="button" disabled={busy} onClick={() => { setBase(page); setDraft(displayPromptDraft(page.prompt)); setError(""); }}>放弃草稿并载入最新</button></p>}
       <small>{(page.characters ?? []).map(ref => { const c = characters.find(c => c.id === ref.character_id); return (c?.name ?? ref.character_id) + ' · ' + (c?.visual.variants.find(v => v.id === ref.variant_id)?.name ?? ref.variant_id); }).join('、')}{page.prompt.scene_id ? ' / 场景：' + (scenes.find(s => s.id === page.prompt.scene_id)?.name ?? page.prompt.scene_id) : ''}</small>
-      {free && <small>自定义模式：请打开单页编辑；以下为结构化基础。</small>}
     </header>
-    {(visible || focused) && <><fieldset className="prompt-overview-population" disabled={busy || free}><PromptPopulationEditor fragments={draft.subject} disabled={busy || free} onChange={subject => setDraft(current => ({ ...current, subject }))} /></fieldset>
-    <div className="prompt-overview-editor" inert={busy || free}>
+    {(visible || focused) && <><fieldset className="prompt-overview-population" disabled={busy}><PromptPopulationEditor fragments={draft.subject} disabled={busy} onChange={subject => setDraft(current => ({ ...current, subject }))} /></fieldset>
+    <div className="prompt-overview-editor" inert={busy}>
       <PromptFragmentEditor showEmptyCategories categories={categories} scope="page" fragments={draft} roles={roles} createFragment={createPromptDraftFragment} onChange={next => setDraft(current => ({ ...next, subject: current.subject }))} historyScopeKey={`${page.page_id}:${base.prompt_sha256}`} />
     </div></>}
   </article>;

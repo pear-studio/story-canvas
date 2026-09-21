@@ -1,4 +1,4 @@
-import { ReferenceImageEditor } from "./ReferenceImageEditor";
+import { ReferenceLibrary, ReferenceSelection, type ReferenceEntry } from "./ReferenceLibrary";
 import { defaultTextPageLayout, type TextPageLayout } from "../shared/text-page-layout.mjs";
 import { SceneReferenceEditor } from './SceneReferenceEditor';
 import { InheritedPromptEditor } from './InheritedPromptEditor';
@@ -7,6 +7,7 @@ import type { Scene } from './project-workbench-client';
 import type { ImageOverlayTarget } from "./ImageLightbox";
 import {
   type CSSProperties,
+  type ReactNode,
   Fragment,
   type PointerEvent as ReactPointerEvent,
   type SyntheticEvent as ReactSyntheticEvent,
@@ -19,7 +20,6 @@ import {
 import { createPortal } from "react-dom";
 import { countStoryCharacters, storyContentWarnings, SCENE_DESCRIPTION_CHARACTER_LIMIT, NARRATION_CHARACTER_LIMIT } from "../shared/story-content-guidance.mjs";
 import { PromptPopulationEditor } from "./PromptPopulationEditor";
-import { FreePromptEditor } from "./FreePromptEditor";
 import { PromptFragmentEditor } from "./PromptFragmentEditor";
 import { GenerationDetailsPanel } from "./GenerationDetailsPanel";
 import { GenerateSplitButton } from "./GenerateSplitButton";
@@ -186,6 +186,21 @@ function characterAbbreviation(name: string) {
   return Array.from(words[0] ?? "?").slice(0, 2).join("");
 }
 
+function ReferenceRow({ title, editor, children }: { title: string; editor: ReactNode; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return <div className="page-reference-row">
+    <div className="page-reference-header"><button type="button" className="reference-disclosure" title={`展开${title}引用`} aria-expanded={open} onClick={() => setOpen(value => !value)}><span aria-hidden="true">{open ? '▾' : '▸'}</span>{title}</button>{editor}</div>
+    <div className="page-reference-body" hidden={!open}>{children}</div>
+  </div>;
+}
+
+function ReferenceLabel({ name, variant, color }: { name: string; variant?: string; color?: string }) {
+  return <span className="character-setting-chip reference-summary-chip" style={{ '--role-color': color ?? '#89938e' } as CSSProperties}><i aria-hidden="true" /><b>{name}</b>{variant && <small>{variant}</small>}</span>;
+}
+function selectedReferenceImages(entries: ReferenceEntry[], selection?: string[]) {
+  return (selection ?? entries.slice(0, 1).map(e => e.id)).flatMap(id => entries.filter(e => e.id === id));
+}
+
 function ParticipantEditor({ characters, ownerCharacterId, value, onChange }: {
   characters: WorkbenchCharacter[];
   ownerCharacterId?: string;
@@ -267,7 +282,7 @@ function ParticipantEditor({ characters, ownerCharacterId, value, onChange }: {
           <select aria-label={`${character?.name ?? entry.character_id}角色设定`} value={entry.variant_id || character?.visual.variants[0]?.id || ""} onChange={(event) => setCharacterVariant(entry.character_id, event.target.value)}>
             {!variant && <option value={entry.variant_id}>缺失：{entry.character_id} · {entry.variant_id}</option>}{(character?.visual.variants ?? []).map((candidate) => <option value={candidate.id} key={candidate.id}>{character?.name ?? entry.character_id} · {candidate.name}</option>)}
           </select>
-          <b>{character?.name ?? entry.character_id}{variant ? ` · ${variant.name}` : ""}</b>
+          <b>{character?.name ?? entry.character_id}</b>{variant && <small>{variant.name}</small>}
           <button type="button" onClick={() => onChange(value.filter((item) => item.character_id !== entry.character_id))} aria-label={`移除${character?.name ?? entry.character_id}`}>×</button>
         </span>;
       })}
@@ -750,15 +765,9 @@ export default function WorkbenchPageEditor({
   const incomingPrompt = useMemo(() => displayPromptDraft(page.prompt), [page.prompt_sha256]);
   const [promptBaseline, setPromptBaseline] = useState(incomingPrompt);
   const [promptDraft, setPromptDraft] = useState(incomingPrompt);
-  const incomingOptions = useMemo(() => ({ mode: page.prompt.mode ?? "structured", free: page.prompt.free, reference_image: page.prompt.reference_image, scene_id: page.prompt.scene_id, scene_variant_id: page.prompt.scene_variant_id, inheritance: page.prompt.inheritance }), [page.prompt_sha256]);
+  const incomingOptions = useMemo(() => ({ reference_images: page.prompt.reference_images, reference_overrides: page.prompt.reference_overrides, scene_id: page.prompt.scene_id, scene_variant_id: page.prompt.scene_variant_id, inheritance: page.prompt.inheritance }), [page.prompt_sha256]);
   const [promptOptions, setPromptOptions] = useState(incomingOptions);
   const [optionsBaseline, setOptionsBaseline] = useState(incomingOptions);
-  const customBase = flowPreview?.structured_import ?? null;
-  const customConflict = Boolean(promptOptions.free && (customBase && promptOptions.free.base_sha256 !== customBase.base_sha256));
-  function changeCustom(free: import("./project-workbench-client").FreePrompt) {
-    const sameAsBase = customBase && free.positive === customBase.positive && free.negative === customBase.negative && sameJson(free.loras, customBase.loras);
-    setPromptOptions(current => ({ ...current, free: sameAsBase ? undefined : { ...free, base_sha256: current.free ? current.free.base_sha256 : customBase?.base_sha256 } }));
-  }
   const persistedPrompt = useMemo(() => ({ ...persistPromptDraft(promptDraft), ...promptOptions }), [promptDraft, promptOptions]);
   const [promptPhase, setPromptPhase] = useState<SavePhase>("saved");
   const [promptError, setPromptError] = useState("");
@@ -846,8 +855,8 @@ export default function WorkbenchPageEditor({
         const content = contentFromPage({ ...page, ...saved.content });
         editBaseline.current = saved.page; setExternalConflict(false);
         setContentBaseline(clone(content)); setContentDraft(clone(content)); setDialogueDraft(editableDialogue(content.dialogue));
-        const { mode, free, reference_image, scene_id, scene_variant_id, inheritance } = saved.prompt;
-        const options = { mode: mode ?? 'structured' as const, free, reference_image, scene_id, scene_variant_id, inheritance };
+        const { reference_images, reference_overrides, scene_id, scene_variant_id, inheritance } = saved.prompt;
+        const options = { reference_images, reference_overrides, scene_id, scene_variant_id, inheritance };
         const fragments = displayPromptDraft(saved.prompt);
         setPromptDraft(fragments); setPromptBaseline(clone(fragments)); setPromptOptions(options); setOptionsBaseline(clone(options));
         setLayoutDraft(clone(saved.items)); setLayoutBaseline(clone(saved.items));
@@ -882,6 +891,26 @@ export default function WorkbenchPageEditor({
   const saveNeeded = anyDirty || contentPhase === "error" || promptPhase === "error";
   const saving = contentPhase === "saving" || promptPhase === "saving";
 
+  const selectedScene = scenes.find(scene => scene.id === promptOptions.scene_id);
+  const sceneEntries = selectedScene?.prompt.variants[promptOptions.scene_variant_id ?? '']?.reference_images ?? [];
+  const sceneSelection = promptOptions.reference_overrides?.[sceneSource(promptOptions.scene_id ?? '', promptOptions.scene_variant_id ?? '')] ?? sceneEntries.slice(0, 1).map(e => e.id);
+  const referenceCount = (promptOptions.reference_images?.length ?? 0) + sceneSelection.length + (contentDraft.characters ?? []).reduce((count, ref) => {
+    const entries = characters.find(c => c.id === ref.character_id)?.prompt.variants[ref.variant_id]?.reference_images ?? [];
+    return count + (promptOptions.reference_overrides?.[characterSource(ref.character_id, ref.variant_id)] ?? entries.slice(0, 1)).length;
+  }, 0);
+  const enabledReferenceImages = [
+    ...(contentDraft.characters ?? []).flatMap(ref => selectedReferenceImages(characters.find(c => c.id === ref.character_id)?.prompt.variants[ref.variant_id]?.reference_images ?? [], promptOptions.reference_overrides?.[characterSource(ref.character_id, ref.variant_id)])),
+    ...selectedReferenceImages(sceneEntries, promptOptions.reference_overrides?.[sceneSource(promptOptions.scene_id ?? '', promptOptions.scene_variant_id ?? '')]),
+    ...(promptOptions.reference_images ?? []),
+  ];
+  function changeCharacters(value: Array<{ character_id: string; variant_id: string }>) {
+    const keep = new Set(value.map(r => characterSource(r.character_id, r.variant_id)));
+    setPromptOptions(current => ({ ...current,
+      inheritance: Object.fromEntries(Object.entries(current.inheritance ?? {}).filter(([key]) => !key.startsWith('character:') || keep.has(key))),
+      reference_overrides: Object.fromEntries(Object.entries(current.reference_overrides ?? {}).filter(([key]) => !key.startsWith('character:') || keep.has(key))),
+    }));
+    setContentDraft(current => ({ ...current, characters: value }));
+  }
   return <section className="document-editor workbench-page-editor" data-page-content-dirty={contentDirty ? "true" : undefined} data-page-prompt-dirty={promptDirty ? "true" : undefined} data-lettering-dirty={layoutDirty ? "true" : undefined}>
     <fieldset className="page-save-fields" inert={contentPhase === "saving"} disabled={contentPhase === "saving"}>
     <WorkspaceHeader breadcrumb={breadcrumb} className="story-toolbar" title={<span className="page-title-editor">
@@ -899,15 +928,6 @@ export default function WorkbenchPageEditor({
     {externalConflict && <p role="alert">页面事实已变化，当前草稿已保留。<button type="button" className="button button--quiet" onClick={discardAll}>放弃草稿并载入最新</button></p>}
     {contentError && <p className="prompt-save-error" role="alert">{contentError}</p>}
 
-    {!isTextPage && <div className="page-context">
-      <div className="participant-editor"><span>出场角色</span><ParticipantEditor characters={characters} value={contentDraft.characters ?? []} onChange={value => {
-        const keep = new Set(value.map(r => characterSource(r.character_id, r.variant_id)));
-        setPromptOptions(current => ({ ...current, inheritance: Object.fromEntries(Object.entries(current.inheritance ?? {}).filter(([key]) => !key.startsWith('character:') || keep.has(key))) }));
-        setContentDraft(current => ({ ...current, characters: value }));
-      }} /></div>
-      <div className="participant-editor"><span>参考图</span><ReferenceImageEditor key={`${projectId}:${page.page_id}`} projectId={projectId} value={promptOptions.reference_image} disabled={busy || promptPhase === "saving"} onChange={reference_image => setPromptOptions(current => ({ ...current, reference_image }))} /></div>
-      <div className="participant-editor"><span>场景设定</span><SceneReferenceEditor scenes={scenes} value={promptOptions.scene_id} variantId={promptOptions.scene_variant_id} onChange={(id, variantId) => setPromptOptions(current => ({ ...current, scene_id: id, scene_variant_id: variantId, inheritance: Object.fromEntries(Object.entries(current.inheritance ?? {}).filter(([key]) => !key.startsWith('scene:'))) }))} /></div>
-    </div>}
     <div className="page-storyboard-fields">
       {isTextPage
         ? <><TextPageEditor value={contentDraft} disabled={busy || saving} onChange={patch => setContentDraft(current => ({ ...current, ...patch }))} />{textOverflow && <p className="prompt-save-error" role="alert">文字超出画布，请缩小字号或减少内容后再输出。</p>}</>
@@ -924,18 +944,37 @@ export default function WorkbenchPageEditor({
 
     {(visibleTab === "lettering" || isTextPage) && onOpenLetteringSettings && <button type="button" className="button button--quiet lettering-settings-link" onClick={onOpenLetteringSettings}>项目嵌字样式 ↗</button>}
     {!isTextPage && visibleTab === "visual" && <section className="current-workbench-prompts character-prompt-editor">
-      <SectionHeader title="Prompt" titleActions={<div className="prompt-mode-switch" role="group" aria-label="Prompt 模式">{(["structured", "free"] as const).map(mode => <button type="button" key={mode} aria-pressed={promptOptions.mode === mode} disabled={promptPhase === "saving"} className={`button ${promptOptions.mode === mode ? "button--primary" : "button--quiet"}`} onClick={() => setPromptOptions(current => ({ ...current, mode }))}>{mode === "free" ? "自定义" : "结构化"}</button>)}</div>} actions={<div className="prompt-save-actions">{promptPhase === "error" && <button type="button" className="button button--quiet" onClick={() => void reloadAll()}>放弃本页草稿并重新载入</button>}{promptAuditWarnings.length > 0 && <button type="button" className="issue-indicator issue-indicator--warning" aria-label={`查看 ${promptAuditWarnings.length} 条 Prompt 警告`} title="查看 Prompt 警告" onClick={() => setPromptWarningsOpen(true)}>!</button>}</div>} />
+      <SectionHeader title="Prompt" actions={<div className="prompt-save-actions">{promptPhase === "error" && <button type="button" className="button button--quiet" onClick={() => void reloadAll()}>放弃本页草稿并重新载入</button>}{promptAuditWarnings.length > 0 && <button type="button" className="issue-indicator issue-indicator--warning" aria-label={`查看 ${promptAuditWarnings.length} 条 Prompt 警告`} title="查看 Prompt 警告" onClick={() => setPromptWarningsOpen(true)}>!</button>}</div>} />
       {promptError && <p className="prompt-save-error" role="alert">{promptError}</p>}
       {promptAuditErrors.length > 0 && <PromptIssueList issues={promptAuditErrors} title="Prompt 错误" />}
-      {promptOptions.mode === "free" ? <FreePromptEditor projectId={projectId} value={promptOptions.free ?? customBase ?? { positive: "", negative: "", loras: [] }} disabled={busy || promptPhase === "saving"} baseReady={Boolean(customBase)} conflict={customConflict} hasOverride={Boolean(promptOptions.free)} onKeep={() => { if (customBase) setPromptOptions(current => ({ ...current, free: current.free ? { ...current.free, base_sha256: customBase.base_sha256 } : undefined })); }} onClear={() => { setPromptOptions(current => ({ ...current, free: undefined })); setPromptError(""); }} onChange={changeCustom} /> : <><PromptPopulationEditor fragments={promptDraft.subject ?? []} disabled={busy || promptPhase === "saving"} onChange={subject => setPromptDraft(current => ({ ...current, subject }))} />{(contentDraft.characters ?? []).map(reference => {
+      {<><PromptPopulationEditor fragments={promptDraft.subject ?? []} disabled={busy || promptPhase === "saving"} onChange={subject => setPromptDraft(current => ({ ...current, subject }))} />
+      <div className="page-reference-rows">
+      <ReferenceRow title="角色" editor={<ParticipantEditor characters={characters} value={contentDraft.characters ?? []} onChange={changeCharacters} />}>
+      {(contentDraft.characters ?? []).map(reference => {
         const character = characters.find(c => c.id === reference.character_id), variant = character?.prompt.variants[reference.variant_id];
-        if (!character || !variant) return null;
+        if (!character || !variant) return <div className="page-reference-setting" key={reference.character_id}><p role="alert">设定缺失：{character?.name ?? reference.character_id} · {reference.variant_id}</p><button type="button" className="button" onClick={() => changeCharacters((contentDraft.characters ?? []).filter(r => r.character_id !== reference.character_id))}>移除缺失引用</button></div>;
         const source = characterSource(character.id, reference.variant_id);
-        return <InheritedPromptEditor key={source} title={character.name + ' · ' + (character.visual.variants.find(v => v.id === reference.variant_id)?.name ?? reference.variant_id)} source={source + ':' + character.prompt_sha256} prompt={variantPrompt(character.prompt.identity, variant) as PagePrompt} adjustments={promptOptions.inheritance?.[source]} onChange={value => setPromptOptions(current => ({ ...current, inheritance: { ...current.inheritance, [source]: value } }))} />;
+        const entries = variant.reference_images ?? [];
+        return <div className="page-reference-setting" key={source} data-reference-source={source}><ReferenceLabel name={character.name} variant={character.visual.variants.find(v => v.id === reference.variant_id)?.name ?? reference.variant_id} color={character.style?.display_color} />
+          <ReferenceSelection projectId={projectId} entries={entries} selection={promptOptions.reference_overrides?.[source]} onChange={ids => setPromptOptions(current => { const next = { ...current.reference_overrides }; if (ids === undefined) delete next[source]; else next[source] = ids; return { ...current, reference_overrides: next }; })} />
+          <InheritedPromptEditor title="继承词" collapsible={false} source={source + ':' + character.prompt_sha256} prompt={variantPrompt(character.prompt.identity, variant) as PagePrompt} adjustments={promptOptions.inheritance?.[source]} onChange={value => setPromptOptions(current => ({ ...current, inheritance: { ...current.inheritance, [source]: value } }))} />
+        </div>;
       })}
-      {scenes.filter(scene => scene.id === promptOptions.scene_id && scene.prompt.variants[promptOptions.scene_variant_id ?? '']).map(scene => <InheritedPromptEditor key={scene.id} title={'场景 · ' + scene.name} source={sceneSource(scene.id, promptOptions.scene_variant_id ?? '')} prompt={variantPrompt(scene.prompt.identity, scene.prompt.variants[promptOptions.scene_variant_id ?? '']) as PagePrompt} adjustments={promptOptions.inheritance?.[sceneSource(scene.id, promptOptions.scene_variant_id ?? '')]} onChange={value => setPromptOptions(current => ({ ...current, inheritance: { ...current.inheritance, [sceneSource(scene.id, promptOptions.scene_variant_id ?? '')]: value } }))} />)}
+      </ReferenceRow>
+      <ReferenceRow title="场景" editor={
+        <SceneReferenceEditor scenes={scenes} value={promptOptions.scene_id} variantId={promptOptions.scene_variant_id} onChange={(scene_id, scene_variant_id) => setPromptOptions(current => ({ ...current, scene_id, scene_variant_id, inheritance: Object.fromEntries(Object.entries(current.inheritance ?? {}).filter(([key]) => !key.startsWith("scene:"))), reference_overrides: Object.fromEntries(Object.entries(current.reference_overrides ?? {}).filter(([key]) => !key.startsWith("scene:"))) }))} />
+      }>
+        {scenes.filter(scene => scene.id === promptOptions.scene_id && scene.prompt.variants[promptOptions.scene_variant_id ?? '']).map(scene => {
+          const variantId = promptOptions.scene_variant_id!, variant = scene.prompt.variants[variantId], source = sceneSource(scene.id, variantId);
+          return <div className="page-reference-setting" key={source} data-reference-source={source}><ReferenceLabel name={scene.name} variant={scene.visual.variants.find(v => v.id === variantId)?.name ?? variantId} /><ReferenceSelection projectId={projectId} entries={variant.reference_images ?? []} selection={promptOptions.reference_overrides?.[source]} onChange={ids => setPromptOptions(current => { const next = { ...current.reference_overrides }; if (ids === undefined) delete next[source]; else next[source] = ids; return { ...current, reference_overrides: next }; })} />
+            <InheritedPromptEditor title="继承词" collapsible={false} source={source + ':' + scene.prompt_sha256} prompt={variantPrompt(scene.prompt.identity, variant) as PagePrompt} adjustments={promptOptions.inheritance?.[source]} onChange={value => setPromptOptions(current => ({ ...current, inheritance: { ...current.inheritance, [source]: value } }))} />
+          </div>;
+        })}
+      </ReferenceRow></div>
+      {referenceCount > 10 && <p role="alert">本页引用了 {referenceCount} 张参考图，最多支持 10 张，请展开设定取消部分图片。</p>}
       <PromptFragmentEditor categories={promptCategories.filter(category => category !== "subject").map((category) => ({ id: category, label: categoryLabels[category] }))} scope="page" fragments={promptDraft} roles={promptRoles} createFragment={createPromptDraftFragment} onChange={next => setPromptDraft(current => ({ ...next, subject: current.subject }))} historyScopeKey={`${pageIdentity}:${page.prompt_sha256}`} /></>}
-      {promptOptions.mode === "structured" && <div className="prompt-camera-actions"><button type="button" className="button" disabled={busy || promptPhase === "saving"} onClick={() => setCameraOpen(true)}>机位控制</button>{onOpenPromptOverview && <button type="button" className="button" disabled={busy || saving} onClick={onOpenPromptOverview}>Prompt 总览</button>}</div>}
+      {<div className="prompt-camera-actions"><button type="button" className="button" disabled={busy || promptPhase === "saving"} onClick={() => setCameraOpen(true)}>机位控制</button>{onOpenPromptOverview && <button type="button" className="button" disabled={busy || saving} onClick={onOpenPromptOverview}>Prompt 总览</button>}</div>}
+      <ReferenceLibrary key={pageIdentity} projectId={projectId} target={{ kind: 'page', id: page.page_id }} pages={[]} inheritedEntries={enabledReferenceImages.slice(0, enabledReferenceImages.length - (promptOptions.reference_images?.length ?? 0))} initialEntries={promptOptions.reference_images ?? []} capacity={10 - referenceCount} disabled={busy || saving} onChanged={() => {}} onDraftChange={entries => setPromptOptions(current => ({ ...current, reference_images: entries }))} />
     </section>}
 
     {!isTextPage && visibleTab === "lettering" && letteringStyle && <>

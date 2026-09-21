@@ -1,3 +1,4 @@
+import { FeedbackProvider } from '../../src/feedback';
 import {useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import WorkbenchPageEditor from '../../src/WorkbenchPageEditor';
@@ -27,4 +28,4 @@ function Harness(){
   <div style={{position:'relative',width:640,height:960,background:'linear-gradient(135deg,#b0a0b8,#675e80)'}}><span ref={setTarget} style={{position:'absolute',inset:0}} /></div>
  </div>;
 }
-createRoot(document.getElementById('root')!).render(<Harness/>);
+createRoot(document.getElementById('root')!).render(<FeedbackProvider><Harness /></FeedbackProvider>);

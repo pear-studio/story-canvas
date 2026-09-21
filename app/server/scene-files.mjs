@@ -48,6 +48,6 @@ export function defaultSceneFacts(id, name) {
 export function resolveSceneConfiguration(scene, variantId) {
   const variant = scene?.prompt?.variants?.[variantId];
   if (!variant || !scene.visual?.variants?.some(item => item.id === variantId)) throw new TypeError(`场景子设定不存在：${scene?.id} · ${variantId}`);
-  return { id: scene.id, name: scene.name, configuration_id: variantId, identity: scene.prompt.identity,
+  return { id: scene.id, name: scene.name, configuration_id: variantId, reference_images: structuredClone(variant.reference_images ?? []), identity: scene.prompt.identity,
     ...variant, loras: [...(scene.prompt.identity.lora ? [scene.prompt.identity.lora] : []), ...variant.loras] };
 }

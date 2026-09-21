@@ -60,27 +60,13 @@
 .prompt-save-actions .icon-button:hover:not(:disabled) { border-color: #b8c3bc; color: var(--ink); }
 .prompt-save-actions .icon-button:disabled { opacity: .45; cursor: default; }
 .prompt-camera-actions { margin-top: 14px; display: flex; }
-.free-prompt-editor { display: grid; gap: 14px; }
-.free-prompt-import { display: flex; gap: 8px; }
-.free-prompt-import .button, .free-lora-heading .button { min-height: 28px; padding: 5px 10px; font-size: 12px; }
-.free-prompt-editor > label { display: grid; gap: 7px; font-size: 12px; font-weight: 600; color: var(--muted); }
-.free-prompt-editor textarea { width: 100%; box-sizing: border-box; padding: 10px 12px; resize: vertical; font-size: 13px; font-weight: 400; line-height: 1.65; border: 1px solid var(--line); border-radius: 8px; background: white; color: var(--ink); }
-.free-prompt-editor textarea:focus { border-color: #82b6a0; box-shadow: 0 0 0 2px #2d725c12; }
-.free-lora-heading { display: flex; align-items: center; justify-content: space-between; font-size: 13px; }
-.free-prompt-editor > p { margin: 0; padding: 12px; border: 1px dashed var(--line); border-radius: 8px; color: var(--muted); font-size: 12px; }
 .free-lora-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: white; font-size: 12px; }
 .free-lora-row > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .free-lora-row b { font-weight: 500; }
 .free-lora-row small { display: block; margin-top: 5px; color: var(--muted); }
 .free-lora-row label { display: grid; gap: 4px; color: var(--muted); font-size: 11px; }
 .free-lora-row input { width: 64px; padding: 6px; font-size: 12px; }
-.free-lora-row .free-lora-remove { border: 0; padding: 4px; min-width: 24px; min-height: 24px; color: #b34e48; font-size: 20px; background: transparent; }
-.free-lora-row .free-prompt-warning { color: #a3712d; }
 
- .custom-prompt-status { display: inline-flex; align-items: center; padding: 3px 9px; border: 1px solid var(--line); border-radius: 999px; font-size: 11px; line-height: 1.5; color: var(--muted); background: #f3f6f4; }
-.custom-prompt-status.is-modified { color: #2c6954; background: #eaf4ee; border-color: #bbd9c8; }
-.custom-prompt-status.is-conflict { color: #9b6c24; background: #fbf3e6; border-color: #e8d0a7; }
-.free-prompt-import { align-items: center; flex-wrap: wrap; }
 
 .page-save-fields { display: contents; margin: 0; padding: 0; border: 0; min-width: 0; }
 

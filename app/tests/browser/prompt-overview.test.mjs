@@ -87,7 +87,7 @@ test("只保存修改页，保留人物片段和参数；跨单元批量生成�
   await page.waitForFunction(() => document.querySelector('[data-overview-page="page-1"]').dataset.pagePromptDirty !== 'true');
   assert.equal(writes.length, 1);
   assert.deepEqual(writes[0].prompt.person, [{ id: 'token-appear1', tag: 'long_hair', weight: 1.2 }, { id: 'token-action1-0', description: 'standing near window 0' }]);
-  assert.equal(writes[0].prompt.reference_image, "reference.png");
+  assert.equal(writes[0].prompt.reference_images[0].file, "reference-11111111.png");
   assert.equal(writes[0].prompt.setting[0].description, 'dim lighting, steel_wall');
   assert.equal(writes[0].expected_context_sha256, 'context-1');
   await col(1).getByRole('checkbox', { name: '页面 1', exact: true }).check();

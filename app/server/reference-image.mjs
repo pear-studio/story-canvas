@@ -28,15 +28,19 @@ export async function readReferenceImage(projectDirectory, file) {
   return { identity: { material_file: file, source_sha256: hash(source), sha256: hash(bytes), width: info.width, height: info.height }, bytes };
 }
 
-export async function persistReferenceImage(directory, items, bytes) {
-  const references = items.filter(item => item.reference_image).map(item => item.reference_image);
+export async function persistReferenceImage(directory, items, images = []) {
+  const references = items.flatMap(item => item.reference_images ?? []);
   if (!references.length) return;
+  await mkdir(path.join(directory, "inputs"), { recursive: true });
+  const saved = new Set();
   for (const reference of references) {
     referenceImageFilename(reference);
+    const bytes = images.find(image => image.identity.sha256 === reference.sha256)?.bytes;
     if (!bytes || hash(bytes) !== reference.sha256) throw new Error("参考图内容与冻结身份不一致");
+    if (saved.has(reference.sha256)) continue;
+    await writeFile(path.join(directory, "inputs", reference.sha256 + '.png'), bytes, { flag: "wx" });
+    saved.add(reference.sha256);
   }
-  await mkdir(path.join(directory, "inputs"), { recursive: true });
-  await writeFile(path.join(directory, "inputs", `${references[0].sha256}.png`), bytes, { flag: "wx" });
 }
 
 export async function uploadFrozenReferenceImage(apiUrl, taskDirectory, identity) {

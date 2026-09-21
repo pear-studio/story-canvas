@@ -86,7 +86,7 @@ function compileTask({ resolved, projectDirectory, projectId, taskId, count, see
       task: taskId,
       page_key: structuredClone(resolved.page_key),
       seed: seeds[index],
-      ...(resolved.reference_image ? { reference_image: structuredClone(resolved.reference_image) } : {}),
+      reference_images: structuredClone(resolved.reference_images),
       positive_prompt: compiled.positive_prompt,
       negative_prompt: compiled.negative_prompt,
       prompt_parts: structuredClone(compiled.prompt_parts),

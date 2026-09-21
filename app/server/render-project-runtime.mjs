@@ -261,7 +261,7 @@ async function runRender(options, assignedTaskId) {
   const runtimeConfig = { ...localConfig, comfyui_urls: [apiUrl] };
   const purpose = task.purpose;
   const profile = task.snapshot.profile;
-  const profileDiagnosis = await diagnoseRenderProfile(task.items.every(item => item.prompt_parts?.mode === "free") ? { ...profile, style_loras: {} } : profile, repositoryRoot, runtimeConfig, null, { modelShaPolicy: "advisory" });
+  const profileDiagnosis = await diagnoseRenderProfile(profile, repositoryRoot, runtimeConfig, null, { modelShaPolicy: "advisory" });
   if (!profileDiagnosis.available) {
     const details = [
       ...Object.values(profileDiagnosis.models).filter((model) => model.status !== "available").map((model) => `${model.relative_path}: ${model.reason}`),
@@ -383,8 +383,7 @@ async function runRender(options, assignedTaskId) {
           unit.plan.workflow.api,
           await comfyLoraOptionsForWorkflow(apiUrl, unit.plan.workflow.api, comfyLoraOptions),
         );
-        const reference = items[0].reference_image;
-        if (reference) {
+        for (const reference of items[0].reference_images ?? []) {
           if (!uploadedReferences.has(reference.sha256)) uploadedReferences.set(reference.sha256, uploadFrozenReferenceImage(apiUrl, taskDirectory, reference));
           const uploaded = await uploadedReferences.get(reference.sha256);
           for (const node of Object.values(resolvedPrompt)) if (node.class_type === "LoadImage" && node.inputs.image === referenceImageFilename(reference)) node.inputs.image = uploaded;

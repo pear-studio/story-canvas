@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import Ajv2020 from "ajv/dist/2020.js";
+import { defaultSceneFacts, validateScenePromptDocument } from "../server/scene-files.mjs";
 
 import {
   CHARACTER_INDEX_SCHEMA_ID,
@@ -50,6 +51,22 @@ function completePrompt({ schema } = {}) {
 function emptyPrompt() {
   return Object.fromEntries(Object.keys(completePrompt()).map((category) => [category, []]));
 }
+
+test("角色和场景参考图校验拒绝错误类型、重复 ID 和非法条目", () => {
+  const entry = { id: "ref-11111111-1111-4111-8111-111111111111", file: "reference-11111111-1111-4111-8111-111111111111.png", title: "参考图" };
+  for (const kind of ["character", "scene"]) {
+    const prompt = defaultSceneFacts("room", "房间").prompt;
+    const validate = kind === "character" ? validateCharacterPromptDocument : validateScenePromptDocument;
+    if (kind === "character") prompt.$schema = CHARACTER_PROMPT_SCHEMA_ID;
+    assert.deepEqual(validate(prompt), [], kind);
+    prompt.variants.default.reference_images = [entry];
+    assert.deepEqual(validate(prompt), [], kind);
+    for (const invalid of ["broken", [entry, { ...entry }], [{ ...entry, file: "../outside.png" }], [{ ...entry, title: "" }]]) {
+      prompt.variants.default.reference_images = invalid;
+      assert.ok(validate(prompt).length > 0, `${kind}: ${JSON.stringify(invalid)}`);
+    }
+  }
+});
 
 test("角色 profile、visual 与 identity 加按配置拆分的 Prompt/LoRA 通过拆分契约", async () => {
   const validate = await validators();

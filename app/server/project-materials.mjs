@@ -170,11 +170,11 @@ export async function saveMaterial(projectDirectory, projectId, value) {
   return describeMaterial(projectDirectory, projectId, file, title);
 }
 
-export async function deleteMaterial(projectDirectory, relativeFile) {
-  const { target, file } = await resolveMaterialTarget(projectDirectory, relativeFile);
-  const info = await lstat(target);
-  if (!info.isFile() || info.isSymbolicLink()) throw new ProjectContractError(409, "material_not_file");
-  await unlink(target);
+export async function deleteMaterial(projectDirectory, relativeFile, { allowMissing = false } = {}) {
+  const { target, file } = await resolveMaterialTarget(projectDirectory, relativeFile, { allowMissing });
+  const info = await lstat(target).catch(error => { if (allowMissing && error.code === 'ENOENT') return null; throw error; });
+  if (info && (!info.isFile() || info.isSymbolicLink())) throw new ProjectContractError(409, "material_not_file");
+  if (info) await unlink(target);
   const metadata = await readJson(path.join(projectDirectory, "materials", "index.json"), emptyMaterialMetadata());
   const next = { ...metadata, items: (metadata.items ?? []).filter((item) => item.file !== file) };
   if (validateMaterialMetadata(next).length === 0) await saveMaterialMetadata(projectDirectory, next);

@@ -1,3 +1,4 @@
+import { checkRemovedSettingReferences, cleanRemovedReferences } from './reference-materials.mjs';
 import { encodePromptFragment } from './current-page-prompt.mjs';
 import path from 'node:path';
 import { readFile, lstat, unlink } from 'node:fs/promises';
@@ -193,6 +194,7 @@ export async function planCharacterSwitch(directory, pageId, before, after) {
 
     delete next.inheritance[source];
   }
+  for (const source of Object.keys(next.reference_overrides ?? {})) if (source.startsWith('character:') && !keep.has(source)) delete next.reference_overrides[source];
   const removed = Object.keys(prompt.inheritance ?? {}).filter(id => id.startsWith('character:') && !keep.has(id));
   plan.impacts = await sourceSwitchImpacts(directory, prompt, next, before.characters, after.characters, removed);
   if (hashCanonicalJson(next) !== hashCanonicalJson(prompt)) plan.writes.push({ relative, before: prompt, after: next });
@@ -207,12 +209,14 @@ export async function applySceneSwitch(directory, baseline, next, references) {
 
     if (next.inheritance) delete next.inheritance[source];
   }
+  for (const source of Object.keys(next.reference_overrides ?? {})) if (source.startsWith('scene:') && source !== sceneSource(next.scene_id, next.scene_variant_id)) delete next.reference_overrides[source];
   plan.impacts = await sourceSwitchImpacts(directory, baseline, next, references, references, Object.keys(baseline.inheritance ?? {}).filter(id => id.startsWith('scene:')));
   return plan;
 }
 
 // 项目写锁由调用入口持有；失败时恢复已写文件，避免半套连带修改。
 export async function commitFactChanges(directory, writes) {
+  await checkRemovedSettingReferences(directory, writes);
   const done = [];
   try {
     for (const write of writes) {
@@ -227,4 +231,5 @@ export async function commitFactChanges(directory, writes) {
     }
     throw error;
   }
+  for (const write of writes) if (write.relative.endsWith('.prompt.json')) await cleanRemovedReferences(directory, write.before);
 }

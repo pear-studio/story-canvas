@@ -15,10 +15,10 @@ async function openHarness(t, query = '') {
 }
 test('基础词默认展开且与本地对齐，继承行可开关和改权重，恢复上游不复制词条', async t => {
  const {page, errors} = await openHarness(t);
- const base = page.locator('details').first();
+ const base = page.locator('details.inherited-prompt').first();
  await base.locator('.prompt-fragment-row').waitFor();
  assert.equal(await base.evaluate(e => e.open), true);
- assert.equal(await page.locator('details').nth(1).evaluate(e => e.open), false);
+ assert.equal(await page.locator('details.inherited-prompt').nth(1).evaluate(e => e.open), false);
  const inheritedBox = await base.locator('.prompt-fragment-row').boundingBox();
  const localBox = await page.locator('#local .prompt-fragment-row').boundingBox();
  assert.ok(Math.abs(inheritedBox.x - localBox.x) < 1);
@@ -68,11 +68,14 @@ test('场景标签可切换、移除并从选择菜单重新添加', async t => 
  const {page, errors} = await openHarness(t);
  const scene = page.locator('.participant-editor');
  assert.equal(await scene.getByLabel('页面场景设定').inputValue(), 'steel:default');
- await scene.getByLabel('页面场景设定').selectOption('space:default');
+ await scene.getByTitle('选择场景').click();
+ await scene.getByPlaceholder('搜索场景').fill('星空');
+ await scene.getByRole('checkbox', {name:'暗紫星空 · 默认 默认', exact:true}).check();
  assert.equal(await scene.getByLabel('页面场景设定').inputValue(), 'space:default');
  await scene.getByRole('button', {name:'移除场景引用'}).click();
- assert.equal(await scene.getByLabel('页面场景设定').inputValue(), '');
- await scene.getByLabel('页面场景设定').selectOption('steel:default');
+ assert.equal(await scene.getByLabel('页面场景设定').count(), 0);
+ await scene.getByPlaceholder('搜索场景').fill('钢墙');
+ await scene.getByRole('checkbox', {name:'冷蓝灰钢墙 · 默认 默认', exact:true}).check();
  assert.equal(await scene.getByLabel('页面场景设定').inputValue(), 'steel:default'); assert.deepEqual(errors, []);
 });
 

@@ -802,3 +802,80 @@ test("删除角色后仍可编辑剧情页移除悬空引用，不要求先恢�
   assert.deepEqual(saved.content.dialogue, []);
   assert.equal((await readJson(path.join(current.directory, "pages/page-001.content.json"))).scene_description, "门口无人。");
 });
+
+test('参考图迭代保留 ID，默认/多选跟随，冲突不留垃圾，使用中禁止删除', async t => {
+  const { root, directory, projectId } = await fixture(t);
+  const sharp = (await import('sharp')).default;
+  const { readdir, access } = await import('node:fs/promises');
+  const { readReferenceLibrary, mutateReferenceLibrary } = await import('../server/reference-library.mjs');
+  const { resolveReferenceEntries } = await import('../shared/reference-images.mjs');
+  const { renameCharacterVariant, deleteCharacterVariant } = await import('../server/character-facts.mjs');
+  const target = { kind: 'character', id: 'ellen', variant_id: 'default' };
+  const image = async color => (await sharp({ create: { width: 16, height: 24, channels: 3, background: color } }).png().toBuffer()).toString('base64');
+  let library = await readReferenceLibrary(root, projectId, target);
+  const mutate = async value => library = await mutateReferenceLibrary(root, directory, projectId, { target, expected_sha256: library.sha256, ...value });
+  await mutate({ action: 'save', title: '正面', content: await image('#123456') });
+  const first = library.entries[0], source = 'character:ellen:default';
+  await mutate({ action: 'save', title: '侧面', content: await image('#456789') });
+  const second = library.entries[1];
+  const resolve = selection => resolveReferenceEntries([{ source, entries: library.entries }], selection);
+  assert.equal(resolve()[0].id, first.id);
+  const beforeFiles = await readdir(path.join(directory, 'materials'));
+  await assert.rejects(mutate({ action: 'save', expected_sha256: 'stale', content: await image('#ffffff') }), /reference_library_conflict/);
+  assert.deepEqual(await readdir(path.join(directory, 'materials')), beforeFiles);
+  await assert.rejects(mutate({ action: 'save', title: '   ', content: await image('#ffffff') }));
+  assert.deepEqual(await readdir(path.join(directory, 'materials')), beforeFiles, '事实保存失败会清理预先写入的新图');
+  await mutate({ action: 'reorder', ids: [second.id, first.id] });
+  assert.equal(resolve()[0].id, second.id);
+  assert.equal(resolve({ [source]: [first.id] })[0].file, first.file);
+  assert.equal(resolve({ [source]: [] }).length, 0);
+  await mutate({ action: 'save', id: first.id, content: await image('#112233') });
+  const replacement = library.entries.find(e => e.id === first.id);
+  assert.notEqual(replacement.file, first.file);
+  assert.equal(resolve({ [source]: [first.id] })[0].file, replacement.file);
+  await assert.rejects(access(path.join(directory, 'materials', first.file)), /ENOENT/);
+  const promptFile = path.join(directory, 'pages/page-001.prompt.json');
+  const pagePrompt = await readJson(promptFile); pagePrompt.reference_overrides = { [source]: [first.id] }; await writeJson(promptFile, pagePrompt);
+  await assert.rejects(mutate({ action: 'delete', id: first.id }), error => error.code === 'reference_image_in_use' && error.details.includes('pages/page-001.prompt.json'));
+  await access(path.join(directory, 'materials', replacement.file));
+  await renameCharacterVariant(root, projectId, 'ellen', 'default', 'renamed');
+  const updated = await readJson(promptFile);
+  assert.deepEqual(updated.reference_overrides, { 'character:ellen:renamed': [first.id] });
+  target.variant_id = 'casual'; library = await readReferenceLibrary(root, projectId, target);
+  await mutate({ action: 'save', content: await image('#223344') });
+  const removed = library.entries[0];
+  await deleteCharacterVariant(root, projectId, 'ellen', 'casual');
+  await assert.rejects(access(path.join(directory, 'materials', removed.file)), /ENOENT/);
+});
+
+test('候选提升为参考图后可独立清理，删除页面同时清理附加图片', async t => {
+  const { root, directory, projectId, candidateId } = await fixture(t);
+  const { readReferenceLibrary, mutateReferenceLibrary } = await import('../server/reference-library.mjs');
+  const { access } = await import('node:fs/promises');
+  const target = { kind: 'page', id: 'page-001' };
+  const before = await readReferenceLibrary(root, projectId, target);
+  const result = await mutateReferenceLibrary(root, directory, projectId, { target, expected_sha256: before.sha256, action: 'save', candidate_id: candidateId, page_key: { page_id: 'page-001' } });
+  const image = path.join(directory, 'materials', result.entries[0].file);
+  await deletePageCandidateById(root, projectId, { page_id: 'page-001' }, candidateId);
+  await access(image);
+  await deleteStoryPage(root, projectId, 'page-001');
+  await assert.rejects(access(image), /ENOENT/);
+});
+
+
+test('Agent事实保存也保护手动引用并清理移除的参考图', async t => {
+ const {root,directory,projectId}=await fixture(t);
+ const {readReferenceLibrary,mutateReferenceLibrary}=await import('../server/reference-library.mjs');
+ const {readFactDraft,saveFactDraft}=await import('../server/fact-drafts.mjs');
+ const {access}=await import('node:fs/promises');const sharp=(await import('sharp')).default;
+ const target={kind:'character',id:'ellen',variant_id:'default'};
+ const initial=await readReferenceLibrary(root,projectId,target);
+ const library=await mutateReferenceLibrary(root,directory,projectId,{target,expected_sha256:initial.sha256,action:'save',content:(await sharp({create:{width:2,height:2,channels:3,background:'red'}}).png().toBuffer()).toString('base64')});
+ const entry=library.entries[0],pageFile=path.join(directory,'pages/page-001.prompt.json');
+ const page=await readJson(pageFile);page.reference_overrides={'character:ellen:default':[entry.id]};await writeJson(pageFile,page);
+ const args={projectId,domain:'character',kind:'prompt',targetId:'ellen'};
+ const save=async()=>{const draft=await readFactDraft(root,args);draft.document.variants.default.reference_images=[];return saveFactDraft(root,{...args,document:draft.document,expectedSha256:draft.expected_sha256,expectedContextSha256:draft.expected_context_sha256});};
+ await assert.rejects(save(),e=>e.code==='reference_image_in_use');await access(path.join(directory,'materials',entry.file));
+ page.reference_overrides={};await writeJson(pageFile,page);await save();
+ await assert.rejects(access(path.join(directory,'materials',entry.file)),{code:'ENOENT'});
+});

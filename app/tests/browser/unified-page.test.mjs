@@ -10,12 +10,16 @@ before(async()=>{
  browser=await chromium.launch({headless:true,channel:process.env.BROWSER_CHANNEL||(process.platform==='win32'?'msedge':undefined)});
 });
 after(async()=>{await browser?.close();await server?.close();});
-async function open(t,query){
+async function open(t,query,setup){
  const page=await browser.newPage({viewport:{width:1400,height:1000}});page.setDefaultTimeout(8000);
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
  t.after(async()=>{assert.deepEqual(errors,[]);await page.close();});
  await page.route('**/api/projects/test/materials', route => route.fulfill({json:{materials:[{file:'reference.png',title:'角色参考',available:true,url:null}]}}));
- await page.goto(`${origin}/tests/browser/unified-page.html?${query}`);return page;
+ await page.route('**/workbench/reference-library',route=>route.fulfill({json:{entries:query.includes('extra')?[{id:'ref-33333333-3333-4333-8333-333333333333',file:'reference-extra.png',title:'附加图'}]:[],sha256:'refs'}}));
+ await setup?.(page);
+ await page.goto(`${origin}/tests/browser/unified-page.html?${query}`);
+ if(!query.includes('collapsed')) { await page.getByTitle('展开角色引用').click(); await page.getByTitle('展开场景引用').click(); }
+ return page;
 }
 for(const kind of ['story','character','scene'])test(`${kind} 页面均可编辑人物、场景、嵌字并移除默认引用`,async t=>{
  const page=await open(t,`kind=${kind}`);
@@ -23,6 +27,8 @@ for(const kind of ['story','character','scene'])test(`${kind} 页面均可编辑
  assert.equal(await page.getByLabel('页面场景设定').inputValue(),'room:day');
  await page.getByRole('tab',{name:'嵌字',exact:true}).click();
  await page.getByLabel('旁白',{exact:true}).fill('统一文案');
+ await page.getByRole('tab',{name:'视觉描述 / Prompt',exact:true}).click();
+ await page.getByTitle('展开角色引用').click(); await page.getByTitle('展开场景引用').click();
  await page.getByRole('button',{name:'移除艾莲',exact:true}).click();
  await page.getByRole('button',{name:'移除场景引用',exact:true}).click();
  await page.getByRole('button',{name:'保存',exact:true}).click();
@@ -32,17 +38,24 @@ for(const kind of ['story','character','scene'])test(`${kind} 页面均可编辑
  assert.equal(saved.content.dialogue[0].text,'统一文案');
  assert.equal(await page.getByRole('button',{name:'保存',exact:true}).isDisabled(),true);
 });
-test('参考图与场景一样选择、保存、移除',async t=>{
+test('参考图默认选首张，多选和停用保存在同一设定卡片；恢复默认不存重复选择',async t=>{
  const page=await open(t,'kind=story');
- await page.getByLabel('页面参考图').selectOption('reference.png');
+ const card=page.locator('[data-reference-source="character:alice:day"]');
+ assert.equal(await card.locator('.reference-toggle').nth(0).getAttribute('aria-pressed'),'true');
+ assert.equal(await card.locator('.reference-toggle').nth(1).getAttribute('aria-pressed'),'false');
+ await card.locator('.reference-toggle').nth(1).click();
  await page.getByRole('button',{name:'保存',exact:true}).click();
- await page.waitForFunction(()=>JSON.parse(localStorage.getItem('saved-page')??'null')?.prompt.reference_image==='reference.png');
- assert.equal(await page.getByLabel('页面参考图').inputValue(),'reference.png');
- await page.getByRole('button',{name:'移除参考图',exact:true}).click();
+ await page.waitForFunction(()=>JSON.parse(localStorage.getItem('saved-page')??'null')?.prompt.reference_overrides?.['character:alice:day']?.length===2);
+ await card.locator('.reference-toggle').nth(0).click(); await card.locator('.reference-toggle').nth(1).click();
  await page.getByRole('button',{name:'保存',exact:true}).click();
- await page.waitForFunction(()=>JSON.parse(localStorage.getItem('saved-page')??'null')?.prompt.reference_image===undefined);
- assert.equal(await page.getByLabel('页面参考图').inputValue(),'');
+ await page.waitForFunction(()=>JSON.parse(localStorage.getItem('saved-page')??'null')?.prompt.reference_overrides?.['character:alice:day']?.length===0);
+ await card.getByRole('button',{name:'恢复默认',exact:true}).click();
+ await page.getByRole('button',{name:'保存',exact:true}).click();
+ await page.waitForFunction(()=>!JSON.parse(localStorage.getItem('saved-page')??'null')?.prompt.reference_overrides?.['character:alice:day']);
+ assert.equal(await card.locator('.reference-toggle').nth(0).getAttribute('aria-pressed'),'true');
+ assert.equal(await page.getByRole('button',{name:'自定义',exact:true}).count(),0);
 });
+
 test('场景子设定切换后失败保留全部草稿，重试提交新引用并清除旧继承调整',async t=>{
  const page=await open(t,'kind=scene&fail-once');
  await page.getByLabel('页面场景设定').selectOption('room:night');
@@ -70,7 +83,7 @@ test('同页外部刷新保留人物、场景和内容草稿，保存提交编�
  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
  assert.equal(await page.getByLabel('画面内容').inputValue(),'本地未保存内容');
  assert.equal(await page.getByLabel('艾莲角色设定').inputValue(),'night');
- assert.equal(await page.getByLabel('页面场景设定').inputValue(),'');
+ assert.equal(await page.getByLabel('页面场景设定').count(),0);
  await page.getByRole('button',{name:'保存',exact:true}).click();
  await page.getByRole('alert').filter({hasText:'page_content_target_conflict'}).waitFor();
  const baseline=await page.evaluate(()=>JSON.parse(localStorage.getItem('submitted-baseline')));
@@ -85,4 +98,147 @@ test('同页外部刷新保留人物、场景和内容草稿，保存提交编�
  await page.waitForFunction(()=>localStorage.getItem('saved-page'));
  const reloaded=await page.evaluate(()=>JSON.parse(localStorage.getItem('submitted-baseline')));
  assert.equal(reloaded.content_sha256,'external-content');
+});
+
+test('展开后选择角色和场景，保存引用；移除场景后保留紧凑入口',async t=>{
+ const page=await open(t,'kind=story&empty');
+ await page.getByTitle('选择角色',{exact:true}).click();
+ await page.locator('.reference-picker-menu label').filter({hasText:'艾莲 · 白天'}).getByRole('checkbox').check();
+ await page.getByTitle('选择场景',{exact:true}).click();
+ await page.getByPlaceholder('搜索场景').fill('房间');
+ await page.locator('.reference-picker-menu label').filter({hasText:'房间 · 白天'}).getByRole('checkbox').check();
+ await page.getByRole('button',{name:'保存',exact:true}).click();
+ await page.waitForFunction(()=>localStorage.getItem('saved-page'));
+ const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('saved-page')));
+ assert.equal(saved.prompt.scene_id,'room');assert.deepEqual(saved.content.characters,[{character_id:'alice',variant_id:'day'}]);
+ await page.getByRole('button',{name:'移除场景引用',exact:true}).click();
+ assert.equal(await page.getByLabel('页面场景设定').count(),0);
+});
+
+test('场景搜索选择与标签显示沿用角色交互，替换时保持单选，可再次取消',async t=>{
+ const page=await open(t,'kind=story');
+ await page.getByTitle('选择场景',{exact:true}).click();
+ await page.getByPlaceholder('搜索场景').fill('街道');
+ const menu=page.locator('details').filter({has:page.getByPlaceholder('搜索场景')}).last();
+ const options=menu.locator('.reference-picker-menu label');
+ assert.equal(await options.count(),2);
+ await options.filter({hasText:'街道 · 白天'}).getByRole('checkbox').check();
+ assert.equal(await page.getByLabel('页面场景设定').inputValue(),'street:day');
+ await page.getByPlaceholder('搜索场景').fill('');
+ assert.equal(await menu.locator('.reference-picker-menu input:checked').count(),1);
+ assert.equal(await page.locator('[data-reference-source="scene:room:day"]').count(),0);
+ await page.getByLabel('页面场景设定').selectOption('street:night');
+ assert.equal(await options.filter({hasText:'街道 · 夜晚'}).getByRole('checkbox').isChecked(),true);
+ await options.filter({hasText:'街道 · 夜晚'}).getByRole('checkbox').uncheck();
+ assert.equal(await page.getByLabel('页面场景设定').count(),0);
+ assert.equal(await page.getByTitle('选择场景',{exact:true}).isVisible(),true);
+});
+
+for (const width of [1400,390]) test('角色和场景默认只占两行，图片与编辑控件收起 '+width,async t=>{
+ const page=await open(t,'kind=story&collapsed');await page.setViewportSize({width,height:1000});
+ const rows=page.locator('.page-reference-rows');
+ assert.equal(await rows.locator('.page-reference-row').count(),2);
+ assert.equal(await rows.locator('.reference-disclosure[aria-expanded="true"]').count(),0);
+ const size=await rows.boundingBox();assert.ok(size.height<=80, '两行总高度为 '+size.height);
+ assert.equal(await rows.locator('img:visible').count(),0);
+ assert.equal(await rows.locator('.page-reference-header .character-setting-chip').count(),2);
+ assert.equal(await page.getByLabel('页面场景设定').isVisible(),true);
+ assert.equal(await page.getByRole('button',{name:'移除艾莲',exact:true}).isVisible(),true);
+ assert.equal(await page.getByRole('button',{name:'管理参考图',exact:true}).count(),0);
+ assert.equal(await page.getByRole('button',{name:/添加图片|上移|前移/}).count(),0);
+ await page.getByTitle('展开角色引用').click();
+ assert.equal(await rows.locator('img:visible').count(),2);
+});
+
+test('展开角色行后用拖拽改变引用顺序',async t=>{
+ const page=await open(t,'kind=story');
+ await page.getByTitle('选择角色',{exact:true}).click();
+ await page.locator('.reference-picker-menu label').filter({hasText:'鲍勃 · 白天'}).getByRole('checkbox').check();
+ await page.getByTitle('选择角色',{exact:true}).click();
+ const from=await page.getByRole('button',{name:'拖动排序：鲍勃',exact:true}).boundingBox();
+ const to=await page.getByRole('button',{name:'拖动排序：艾莲',exact:true}).boundingBox();
+ await page.mouse.move(from.x+from.width/2,from.y+from.height/2);await page.mouse.down();
+ await page.mouse.move(to.x,to.y+to.height/2,{steps:8});await page.mouse.up();
+ await page.getByRole('button',{name:'保存',exact:true}).click();await page.waitForFunction(()=>localStorage.getItem('saved-page'));
+ assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem('saved-page')).content.characters.map(r=>r.character_id)),['bob','alice']);
+});
+
+test('继承词默认展开，缩略图切换颜色，底部只读汇总随草稿变化并包含附图',async t=>{
+ const page=await open(t,'kind=story&extra');
+ const card=page.locator('[data-reference-source="character:alice:day"]');
+ const images=page.getByLabel('最终启用的参考图');
+ assert.equal(await images.locator('img').count(),3);
+ assert.equal(await images.locator('.inherited-reference-image').count(),2);
+ assert.equal(await images.getByRole('button',{name:'添加参考图',exact:true}).count(),1);
+ assert.equal(await card.locator('.inherited-prompt summary').count(),0);
+ assert.equal(await card.locator('.inherited-prompt .character-identity-preview-body').isVisible(),true);
+ assert.equal(await card.locator('.reference-selection input').count(),0);
+ assert.equal(await card.locator('.reference-selection').innerText(),'');
+ const second=card.locator('.reference-toggle').nth(1);
+ assert.equal(await second.locator('img').evaluate(e=>getComputedStyle(e).filter),'grayscale(1)');
+ await second.press('Space');
+ assert.equal(await images.locator('img').count(),4);
+ assert.equal(await second.getAttribute('aria-pressed'),'true');
+ await card.locator('.reference-toggle').nth(0).click();
+ assert.equal(await images.locator('img').count(),3);
+ const files=await images.locator('img').evaluateAll(imgs=>imgs.map(img=>new URL(img.src).searchParams.get('file')));
+ assert.deepEqual(files,['reference-22222222.png','reference-11111111.png','reference-extra.png']);
+ const root=page.locator('.current-workbench-prompts');
+ assert.equal(await root.locator(':scope > :last-child').getAttribute('aria-label'),'最终启用的参考图');
+ await page.getByRole('button',{name:'保存',exact:true}).click();
+ await page.waitForFunction(()=>localStorage.getItem('saved-page'));
+ assert.equal(await images.locator('img').count(),3);
+});
+
+
+test('未保存内容可添加附图，放弃恢复，保存失败保留附图草稿',async t=>{
+ const page=await open(t,'kind=story&fail-once');let writes=0;
+ await page.route('**/workbench/reference-library',route=>{writes++;return route.fulfill({json:{entries:[],sha256:'refs'}});});
+ await page.getByLabel('画面内容').fill('未保存的画面');
+ await page.getByRole('button',{name:'添加参考图',exact:true}).click();
+ await page.getByRole('button',{name:'角色参考',exact:true}).click();
+ await page.getByRole('button',{name:'添加 1 张',exact:true}).click();await page.getByRole('dialog').waitFor({state:'hidden'});
+ assert.equal(writes,0);assert.equal(await page.getByLabel('画面内容').inputValue(),'未保存的画面');
+ assert.equal(await page.locator('[data-reference-card]').count(),1);
+ await page.getByRole('button',{name:'放弃修改',exact:true}).click();assert.equal(await page.locator('[data-reference-card]').count(),0);
+ await page.getByRole('button',{name:'添加参考图',exact:true}).click();await page.getByRole('button',{name:'角色参考',exact:true}).click();await page.getByRole('button',{name:'添加 1 张',exact:true}).click();await page.getByRole('dialog').waitFor({state:'hidden'});
+ await page.getByRole('button',{name:'保存',exact:true}).click();await page.getByRole('alert').filter({hasText:'草稿已保留'}).waitFor();assert.equal(await page.locator('[data-reference-card]').count(),1);
+ await page.getByRole('button',{name:'保存',exact:true}).click();await page.waitForFunction(()=>localStorage.getItem('saved-page'));
+ assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('saved-page')).prompt.reference_images[0].draft.material_file),'reference.png');assert.equal(writes,0);
+});
+
+for (const outcome of ['success','save-failure','missing-saved-image']) test('附图草稿保存并生成完整检查：'+outcome,async t=>{
+ const events=[],requests=[]; let savedPrompt=null;
+ const page=await open(t,'kind=story&workspace&extra&collapsed',async page=>{
+  await page.route('**/workbench/page-media',route=>route.fulfill({json:{media:{candidates:[]},revision:'media'}}));
+  await page.route('**/workbench/page-render-inspection',route=>{
+   const body=route.request().postDataJSON();requests.push(body);
+   const strict=!body.prompt;if(strict)events.push('strict-inspection');
+   const missing=(body.prompt?.reference_images??[]).some(entry=>entry.file!=='reference-extra.png')||(strict&&outcome==='missing-saved-image');
+   return route.fulfill({json:{inspection:{ready:!missing,blockers:missing?[{code:'reference_image_unavailable',message:'真实图片缺失'}]:[],audit:{status:'complete',errors:[],warnings:[]},generation_signature:'signature'}}});
+  });
+  await page.route('**/workbench/page-save',route=>{
+   events.push('save');const body=route.request().postDataJSON();
+   if(outcome==='save-failure')return route.fulfill({status:409,json:{error:'模拟保存失败'}});
+   assert.ok(body.reference_inputs.length);savedPrompt=body.prompt;
+   return route.fulfill({json:{content:body.content,prompt:body.prompt,lettering:body.lettering,content_sha256:'saved-content',prompt_sha256:'saved-prompt',prompt_context_sha256:'context',layout_sha256:'layout'}});
+  });
+  await page.route('**/workbench/render',route=>{events.push('render');return route.fulfill({json:{task:{task_id:'render-test'}}});});
+ });
+ await page.getByRole('button',{name:'添加参考图',exact:true}).click();
+ await page.getByRole('button',{name:'角色参考',exact:true}).click();
+ await page.getByRole('button',{name:'添加 1 张',exact:true}).click();
+ await page.getByRole('dialog').waitFor({state:'hidden'});
+ await page.waitForTimeout(400);
+ assert.deepEqual(requests.at(-1).prompt.reference_images.map(entry=>entry.file),['reference-extra.png'],'检查只跳过待保存附图，保留真实附图');
+ const generate=page.locator('.workbench-page-editor .generate-split__action');
+ assert.equal(await generate.isDisabled(),false);
+ await generate.click();
+ if(outcome==='success'){
+  await page.waitForFunction(()=>document.body.innerText.includes('已启动当前页面任务'));
+  assert.deepEqual(events,['save','strict-inspection','render']);assert.equal(savedPrompt.reference_images.length,2);
+ }else{
+  await page.getByText(outcome==='save-failure'?'保存未完成，已取消生成':'真实图片缺失',{exact:true}).first().waitFor();
+  assert.deepEqual(events,outcome==='save-failure'?['save']:['save','strict-inspection']);
+ }
 });

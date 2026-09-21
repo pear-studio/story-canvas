@@ -12,7 +12,7 @@ const page = (index: number): WorkbenchPage => ({
   prompt: { subject: [{ id: `token-subject${index}`, tag: "1girl" }], person: [...[{ id: `token-appear${index}`, tag: "long_hair", weight: 1.2 }], ...Array.from({ length: index === 2 ? 3 : 1 }, (_, i) => ({ id: `token-action${index}-${i}`, description: `standing near window ${i}` }))],
     
     setting: [{ id: `token-setting${index}`, description: "dim lighting, a sentence with unrecognized words, steel_wall" }],
-    camera: [{ id: `token-camera${index}`, tag: "close-up" }], avoid: [], reference_image: "reference.png" },
+    camera: [{ id: `token-camera${index}`, tag: "close-up" }], avoid: [], reference_images: [{ id: "ref-11111111-1111-4111-8111-111111111111", file: "reference-11111111.png", title: "参考" }] },
 });
 function Harness() {
   const [view, setView] = useState<ProjectWorkbenchView>({ version: 4, project: { id: "overview-test", title: "总览测试", canvas: "3:4", default_render_profile: "test", lettering_settings: null, lettering_settings_sha256: null }, characters: [], diagnostics: [], render_capabilities: { candidates: { available: true, counts: [1,3] } }, outline: { synopsis: "", synopsis_sha256: "synopsis", chapters: [{ id: "chapter", title: "章节", summary: "", summary_sha256: "chapter", sequences: Array.from({ length: Number(new URLSearchParams(location.search).get("pages") ?? 4) / 2 }, (_, index) => index + 1).map(i => ({ id: `seq-${i}`, title: `单元 ${i}`, summary: "", summary_sha256: "seq", pages: [page(i*2-1),page(i*2)] })) }] } });

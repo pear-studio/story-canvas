@@ -73,3 +73,35 @@ test('文字页不能移到设定，活动成品任务阻止删除页面',async 
  await f.write('Saved/finished/active.json',{id:'active',page_id:'page-001',status:'lettering',pid:process.pid});
  const {deletePage}=await import('../server/page-facts.mjs');await assert.rejects(deletePage(f.root,'test','page-001'),error=>error.code==='page_finished_output_busy');assert.deepEqual(await readPageContent(f.directory,'page-001'),content);
 });
+
+
+test('附图随整页保存，图片准备失败回滚，替换移除成功后清理旧素材',async t=>{
+ const {default:sharp}=await import('sharp');
+ const f=await fixture(t), content=(await sharp({create:{width:2,height:2,channels:3,background:'red'}}).png().toBuffer()).toString('base64');
+ const id='ref-11111111-1111-4111-8111-111111111111';
+ const oldFile='reference-11111111-1111-4111-8111-111111111111.png';
+ let req=await f.request();req.content.title='带图草稿';req.prompt.reference_images=[{id,file:oldFile,title:'第一张'}];req.reference_inputs=[{id,content}];
+ const saved=await savePage(f.root,'test',req);assert.equal(saved.content.title,'带图草稿');await readFile(path.join(f.directory,'materials',oldFile));
+ const nextFile='reference-22222222-2222-4222-8222-222222222222.png',badFile='reference-33333333-3333-4333-8333-333333333333.png',badId='ref-33333333-3333-4333-8333-333333333333';
+ req=await f.request();req.content.title='不应保存';req.prompt.reference_images=[{id,file:nextFile,title:'替换'}, {id:badId,file:badFile,title:'失败'}];req.reference_inputs=[{id,content},{id:badId,content:'broken'}];
+ await assert.rejects(savePage(f.root,'test',req));await readFile(path.join(f.directory,'materials',oldFile));await assert.rejects(readFile(path.join(f.directory,'materials',nextFile)),{code:'ENOENT'});assert.equal((await readPageContent(f.directory,'page-001')).title,'带图草稿');
+ req.prompt.reference_images.pop();req.reference_inputs.pop();await savePage(f.root,'test',req);
+ await assert.rejects(readFile(path.join(f.directory,'materials',oldFile)),{code:'ENOENT'});await readFile(path.join(f.directory,'materials',nextFile));
+ req=await f.request();req.prompt.reference_images=[];await savePage(f.root,'test',req);await assert.rejects(readFile(path.join(f.directory,'materials',nextFile)),{code:'ENOENT'});
+});
+
+
+test('移除文件已缺失的旧附图仍完成保存并清理素材索引',async t=>{
+ const {default:sharp}=await import('sharp');const {unlink}=await import('node:fs/promises');
+ const f=await fixture(t),id='ref-11111111-1111-4111-8111-111111111111',file='reference-11111111-1111-4111-8111-111111111111.png';
+ const content=(await sharp({create:{width:2,height:2,channels:3,background:'red'}}).png().toBuffer()).toString('base64');
+ let req=await f.request();req.prompt.reference_images=[{id,file,title:'旧图'}];req.reference_inputs=[{id,content}];await savePage(f.root,'test',req);
+ await unlink(path.join(f.directory,'materials',file));req=await f.request();req.prompt.reference_images=[];
+ await savePage(f.root,'test',req);assert.deepEqual(JSON.parse(await readFile(path.join(f.directory,'materials/index.json'),'utf8')).items,[]);
+});
+
+
+test('整页保存移除角色时清理旧手动参考图选择',async t=>{
+ const f=await fixture(t),req=await f.request();req.prompt.reference_overrides={'character:removed:default':['ref-11111111-1111-4111-8111-111111111111']};
+ const saved=await savePage(f.root,'test',req);assert.deepEqual(saved.prompt.reference_overrides,{});
+});

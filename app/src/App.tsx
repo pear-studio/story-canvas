@@ -547,7 +547,7 @@ function LetteringCanvasProbe({ canvas, onWidthChange }: { canvas: string; onWid
   </div>;
 }
 
-function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSettings, pageOrder, onOpenPromptOverview, projectId, location, ownerPages, characters, scenes, renderCapabilities, defaultRenderProfile, canvas, letteringStyle, taskCollection, busy, editorWidth, candidateWidth, onEditorWidthChange, onCandidateWidthChange, onPageChanged, onReload, onTrackedTasksChange }: {
+export function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSettings, pageOrder, onOpenPromptOverview, projectId, location, ownerPages, characters, scenes, renderCapabilities, defaultRenderProfile, canvas, letteringStyle, taskCollection, busy, editorWidth, candidateWidth, onEditorWidthChange, onCandidateWidthChange, onPageChanged, onReload, onTrackedTasksChange }: {
   projectId: string;
   location: PageLocation;
   onOpenPromptOverview: () => void;
@@ -774,8 +774,19 @@ function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSettings, 
           if (isCurrentWorkspace()) notify({ kind: "error", message: "保存未完成，已取消生成" });
           return;
         }
+        if (!isCurrentWorkspace()) return;
+        // 草稿检查跳过未落盘附图；提交后以完整事实检查文件、数量和实际生成路由。
+        const { inspection } = await inspectPageRender(projectId, page.page_key);
+        if (!isCurrentWorkspace()) return;
+        if (!inspection.ready) {
+          setRenderInspection(inspection);
+          notify({ kind: "error", message: inspection.blockers.map(promptIssueSummary).join("；") || "页面已保存，但尚未满足生成条件" });
+          return;
+        }
       }
       await startCurrentPage(request);
+    } catch (error) {
+      if (isCurrentWorkspace()) notify({ kind: "error", message: `生成前检查失败：${error instanceof Error ? error.message : String(error)}` });
     } finally {
       saveAndGenerateInFlight.current = false;
     }

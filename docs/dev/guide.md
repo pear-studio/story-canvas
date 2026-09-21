@@ -19,7 +19,7 @@
 - 图片生成由 `app/server/page-render-resolver.mjs` 直接读取当前页面、Prompt、角色与生成配置，
   `app/server/page-render.mjs` 原子保存正式任务并排队；`app/server/render-project-runtime.mjs` 只读取
   已冻结的 task ID、执行预检并调用 ComfyUI。Agent 使用 `visual:produce` 生成一至三张候选；当前
-  Anima 与 Qwen profile 支持 candidates；Qwen 另支持页面单参考图，见 [Qwen 接入](qwen-image.md)；浏览器单页生成入口真实建立同一任务，不再提供选用入口；
+  Anima 与 Qwen profile 支持 candidates；Qwen 另支持页面多参考图，见 [Qwen 接入](qwen-image.md)；浏览器单页生成入口真实建立同一任务，不再提供选用入口；
 - LoRA 训练由 `app/server/lora-training-module.mjs` 组合四个深 Module：`lora-training-facts.mjs`
   负责全局训练事实与 Caption，`lora-training-plan.mjs` 负责环境、方案和 frozen manifest，
   `lora-training-runtime.mjs` 负责只消费 manifest 的运行时，`lora-training-media.mjs` 负责图片后处理；
@@ -98,7 +98,7 @@
 | `app/server/character-files.mjs` | 角色 profile、visual、Prompt 与视觉页当前契约 |
 | `app/server/lettering-settings.mjs` | 项目排版预设与角色文字颜色的统一契约 |
 | `app/server/page-render-resolver.mjs` | 按当前 index 精确解析完整 PageKey，并为普通生成与实验一次性导入编译唯一页面生成目标 |
-| `app/src/SourcePromptEditor.tsx` | 自定义模式的来源标签、重置和文本编辑控件 |
+| `app/src/SourcePromptEditor.tsx` | 对比实验使用的完整文本编辑控件 |
 | `app/server/prompt-inheritance-facts.mjs` | 继承检查、连带影响计划、确认指纹和原子写入；共享规则在 `app/shared/prompt-inheritance.mjs`，重复检查与编译共用覆盖后生效片段投影；生成解析只预检引用，由编译器统一检查生效重复 |
 | `app/server/scene-facts.mjs` | 项目场景 read/save、环境分类约束与连带修改 |
 | `app/src/InheritedPromptEditor.tsx` / `SceneEditor.tsx` | 继承行权重/开关与项目场景管理 |

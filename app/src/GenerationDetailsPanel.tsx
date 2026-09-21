@@ -64,7 +64,6 @@ export function GenerationDetailsPanel({ details }: { details: GenerationDetails
         <h4 id="generation-parameters-heading">参数</h4>
         <dl className="generation-details__items generation-details__items--parameters">
           <div className="generation-details__item--profile"><dt>配置</dt><dd>{value(details.profile_name)}</dd></div>
-          <div><dt>生成模式</dt><dd>{details.prompt_mode === "free" ? "自定义" : "结构化"}</dd></div>
           <div className="generation-details__item--dimensions"><dt>尺寸</dt><dd>{dimensionLabel}</dd></div>
           <div><dt>Steps</dt><dd>{value(details.parameters?.steps)}</dd></div>
           <div><dt>CFG</dt><dd>{value(details.parameters?.cfg)}</dd></div>

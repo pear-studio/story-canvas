@@ -1,6 +1,5 @@
 import { effectivePromptEntries, applyInheritedPrompt, variantPrompt, characterSource, sceneSource, duplicatePromptWords } from '../shared/prompt-inheritance.mjs';
-import { hashCanonicalJson } from "./workflow-definition.mjs";
-import { resolveParticipantLoras, styleLoraTriggers, validateLoraDefinition } from "./lora-config.mjs";
+import { resolveParticipantLoras, styleLoraTriggers } from "./lora-config.mjs";
 import { validatePageKey } from "./page-key.mjs";
 import { auditPromptContext } from "./prompt-audit.mjs";
 import {
@@ -251,16 +250,6 @@ export function compileCurrentPagePrompt({
 }) {
   const pageKeyErrors = validatePageKey(pageKey);
   if (pageKeyErrors.length) throw new TypeError(pageKeyErrors.join("；"));
-  if (pagePrompt.mode === "free") {
-    const structured = compileCurrentPagePrompt({ pageId, pageKey, pagePrompt: { ...pagePrompt, mode: "structured" }, profile, characters, scenes, participantIds, dictionaryEntries, profilePromptFragmentSources });
-    const base = structuredPromptBase(structured, profile, characters, scenes);
-    const compiled = compileFreePagePrompt(pageId, pageKey, pagePrompt.free ?? base, profile.prompt.family);
-    if (!base) compiled.errors.push("结构化基础不可用，无法检查自定义内容");
-    else if (pagePrompt.free && pagePrompt.free.base_sha256 !== base.base_sha256) compiled.errors.push("自定义内容冲突：结构化基础已变化，请重置或保留自定义");
-    compiled.ready = !compiled.errors.length && !compiled.missing.length;
-    Object.assign(compiled, applyPromptAvoidance(compiled.positive_prompt, compiled.negative_prompt, profile));
-    return compiled;
-  }
   const rules = profilePromptRules(profile);
   const missing = [];
   const errors = rules.categoryOrderErrors.map((error) => `${profile?.id ?? "当前生成配置"}.${error}`);
@@ -385,35 +374,4 @@ export function compileCurrentPagePrompt({
     categories: categoryPrompts,
     loras: resolvedLoras.loras,
   };
-}
-
-function compileFreePagePrompt(pageId, pageKey, free, promptFamily) {
-  const positive = free?.positive ?? "";
-  const negative = free?.negative ?? "";
-  const loras = free?.loras ?? [];
-  const errors = loras.flatMap((lora, index) => validateLoraDefinition(lora, `free.loras[${index}]`));
-  const missing = positive.trim() ? [] : ["自定义模式正向 Prompt 为空"];
-  const warnings = loras.filter(lora => lora.trigger && !positive.toLowerCase().includes(lora.trigger.toLowerCase())).map(lora => ({
-    code: "free_lora_trigger_missing", message: `${lora.filename}：正向 Prompt 中未找到触发词 ${lora.trigger}`, severity: "warning",
-  }));
-  const parts = (text, polarity) => text ? [{ text, prompt_text: text, weight: 1, polarity, origin: "free", origin_id: pageId, category: null, role: null, prompt_type: null, path: `free.${polarity}` }] : [];
-  return {
-    page_key: pageKey, prompt_family: promptFamily, ready: !errors.length && !missing.length, missing, errors,
-    positive_prompt: positive, negative_prompt: negative,
-    prompt_parts: { mode: "free", separator: "", positive: parts(positive, "positive"), negative: parts(negative, "negative") },
-    audit_records: { positive: [], negative: [] },
-    audit: { valid: !errors.length && !missing.length, errors: [], warnings, stats: {} },
-    categories: {}, loras: loras.map(lora => ({ ...lora, kind: "free", owner: pageId })),
-  };
-}
-
-export function structuredPromptBase(compiled, profile, characters = [], scenes = []) {
-  if (compiled.missing.length || compiled.errors.length) return null;
-  const definitions = [...Object.values(profile?.style_loras ?? {}), ...[...characters, ...scenes].flatMap(setting => setting.loras ?? [])];
-  const base = { positive: compiled.positive_prompt, negative: compiled.negative_prompt,
-    loras: compiled.loras.map(lora => {
-      const trigger = definitions.find(def => def.filename === lora.filename)?.trigger;
-      return { filename: lora.filename, sha256: lora.sha256, weight: lora.weight, ...(trigger ? { trigger } : {}) };
-    }) };
-  return { ...base, base_sha256: hashCanonicalJson(base) };
 }

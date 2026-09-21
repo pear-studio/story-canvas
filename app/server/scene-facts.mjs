@@ -1,3 +1,4 @@
+import { cleanRemovedReferences } from './reference-materials.mjs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { mkdir, rename, readdir, stat } from 'node:fs/promises';
@@ -147,6 +148,7 @@ export async function deleteSceneVariant(root, projectId, sceneId, variantId, { 
     { relative: relative(sceneId, 'visual'), before: visual, after: nextVisual },
     { relative: relative(sceneId, 'prompt'), before: prompt, after: normalizedPrompt(prompt, nextVisual) },
   ]);
+  await cleanRemovedReferences(project.projectDirectory, prompt);
   return { scene_id: sceneId, variant_id: variantId, downstream_diagnostics: [] };
 }
 export async function renameSceneVariant(root, projectId, sceneId, oldId, newId, { beforeCommit } = {}) {
@@ -167,6 +169,7 @@ export async function renameSceneVariant(root, projectId, sceneId, oldId, newId,
     const file = `pages/${page.page_id}.prompt.json`, before = await optionalFact(project.projectDirectory, file);
     if (before?.scene_id !== sceneId || before.scene_variant_id !== oldId) continue;
     const after = structuredClone(before); after.scene_variant_id = newId;
+    if (after.reference_overrides?.[sceneSource(sceneId, oldId)]) { after.reference_overrides[sceneSource(sceneId, newId)] = after.reference_overrides[sceneSource(sceneId, oldId)]; delete after.reference_overrides[sceneSource(sceneId, oldId)]; }
     if (after.inheritance?.[sceneSource(sceneId, oldId)]) { after.inheritance[sceneSource(sceneId, newId)] = after.inheritance[sceneSource(sceneId, oldId)]; delete after.inheritance[sceneSource(sceneId, oldId)]; }
     writes.push({ relative: file, before, after }); ids.add(page.page_id);
   }
@@ -200,6 +203,7 @@ export async function deleteScene(root, projectId, sceneId, { beforeCommit } = {
     await storage.removeSafeRuntimeDirectory(root, path.resolve(root, 'Saved/state/deleted-scenes'), archive, 'deleted scene archive');
     throw error;
   }
+  for (const fact of facts) await cleanRemovedReferences(project.projectDirectory, fact);
   return { scene_id: sceneId, deletion_id: deletionId, archive_directory: archive,
     downstream_diagnostics: references.map(ref => ({ code: ref.reference_kind === 'owner' ? 'page_owner_missing' : 'page_scene_missing', page_id: ref.page_id, scene_id: sceneId, variant_id: ref.variant_id })) };
 }

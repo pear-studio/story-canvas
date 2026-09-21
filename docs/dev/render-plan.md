@@ -149,7 +149,7 @@ workflow。
 }
 ```
 
-输入来源为 `empty_latent`（文生图）或 `reference_image`（页面选择一张材料图片）；
+输入来源为 `empty_latent`（文生图）或 `reference_image`（页面有效参考图）；
 参考图仅由声明该路由的 Qwen 配置支持，冻结与上传约定见 [Qwen 接入](qwen-image.md)。
 
 operation 与输入来源使用固定矩阵，不参与自由优先级竞争：
@@ -157,7 +157,7 @@ operation 与输入来源使用固定矩阵，不参与自由优先级竞争：
 | operation | 合法输入来源 | 选择规则 |
 |---|---|---|
 | `candidates` | `empty_latent` | 仅使用文字条件生成候选图 |
-| `candidates` | `reference_image` | 使用冻结的单张参考图和文字条件，输出仍遵循项目画布 |
+| `candidates` | `reference_image` | 使用冻结的有序参考图（最多十张）和文字条件，输出仍遵循项目画布 |
 
 route 不存在时直接报错，不回退到另一来源。结构家族不匹配或 manifest 不支持
 实际 modifier 时同样报错。Anima 保留 `empty_latent`，Qwen 提供上述两条 route。

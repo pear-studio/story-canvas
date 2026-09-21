@@ -5,7 +5,6 @@ import { inspectionGenerationSignature } from "./generation-signature.mjs";
 import { storyPromptCategories } from "./story-files.mjs";
 import { hashCanonicalJson } from "./workflow-definition.mjs";
 import { loadPromptDictionaryForRender } from "./prompt-dictionary-loader.mjs";
-import { compileCurrentPagePrompt, structuredPromptBase } from "./current-page-prompt.mjs";
 import { generationDetailsProjection } from "./generation-details.mjs";
 
 function issue(code, message, source = null, details = []) {
@@ -47,7 +46,7 @@ async function diagnoseProfileContext(context, repositoryRoot, config) {
   if (!context.active_profile || !context.compiled_profile) {
     return { diagnosis: null, inspection: null, blockers: [], warnings: [] };
   }
-  const diagnosis = await diagnoseRenderProfile(context.snapshot.page_prompt.mode === "free" ? { ...context.active_profile, style_loras: {} } : context.active_profile, repositoryRoot, config);
+  const diagnosis = await diagnoseRenderProfile(context.active_profile, repositoryRoot, config);
   const baseBundle = context.compiled_profile.base_bundle ?? context.compiled_profile;
   const activeSha = context.compiled_profile.blocked
     ? baseBundle.resolved_profile_sha256
@@ -142,7 +141,7 @@ export async function inspectPageRender({
   const auditWarnings = context.audit.warnings ?? [];
   const blockers = uniqueIssues([
     ...context.blockers,
-    ...profile.blockers.filter(item => context.snapshot.page_prompt.mode !== "free" || !String(item.source ?? "").includes("style_loras")),
+    ...profile.blockers,
     ...loraBlockers(diagnosedLoras),
   ]);
   const warnings = uniqueIssues([...profile.warnings, ...auditWarnings]);
@@ -167,15 +166,7 @@ export async function inspectPageRender({
         ?? null,
   } : null;
 
-  let structuredImport = null;
-  try {
-    const structured = compileCurrentPagePrompt({ pageId: context.snapshot.page_id, pageKey: context.snapshot.page_key,
-      pagePrompt: { ...context.snapshot.page_prompt, mode: "structured" }, profile: context.active_profile,
-      characters: context.snapshot.characters, scenes: context.snapshot.scenes ?? [], participantIds: context.snapshot.character_references.map(ref => ref.character_id), dictionaryEntries });
-    structuredImport = structuredPromptBase(structured, context.active_profile, context.snapshot.characters, context.snapshot.scenes ?? []);
-  } catch { /* 当前结构化配置不完整时仍可自由编辑。 */ }
   return {
-    structured_import: structuredImport,
     generation_signature: inspectionGenerationSignature(context),
     version: 1,
     page_key: structuredClone(context.snapshot.page_key),

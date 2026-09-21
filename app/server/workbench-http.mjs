@@ -1,3 +1,4 @@
+import { readReferenceLibrary, mutateReferenceLibrary } from "./reference-library.mjs";
 import { savePage } from "./page-facts.mjs";
 import { SCENE_PROFILE_SCHEMA_ID, SCENE_VISUAL_SCHEMA_ID, SCENE_PROMPT_SCHEMA_ID } from "./scene-files.mjs";
 import { hashCanonicalJson } from "./workflow-definition.mjs";
@@ -125,10 +126,18 @@ export async function handleWorkbenchRequest({
   }
   const pageSaveMatch = /^\/api\/projects\/([^/]+)\/workbench\/page-save\/?$/.exec(decodedPath);
   if (pageSaveMatch && request.method === "PUT") {
-    const value = await readJsonBody(request);
+    const value = await readJsonBody(request, 440 * 1024 * 1024);
     const result = await mutateTargetFacts(pageSaveMatch[1], ({ projectId }) => savePage(projectRoot, projectId, value));
     sendOperation(200, result);
     return true;
+  }
+  const referenceMatch = /^\/api\/projects\/([^/]+)\/workbench\/reference-library$/.exec(decodedPath);
+  if (referenceMatch && request.method === "POST") {
+    const value = await readJsonBody(request, 44 * 1024 * 1024);
+    const result = value.action === "read"
+      ? await readFacts(referenceMatch[1], ({ projectId }) => readReferenceLibrary(projectRoot, projectId, value.target))
+      : await mutateTargetFacts(referenceMatch[1], ({ projectDirectory, projectId }) => mutateReferenceLibrary(projectRoot, projectDirectory, projectId, value));
+    sendOperation(200, result); return true;
   }
   const workbenchMatch = /^\/api\/projects\/([^/]+)\/workbench\/?$/.exec(decodedPath);
   if (request.method === "GET" && workbenchMatch) {

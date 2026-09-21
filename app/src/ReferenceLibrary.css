@@ -1,0 +1,103 @@
+.reference-thumbnails { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0; }
+.reference-thumbnails > * { display: flex; flex-direction: column; gap: 5px; width: 130px; font-size: 12px; }
+.reference-thumbnails img { width: 130px; height: 110px; object-fit: contain; border-radius: 6px; background: #edf2ee; }
+.reference-thumbnails label { cursor: pointer; }
+.reference-thumbnails input { width: auto; min-height: 0; margin-right: 6px; }
+.reference-selection-heading { display: flex; align-items: center; gap: 10px; }
+.reference-selection-heading small { color: var(--muted); }
+.reference-library-items > * { width: 180px; }
+.reference-library-items .button { padding: 5px 8px; }
+.reference-candidate { border: 1px solid var(--line); border-radius: 8px; padding: 5px; background: white; cursor: pointer; }
+
+.reference-library-items b { overflow-wrap: anywhere; }
+
+.reference-library-items { max-height: 40vh; overflow: auto; }
+.reference-library-body { min-width: 0; border: 0; padding: 0; }
+
+.reference-thumbnails figure { margin: 0; }
+.reference-thumbnails figcaption { max-width: 130px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+.page-reference-rows { margin: 10px 0; min-width: 0; }
+.page-reference-row { margin: 0; padding: 0; border: 0; }
+.page-reference-header { display: flex; align-items: flex-start; gap: 6px; padding: 3px 0; min-width: 0; }
+.reference-disclosure { display: inline-flex; align-items: center; min-height: 28px; gap: 6px; flex: none; padding: 0; border: 0; background: transparent; color: var(--ink); font: inherit; font-size: var(--text-section-title); font-weight: 600; cursor: pointer; }
+.page-reference-header .character-reference-editor { flex: 1; min-width: 0; flex-wrap: wrap; }
+.page-reference-header .reference-chips { min-width: 0; }
+.page-reference-header .character-setting-chip { max-width: 100%; }
+.page-reference-header .character-reference-editor > details { position: static; }
+.page-reference-header .reference-picker-menu { top: 100%; left: 0; right: auto; max-width: 100%; }
+.page-reference-rows .character-setting-chip > button:not(.chip-drag) { position: relative; z-index: 1; display: grid; place-items: center; width: 22px; height: 22px; min-height: 0; padding: 0; line-height: 1; font-size: 18px; border-radius: 50%; background: transparent; }
+.page-reference-rows .character-setting-chip > button:not(.chip-drag):hover { color: var(--red); background: #f8eceb; }
+.page-reference-rows .character-setting-chip > select { width: auto; min-width: 0; right: 28px; }
+.page-reference-row > summary { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 3px 0; line-height: 24px; font-size: var(--text-section-title); color: var(--ink); cursor: pointer; list-style: none; }
+.page-reference-row > summary::-webkit-details-marker { display: none; }
+.page-reference-row > summary::before { content: '▸'; flex: none; }
+.page-reference-row[open] > summary::before { content: '▾'; }
+.page-reference-row > summary > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.page-reference-body { padding: 8px 0 12px 14px; min-width: 0; }
+.page-reference-setting { margin-top: 10px; padding: 10px; border: 1px solid var(--line); border-left: 3px solid #b6cabe; border-radius: 6px; background: var(--paper); font-size: var(--text-body); }
+.page-reference-body .reference-thumbnails > * { width: 92px; }
+.page-reference-body .reference-thumbnails img { width: 92px; height: 82px; }
+.page-reference-body .reference-selection { margin-top: 8px; }
+.page-reference-body .inherited-prompt { border: 0; margin-top: 6px; }
+
+
+.page-reference-row + .page-reference-row { border-top: 1px solid var(--line); }
+.page-reference-row > summary > strong { font-size: inherit; flex: none; font-weight: 600; }
+.page-reference-row .reference-summary-labels { display: flex; gap: 6px; min-width: 0; align-items: center; }
+.reference-summary-chip.character-setting-chip { padding: 0 8px; height: 28px; flex: 0 1 auto; }
+.page-reference-rows .character-setting-chip > b { font-size: var(--text-body); }
+.page-reference-rows .character-setting-chip > small { flex: none; padding-left: 6px; border-left: 1px solid var(--line); color: var(--muted); font-size: var(--text-label); }
+.reference-toggle { padding: 0; border: 1px solid var(--line); border-radius: 6px; background: transparent; cursor: pointer; overflow: hidden; }
+.reference-toggle img { display: block; transition: filter 120ms, opacity 120ms; }
+.reference-toggle[aria-pressed="false"] img { filter: grayscale(1); opacity: .4; }
+.reference-toggle:focus-visible, .reference-reset:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
+.reference-options { align-items: center; }
+.page-reference-body .reference-options > .reference-reset { width: 30px; min-height: 30px; border: 0; background: transparent; color: var(--muted); font-size: 20px; cursor: pointer; }
+.effective-reference-images { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 10px; margin-top: 12px; border-top: 1px solid var(--line); }
+.effective-reference-images img { display: block; width: 56px; height: 64px; object-fit: contain; border-radius: 4px; background: #edf2ee; }
+.setting-reference-library { margin: 12px 0 18px; }
+.setting-reference-library h3 { margin: 0 0 10px; font-size: var(--text-section-title); }
+.setting-reference-grid { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 10px; }
+.setting-reference-card { position: relative; width: 150px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); }
+.setting-reference-image { display: block; position: relative; width: 100%; height: 150px; padding: 5px; border: 0; border-radius: 8px; background: transparent; cursor: zoom-in; }
+.setting-reference-image img { display: block; width: 100%; height: 100%; object-fit: contain; border-radius: 5px; }
+.setting-reference-default { position: absolute; left: 7px; top: 7px; padding: 2px 6px; border-radius: 4px; background: var(--green-soft); color: var(--green); font-size: var(--text-meta); }
+.setting-reference-card .reference-grip { position: absolute; right: 5px; top: 5px; display: grid; place-items: center; width: 28px; height: 28px; padding: 4px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); background: var(--paper); touch-action: none; cursor: grab; opacity: 0; }
+.reference-grip svg { width: 12px; height: 18px; fill: currentColor; }
+.setting-reference-card:hover .reference-grip, .setting-reference-card:focus-within .reference-grip, .setting-reference-card.is-drag-source .reference-grip { opacity: 1; }
+.setting-reference-card .reference-grip:active { cursor: grabbing; }
+@media (hover: none), (pointer: coarse) { .setting-reference-card .reference-grip { opacity: 1; width: 36px; height: 36px; } }
+.setting-reference-card.is-drag-source { opacity: .5; }
+.setting-reference-card.is-drag-before::before, .setting-reference-card.is-drag-after::after { content: ''; position: absolute; top: 0; bottom: 0; width: 3px; background: var(--green); border-radius: 2px; }
+.setting-reference-card.is-drag-before::before { left: -7px; }
+.setting-reference-card.is-drag-after::after { right: -7px; }
+.setting-reference-library .setting-reference-add.button { display: grid; place-items: center; flex: 0 0 36px; width: 36px; height: 36px; min-height: 36px; padding: 0; border-radius: 7px; align-self: center; }
+.setting-reference-add svg, .reference-upload-menu summary svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; }
+.reference-candidate-source { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.reference-candidate-source select { min-width: 0; flex: 1; }
+.reference-candidate-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+.reference-picker-modal .modal__body { padding: 16px; }
+.reference-candidate-choice { position: relative; display: flex; flex-direction: column; gap: 6px; min-width: 0; height: 194px; padding: 6px; border: 2px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); cursor: pointer; font: inherit; font-size: var(--text-label); }
+.reference-candidate-choice img { width: 100%; height: 150px; object-fit: contain; }
+.reference-candidate-choice span { max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.reference-candidate-choice[aria-pressed="true"] { border-color: var(--green); background: var(--green-soft); }
+.reference-candidate-choice i { position: absolute; top: 8px; right: 8px; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; background: var(--green); color: white; font-style: normal; }
+
+.reference-upload-menu { position: relative; height: 194px; min-width: 0; }
+.reference-upload-menu summary { display: grid; place-items: center; box-sizing: border-box; width: 100%; height: 100%; border: 1px dashed var(--line); border-radius: 8px; color: var(--green); background: var(--paper); cursor: pointer; list-style: none; }
+.reference-upload-menu summary:hover { border-color: var(--green); background: var(--green-soft); }
+.reference-upload-menu summary::-webkit-details-marker { display: none; }
+.reference-upload-menu > div { position: absolute; z-index: 2; top: 35px; left: 8px; min-width: 170px; display: grid; gap: 6px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); box-shadow: 0 8px 20px #0002; }
+.reference-picker-empty { margin: 10px 0 0; color: var(--muted); font-size: var(--text-label); }
+.reference-upload-menu small { color: var(--muted); }
+.reference-upload-previews { display: grid; gap: 12px; }
+.reference-upload-previews label { display: flex; gap: 12px; align-items: center; }
+.reference-upload-previews img { width: 80px; height: 90px; object-fit: contain; }
+.reference-upload-previews input { min-width: 0; flex: 1; }
+.page-attached-references { padding-top: 10px; border-top: 1px solid var(--line); margin: 12px 0 0; }
+.page-attached-references .setting-reference-grid { gap: 6px; }
+.page-attached-references .inherited-reference-image, .page-attached-references .setting-reference-card { width: 56px; height: 64px; object-fit: contain; border-radius: 4px; }
+.page-attached-references .setting-reference-image { height: 62px; padding: 0; }
+.page-attached-references .setting-reference-default { top: auto; left: 0; bottom: 0; font-size: 9px; padding: 0 3px; }
+.page-attached-references .reference-grip { top: 0; right: 0; width: 22px; height: 22px; padding: 2px; }

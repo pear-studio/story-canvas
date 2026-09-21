@@ -1,3 +1,4 @@
+import type { ReferenceEntry } from "./ReferenceLibrary";
 import type { TextPageLayout } from "../shared/text-page-layout.mjs";
 import type { PageKey } from "./page-key";
 import { workbenchResponseJson } from "./api-response";
@@ -23,14 +24,14 @@ export type PromptFragment = {
   weight?: number;
   enabled?: boolean;
 };
-export type FreePrompt = { base_sha256?: string; positive: string; negative: string; loras: CharacterLora[] };
 export type InheritedAdjustments = Record<string, { weight?: number; enabled?: boolean }>;
 export type SettingKind = 'character' | 'scene';
 export type Scene = WorkbenchCharacter;
 export type PageOwner = { page_id: string; owner_kind: 'story' | 'character' | 'scene'; sequence_id?: string; character_id?: string; scene_id?: string; variant_id?: string };
-export type PagePrompt = Record<PromptCategory, PromptFragment[]> & { mode?: "structured" | "free"; free?: FreePrompt; reference_image?: string; scene_id?: string; scene_variant_id?: string; inheritance?: Record<string, InheritedAdjustments> };
+export type PagePrompt = Record<PromptCategory, PromptFragment[]> & { reference_images?: ReferenceEntry[]; reference_overrides?: Record<string, string[]>; scene_id?: string; scene_variant_id?: string; inheritance?: Record<string, InheritedAdjustments> };
 export type CharacterLora = { filename: string; sha256: string; weight: number; trigger?: string };
 export type CharacterPromptSetting = {
+  reference_images?: ReferenceEntry[];
   prompt: PagePrompt;
   loras: CharacterLora[];
   /** 本造型排除的 identity.prompt 文本键（tag/description 文本）；必有，可为空数组。 */
@@ -402,7 +403,6 @@ export type PageRenderPromptPart = {
 };
 
 export type GenerationDetails = {
-  prompt_mode?: "structured" | "free";
   profile_name: string | null;
   canvas: string | null;
   parameters: {
@@ -433,7 +433,6 @@ export type GenerationDetails = {
 
 export type PageRenderInspection = {
   generation_signature: string | null;
-  structured_import: FreePrompt | null;
   version: 1;
   page_key: WorkbenchPage["page_key"];
   title: string;
@@ -501,10 +500,16 @@ export async function inspectPageRender(
   pageKey: WorkbenchPage["page_key"],
   prompt?: PagePrompt,
 ) {
+  // 本页待保存附图尚未落盘；编辑检查保留其他已保存素材的严格校验。
+  // 保存并生成会在提交后重新检查完整页面，不能将这里的结果直接用于出图。
+  const inspectionPrompt = prompt === undefined ? undefined : {
+    ...prompt,
+    ...(prompt.reference_images ? { reference_images: prompt.reference_images.filter(entry => !entry.draft) } : {}),
+  };
   return workbenchResponseJson<{ inspection: PageRenderInspection }>(await readFacts(`${base(projectId)}/page-render-inspection`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ page_key: pageKey, ...(prompt === undefined ? {} : { prompt }) }),
+    body: JSON.stringify({ page_key: pageKey, ...(inspectionPrompt === undefined ? {} : { prompt: inspectionPrompt }) }),
   }));
 }
 
@@ -573,8 +578,10 @@ export const saveSettingPrompt = (kind: SettingKind, projectId: string, setting:
 export const renameSettingVariant = (kind: SettingKind, projectId: string, setting: WorkbenchCharacter, oldId: string, newId: string) => renameCharacterVariant(projectId, setting, oldId, newId, kind);
 
 export async function saveWholePage(projectId: string, page: WorkbenchPage, content: StoryPageContentDraft, prompt: PagePrompt, items: LetteringItem[], confirmationSha256?: string) {
+  const reference_inputs = (prompt.reference_images ?? []).filter(entry => entry.draft).map(entry => ({ id: entry.id, ...entry.draft }));
+  prompt = { ...prompt, ...(prompt.reference_images ? { reference_images: prompt.reference_images.map(({ draft, ...entry }) => entry) } : {}) };
   return workbenchResponseJson<{ content: StoryPageContentDraft & { dialogue: NonNullable<WorkbenchPage["dialogue"]> }; content_sha256: string; prompt: PagePrompt; prompt_sha256: string; prompt_context_sha256: string; lettering: { page: string; items: LetteringItem[] }; layout_sha256: string }>(await mutateTargetFacts(`${base(projectId)}/page-save`, {
-    method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ page_key: page.page_key, content, prompt,
+    method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ page_key: page.page_key, content, prompt, reference_inputs,
       expected_content_sha256: page.content_sha256, expected_prompt_sha256: page.prompt_sha256,
       expected_context_sha256: page.prompt_context_sha256, lettering: { items }, expected_layout_sha256: page.layout_sha256,
       confirmation_sha256: confirmationSha256 }),
