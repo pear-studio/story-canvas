@@ -7,8 +7,10 @@
   "comfy_install_source": "",
   "models_root": "",
   "lora_training": {
-    "trainer_root": "../story-canvas-trainer/sd-scripts",
-    "python": "../story-canvas-trainer/sd-scripts/.venv/Scripts/python.exe",
+    "diffsynth": {
+      "trainer_root": "../story-canvas-trainer/DiffSynth-Studio",
+      "python": "../story-canvas-trainer/DiffSynth-Studio/.venv/Scripts/python.exe"
+    },
     "quality": { "python": "" }
   },
   "prompt_dictionary": {

@@ -10,7 +10,7 @@
   ],
   "properties": {
     "version": {
-      "const": 4
+      "const": 5
     },
     "target": {
       "type": "object",
@@ -22,7 +22,7 @@
       ],
       "properties": {
         "family": {
-          "const": "anima"
+          "const": "qwen-image-2-1"
         },
         "prompt_family": {
           "type": "string",
@@ -36,20 +36,21 @@
           "required": [
             "dit",
             "text_encoder",
-            "vae"
+            "vae",
+            "processor"
           ],
           "properties": {
             "dit": {
-              "$ref": "#/$defs/model"
+              "$ref": "#/$defs/base_dir"
             },
             "text_encoder": {
-              "$ref": "#/$defs/model"
+              "$ref": "#/$defs/base_dir"
             },
             "vae": {
-              "$ref": "#/$defs/model"
+              "$ref": "#/$defs/base_dir"
             },
-            "llm_adapter": {
-              "$ref": "#/$defs/model"
+            "processor": {
+              "$ref": "#/$defs/base_dir"
             }
           },
           "additionalProperties": false
@@ -79,10 +80,7 @@
       "required": [
         "max_train_steps",
         "save_every_n_steps",
-        "seed",
-        "micro_batch_size",
-        "max_data_loader_n_workers",
-        "blocks_to_swap"
+        "seed"
       ],
       "properties": {
         "max_train_steps": {
@@ -96,18 +94,6 @@
         "seed": {
           "type": "integer",
           "minimum": 1
-        },
-        "micro_batch_size": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "max_data_loader_n_workers": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "blocks_to_swap": {
-          "type": "integer",
-          "minimum": 0
         }
       },
       "additionalProperties": false
@@ -151,7 +137,7 @@
       },
       "additionalProperties": false
     },
-    "model": {
+    "base_dir": {
       "type": "object",
       "required": [
         "relative_path"
@@ -159,11 +145,7 @@
       "properties": {
         "relative_path": {
           "type": "string",
-          "pattern": "^(?!/)(?!.*\\.\\.)(?!.*\\\\).+$"
-        },
-        "sha256": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{64}$"
+          "pattern": "^(?!/)(?!.*\\.\\.)(?!.*\\\\).+/$"
         },
         "source": {
           "type": "string"
@@ -173,26 +155,23 @@
     },
     "recipe_overrides": {
       "type": "object",
+      "required": [
+        "network_dim",
+        "learning_rate",
+        "gradient_accumulation_steps"
+      ],
       "properties": {
-        "resolution": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "effective_batch_size": {
-          "type": "integer",
-          "minimum": 1
-        },
         "network_dim": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "network_alpha": {
           "type": "integer",
           "minimum": 1
         },
         "learning_rate": {
           "type": "number",
           "exclusiveMinimum": 0
+        },
+        "gradient_accumulation_steps": {
+          "type": "integer",
+          "minimum": 1
         }
       },
       "additionalProperties": false

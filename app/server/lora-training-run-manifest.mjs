@@ -1,3 +1,5 @@
+import path from "node:path";
+
 const sha256Pattern = /^[0-9a-f]{64}$/;
 const idPatterns = Object.freeze({
   run: /^run-[a-f0-9]{12}$/,
@@ -7,6 +9,7 @@ const idPatterns = Object.freeze({
   asset: /^(?:asset-[a-f0-9]{12}|[a-z][a-z0-9]*(?:-[a-z0-9]+)*-[0-9]{3})$/,
   group: /^group-[a-f0-9]{12}$/,
 });
+const snapshotIdPattern = /^step-\d{6}$/;
 
 function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -73,7 +76,7 @@ function validateUsageDefaults(value, errors) {
 function validateModel(value, index, errors) {
   const label = `models[${index}]`;
   if (!validateObject(value, label, ["kind", "relative_path", "sha256", "size_bytes", "source"], errors)) return;
-  if (!["dit", "text_encoder", "vae", "llm_adapter"].includes(value.kind)) errors.push(`${label}.kind 无效`);
+  if (!["dit", "text_encoder", "vae", "processor"].includes(value.kind)) errors.push(`${label}.kind 无效`);
   if (!isSafeRelativePath(value.relative_path)) errors.push(`${label}.relative_path 必须是安全的正斜杠相对路径`);
   validateHash(value.sha256, `${label}.sha256`, errors);
   if (!Number.isSafeInteger(value.size_bytes) || value.size_bytes < 0) errors.push(`${label}.size_bytes 必须是非负整数`);
@@ -107,9 +110,16 @@ function validateItem(value, index, groupIds, itemIds, assetIds, errors) {
 
 function validateTrainer(value, errors) {
   const label = "trainer";
-  if (!validateObject(value, label, ["sd_scripts_commit", "python", "torch", "cuda", "accelerate", "gpu", "vram_bytes"], errors)) return;
-  for (const key of ["sd_scripts_commit", "python", "torch", "cuda", "accelerate", "gpu"]) validateNonEmptyString(value[key], `${label}.${key}`, errors);
-  if (!Number.isSafeInteger(value.vram_bytes) || value.vram_bytes < 1) errors.push(`${label}.vram_bytes 必须是正整数`);
+  if (!validateObject(value, label, ["diffsynth_commit", "python", "torch", "gpu", "vram_bytes", "runner"], errors)) return;
+  for (const key of ["diffsynth_commit", "python", "torch"]) validateNonEmptyString(value[key], `${label}.${key}`, errors);
+  // CPU/toy 环境没有 GPU 身份；正式预检会单独阻断无 CUDA 的运行。
+  if (value.gpu !== null && typeof value.gpu !== "string") errors.push(`${label}.gpu 必须是字符串或 null`);
+  if (!Number.isSafeInteger(value.vram_bytes) || value.vram_bytes < 0) errors.push(`${label}.vram_bytes 必须是非负整数`);
+  const runner = value.runner;
+  if (!validateObject(runner, `${label}.runner`, ["name", "version", "sha256"], errors)) return;
+  if (runner.name !== "qwen-image21-lora-runner") errors.push(`${label}.runner.name 必须为 qwen-image21-lora-runner`);
+  validatePositiveInteger(runner.version, `${label}.runner.version`, errors);
+  validateHash(runner.sha256, `${label}.runner.sha256`, errors);
 }
 
 function validateRecipe(value, errors) {
@@ -118,58 +128,88 @@ function validateRecipe(value, errors) {
   validateNonEmptyString(value.id, `${label}.id`, errors);
   validatePositiveInteger(value.version, `${label}.version`, errors);
   validateHash(value.sha256, `${label}.sha256`, errors);
-  if (!validateObject(value.overrides, `${label}.overrides`, [], errors, ["resolution", "effective_batch_size", "network_dim", "network_alpha", "learning_rate"])) return;
-  for (const key of ["resolution", "effective_batch_size", "network_dim", "network_alpha"]) if (Object.hasOwn(value.overrides, key)) validatePositiveInteger(value.overrides[key], `${label}.overrides.${key}`, errors);
+  if (!validateObject(value.overrides, `${label}.overrides`, [], errors, ["network_dim", "learning_rate", "gradient_accumulation_steps"])) return;
+  for (const key of ["network_dim", "gradient_accumulation_steps"]) if (Object.hasOwn(value.overrides, key)) validatePositiveInteger(value.overrides[key], `${label}.overrides.${key}`, errors);
   if (Object.hasOwn(value.overrides, "learning_rate") && (!isFiniteNumber(value.overrides.learning_rate) || value.overrides.learning_rate <= 0)) errors.push(`${label}.overrides.learning_rate 必须是正有限数`);
 }
 
 function validateSemanticConfig(value, errors) {
   const label = "semantic_config";
-  if (!validateObject(value, label, ["resolution", "effective_batch_size", "network_dim", "network_alpha", "learning_rate", "optimizer_type"], errors)) return;
-  for (const key of ["resolution", "effective_batch_size", "network_dim", "network_alpha"]) validatePositiveInteger(value[key], `${label}.${key}`, errors);
-  if (!isFiniteNumber(value.learning_rate) || value.learning_rate <= 0) errors.push(`${label}.learning_rate 必须是正有限数`);
-  validateNonEmptyString(value.optimizer_type, `${label}.optimizer_type`, errors);
-}
-
-function validateExperiment(value, errors) {
-  const label = "experiment";
-  if (!validateObject(value, label, ["max_train_steps", "save_every_n_steps", "seed"], errors)) return;
-  validatePositiveInteger(value.max_train_steps, `${label}.max_train_steps`, errors);
-  validatePositiveInteger(value.save_every_n_steps, `${label}.save_every_n_steps`, errors);
-  validatePositiveInteger(value.seed, `${label}.seed`, errors);
-  if (isPositiveInteger(value.max_train_steps) && isPositiveInteger(value.save_every_n_steps) && value.save_every_n_steps > value.max_train_steps) errors.push(`${label}.save_every_n_steps 不能大于 max_train_steps`);
-}
-
-function validateRunSettings(value, errors) {
-  const label = "run_settings";
-  if (value?.note !== undefined && typeof value.note !== "string") errors.push("run_settings.note 必须是字符串");
-  const required = ["max_train_steps", "save_every_n_steps", "seed", "micro_batch_size", "gradient_accumulation_steps", "max_data_loader_n_workers"];
-  required.push("blocks_to_swap");
-  if (!validateObject(value, label, required, errors, [...required, "note"])) return;
-  for (const key of ["max_train_steps", "save_every_n_steps", "seed", "micro_batch_size", "gradient_accumulation_steps", "max_data_loader_n_workers"]) validatePositiveInteger(value[key], `${label}.${key}`, errors);
-  if (!Number.isSafeInteger(value.blocks_to_swap) || value.blocks_to_swap < 0) errors.push(`${label}.blocks_to_swap 必须是非负整数`);
-  if (isPositiveInteger(value.max_train_steps) && isPositiveInteger(value.save_every_n_steps) && value.save_every_n_steps > value.max_train_steps) errors.push(`${label}.save_every_n_steps 不能大于 max_train_steps`);
-}
-
-function validateExecutionConfig(value, errors) {
-  const label = "execution_config";
-  const required = ["micro_batch_size", "gradient_accumulation_steps", "effective_batch_size", "max_data_loader_n_workers"];
-  required.push("blocks_to_swap");
+  const required = ["max_pixels", "network_dim", "network_alpha", "learning_rate", "gradient_accumulation_steps", "micro_batch_size", "optimizer", "scheduler", "precision", "gradient_checkpointing", "lora_target_modules"];
   if (!validateObject(value, label, required, errors)) return;
-  for (const key of ["micro_batch_size", "gradient_accumulation_steps", "effective_batch_size", "max_data_loader_n_workers"]) validatePositiveInteger(value[key], `${label}.${key}`, errors);
-  if (!Number.isSafeInteger(value.blocks_to_swap) || value.blocks_to_swap < 0) errors.push(`${label}.blocks_to_swap 必须是非负整数`);
+  for (const key of ["max_pixels", "network_dim", "network_alpha", "gradient_accumulation_steps"]) validatePositiveInteger(value[key], `${label}.${key}`, errors);
+  if (value.micro_batch_size !== 1) errors.push(`${label}.micro_batch_size 固定为 1`);
+  if (isPositiveInteger(value.network_dim) && isPositiveInteger(value.network_alpha) && value.network_alpha !== value.network_dim) errors.push(`${label}.network_alpha 必须等于 network_dim`);
+  if (!isFiniteNumber(value.learning_rate) || value.learning_rate <= 0) errors.push(`${label}.learning_rate 必须是正有限数`);
+  const optimizer = value.optimizer;
+  if (validateObject(optimizer, `${label}.optimizer`, ["type", "betas", "eps", "weight_decay"], errors)) {
+    validateNonEmptyString(optimizer.type, `${label}.optimizer.type`, errors);
+    if (!Array.isArray(optimizer.betas) || optimizer.betas.length !== 2 || optimizer.betas.some((beta) => !isFiniteNumber(beta) || beta <= 0 || beta >= 1)) errors.push(`${label}.optimizer.betas 必须是两个 (0,1) 区间有限数`);
+    if (!isFiniteNumber(optimizer.eps) || optimizer.eps <= 0) errors.push(`${label}.optimizer.eps 必须是正有限数`);
+    if (!isFiniteNumber(optimizer.weight_decay) || optimizer.weight_decay < 0) errors.push(`${label}.optimizer.weight_decay 必须是非负有限数`);
+  }
+  const scheduler = value.scheduler;
+  if (validateObject(scheduler, `${label}.scheduler`, ["type", "factor", "total_iters"], errors)) {
+    validateNonEmptyString(scheduler.type, `${label}.scheduler.type`, errors);
+    if (!isFiniteNumber(scheduler.factor) || scheduler.factor <= 0) errors.push(`${label}.scheduler.factor 必须是正有限数`);
+    if (!Number.isSafeInteger(scheduler.total_iters) || scheduler.total_iters < 0) errors.push(`${label}.scheduler.total_iters 必须是非负整数`);
+  }
+  const precision = value.precision;
+  if (validateObject(precision, `${label}.precision`, ["base", "lora", "optimizer_state"], errors)) {
+    for (const key of ["base", "lora", "optimizer_state"]) validateNonEmptyString(precision[key], `${label}.precision.${key}`, errors);
+  }
+  if (typeof value.gradient_checkpointing !== "boolean") errors.push(`${label}.gradient_checkpointing 必须是布尔值`);
+  if (!Array.isArray(value.lora_target_modules) || value.lora_target_modules.length === 0) errors.push(`${label}.lora_target_modules 必须是非空字符串数组`);
+  else value.lora_target_modules.forEach((entry, index) => validateNonEmptyString(entry, `${label}.lora_target_modules[${index}]`, errors));
 }
 
-function validateTrainingConfig(value, errors) {
-  const label = "config";
-  const required = ["resolution", "max_train_steps", "train_batch_size", "network_dim", "network_alpha", "learning_rate", "optimizer_type", "save_every_n_steps", "seed", "gradient_accumulation_steps", "max_data_loader_n_workers"];
-  required.push("blocks_to_swap");
-  if (!validateObject(value, label, required, errors)) return;
-  for (const key of ["resolution", "max_train_steps", "train_batch_size", "network_dim", "network_alpha", "save_every_n_steps", "seed", "gradient_accumulation_steps", "max_data_loader_n_workers"]) validatePositiveInteger(value[key], `${label}.${key}`, errors);
-  if (!isFiniteNumber(value.learning_rate) || value.learning_rate <= 0) errors.push(`${label}.learning_rate 必须是正有限数`);
-  validateNonEmptyString(value.optimizer_type, `${label}.optimizer_type`, errors);
+function validateRun(value, errors) {
+  const label = "run";
+  if (value?.note !== undefined && typeof value.note !== "string") errors.push("run.note 必须是字符串");
+  if (!validateObject(value, label, ["max_train_steps", "save_every_n_steps", "seed"], errors, ["max_train_steps", "save_every_n_steps", "seed", "note"])) return;
+  for (const key of ["max_train_steps", "save_every_n_steps", "seed"]) validatePositiveInteger(value[key], `${label}.${key}`, errors);
   if (isPositiveInteger(value.max_train_steps) && isPositiveInteger(value.save_every_n_steps) && value.save_every_n_steps > value.max_train_steps) errors.push(`${label}.save_every_n_steps 不能大于 max_train_steps`);
-  if (!Number.isSafeInteger(value.blocks_to_swap) || value.blocks_to_swap < 0) errors.push(`${label}.blocks_to_swap 必须是非负整数`);
+}
+
+function validateSampling(value, itemIds, errors) {
+  const label = "sampling";
+  if (!validateObject(value, label, ["weights"], errors)) return;
+  if (!Array.isArray(value.weights)) {
+    errors.push(`${label}.weights 必须是数组`);
+    return;
+  }
+  const seen = new Set();
+  value.weights.forEach((entry, index) => {
+    const entryLabel = `${label}.weights[${index}]`;
+    if (!validateObject(entry, entryLabel, ["item_id", "weight"], errors)) return;
+    if (!idPatterns.item.test(entry.item_id ?? "")) errors.push(`${entryLabel}.item_id 无效`);
+    else if (seen.has(entry.item_id)) errors.push(`${entryLabel}.item_id 重复：${entry.item_id}`);
+    else {
+      seen.add(entry.item_id);
+      if (itemIds.size && !itemIds.has(entry.item_id)) errors.push(`${entryLabel}.item_id 不在 items 快照中`);
+    }
+    validatePositiveInteger(entry.weight, `${entryLabel}.weight`, errors);
+  });
+}
+
+function validateResume(value, errors) {
+  if (value === null) return;
+  const label = "resume";
+  if (!validateObject(value, label, ["parent_run_id", "source_snapshot_id", "source_sha256", "start_step"], errors)) return;
+  if (!idPatterns.run.test(value.parent_run_id ?? "")) errors.push(`${label}.parent_run_id 无效`);
+  if (!snapshotIdPattern.test(value.source_snapshot_id ?? "")) errors.push(`${label}.source_snapshot_id 必须是 step-NNNNNN 形式`);
+  validateHash(value.source_sha256, `${label}.source_sha256`, errors);
+  if (!Number.isSafeInteger(value.start_step) || value.start_step < 0) errors.push(`${label}.start_step 必须是非负整数`);
+}
+
+function validatePaths(value, errors) {
+  const label = "paths";
+  const absolute = ["inputs_dir", "cache_dir", "control_dir", "archive_dir", "resume_dir", "events_file", "log_file", "checkpoints_dir", "models_root"];
+  if (!validateObject(value, label, [...absolute, "checkpoints_relative_path"], errors)) return;
+  for (const key of absolute) {
+    if (typeof value[key] !== "string" || !value[key].trim() || !path.isAbsolute(value[key])) errors.push(`${label}.${key} 必须是绝对路径`);
+  }
+  if (!isSafeRelativePath(value.checkpoints_relative_path)) errors.push(`${label}.checkpoints_relative_path 必须是安全的正斜杠相对路径`);
 }
 
 function validateExecution(value, errors) {
@@ -180,38 +220,9 @@ function validateExecution(value, errors) {
   else value.argv.forEach((entry, index) => validateNonEmptyString(entry, `${label}.argv[${index}]`, errors));
 }
 
-function validateCrossFields(value, errors) {
-  const pairs = [
-    ["seed", value.seed, "experiment.seed", value.experiment?.seed],
-    ["seed", value.seed, "run_settings.seed", value.run_settings?.seed],
-    ["seed", value.seed, "config.seed", value.config?.seed],
-    ["experiment.max_train_steps", value.experiment?.max_train_steps, "run_settings.max_train_steps", value.run_settings?.max_train_steps],
-    ["experiment.save_every_n_steps", value.experiment?.save_every_n_steps, "run_settings.save_every_n_steps", value.run_settings?.save_every_n_steps],
-    ["run_settings.micro_batch_size", value.run_settings?.micro_batch_size, "execution_config.micro_batch_size", value.execution_config?.micro_batch_size],
-    ["run_settings.gradient_accumulation_steps", value.run_settings?.gradient_accumulation_steps, "execution_config.gradient_accumulation_steps", value.execution_config?.gradient_accumulation_steps],
-    ["run_settings.max_data_loader_n_workers", value.run_settings?.max_data_loader_n_workers, "execution_config.max_data_loader_n_workers", value.execution_config?.max_data_loader_n_workers],
-    ["run_settings.blocks_to_swap", value.run_settings?.blocks_to_swap, "execution_config.blocks_to_swap", value.execution_config?.blocks_to_swap],
-    ["semantic_config.effective_batch_size", value.semantic_config?.effective_batch_size, "execution_config.effective_batch_size", value.execution_config?.effective_batch_size],
-    ["experiment.max_train_steps", value.experiment?.max_train_steps, "config.max_train_steps", value.config?.max_train_steps],
-    ["experiment.save_every_n_steps", value.experiment?.save_every_n_steps, "config.save_every_n_steps", value.config?.save_every_n_steps],
-    ["run_settings.micro_batch_size", value.run_settings?.micro_batch_size, "config.train_batch_size", value.config?.train_batch_size],
-    ["run_settings.gradient_accumulation_steps", value.run_settings?.gradient_accumulation_steps, "config.gradient_accumulation_steps", value.config?.gradient_accumulation_steps],
-    ["run_settings.max_data_loader_n_workers", value.run_settings?.max_data_loader_n_workers, "config.max_data_loader_n_workers", value.config?.max_data_loader_n_workers],
-    ["semantic_config.resolution", value.semantic_config?.resolution, "config.resolution", value.config?.resolution],
-    ["semantic_config.network_dim", value.semantic_config?.network_dim, "config.network_dim", value.config?.network_dim],
-    ["semantic_config.network_alpha", value.semantic_config?.network_alpha, "config.network_alpha", value.config?.network_alpha],
-    ["semantic_config.learning_rate", value.semantic_config?.learning_rate, "config.learning_rate", value.config?.learning_rate],
-    ["semantic_config.optimizer_type", value.semantic_config?.optimizer_type, "config.optimizer_type", value.config?.optimizer_type],
-  ];
-  for (const [leftLabel, left, rightLabel, right] of pairs) if (left !== undefined && right !== undefined && left !== right) errors.push(`${leftLabel} 必须与 ${rightLabel} 一致`);
-  if (isPositiveInteger(value.run_settings?.micro_batch_size) && isPositiveInteger(value.run_settings?.gradient_accumulation_steps) && isPositiveInteger(value.semantic_config?.effective_batch_size) && value.run_settings.micro_batch_size * value.run_settings.gradient_accumulation_steps !== value.semantic_config.effective_batch_size) errors.push("run_settings.micro_batch_size × gradient_accumulation_steps 必须等于 semantic_config.effective_batch_size");
-  if (isPositiveInteger(value.config?.train_batch_size) && isPositiveInteger(value.config?.gradient_accumulation_steps) && isPositiveInteger(value.semantic_config?.effective_batch_size) && value.config.train_batch_size * value.config.gradient_accumulation_steps !== value.semantic_config.effective_batch_size) errors.push("config.train_batch_size × gradient_accumulation_steps 必须等于 semantic_config.effective_batch_size");
-  if (value.family === "anima" && value.run_settings?.blocks_to_swap !== undefined && value.config?.blocks_to_swap !== undefined && value.run_settings.blocks_to_swap !== value.config.blocks_to_swap) errors.push("run_settings.blocks_to_swap 必须与 config.blocks_to_swap 一致");
-}
-
 /**
- * 计划冻结与运行时之间唯一共享的训练事实快照。
- * 调用方必须先复制当前图片和 Caption，再传入已完成 preflight 的结果；
+ * 计划冻结与运行时之间唯一共享的训练事实快照（v5，单一来源）。
+ * 调用方必须先复制当前图片和 Caption 到 inputs_dir，再传入已完成 preflight 的结果；
  * 运行时不得通过 task 或 dataset 重新解释这些值。
  */
 export function createLoraTrainingRunManifest({
@@ -221,14 +232,15 @@ export function createLoraTrainingRunManifest({
   dataset,
   snapshots,
   preflight,
-  finalConfig,
+  paths,
   execution,
-  datasetToml,
-  checkpointsRelativePath = null,
+  runner,
+  sampling,
+  resume = null,
   createdAt = new Date().toISOString(),
 }) {
   const manifest = {
-    version: 4,
+    version: 5,
     id: runId,
     task_id: taskId,
     dataset_id: task.dataset_id,
@@ -243,20 +255,19 @@ export function createLoraTrainingRunManifest({
     items: clone(snapshots),
     groups: clone(dataset.groups.filter((group) => group.enabled)),
     models: preflight.models.map((model) => ({
-      kind: model.label,
+      kind: model.kind,
       relative_path: model.identity.relative_path,
       sha256: model.sha256,
       size_bytes: model.size,
       source: model.identity.source ?? null,
     })),
     trainer: clone({
-      sd_scripts_commit: preflight.environment.commit,
+      diffsynth_commit: preflight.environment.commit,
       python: preflight.environment.runtime.python,
       torch: preflight.environment.runtime.torch,
-      cuda: preflight.environment.runtime.cuda,
-      accelerate: preflight.environment.runtime.accelerate,
-      gpu: preflight.environment.runtime.gpu,
-      vram_bytes: preflight.environment.runtime.vram_bytes,
+      gpu: preflight.environment.runtime.gpu ?? null,
+      vram_bytes: preflight.environment.runtime.vram_bytes ?? 0,
+      runner: { name: runner.name, version: runner.version, sha256: runner.sha256 },
     }),
     recipe: clone({
       id: preflight.recipe.id,
@@ -265,24 +276,17 @@ export function createLoraTrainingRunManifest({
       overrides: task.training_recipe.overrides,
     }),
     semantic_config: clone(preflight.semantic_config),
-    experiment: {
+    run: {
       max_train_steps: preflight.run_settings.max_train_steps,
       save_every_n_steps: preflight.run_settings.save_every_n_steps,
       seed: preflight.run_settings.seed,
+      ...(preflight.run_settings.note !== undefined ? { note: preflight.run_settings.note } : {}),
     },
-    execution_config: {
-      micro_batch_size: preflight.run_settings.micro_batch_size,
-      gradient_accumulation_steps: preflight.run_settings.gradient_accumulation_steps,
-      effective_batch_size: preflight.semantic_config.effective_batch_size,
-      max_data_loader_n_workers: preflight.run_settings.max_data_loader_n_workers,
-      ...(preflight.run_settings.blocks_to_swap !== undefined ? { blocks_to_swap: preflight.run_settings.blocks_to_swap } : {}),
-    },
-    run_settings: clone(preflight.run_settings),
-    config: clone(finalConfig),
-    dataset_toml_sha256: datasetToml.sha256,
-    ...(typeof checkpointsRelativePath === "string" ? { checkpoints_relative_path: checkpointsRelativePath } : {}),
+    sampling: clone(sampling),
+    resume: clone(resume),
+    paths: clone(paths),
     execution: clone(execution),
-    seed: finalConfig.seed,
+    seed: preflight.run_settings.seed,
   };
   const errors = validateLoraTrainingRunManifest(manifest);
   if (errors.length) {
@@ -297,17 +301,16 @@ export function createLoraTrainingRunManifest({
 export function validateLoraTrainingRunManifest(value) {
   const errors = [];
   if (!isRecord(value)) return ["manifest 必须是 JSON 对象"];
-  const allowedKeys = ["version", "id", "task_id", "dataset_id", "created_at", "task_name", "dataset_name", "family", "prompt_family", "usage_defaults", "description", "activation_terms", "items", "groups", "models", "trainer", "recipe", "semantic_config", "experiment", "execution_config", "run_settings", "config", "dataset_toml_sha256", "checkpoints_relative_path", "execution", "seed"];
-  if (value.checkpoints_relative_path !== undefined && (typeof value.checkpoints_relative_path !== "string" || value.checkpoints_relative_path !== value.checkpoints_relative_path.trim() || value.checkpoints_relative_path.startsWith("/") || value.checkpoints_relative_path.includes("\\") || value.checkpoints_relative_path.split("/").includes(".."))) errors.push("checkpoints_relative_path 必须是安全的正斜杠相对路径");
+  const allowedKeys = ["version", "id", "task_id", "dataset_id", "created_at", "task_name", "dataset_name", "family", "prompt_family", "usage_defaults", "description", "activation_terms", "items", "groups", "models", "trainer", "recipe", "semantic_config", "run", "sampling", "resume", "paths", "execution", "seed"];
   for (const key of Object.keys(value)) if (!allowedKeys.includes(key)) errors.push(`manifest 包含未支持字段：${key}`);
-  if (value.version !== 4) errors.push("version 必须为 4");
+  if (value.version !== 5) errors.push("version 必须为 5");
   if (!idPatterns.run.test(value.id ?? "")) errors.push("id 无效");
   if (!idPatterns.task.test(value.task_id ?? "")) errors.push("task_id 无效");
   if (!idPatterns.dataset.test(value.dataset_id ?? "")) errors.push("dataset_id 无效");
   if (!validDate(value.created_at)) errors.push("created_at 无效");
   validateNonEmptyString(value.task_name, "task_name", errors);
   validateNonEmptyString(value.dataset_name, "dataset_name", errors);
-  if (value.family !== "anima") errors.push("family 必须为 anima");
+  if (value.family !== "qwen-image-2-1") errors.push("family 必须为 qwen-image-2-1");
   validateNonEmptyString(value.prompt_family, "prompt_family", errors);
   validateUsageDefaults(value.usage_defaults, errors);
   if (typeof value.description !== "string") errors.push("description 必须是字符串");
@@ -340,26 +343,31 @@ export function validateLoraTrainingRunManifest(value) {
   if (!Array.isArray(value.items)) errors.push("items 必须是数组");
   else value.items.forEach((item, index) => validateItem(item, index, groupIds, itemIds, assetIds, errors));
 
-  const modelKinds = [];
+  const modelPaths = new Set();
+  const modelKinds = new Set();
   if (!Array.isArray(value.models) || value.models.length === 0) errors.push("models 必须是非空数组");
   else value.models.forEach((model, index) => {
     validateModel(model, index, errors);
-    if (isRecord(model) && typeof model.kind === "string") modelKinds.push(model.kind);
+    if (isRecord(model)) {
+      if (typeof model.kind === "string") modelKinds.add(model.kind);
+      if (typeof model.relative_path === "string") {
+        if (modelPaths.has(model.relative_path)) errors.push(`models[${index}].relative_path 重复：${model.relative_path}`);
+        modelPaths.add(model.relative_path);
+      }
+    }
   });
-  if (new Set(modelKinds).size !== modelKinds.length) errors.push("models.kind 不能重复");
-  for (const kind of ["dit", "text_encoder", "vae"]) if (!modelKinds.includes(kind)) errors.push(`anima manifest.models 缺少 ${kind}`);
-  if (modelKinds.some((kind) => !["dit", "text_encoder", "vae", "llm_adapter"].includes(kind))) errors.push("anima manifest.models 包含不支持的模型类型");
+  for (const kind of ["dit", "text_encoder", "vae", "processor"]) if (!modelKinds.has(kind)) errors.push(`manifest.models 缺少 ${kind} 文件`);
 
   validateTrainer(value.trainer, errors);
   validateRecipe(value.recipe, errors);
   validateSemanticConfig(value.semantic_config, errors);
-  validateExperiment(value.experiment, errors);
-  validateExecutionConfig(value.execution_config, errors);
-  validateRunSettings(value.run_settings, errors);
-  validateTrainingConfig(value.config, errors);
-  validateHash(value.dataset_toml_sha256, "dataset_toml_sha256", errors);
+  validateRun(value.run, errors);
+  validateSampling(value.sampling, itemIds, errors);
+  validateResume(value.resume, errors);
+  validatePaths(value.paths, errors);
   validateExecution(value.execution, errors);
   validatePositiveInteger(value.seed, "seed", errors);
-  validateCrossFields(value, errors);
+  if (isPositiveInteger(value.seed) && isPositiveInteger(value.run?.seed) && value.seed !== value.run.seed) errors.push("seed 必须与 run.seed 一致");
+  if (isRecord(value.resume) && Number.isSafeInteger(value.resume.start_step) && isPositiveInteger(value.run?.max_train_steps) && value.resume.start_step >= value.run.max_train_steps) errors.push("resume.start_step 必须小于 run.max_train_steps");
   return [...new Set(errors)];
 }

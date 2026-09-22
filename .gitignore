@@ -3,6 +3,13 @@
 /Saved/
 /workspace/
 
+# 测试派生物（浏览器测试 vite/截图输出）
+/.temp/
+/runtime/
+/app/.temp/
+/app/runtime/
+/app/Saved/
+
 # 安装环境、依赖和构建
 /app/data.local/
 /app/node_modules/

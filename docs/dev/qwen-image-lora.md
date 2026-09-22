@@ -1,12 +1,15 @@
 # Qwen-Image-2.1 训练环境
 
-独立 DiffSynth-Studio 环境已完成本机 100 步短程训练验证，尚未接入 StoryCanvas 训练调度。
-真实训练须取得用户授权；本次短训和产物验证已获授权。当前工作台训练入口仍使用原有训练器。
+> 现状：该独立实验已接入工作台，Qwen-Image-2.1 是当前唯一训练路线；工作台的训练契约、预检、
+> 两阶段执行与续训见 [LoRA 训练](../reference/lora-training.md)。本文保留实验安装与验证记录。
+
+以下为接入前独立实验的原始记录（当时尚未接入 StoryCanvas 训练调度，工作台训练入口仍使用原有训练器）；
+其中安装位置、版本与验证边界仍是当前环境的依据。真实训练须取得用户授权；本次短训和产物验证已获授权。
 
 ## 安装位置与版本
 
 - 源码安装在工具仓库外，与剧情项目目录平级的 `story-canvas-trainer/DiffSynth-Studio/`，虚拟环境位于其下 `.venv/`。
-- 设备实际路径记录在 `Config/local.json` 的 `lora_training.diffsynth.trainer_root` 和 `python`；当前仅用于独立环境管理，工作台训练调度尚未消费这两个字段。原有 `trainer_root` 与 `python` 仍属于旧训练器。
+- 设备实际路径记录在 `Config/local.json` 的 `lora_training.diffsynth.trainer_root` 和 `python`；工作台训练调度消费这两个字段。旧训练器的 `trainer_root` 与 `python` 键已不再被代码引用。
 - 固定源码身份：`library/lora-training/diffsynth.json`。网络无法进行 Git fetch 时，可使用该提交的官方源码归档，核对归档 SHA-256；不要把空 Git 目录当作成功检出的版本。
 - 依赖使用独立环境，不修改 ComfyUI 或原有训练器。NVIDIA 环境采用清单中的 CUDA PyTorch 版本。
 - 完整依赖快照为 `app/python/diffsynth.lock`；DiffSynth 自身从上述固定源码安装，不包含在锁文件中。

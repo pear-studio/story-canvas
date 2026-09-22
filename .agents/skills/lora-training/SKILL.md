@@ -1,6 +1,6 @@
 ---
 name: lora-training
-description: 为 StoryCanvas 一次完成 LoRA 数据集准备、SDXL Caption 审计、训练任务诊断和结果分析。用户要求规划角色、服装、道具、场景或画风 LoRA，整理素材与 Caption，检查预检、run、checkpoint 或恢复状态时使用；用户明确授权后可发起一轮或多轮训练。
+description: 为 StoryCanvas 一次完成 LoRA 数据集准备、Caption 审计、训练任务诊断和结果分析。当前唯一训练路线是 Qwen-Image-2.1。用户要求规划角色、服装、道具、场景或画风 LoRA，整理素材与 Caption，检查预检、run、checkpoint 或恢复状态时使用；用户明确授权后可发起一轮或多轮训练。
 ---
 
 # LoRA 训练
@@ -12,8 +12,9 @@ description: 为 StoryCanvas 一次完成 LoRA 数据集准备、SDXL Caption �
 
 按用户当前委托选择范围。只要求裁剪、分组或导入时，按 `docs/reference/lora-training.md` 的“筛选后的图片整理”完成并验证图片，不自动建立训练方案、标注、超分或执行预检；此时没有方案无需读取 plan。网上搜寻补图使用 `lora-material-sourcing`，不把补素材默认解释为生成合成图片。
 
-当前 Caption 审计只面向 SDXL／Illustrious／WAI 的标签流程。不要为 Anima 创建独立 Profile，
-不要把 SDXL Caption 自动转换为 Anima 格式。
+当前训练路线为 Qwen-Image-2.1（BF16）。训练 Caption 原样使用，标签或自然语言均可，不强制转换格式，
+不自动增删触发词。Caption 审计是面向标签式 Caption 的独立历史功能（快照 scope 固定），不等于
+Caption 确认门槛；训练前的硬门槛是当前图片哈希与 Caption 哈希的确认绑定，审计结论不能替代确认。
 
 ## 一次完成数据集与 Caption 审计
 
@@ -24,7 +25,7 @@ description: 为 StoryCanvas 一次完成 LoRA 数据集准备、SDXL Caption �
 
 1. 将 `project.json.description` 当作数据集的训练目标，读取其中“要复现的身份特征”和“允许变化
    的因素”。工作台可以把字段显示为“训练目标”，不为此新增一套目标 Schema。训练任务仍单独决定
-   SDXL 底座、Prompt family、预设和参数；数据集可以被多个训练任务复用。
+   底座、Prompt family、预设和参数；数据集可以被多个训练任务复用。
 2. 有效训练图片必须同时满足 `item.enabled === true` 和所属分组 `group.enabled === true`。审计和
    预检都以这个集合为准；禁用分组中的图片不参与本次审计，重新启用后再按图片 hash 判断是否需要审计。
 3. 读取数据集详情并记录 ETag。Caption 和审计快照通过对应训练 HTTP 接口的 `mutateFacts`
@@ -39,13 +40,15 @@ description: 为 StoryCanvas 一次完成 LoRA 数据集准备、SDXL Caption �
 ```json
 {
   "version": 1,
-  "scope": { "family": "sdxl", "prompt_family": "illustrious" },
+  "scope": { "family": "anima", "prompt_family": "anima" },
   "updated_at": "...",
   "images": {
     "<image_sha256>": { "audited_at": "..." }
   }
 }
 ```
+
+scope 是当前代码固定的审计身份（历史遗留值），不表示训练底座；服务端拒绝其他 scope。
 
 审计状态只由图片 hash 决定：
 
@@ -63,7 +66,7 @@ description: 为 StoryCanvas 一次完成 LoRA 数据集准备、SDXL Caption �
 - `GET /api/lora-training/datasets/:datasetId/caption-audit`：读取当前有效图片的
   `audited`、`pending` 和 `blocked` 状态；
 - `POST /api/lora-training/datasets/:datasetId/caption-audit`：请求体为
-  `{ "image_sha256": ["..."], "prompt_family"?: "illustrious" }`，只把已经完成检查的当前图片 hash
+  `{ "image_sha256": ["..."], "prompt_family"?: "anima" }`，只把已经完成检查的当前图片 hash
   写入最新快照；请求经服务端 `mutateFacts`，并以 `If-Match` 携带对应数据集的 ETag。
 
 Caption 保存接口不触碰审计快照，因此用户手工调整 Caption 不会改变审计状态。
@@ -80,7 +83,7 @@ Agent 必须查看图片、当前 `.txt`、自动基础 Prompt 和 `raw_tags`，
 3. **训练目标一致**：训练目标中声明要复现的身份特征，图片可见时应保留稳定、规范的标签；训练目标
    声明允许变化的服装、饰品、动作、镜头和背景，图片实际出现时应保留这些变化因素。不要把偶然出现
    的单张细节擅自提升为角色身份，也不要删除训练目标明确需要控制的身份特征。
-4. **SDXL Caption 格式**：使用当前 SDXL／Illustrious／WAI 的逗号分隔标签；保留下划线和规范标签写法；
+4. **标签式 Caption 格式**：审计标签式 Caption 时，使用逗号分隔标签；保留下划线和规范标签写法；
    删除重复、空标签和当前打标器排除的 rating 标签；声明的激活标签只在图片确实包含对应概念时使用。
    触发词需要固定在前面时，保持在 Caption 首段；不把质量词、负面词或推荐生成 Prompt 混入角色标签。
 5. **安全修正**：Agent 可以直接修正明确错误并保存最终 Caption；对不确定的标签采取不臆测原则，保留
@@ -103,21 +106,33 @@ Agent 必须查看图片、当前 `.txt`、自动基础 Prompt 和 `raw_tags`，
 
 1. 先建立或选择独立数据集，在其中确定核心概念、素材来源、分组用途、变化覆盖与偏差风险；
    激活标签默认可留空，不生成随机字符串。再建立引用该数据集的训练任务并确认确切底座。
-   当前只确认 SDXL／Illustrious／WAI 底座；Anima 不属于本技能当前的任务范围。
+   当前训练底座为 Qwen-Image-2.1（官方原始 BF16 权重，逐文件身份见
+   `library/lora-training/qwen-image21-models.json`）。
 2. 用户要求以生成图片补充素材时，编写 Prompt、调用现有生成能力、预筛并把选定图片加入数据集；不要假装
    工作台有“一键生成候选素材”。保留原图，裁剪使用工作台的非破坏性派生项。
 3. 图片集合确定并保存后，按激活标签指南结合目标、素材和模型家族决定无专用标签、规范角色
    标签、可读概念标签或多个子概念标签，再批量写或调整每张图片旁的同名 `.txt`。标签只写入
    实际包含对应概念的图片；Caption 写清需要变化的角色、服装、动作、镜头与背景，避免错误
    绑定。Tagger 只能辅助，必须清理错误、冲突和不一致标签。
-4. 训练任务只保存数据集引用、底座与参数。按设备显存选择版本化预设；修改
+4. 训练任务只保存数据集引用、底座与参数。修改
    高级参数时，在会话中留下简短理由；不要传入 shell
    命令或绕过工作台的结构化参数。
 5. 执行预检并处理阻断项，把任务准备到“可训练”。用户明确授权后，通过工作台结构化接口发起一轮或多轮训练；
    沿用当前会话中已给出的授权，不重复请求确认。仅委托数据准备、分析或预检不等于授权训练。
    “训练一版”默认一轮；多轮按用户给定的轮数、预算或停止条件执行，不自行无限追加。
    每轮先保存配置、读取最新 ETag 并通过预检；启动后核对运行记录和实际进度。发生失败先诊断，
-   不盲目重启；重跑计入授权轮数，超出范围时再询问。仅在工作台实际支持且用户授权时恢复训练。
+   不盲目重启；重跑计入授权轮数，超出范围时再询问。
+
+## 运行、停止与续训要点
+
+- 每次 run 分缓存与训练两个独立子进程执行；进度、loss、LR 与已处理张次以 runner 的结构化
+  事件为准，不解析自由文本日志。
+- 「停止」是优雅停止：runner 在下一个完整更新边界保存恢复包后退出，期间不要重复发起停止；
+  超时后服务才强制终止，强制终止可能回退到上一次完整状态。
+- 每个保存节点保留小型 LoRA 权重供出图比较；同一任务只保留最新一份完整恢复状态。
+- 续训从训练记录的「继续训练」（`runs/:runId/resume`）发起，只改累计目标步数与备注，沿用父 run
+  冻结的全部语义参数；数据集、模型、runner 或训练器版本变化时应另开从头训练，不伪装续训。
+  历史 Anima run 只读展示，不能续训。详细语义见 `docs/reference/lora-training.md`。
 
 ## 分析结果
 
@@ -132,8 +147,10 @@ Agent 必须查看图片、当前 `.txt`、自动基础 Prompt 和 `raw_tags`，
 - 删除 checkpoint 或 run 不会删除已经保存的正式 LoRA。需要清理正式资源时必须单独确认确切
   记录和权重范围；需要迁移同一份正式二进制时，同时复制该资源目录与记录中
   `file.relative_path` 指向的权重。
-- 恢复只使用工作台验证的最近完整 state。普通训练错误不能当作 state 损坏反复重启。
+- 恢复只使用工作台验证的最近完整恢复状态（恢复包身份见 run 状态与 `resume/latest.json`）。
+  普通训练错误不能当作恢复包损坏反复重启。
 - 同一项目跨设备继续工作时，优先使用保存 checkpoint 时写入项目的训练约定建立复现任务。
-  复现任务锁定数据集内容、确切底座、训练器版本和训练语义参数，只允许选择本机 12 GB／
-  24 GB 执行配置；产出权重不要求与来源 SHA-256 相同。确实要迁移同一份二进制时，再显式
+  复现任务锁定数据集内容、确切底座、训练器版本和训练语义参数；精确续训还要求 DiffSynth commit、
+  runner 与模型逐文件身份一致，不满足时另开从头训练；产出权重不要求与来源 SHA-256 相同。
+  确实要迁移同一份二进制时，再显式
   复制用户指定的权重与本地资源记录；不要建立项目间文件引用。

@@ -17,7 +17,7 @@ StoryCanvas 是由 Agent 操作的本地系列图片视觉化工作台。输入�
 - 项目操作执行已由 `app/server/project-operations.mjs` 统一实现，覆盖事实读取、事实写入、事实派生、
   本机派生、revision 并发保护、项目复制/重命名生命周期和项目移动保护；媒体流在项目操作完成后发送；
 - 剧情文案和文字布局的服务端 PNG 预览。当前不合成或导出正式带字成品。
-- 当前项目的 SDXL／Illustrious 与 Anima LoRA 训练任务、不可变 run 快照、停止恢复、checkpoint
+- 当前项目的 Qwen-Image-2.1 LoRA 训练任务、不可变 run 快照、停止与续训、checkpoint
   标记、预览和比较矩阵；训练环境仍由 Agent 显式安装。
 
 ## 快速入口

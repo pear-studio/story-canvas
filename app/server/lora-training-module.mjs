@@ -9,7 +9,7 @@ const plan = planImplementation.createLoraTrainingPlanInterface(planImplementati
 const runtime = runtimeImplementation.createLoraTrainingRuntimeInterface(runtimeImplementation);
 const media = mediaImplementation.createLoraTrainingMediaInterface(mediaImplementation);
 
-export function createLoraTrainingCoordination({ isActive, freeze, startManifest }) {
+export function createLoraTrainingCoordination({ isActive, freeze, freezeResume, startManifest }) {
   let admission = false;
   return Object.freeze({
     startRun: async (projectRoot, projectDirectory, taskId, config, options = {}) => {
@@ -23,12 +23,24 @@ export function createLoraTrainingCoordination({ isActive, freeze, startManifest
         admission = false;
       }
     },
+    resumeRun: async (projectRoot, projectDirectory, taskId, runId, config, request = {}, options = {}) => {
+      if (admission || isActive()) throw new LoraTrainingError(409, "lora_training_active");
+      admission = true;
+      try {
+        const snapshot = await freezeResume(projectRoot, projectDirectory, taskId, runId, config, request);
+        const run = await startManifest(projectDirectory, snapshot.manifest, { projectId: options.projectId, mutateDerived: options.mutateDerived });
+        return { run, manifest: snapshot.manifest };
+      } finally {
+        admission = false;
+      }
+    },
   });
 }
 
 const coordination = createLoraTrainingCoordination({
   isActive: runtimeImplementation.hasActiveLoraTraining,
   freeze: plan.freeze,
+  freezeResume: plan.freezeResume,
   startManifest: runtime.startManifest,
 });
 

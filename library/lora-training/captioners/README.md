@@ -37,7 +37,7 @@ version 1 JSON 读取图片清单，并只向标准输出写入 Captioning 协�
     "captioning": {
       "id": "animetimm-eva02-db4-full",
       "version": "dbv4-full@onnx-a9c51fd22bca",
-      "command": "app/data.local/lora-training/sd-scripts/.venv/Scripts/python.exe",
+      "command": "app/data.local/material-tools/.venv/Scripts/python.exe",
       "args": [
         "app/scripts/lora-caption-anime-eva02.py",
         "--model",
@@ -70,5 +70,5 @@ ONNX Runtime GPU 包仍可能为模型中少量 shape 算子保留内部 CPU fal
 输出 Prompt 保留下划线，角色标签排在通用标签之前，各类别内按分数降序及标签名排序。
 `rating` 标签不进入 Prompt，但会连同类别、分数和实际阈值保存在 `raw_tags` 中，供工作台审查。
 
-这套输出服务当前 Anima 训练使用的 Danbooru 标签流程。项目不再按模型家族维护不同的 Caption
+这套输出是 Danbooru 标签流程的打标起点；当前 Qwen-Image-2.1 训练原样使用 Caption（标签或自然语言均可），不按模型家族维护不同的 Caption
 Profile，也不会自动改写 Caption；具体标签仍由用户或 Agent 在训练前审查。

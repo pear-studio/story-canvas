@@ -75,7 +75,7 @@ Agent 临时工作统一位于仓库根 `Saved/Agent/<任务名>/`，同一任�
 - `scenes/index.json` 保存场景顺序；各场景拆分 profile、visual 和 Prompt，与角色共用同一设定契约；
 - `lettering/settings.json` 统一保存项目字体、字号、文案框预设（角色对白/心理/NPC）和角色显示颜色；
   `lettering/dialogue-layouts.json` 只保存逐页对白位置与尺寸；旁白使用通栏字幕条（按页选顶部或底部），不保存布局；
-训练也是独立项目：`project.json` 保存素材组织，`assets/` 保存图片与 Caption，`captioning/` 保存审核事实，`settings.json` 保存唯一当前训练设置；这些内容进入该项目 Git。`Training/` 保存历史冻结输入和结果，`Saved/` 保存缓存及执行副本，均不入 Git。
+训练也是独立项目：`project.json` 保存素材组织，`assets/` 保存图片与 Caption，`captioning/` 保存审核事实，`settings.json` 保存唯一当前训练设置（Qwen-Image-2.1，version 5）；这些内容进入该项目 Git。`Training/` 保存历史冻结输入、恢复包和结果，`Saved/` 保存缓存及执行副本，均不入 Git。
 
 角色与场景 `*.prompt.json` 形状为 `{ prompt_name, variants }`：`prompt_name` 是编译输出的名称，
 创建时复制显示名称、之后独立；每个 `variants.<id>` 自包含一段自由文本 `text` 和有序
@@ -188,8 +188,9 @@ generation 保存完整冻结任务快照及实际提交的 workflow/extra_data/
 标为 unavailable。result 保存图片与 generation 的 SHA-256，清理前校验成果字节。
 
 比较实验保留 manifest、preflight、execution、result 摘要及每个 results/<cell-id>/ 的图片与生成记录。
-训练 run 保留 manifest、当时实际使用的 dataset/ 图片与 Caption、config/ 和 result.json。
-训练器在 runtime 的独立副本上写缓存；配置中的旧绝对路径是执行证据，归档文件以 run 相对路径读取。
+训练 run 在 `Training/<task-id>/<run-id>/` 保留 manifest、`inputs/` 冻结图片与 Caption、`resume/` 恢复包
+和 result.json；`Saved/Training/<task-id>/<run-id>/` 保存缓存、控制文件、status、事件与日志等可清理
+工作副本。归档 manifest 中的绝对路径是执行证据，不随本机配置变化重写。
 外部权重缺失只影响可用性，不擦除历史 checkpoint 清单。
 
 用户明确要清理时，先停止 Node 服务及其他项目写入者，再执行：

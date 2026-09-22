@@ -58,7 +58,7 @@ if (config) {
   );
   try {
     const environment = await readLoraTrainingEnvironment(projectRoot, config);
-    add("LoRA 训练环境", environment.available, environment.available ? `${environment.runtime.gpu}，sd-scripts ${environment.commit.slice(0, 8)}` : environment.checks.filter((check) => !check.ok).map((check) => check.message).join("；"));
+    add("LoRA 训练环境", environment.available, environment.available ? `${environment.runtime.gpu}，DiffSynth ${environment.commit.slice(0, 8)}` : environment.checks.filter((check) => !check.ok).map((check) => check.message).join("；"));
     const upscaler = environment.optional_capabilities?.upscaler ?? await readUpscaleModelStatus(projectRoot, config);
     add("图片超分模型（可选）", upscaler.ready, upscaler.message);
   } catch (error) {

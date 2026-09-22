@@ -8,6 +8,14 @@
     "sha256": "e4e40b3013746247310280eb0be42434f6f27c3eb004f7c0f60dd183088b1b33"
   },
   "architecture_family": "qwen-image-2-1",
+  "identity_files": [
+    { "file": "examples/qwen_image_21/model_training/train.py", "sha256": "d0bf9bac5f9941824c42ec9d13affc2a32ef01df6dc1479be3ed56e24a83deb4" },
+    { "file": "examples/qwen_image_21/model_training/lora/Qwen-Image-2.1.sh", "sha256": "50a8b5daa1cdada4117a7ba8a66ae8250d07eb65cf945a7985556523ea120964" },
+    { "file": "diffsynth/diffusion/runner.py", "sha256": "3139843474906974263517f29d7fc1a39d07f8544d32e9dd6ad56316b6adca7e" },
+    { "file": "diffsynth/diffusion/training_module.py", "sha256": "2f6c0690297e3c62778bb6458154681c51cd0b692937c38725b28eb96c14b86d" },
+    { "file": "diffsynth/diffusion/logger.py", "sha256": "0ceb6da846f43be4bae02ffe3cc7e9389ff62c3ac128b4def93bb29e25439cf3" },
+    { "file": "diffsynth/core/data/unified_dataset.py", "sha256": "80655f7fb4916ff2c5f51569166c932935d3646fe485ed50269d420ca93d39bb" }
+  ],
   "entry": "examples/qwen_image_21/model_training/train.py",
   "dependency_lock": "app/python/diffsynth.lock",
   "verification": "bf16-flex-forward-backward-100-step-training-and-comfy-int8-inference-passed",
@@ -17,5 +25,5 @@
     "torchvision": "0.28.0+cu130",
     "triton-windows": "3.7.1.post27"
   },
-  "notes": "2026-09-21 RTX 4090 24GB 完成 10 图、rank 16、最大 1MP、100 步技术验证及 15 张对照图；尚未接入工作台训练调度，不代表正式角色质量达标。"
+  "notes": "2026-09-21 RTX 4090 24GB 完成 10 图、rank 16、最大 1MP、100 步技术验证及 15 张对照图；尚未接入工作台训练调度，不代表正式角色质量达标。identity_files 是固定 commit 关键文件的内容指纹，用于无 git 历史的 zipball 安装核对训练器身份。"
 }

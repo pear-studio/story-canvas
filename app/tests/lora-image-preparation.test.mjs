@@ -11,7 +11,7 @@ import { preparationDecision, trainingImageTarget } from "../server/lora-image-p
 import { prepareTrainingImage } from "../server/lora-image-preparation.mjs";
 import { prepareLoraTrainingDataset, restoreLoraTrainingOriginal, previewLoraTrainingPostprocess, applyLoraTrainingPostprocess } from "../server/lora-training-media.mjs";
 import {  importLoraTrainingAssets, updateLoraTrainingDataset, readLoraTrainingDataset, createLoraTrainingTask } from "../server/lora-training-facts.mjs";
-import { preflightLoraTraining, createLoraTrainingDatasetToml } from "../server/lora-training-plan.mjs";
+import { preflightLoraTraining } from "../server/lora-training-plan.mjs";
 
 const png = (width, height, color = "#4678ab") => sharp({ create: { width, height, channels: 3, background: color } }).png().toBuffer();
 const model = { ready: true, sha256: "b".repeat(64) };
@@ -125,16 +125,11 @@ test("采用增强结果；禁用项跳过；失败项保留素材及 Caption", 
 
 test("训练预检要求准备完成，训练桶禁止二次放大", async t => {
   const { root, id } = await fixture(t);
-  const recipeDir = path.join(root, "library/lora-training/recipes");
-  await mkdir(recipeDir, { recursive: true });
-  await copyFile(new URL("../../library/lora-training/recipes/anima-character-r32-v1.json", import.meta.url), path.join(recipeDir, "anima-character-r32-v1.json"));
   const task = await createLoraTrainingTask(root, root, { name: "准备检查", dataset_id: id });
   const before = await preflightLoraTraining(root, root, task.id, {}, { skipEnvironment: true });
   assert.equal(before.blockers.filter(b => b.code === "training_image_unprepared").length, 2);
   await prepareLoraTrainingDataset(root, root, id, {}, scorer([70, 70]));
   const after = await preflightLoraTraining(root, root, task.id, {}, { skipEnvironment: true });
   assert.equal(after.blockers.some(b => b.code === "training_image_unprepared"), false);
-  const toml = createLoraTrainingDatasetToml(root, [], [], { resolution: 1024, train_batch_size: 1 });
-  assert.match(toml, /bucket_no_upscale = true/);
-  assert.match(toml, /bucket_reso_steps = 64/);
+  assert.ok(after.semantic_config.max_pixels >= 1024 * 1024, "Qwen 训练按最大像素数对齐，不再二次裁剪或放大");
 });

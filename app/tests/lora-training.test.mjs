@@ -3,12 +3,12 @@ import { registerProject } from "../server/project-registry.mjs";
 import { datasetRoot, taskRoot } from "../server/lora-training-support.mjs";
 import { createLoraTrainingDataset } from "./training-project-fixture.mjs";
 import { registerFixtureProjects } from "./project-registry-fixture.mjs";
-import { snapshotRun } from "../server/lora-training-plan.mjs";
+import { snapshotRun, resolveTrainerCommit } from "../server/lora-training-plan.mjs";
 import { updateRunStatus, readLoraTrainingRun } from "../server/lora-training-runtime.mjs";
 import { inventoryCheckpoints } from "../server/lora-training-run-index.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile, cp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -18,18 +18,15 @@ import { listLoraTrainingDatasets, listLoraTrainingTasks } from "../server/lora-
 
 import {
   chooseLoraUpscaleScale,
-  compileLoraTrainingArguments,
   copyLoraTrainingItem,
   previewLoraTrainingPostprocess,
   prepareLoraTrainingDataset,
   applyLoraTrainingPostprocess,
   restoreLoraTrainingOriginal,
-  
+
   createLoraTrainingTask,
-  effectiveTrainingConfig,
   executeLoraUpscale,
   importLoraTrainingAssets,
-  parseLoraTrainingLine,
   preflightLoraTraining,
   readLoraTrainingRunSettings,
   readLoraTrainingEnvironment,
@@ -64,18 +61,18 @@ async function fixture(context) {
   const project = path.join(root, "workspace", "test-project");
   await Promise.all([
     mkdir(path.join(project, "inputs"), { recursive: true }),
-    mkdir(path.join(root, "library", "lora-training", "recipes"), { recursive: true }),
     mkdir(path.join(root, "library", "render-profiles"), { recursive: true }),
     mkdir(path.join(root, "library", "prompt-policies"), { recursive: true }),
     mkdir(path.join(root, "library", "render-recipes"), { recursive: true }),
+    mkdir(path.join(root, "app", "python"), { recursive: true }),
   ]);
   await Promise.all([
     writeFile(path.join(project, "project.json"), JSON.stringify({ default_render_profile: "test" })),
     writeFile(path.join(root, "library", "render-profiles", "test.json"), JSON.stringify({})),
     writeFile(path.join(root, "library", "prompt-policies", "test-policy.json"), JSON.stringify({ family: "anima" })),
     writeFile(path.join(root, "library", "render-recipes", "test-candidate.json"), JSON.stringify({ clip_skip: null, sampler: "euler", scheduler: "simple", steps: 24, cfg: 4 })),
-    writeFile(path.join(root, "library", "lora-training", "trainer.json"), JSON.stringify({ reference_models: { anima: { dit: { relative_path: "diffusion_models/anima.safetensors", sha256: "1".repeat(64) }, text_encoder: { relative_path: "text_encoders/qwen.safetensors", sha256: "2".repeat(64) }, vae: { relative_path: "vae/qwen.safetensors", sha256: "3".repeat(64) } } } })),
-    writeFile(path.join(root, "library", "lora-training", "recipes", "anima-character-r32-v1.json"), JSON.stringify({ id: "anima-character-r32-v1", version: 1, name: "Anima 角色 LoRA", family: "anima", semantic_config: { resolution: 1024, effective_batch_size: 1, network_dim: 32, network_alpha: 16, learning_rate: 0.0001, optimizer_type: "AdamW8bit" } })),
+    writeFile(path.join(root, "app", "python", "qwen-image21-lora-runner.py"), "# 测试占位 runner；冻结只读取 sha256，不执行\n"),
+    cp(new URL("../../library/lora-training", import.meta.url), path.join(root, "library", "lora-training"), { recursive: true }),
   ]);
   context.after(() => rm(root, { recursive: true, force: true }));
   registerFixtureProjects(root); return { root, project };
@@ -112,16 +109,18 @@ test("迟到的 LoRA 进度不能覆盖退出或关闭终态", () => {
   );
 });
 
-test("训练项目使用 Anima，素材与当前设置共享项目身份", async (context) => {
+test("训练项目使用 Qwen-Image-2.1，素材与当前设置共享项目身份", async (context) => {
   const { root, project } = await fixture(context);
   const createdDataset = await createLoraTrainingDataset(project, { name: "制服素材", description: "制服训练素材", activation_terms: ["test_uniform"] });
   const createdTask = await createLoraTrainingTask(root, project, { name: "制服训练", dataset_id: createdDataset.id });
   assert.match(createdDataset.id, /^dataset-[a-f0-9]{12}$/);
   assert.equal(createdTask.id, createdDataset.id);
   assert.equal(createdTask.task.dataset_id, createdDataset.id);
-  assert.equal(createdTask.task.target.family, "anima");
-  assert.equal(createdTask.task.target.base.dit.sha256, JSON.parse(await readFile(new URL("../../library/lora-training/trainer.json", import.meta.url), "utf8")).reference_models.anima.dit.sha256);
-  assert.equal(createdTask.task.target.prompt_family, "anima");
+  assert.equal(createdTask.task.target.family, "qwen-image-2-1");
+  assert.equal(createdTask.task.target.base.dit.relative_path, "diffusion_models/qwen-image-2.1/");
+  assert.equal(createdTask.task.target.base.processor.relative_path, "text_encoders/qwen-image-2.1/processor/");
+  assert.equal(Object.hasOwn(createdTask.task.target.base.dit, "sha256"), false);
+  assert.equal(createdTask.task.target.prompt_family, "qwen");
   assert.equal(createdTask.task.target.usage_defaults.clip_skip, null);
   assert.equal(createdDataset.dataset.version, 5);
   assert.equal(createdDataset.dataset.description, "制服训练素材");
@@ -325,6 +324,28 @@ test("打标器环境诊断校验命令与模型文件身份", async (context) =
   assert.match(unavailable.captioning.message, /SHA-256/);
 });
 
+test("训练器身份：无 git 历史时按关键文件内容指纹核对", async (context) => {
+  const { root } = await fixture(context);
+  const trainerRoot = path.join(root, "trainer");
+  const files = ["examples/qwen_image_21/model_training/train.py", "diffsynth/diffusion/runner.py"];
+  const manifest = { commit: "c".repeat(40), identity_files: [] };
+  for (const file of files) {
+    const target = path.join(trainerRoot, file);
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, `# ${file}\n`);
+    manifest.identity_files.push({ file, sha256: createHash("sha256").update(`# ${file}\n`).digest("hex") });
+  }
+  const resolved = await resolveTrainerCommit(trainerRoot, manifest);
+  assert.equal(resolved.matches, true);
+  assert.equal(resolved.commit, manifest.commit);
+  await writeFile(path.join(trainerRoot, files[0]), "# 被篡改\n");
+  const tampered = await resolveTrainerCommit(trainerRoot, manifest);
+  assert.equal(tampered.matches, false);
+  assert.equal(tampered.commit, null);
+  const noIdentity = await resolveTrainerCommit(trainerRoot, { commit: "c".repeat(40) });
+  assert.equal(noIdentity.matches, false);
+});
+
 test("环境诊断缓存按依赖变化失效而不依赖时间", async (context) => {
   const { root } = await fixture(context);
   const captionerId = "fixture-cache-captioner";
@@ -398,14 +419,15 @@ test("方案统一保存全部参数，不从历史记录隐式覆盖，预检�
   const { root, project } = await fixture(context);
   const dataset = await createLoraTrainingDataset(project, { name: "角色素材" });
   const task = await createLoraTrainingTask(root, project, { name: "角色训练", dataset_id: dataset.id });
-  assert.equal(task.task.version, 4);
-  assert.equal(task.task.training_recipe.overrides.effective_batch_size, 1);
+  assert.equal(task.task.version, 5);
+  assert.deepEqual(task.task.training_recipe.overrides, { network_dim: 32, learning_rate: 0.0001, gradient_accumulation_steps: 1 });
 
   const settings = await readLoraTrainingRunSettings(root, project, task.id, {}, { skipEnvironment: true });
-  assert.equal(settings.semantic_config.effective_batch_size, 1);
-  assert.equal(settings.values.micro_batch_size, 1);
+  assert.equal(settings.semantic_config.gradient_accumulation_steps, 1);
+  assert.equal(settings.semantic_config.network_alpha, 32);
+  assert.equal(settings.semantic_config.micro_batch_size, 1);
   assert.equal(settings.values.gradient_accumulation_steps, 1);
-  assert.equal(settings.values.max_train_steps, 400);
+  assert.equal(settings.values.max_train_steps, 2000);
   assert.equal(task.task.run_defaults.gradient_accumulation_steps, undefined);
 
   const runId = "run-777777777777";
@@ -421,7 +443,7 @@ test("方案统一保存全部参数，不从历史记录隐式覆盖，预检�
       task_name: task.task.name,
       dataset_name: dataset.dataset.name,
       family: "anima",
-      prompt_family: task.task.target.prompt_family,
+      prompt_family: "anima",
       usage_defaults: task.task.target.usage_defaults,
       description: dataset.dataset.description,
       activation_terms: dataset.dataset.activation_terms,
@@ -429,16 +451,14 @@ test("方案统一保存全部参数，不从历史记录隐式覆盖，预检�
       groups: [],
       models: [
         { kind: "dit", relative_path: "diffusion_models/anima.safetensors", sha256: "1".repeat(64), size_bytes: 1, source: null },
-        { kind: "text_encoder", relative_path: "text_encoders/qwen.safetensors", sha256: "2".repeat(64), size_bytes: 1, source: null },
-        { kind: "vae", relative_path: "vae/qwen.safetensors", sha256: "3".repeat(64), size_bytes: 1, source: null },
       ],
       trainer: { sd_scripts_commit: "test", python: "3.11", torch: "2.0", cuda: "12.8", accelerate: "1.10.0", gpu: "Test GPU", vram_bytes: 12 * 1024 ** 3 },
       recipe: { id: "anima-character-r32-v1", version: 1, sha256: "a".repeat(64), overrides: {} },
       semantic_config: { resolution: 1024, effective_batch_size: 1, network_dim: 32, network_alpha: 16, learning_rate: 0.0001, optimizer_type: "AdamW8bit" },
       experiment: { max_train_steps: 1800, save_every_n_steps: 300, seed: settings.values.seed },
-      execution_config: { micro_batch_size: settings.values.micro_batch_size, gradient_accumulation_steps: settings.values.gradient_accumulation_steps, effective_batch_size: 1, max_data_loader_n_workers: settings.values.max_data_loader_n_workers, blocks_to_swap: settings.values.blocks_to_swap },
-      run_settings: { ...settings.values, max_train_steps: 1800, save_every_n_steps: 300, note: "降低学习率对照" },
-      config: { resolution: 1024, max_train_steps: 1800, train_batch_size: settings.values.micro_batch_size, network_dim: 32, network_alpha: 16, learning_rate: 0.0001, optimizer_type: "AdamW8bit", save_every_n_steps: 300, seed: settings.values.seed, gradient_accumulation_steps: settings.values.gradient_accumulation_steps, max_data_loader_n_workers: settings.values.max_data_loader_n_workers, blocks_to_swap: settings.values.blocks_to_swap },
+      execution_config: { micro_batch_size: 1, gradient_accumulation_steps: 1, effective_batch_size: 1, max_data_loader_n_workers: 2, blocks_to_swap: 4 },
+      run_settings: { max_train_steps: 1800, save_every_n_steps: 300, seed: settings.values.seed, micro_batch_size: 1, gradient_accumulation_steps: 1, max_data_loader_n_workers: 2, blocks_to_swap: 4, note: "降低学习率对照" },
+      config: { resolution: 1024, max_train_steps: 1800, train_batch_size: 1, network_dim: 32, network_alpha: 16, learning_rate: 0.0001, optimizer_type: "AdamW8bit", save_every_n_steps: 300, seed: settings.values.seed, gradient_accumulation_steps: 1, max_data_loader_n_workers: 2, blocks_to_swap: 4 },
       dataset_toml_sha256: "b".repeat(64),
       execution: { executable: "trainer.exe", argv: ["trainer.py"] },
       seed: settings.values.seed,
@@ -447,33 +467,38 @@ test("方案统一保存全部参数，不从历史记录隐式覆盖，预检�
     writeFile(path.join(runDirectory, "result.json"), JSON.stringify({ version: 1, status: "completed", checkpoints: [] })),
   ]);
   const withLastRun = await readLoraTrainingRunSettings(root, project, task.id, {}, { skipEnvironment: true });
-  assert.equal(withLastRun.values.max_train_steps, 400);
+  assert.equal(withLastRun.values.max_train_steps, 2000);
   assert.equal(withLastRun.last_run.config.max_train_steps, 1800);
   assert.equal(withLastRun.values.note, undefined);
   const otherTask = await createLoraTrainingTask(root, project, { name: "独立方案", dataset_id: dataset.id });
   const otherSettings = await readLoraTrainingRunSettings(root, project, otherTask.id, {}, { skipEnvironment: true });
   assert.equal(otherTask.id, task.id);
   assert.equal(otherSettings.last_run.id, runId);
-  assert.equal((await listLoraTrainingTasks(project)).tasks[0].id, task.id);
-  assert.equal(otherSettings.values.max_train_steps, 400);
+  const listedTasks = (await listLoraTrainingTasks(project)).tasks;
+  assert.equal(listedTasks[0].id, task.id);
+  assert.equal(listedTasks[0].runs[0].legacy, true, "v4 Anima 历史 run 只读展示并明确标记");
+  assert.equal(listedTasks[0].runs[0].resumable, false);
+  assert.equal(otherSettings.values.max_train_steps, 2000);
   assert.equal((await readLoraTrainingTask(project, task.id)).runs[0].manifest.run_settings.note, "降低学习率对照");
 
   const mismatch = { ...settings.values, gradient_accumulation_steps: 2 };
   const preflight = await preflightLoraTraining(root, project, task.id, {}, { skipEnvironment: true, runSettings: mismatch });
   assert.ok(preflight.blockers.some((blocker) => blocker.code === "unsaved_lora_training_settings"));
-  const edited = { ...task.task, run_defaults: { ...task.task.run_defaults, max_train_steps: 600, seed: 42 }, training_recipe: { ...task.task.training_recipe, overrides: { ...task.task.training_recipe.overrides, effective_batch_size: 4 } } };
+  const edited = { ...task.task, run_defaults: { ...task.task.run_defaults, max_train_steps: 3000, seed: 7 }, training_recipe: { ...task.task.training_recipe, overrides: { ...task.task.training_recipe.overrides, gradient_accumulation_steps: 4 } } };
   await updateLoraTrainingTask(root, project, task.id, edited);
   const reloaded = await readLoraTrainingRunSettings(root, project, task.id, {}, { skipEnvironment: true });
-  assert.equal(reloaded.values.max_train_steps, 600);
-  assert.equal(reloaded.values.seed, 42);
+  assert.equal(reloaded.values.max_train_steps, 3000);
+  assert.equal(reloaded.values.seed, 7);
   assert.equal(reloaded.values.gradient_accumulation_steps, 4);
   assert.equal(reloaded.last_run.config.max_train_steps, 1800);
   await assert.rejects(updateLoraTrainingTask(root, project, task.id, { ...edited, run_defaults: { ...edited.run_defaults, micro_batch_size: 3 } }), { code: "invalid_lora_training_task" });
   await assert.rejects(updateLoraTrainingTask(root, project, task.id, { ...edited, run_defaults: { ...edited.run_defaults, note: "不应保存" } }), { code: "invalid_lora_training_task" });
+  await assert.rejects(updateLoraTrainingTask(root, project, task.id, { ...edited, target: { ...edited.target, base: { ...edited.target.base, dit: { relative_path: "diffusion_models/qwen-image-2.1/", sha256: "1".repeat(64) } } } }), { code: "invalid_lora_training_task" });
   const invalidManifest = JSON.parse(await readFile(path.join(runDirectory, "manifest.json"), "utf8"));
   delete invalidManifest.execution;
   await writeFile(path.join(runDirectory, "manifest.json"), JSON.stringify(invalidManifest));
-  await assert.rejects(() => readLoraTrainingTask(project, task.id), (error) => error.code === "invalid_lora_training_run_manifest");
+  const withBrokenHistory = await readLoraTrainingTask(project, task.id);
+  assert.equal(withBrokenHistory.runs[0].legacy, true, "无法解析的历史 manifest 只读降级，不影响列表");
 });
 
 test("服务恢复会把遗留的 Anima running run 终结为中断", async (context) => {
@@ -510,10 +535,10 @@ test("服务恢复会把遗留的 Anima running run 终结为中断", async (con
   ]);
 
   const recovered = await recoverLoraTrainingRuns(root);
-  assert.deepEqual(recovered, [{ task_id: taskId, run_id: runId, verified: null, process_found: false }]);
+  assert.deepEqual(recovered, [{ task_id: taskId, run_id: runId, verified: false, process_found: false, legacy_manifest: true }]);
   const status = JSON.parse(await readFile(path.join(runDirectory, "status.json"), "utf8"));
   assert.equal(status.status, "interrupted");
-  assert.equal(status.recovery, "process_missing");
+  assert.equal(status.recovery, "legacy_manifest");
   const broken = runRoot(root, taskId, "run-aaaaaaaaaaaa");
   await mkdir(broken, { recursive: true });
   await writeFile(path.join(broken, "manifest.json"), "{broken");
@@ -902,29 +927,26 @@ test("训练预检不按分组图片数量产生警告", async (context) => {
 
   const preflight = await preflightLoraTraining(root, project, task.id, { models_root: modelsRoot }, { skipEnvironment: true });
   assert.equal(preflight.warnings.some((warning) => warning.code === "group_target_count_deviation"), false);
-  assert.deepEqual(preflight.warnings.map(({ code }) => code), ["anima_low_vram", "anima_license"]);
+  assert.deepEqual(preflight.warnings.map(({ code }) => code), []);
+  assert.ok(preflight.blockers.some((blocker) => blocker.code === "model_missing"), "模型逐文件校验列出缺失文件");
+  assert.equal(preflight.blockers.filter((blocker) => blocker.code === "model_missing").length, 22);
 });
 
-test("CLI 参数只由结构化字段编译，Anima 使用官方入口参数并写入备份元数据", () => {
-  const config = { max_train_steps: 10, train_batch_size: 1, gradient_accumulation_steps: 1, network_dim: 16, network_alpha: 8, learning_rate: 0.0001, optimizer_type: "AdamW8bit", seed: 1, save_every_n_steps: 5, max_data_loader_n_workers: 1, blocks_to_swap: 4 };
-  const compiled = compileLoraTrainingArguments({ trainerRoot: "C:/trainer", python: "C:/python.exe", runDirectory: "D:/run-safe", models: { dit: { path: "D:/models/anima.safetensors" }, text_encoder: { path: "D:/models/qwen.safetensors" }, vae: { path: "D:/models/vae.safetensors" } }, config, datasetConfig: "D:/run-safe/config/dataset.toml", metadata: { title: "制服", description: "固定设计", tags: "test_uniform", trigger_phrase: "test_uniform", author: "StoryCanvas" } });
-  assert.equal(compiled.executable, "C:/python.exe");
-  assert.equal(compiled.argv[0], path.join("C:/trainer", "anima_train_network.py"));
-  assert.deepEqual(compiled.argv.slice(compiled.argv.indexOf("--pretrained_model_name_or_path"), compiled.argv.indexOf("--pretrained_model_name_or_path") + 2), ["--pretrained_model_name_or_path", "D:/models/anima.safetensors"]);
-  assert.ok(compiled.argv.includes("--qwen3"));
-  assert.ok(compiled.argv.includes("networks.lora_anima"));
-  assert.equal(compiled.argv.some(value => value.startsWith("--sample_")), false, "训练参数不再包含预览采样");
-  assert.deepEqual(compiled.argv.slice(compiled.argv.indexOf("--save_every_n_steps"), compiled.argv.indexOf("--save_every_n_steps") + 2), ["--save_every_n_steps", "5"]);
-  assert.deepEqual(compiled.argv.slice(compiled.argv.indexOf("--metadata_title"), compiled.argv.indexOf("--metadata_title") + 2), ["--metadata_title", "制服"]);
-  assert.deepEqual(compiled.argv.slice(compiled.argv.indexOf("--metadata_tags"), compiled.argv.indexOf("--metadata_tags") + 2), ["--metadata_tags", "test_uniform"]);
-  assert.deepEqual(compiled.argv.slice(compiled.argv.indexOf("--metadata_trigger_phrase"), compiled.argv.indexOf("--metadata_trigger_phrase") + 2), ["--metadata_trigger_phrase", "test_uniform"]);
-  assert.equal(compiled.argv.some((value) => value.includes("&&") || value.includes(";")), false);
-});
-
-test("训练日志只把实际进度当作 step，不误读百分比", () => {
-  assert.deepEqual(parseLoraTrainingLine("steps:  64%|██████▍   | 1/1 [00:05<00:00, 5.01s/it, avr_loss=0.114]"), { step: 1, loss: 0.114 });
-  assert.deepEqual(parseLoraTrainingLine("global_step = 300 loss=0.042"), { step: 300, loss: 0.042 });
-  assert.deepEqual(parseLoraTrainingLine("bucket 0: resolution (384, 640), count: 1"), { step: null, loss: null });
+test("模型清单按 base 目录前缀归属，前缀不匹配时明确阻断", async (context) => {
+  const { root, project } = await fixture(context);
+  const modelsRoot = path.join(root, "models");
+  const dataset = await createLoraTrainingDataset(project, { name: "模型归属" });
+  await importLoraTrainingAssets(project, dataset.id, {
+    group_id: dataset.dataset.groups[0].id,
+    files: [{ filename: "subject.png", buffer: await imageBuffer(), caption: "subject", asset_id: "subject-001" }],
+  });
+  const task = await createLoraTrainingTask(root, project, { name: "模型归属任务", dataset_id: dataset.id });
+  const edited = structuredClone(task.task);
+  edited.target.base.dit = { relative_path: "diffusion_models/other-model/" };
+  await updateLoraTrainingTask(root, project, task.id, edited);
+  const preflight = await preflightLoraTraining(root, project, task.id, { models_root: modelsRoot }, { skipEnvironment: true });
+  assert.ok(preflight.blockers.some((blocker) => blocker.code === "model_kind_unmapped" && blocker.model === "dit"));
+  assert.equal(preflight.blockers.some((blocker) => blocker.code === "model_kind_unmapped" && blocker.model === "processor"), false, "processor 前缀嵌套在 text_encoder 内，须正确归属");
 });
 
 test("公开 LoRA 记录与本地训练记录统一读取，并保留预览来源和 NSFW 级别", async (t) => {
@@ -1011,18 +1033,26 @@ test("训练冻结保留独立图片Caption副本，终态结果不依赖runtime
   await importLoraTrainingAssets(project, dataset.id, { group_id: dataset.dataset.groups[0].id, files: [{ filename: "look.png", buffer: bytes, caption: "standing" }] });
   const settings = await readLoraTrainingRunSettings(root, project, task.id, {}, { skipEnvironment: true });
   const preflight = await preflightLoraTraining(root, project, task.id, {}, { skipEnvironment: true, runSettings: settings.values });
-  preflight.environment = { trainer_root: root, python: "python", commit: "test", runtime: { python: "3.11", torch: "2.0", cuda: "12.8", accelerate: "1.0", gpu: "test", vram_bytes: 12 * 1024 ** 3 } };
-  preflight.models = preflight.models.map(model => ({ ...model, sha256: model.identity.sha256, size: 1 }));
+  preflight.environment = { trainer_root: root, python: "python", commit: "c".repeat(40), runtime: { python: "3.11", torch: "2.13", gpu: "test", vram_bytes: 24 * 1024 ** 3 } };
+  preflight.models = ["dit", "text_encoder", "vae", "processor"].map((kind, index) => ({ kind, label: kind, identity: { relative_path: `models/${kind}.safetensors`, source: null }, path: null, exists: true, sha256: String(index + 1).repeat(64), size: 100 + index, matches: true }));
   const frozen = await snapshotRun(root, project, task.id, { models_root: path.join(root, "models") }, preflight);
   const archive = generatedRunRoot(project, task.id, frozen.runId);
   const item = frozen.manifest.items[0];
-  const frozenCaption = await readFile(path.join(archive, item.caption_file));
-  assert.deepEqual(await readFile(path.join(archive, item.image_file)), bytes);
-  await writeFile(path.join(frozen.runDirectory, item.caption_file), "working copy changed");
-  await writeFile(path.join(frozen.runDirectory, "dataset", "latent.npz"), "runtime cache");
-  assert.deepEqual(await readFile(path.join(archive, item.caption_file)), frozenCaption);
-  assert.equal(Object.hasOwn(frozen.manifest, "preview_prompts"), false);
-  assert.equal((await readdir(path.join(frozen.runDirectory, "config"))).includes("sample-prompts.txt"), false);
+  assert.equal(frozen.manifest.version, 5);
+  assert.equal(frozen.manifest.family, "qwen-image-2-1");
+  assert.deepEqual(frozen.manifest.sampling.weights, [{ item_id: item.item_id, weight: 1 }]);
+  assert.equal(frozen.manifest.resume, null);
+  assert.equal(frozen.manifest.execution.executable, "python");
+  assert.deepEqual(frozen.manifest.execution.argv, [path.join(root, "app", "python", "qwen-image21-lora-runner.py"), "--manifest", path.join(archive, "manifest.json")]);
+  assert.equal(frozen.manifest.trainer.diffsynth_commit, "c".repeat(40));
+  assert.match(frozen.manifest.trainer.runner.sha256, /^[0-9a-f]{64}$/);
+  assert.equal(frozen.manifest.semantic_config.lora_target_modules.length, 224);
+  assert.ok(path.isAbsolute(frozen.manifest.paths.cache_dir));
+  assert.equal(frozen.manifest.paths.archive_dir, archive);
+  const frozenCaption = await readFile(path.join(frozen.manifest.paths.inputs_dir, item.caption_file));
+  assert.deepEqual(await readFile(path.join(frozen.manifest.paths.inputs_dir, item.image_file)), bytes);
+  await writeFile(path.join(frozen.runDirectory, "cache", "latent.pth"), "runtime cache");
+  assert.deepEqual(await readFile(path.join(frozen.manifest.paths.inputs_dir, item.caption_file)), frozenCaption);
   const terminal = await updateRunStatus(frozen.runDirectory, { status: "completed", completed_at: new Date().toISOString(), checkpoints: [{ id: "checkpoint-aaaaaaaaaaaa", file: "missing.safetensors", sha256: "a".repeat(64), size: 10, step: 2 }] });
   await rm(path.join(datasetRoot(project, dataset.id), "Saved"), { recursive: true });
   const result = await readLoraTrainingRun(project, task.id, frozen.runId);
@@ -1030,7 +1060,7 @@ test("训练冻结保留独立图片Caption副本，终态结果不依赖runtime
   assert.equal(result.status.checkpoints[0].sha256, "a".repeat(64));
   assert.equal(result.status.checkpoints[0].available, false);
   assert.equal(result.manifest.items[0].caption_sha256, createHash("sha256").update(frozenCaption).digest("hex"));
-  await assert.rejects(readFile(path.join(archive, "dataset", "latent.npz")), { code: "ENOENT" });
+  await assert.rejects(readFile(path.join(archive, "cache", "latent.pth")), { code: "ENOENT" });
   assert.deepEqual(result.status, terminal);
 });
 

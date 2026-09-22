@@ -105,18 +105,19 @@ export async function createLoraTrainingTask(projectRoot, projectDirectory, inpu
   const id = datasetId;
   if (await exists(path.join(taskRoot(projectDirectory, id), "settings.json"))) return readLoraTrainingTask(projectDirectory, id);
   const { dataset } = await requireDataset(projectDirectory, datasetId);
-  if (input?.target?.family && input.target.family !== "anima") throw new LoraTrainingError(422, "unsupported_lora_training_family");
-  const family = "anima";
-  const trainerManifest = await readJson(path.join(projectRoot, "library", "lora-training", "trainer.json"), { optional: true });
-  const referenceBase = trainerManifest?.reference_models?.[family];
+  if (input?.target?.family && input.target.family !== "qwen-image-2-1") throw new LoraTrainingError(422, "unsupported_lora_training_family");
+  const family = "qwen-image-2-1";
+  // 默认底模为官方 BF16 目录前缀；逐文件身份以 library/lora-training/qwen-image21-models.json 为准。
+  const qwenSource = "https://huggingface.co/Qwen/Qwen-Image-2.1";
   const defaultTarget = {
-    family: "anima",
-    prompt_family: "anima",
-    usage_defaults: { clip_skip: null, sampler: "euler", scheduler: "simple", steps: 24, cfg: 4 },
-    base: referenceBase ? Object.fromEntries(["dit", "text_encoder", "vae", "llm_adapter"].filter((key) => referenceBase[key]).map((key) => [key, referenceBase[key]])) : {
-      dit: { relative_path: "diffusion_models/anima-base-v1.0.safetensors" },
-      text_encoder: { relative_path: "text_encoders/qwen_3_06b_base.safetensors" },
-      vae: { relative_path: "vae/qwen_image_vae.safetensors" },
+    family,
+    prompt_family: "qwen",
+    usage_defaults: { clip_skip: null, sampler: "euler", scheduler: "simple", steps: 25, cfg: 1 },
+    base: {
+      dit: { relative_path: "diffusion_models/qwen-image-2.1/", source: qwenSource },
+      text_encoder: { relative_path: "text_encoders/qwen-image-2.1/", source: qwenSource },
+      vae: { relative_path: "vae/qwen-image-2.1/", source: qwenSource },
+      processor: { relative_path: "text_encoders/qwen-image-2.1/processor/", source: qwenSource },
     },
   };
   const target = {
@@ -125,12 +126,12 @@ export async function createLoraTrainingTask(projectRoot, projectDirectory, inpu
     usage_defaults: { ...defaultTarget.usage_defaults, ...(isRecord(input?.target?.usage_defaults) ? input.target.usage_defaults : {}) },
     base: input?.target?.base ?? defaultTarget.base,
   };
-  const recipeId = typeof input.recipe_id === "string" ? input.recipe_id : "anima-character-r32-v1";
+  const recipeId = typeof input.recipe_id === "string" ? input.recipe_id : "qwen-image21-lora-v1";
   const recipe = await readLoraTrainingRecipe(projectRoot, recipeId);
   if (!recipe || recipe.family !== family) throw new LoraTrainingError(422, "invalid_training_recipe");
   const task = {
-    version: 4,
-    name: String(input.name ?? `${dataset.name} · Anima`).trim() || `${dataset.name} · Anima`,
+    version: 5,
+    name: String(input.name ?? `${dataset.name} · Qwen-Image-2.1`).trim() || `${dataset.name} · Qwen-Image-2.1`,
     dataset_id: datasetId,
     target,
     training_recipe: { id: recipeId, overrides: Object.fromEntries(Object.keys(support.loraTrainingOverrideDefinitions).map(key => [key, recipe.semantic_config[key]])) },
@@ -273,7 +274,7 @@ export async function listLoraTrainingTasks(projectDirectory) {
     if (!entry.available) continue;
     const detail = await readLoraTrainingTask(projectDirectory, entry.id).catch((error) => ({ id: entry.id, error: error.code ?? "invalid_lora_training_task" }));
     if (detail.error) tasks.push(detail);
-    else tasks.push({ id: detail.id, name: detail.task.name, family: detail.task.target.family, dataset: detail.dataset, runs: detail.runs.map(({ id, status: value, manifest, disk_bytes }) => ({ id, status: value.status, step: value.step ?? 0, created_at: manifest.created_at, disk_bytes })) });
+    else tasks.push({ id: detail.id, name: detail.task.name, family: detail.task.target.family, dataset: detail.dataset, runs: detail.runs.map(({ id, status: value, created_at, legacy, legacy_note, resumable, disk_bytes }) => ({ id, status: value.status, step: value.step ?? 0, created_at, ...(legacy ? { legacy, legacy_note } : {}), resumable: Boolean(resumable), disk_bytes })) });
   }
   tasks.sort((left, right) => {
     const latest = task => (task.runs ?? []).reduce((date, run) => run.created_at > date ? run.created_at : date, "");
@@ -295,7 +296,7 @@ export async function updateLoraTrainingTask(projectRoot, projectDirectory, task
   if (!taskFileInfo) throw new LoraTrainingError(404, "lora_training_task_not_found");
   if (!taskFileInfo.isFile() || taskFileInfo.isSymbolicLink()) throw new LoraTrainingError(422, "unsafe_lora_training_task_storage");
   if (value.dataset_id !== taskId) throw new LoraTrainingError(422, "training_project_dataset_fixed");
-  const next = { ...value, version: 4 };
+  const next = { ...value, version: 5 };
   const errors = validateLoraTrainingTask(next);
   if (errors.length) throw new LoraTrainingError(422, "invalid_lora_training_task", errors);
   const recipe = await readLoraTrainingRecipe(projectRoot, next.training_recipe.id);

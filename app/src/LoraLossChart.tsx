@@ -9,7 +9,8 @@ export function LoraLossChart({ history, log, active }: { history?: LossPoint[];
     return collected.current;
   }, [history, log]);
   const [hover, setHover] = useState<number | null>(null);
-  const [autoRange, setAutoRange] = useState(false);
+  // 默认自动范围：Qwen 的 loss 量级与旧路线不同，固定 0–0.2 会裁掉曲线。
+  const [autoRange, setAutoRange] = useState(true);
   const clipId = useId();
   const width = 900, height = 240, left = 65, right = 20, top = 20, bottom = 35;
   const maxStep = Math.max(1, points.at(-1)?.step ?? 1);
@@ -25,7 +26,7 @@ export function LoraLossChart({ history, log, active }: { history?: LossPoint[];
   const selected = hover === null ? points.at(-1) : points.reduce<LossPoint | undefined>((best, point) => !best || Math.abs(point.step - hover) < Math.abs(best.step - hover) ? point : best, undefined);
   return <section className="lora-loss-chart" aria-label="训练 loss 曲线">
     <div className="lora-loss-heading"><b>Loss 曲线</b><span>{active ? "实时更新 · " : ""}avr_loss{selected ? ` · Step ${selected.step}：${selected.loss.toFixed(4)}` : ""}</span></div>
-    <div className="lora-loss-range"><label>纵轴范围 <select value={autoRange ? "auto" : "fixed"} onChange={event => setAutoRange(event.target.value === "auto")}><option value="fixed">固定 0–0.2</option><option value="auto">自动范围</option></select></label>{outsideRange > 0 && <span>{outsideRange} 个数据点超出范围，可切换自动范围查看。</span>}</div>
+    <div className="lora-loss-range"><label>纵轴范围 <select value={autoRange ? "auto" : "fixed"} onChange={event => setAutoRange(event.target.value === "auto")}><option value="auto">自动范围</option><option value="fixed">固定 0–0.2</option></select></label>{!autoRange && outsideRange > 0 && <span>{outsideRange} 个数据点超出范围，可切换自动范围查看。</span>}</div>
     {points.length ? <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Loss 随 step 变化，${points.length} 个数据点`} onPointerLeave={() => setHover(null)} onPointerMove={event => {
       const rect = event.currentTarget.getBoundingClientRect();
       setHover(((event.clientX - rect.left) / rect.width * width - left) / (width - left - right) * maxStep);

@@ -14,6 +14,44 @@ before(async () => {
 });
 after(async () => { await browser?.close(); await server?.close(); });
 
+// v5（Qwen-Image-2.1）训练契约 mock：训练记录/任务详情接口的最小有效形状。
+function qwenTaskMock(id, name) {
+  return {
+    version: 5,
+    name,
+    dataset_id: id,
+    target: {
+      family: "qwen-image-2-1",
+      base: {
+        dit: { relative_path: "qwen-image-2-1/dit/model.safetensors" },
+        text_encoder: { relative_path: "qwen-image-2-1/text_encoder/model.safetensors" },
+        vae: { relative_path: "qwen-image-2-1/vae/model.safetensors" },
+        processor: { relative_path: "qwen-image-2-1/processor" },
+      },
+      prompt_family: "qwen-image",
+      usage_defaults: { clip_skip: null, sampler: "euler", scheduler: "simple", steps: 20, cfg: 4 },
+    },
+    training_recipe: { id: "qwen-image21-lora-v1", overrides: { network_dim: 32, learning_rate: 0.0001, gradient_accumulation_steps: 1 } },
+    run_defaults: { max_train_steps: 2000, save_every_n_steps: 500, seed: 42 },
+  };
+}
+
+function qwenRunSettingsMock(task) {
+  return {
+    recipe: { id: "qwen-image21-lora-v1", version: 1, name: "Qwen Rank 32" },
+    semantic_config: {
+      max_pixels: 1048576, network_dim: 32, network_alpha: 32, learning_rate: 0.0001,
+      gradient_accumulation_steps: 1, micro_batch_size: 1,
+      optimizer: { type: "AdamW", betas: [0.9, 0.999], eps: 1e-8, weight_decay: 0.01 },
+      scheduler: { type: "ConstantLR", factor: 1 / 3, total_iters: 5 },
+      precision: { base: "bf16", lora: "bf16", optimizer_state: "bf16" },
+      gradient_checkpointing: true, lora_target_modules: ["transformer_blocks.0.attn.to_q"],
+    },
+    values: { ...task.run_defaults, gradient_accumulation_steps: task.training_recipe.overrides.gradient_accumulation_steps },
+    last_run: null,
+  };
+}
+
 async function setup(t, { character = false, mobile = false, visualPages = false, longStory = false } = {}) {
   const page = await browser.newPage({ viewport: mobile ? { width: 390, height: 844 } : { width: 1500, height: 1000 }, hasTouch: mobile });
   page.setDefaultTimeout(8000);
@@ -116,8 +154,8 @@ test("没有项目也能直达训练，刷新与资源切换不要求项目事�
   await page.goto(`${origin}/?tab=lora-datasets`);
   await page.getByRole('heading', { name: '暂无数据集', exact: true }).waitFor();
   await page.locator('.lora-dataset-nav-heading').click({ button: 'right' });
-  await page.getByRole('menuitem', { name: '新增数据集', exact: true }).click();
-  await page.getByRole('heading', { name: '新建数据集', exact: true }).waitFor();
+  await page.getByRole('menuitem', { name: '新增训练项目', exact: true }).click();
+  await page.getByRole('heading', { name: '新建训练项目', exact: true }).waitFor();
   await page.locator('.lora-create-card').getByRole('button', { name: '取消', exact: true }).click();
   await page.reload();
   await page.getByRole('heading', { name: '暂无数据集', exact: true }).waitFor();
@@ -133,6 +171,12 @@ test("数据集导航切换保持选择且不会反复加载", async t => {
     const id = new URL(route.request().url()).pathname.split('/').at(-1);
     requests.push(id);
     return route.fulfill({ json: { id, dataset: { version: 5, name: datasets.find(item => item.id === id).name, description: '', activation_terms: [], groups: [], items: [] }, items: [], captioning: { version: 1, latest: null, summary: { total: 0, with_base: 0, confirmed: 0, unconfirmed: 0 }, items: [] } } });
+  });
+  // 选中数据集会连带加载同 id 的训练设置；提供 v5 契约响应，避免 404 错误弹窗遮挡导航。
+  await page.route('**/api/lora-training/tasks/*/run-settings', route => route.fulfill({ json: qwenRunSettingsMock(qwenTaskMock('dataset-a', '数据集a')) }));
+  await page.route('**/api/lora-training/tasks/*', route => {
+    const id = new URL(route.request().url()).pathname.split('/').at(-1);
+    return route.fulfill({ json: { id, task: qwenTaskMock(id, `数据集${id.at(-1)}`), dataset: { id, name: `数据集${id.at(-1)}`, activation_terms: [], item_count: 0, enabled_item_count: 0, effective_item_count: 0 }, runs: [] } });
   });
   await page.goto(`${origin}/?tab=lora-datasets`);
   const name = page.getByRole('textbox', { name: '名称', exact: true });
@@ -330,7 +374,7 @@ test("同角色切换子设定保留共享草稿不提示放弃，离开角色�
   await page.getByRole('heading', { name: '基本信息', exact: true }).waitFor();
 });
 
-test("Ctrl+S 保存包含词条输入框中未提交的草稿", async t => {
+test("Ctrl+S 保存包含本页 Prompt 文本框中未保存的草稿", async t => {
   const { page } = await setup(t);
   const saves = [];
   await page.route("**/api/projects/*/workbench/page-save", route => {
@@ -338,13 +382,13 @@ test("Ctrl+S 保存包含词条输入框中未提交的草稿", async t => {
     saves.push(body);
     return route.fulfill({ json: { content: body.content, content_sha256: "saved-content", prompt: body.prompt, prompt_sha256: "d".repeat(64), lettering: { page: body.page_key.page_id, items: body.lettering.items }, layout_sha256: "saved-layout" }, headers: { "x-story-canvas-revision": "2" } });
   });
-  await page.getByRole("button", { name: "＋ 场景", exact: true }).click();
-  const input = page.getByRole("combobox", { name: "场景第 1 项 Prompt" });
+  const input = page.getByRole("textbox", { name: "本页 Prompt", exact: true });
+  await input.waitFor();
   await input.fill("a lamp by the window");
   await input.press("Control+s");
   await page.getByText("文案与布局已保存", { exact: true }).waitFor();
   assert.equal(saves.length, 1, "Ctrl+S 应触发一次 Prompt 保存");
-  assert.equal(saves[0].prompt.setting[0].tag, "a lamp by the window", "保存内容应包含未提交草稿");
+  assert.equal(saves[0].prompt.text, "a lamp by the window", "保存内容应包含未保存草稿");
 });
 
 test("分区浏览不离开草稿，搜索实际打开页面并同步目录和前后历史", async t => {
@@ -408,13 +452,14 @@ test("跳转项目嵌字样式后返回恢复页内标签，后退取消保留�
 test("迟到的训练进度保留任务草稿及其保存版本", async t => {
   const { page } = await setup(t);
   const id = "lora-123456abcdef";
-  const task = { version: 3, name: "原任务", dataset_id: "dataset-123456abcdef", target: { base: { dit: { relative_path: "anima.safetensors" } } }, training_recipe: { id: "recipe", overrides: { effective_batch_size: 1 } }, run_defaults: { micro_batch_size: 1, max_train_steps: 800, save_every_n_steps: 100 } };
-  const detail = { id, task, dataset: { name: "素材", effective_item_count: 1 }, runs: [{ id: "run", manifest: { task_id: id, task_name: task.name, dataset_name: "素材", created_at: "2026-09-18T00:00:00Z", config: { max_train_steps: 800 } }, status: { status: "running", step: 1 }, disk_bytes: 0 }] };
+  const task = qwenTaskMock(id, "原任务");
+  const runningRun = { id: "run-aaaaaaaaaaaa", created_at: "2026-09-18T00:00:00Z", manifest: { task_id: id, task_name: task.name, dataset_name: "素材", created_at: "2026-09-18T00:00:00Z", run: { max_train_steps: 800, save_every_n_steps: 100, seed: 42 }, semantic_config: { network_dim: 32, learning_rate: 0.0001 } }, status: { status: "running", phase: "train", step: 1, loss: null, lr: null, samples_seen: 1, eta_seconds: null, error: null, checkpoints: [] }, disk_bytes: 0 };
+  const detail = { id, task, dataset: { id: "dataset-123456abcdef", name: "素材", activation_terms: [], item_count: 1, enabled_item_count: 1, effective_item_count: 1 }, runs: [runningRun] };
   let reads = 0, release, saved;
   const pending = new Promise(resolve => { release = resolve; });
   t.after(() => release());
   await page.route("**/api/lora-training/tasks", route => route.fulfill({ json: { tasks: [{ id, name: "原任务", dataset: { name: "素材" }, runs: [] }] } }));
-  await page.route(`**/api/lora-training/tasks/${id}/run-settings`, route => route.fulfill({ json: { values: {}, recommendations: {}, sources: {}, semantic_config: {} }, headers: { etag: '"auxiliary"' } }));
+  await page.route(`**/api/lora-training/tasks/${id}/run-settings`, route => route.fulfill({ json: qwenRunSettingsMock(task), headers: { etag: '"auxiliary"' } }));
   await page.route(`**/api/lora-training/tasks/${id}`, async route => {
     if (route.request().method() === "PUT") {
       saved = { task: route.request().postDataJSON(), revision: route.request().headers()["if-match"] };
@@ -425,18 +470,19 @@ test("迟到的训练进度保留任务草稿及其保存版本", async t => {
     return route.fulfill({ json: reads > 1 ? { ...detail, task: { ...task, name: "另一个窗口" }, runs: [] } : detail, headers: { etag: reads > 1 ? '"new"' : '"original"' } });
   });
   await page.goto(`${origin}/?tab=lora-tasks`);
-  const name = page.getByLabel("方案名称", { exact: true });
-  try { await name.waitFor(); } catch (error) { t.diagnostic(`reads=${reads} ${await page.locator("body").innerText()}`); throw error; }
+  const input = page.locator("label").filter({ has: page.locator("span.lora-field-label", { hasText: "总更新步数" }) }).locator("input");
+  try { await input.waitFor(); } catch (error) { t.diagnostic(`reads=${reads} ${await page.locator("body").innerText()}`); throw error; }
   const poll = await page.waitForRequest(request => request.url().endsWith(`/tasks/${id}`) && request.method() === "GET");
-  await name.fill("我的草稿");
+  await input.fill("1600");
   const response = page.waitForResponse(value => value.request() === poll);
   release();
   await response;
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  assert.equal(await name.inputValue(), "我的草稿");
+  assert.equal(await input.inputValue(), "1600");
   await page.getByRole("button", { name: "保存配置", exact: true }).click();
   await page.getByText("已保存", { exact: true }).waitFor();
-  assert.equal(saved.task.name, "我的草稿");
+  assert.equal(saved.task.run_defaults.max_train_steps, 1600);
+  assert.equal(saved.task.name, "原任务");
   assert.equal(saved.revision, '"original"');
 });
 

@@ -64,6 +64,14 @@ export async function handleLoraTrainingRequest({
     sendJson(response, 202, result);
     return true;
   }
+  const loraRunResumeMatch = /^\/api\/lora-training\/tasks\/([^/]+)\/runs\/([^/]+)\/resume\/?$/.exec(decodedPath);
+  if (request.method === "POST" && loraRunResumeMatch) {
+    // 续训走冻结 + runtime 的完整路径；来源新鲜度在串行队列内再次校验，陈旧来源返回 409。
+    const value = await readJsonBody(request);
+    const result = await deriveFromFacts(({ projectDirectory }) => loraTrainingModule.coordination.resumeRun(resolvedProjectRoot, projectDirectory, loraRunResumeMatch[1], loraRunResumeMatch[2], config, value));
+    sendOperation(202, result);
+    return true;
+  }
   const loraRunMatch = /^\/api\/lora-training\/tasks\/([^/]+)\/runs\/([^/]+)\/?$/.exec(decodedPath);
   if (request.method === "DELETE" && loraRunMatch) {
     const result = await mutateDerived(({ projectDirectory }) => loraTrainingModule.runtime.deleteRun(projectDirectory, loraRunMatch[1], loraRunMatch[2]));

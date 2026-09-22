@@ -46,24 +46,30 @@ type DatasetDetail = { id: string; dataset: TrainingDataset; items: DatasetItem[
 export type LoraDatasetSummary = { id: string; name?: string; activation_terms?: string[]; item_count?: number; enabled_item_count?: number; effective_item_count?: number; error?: string };
 
 type TrainingTask = {
-  version: 4;
+  version: 5;
   name: string;
   dataset_id: string;
-  target: { family: "anima"; base: { dit: ModelIdentity; text_encoder: ModelIdentity; vae: ModelIdentity; llm_adapter?: ModelIdentity }; prompt_family: string; usage_defaults: UsageDefaults };
-  training_recipe: { id: string; overrides: Record<string, unknown> };
+  target: { family: "qwen-image-2-1"; base: { dit: ModelIdentity; text_encoder: ModelIdentity; vae: ModelIdentity; processor: ModelIdentity }; prompt_family: string; usage_defaults: UsageDefaults };
+  training_recipe: { id: string; overrides: Partial<Record<RecipeOverrideKey, number>> };
   run_defaults: Record<Exclude<RunSettingKey, "gradient_accumulation_steps">, number>;
 };
 type DatasetReference = { id: string; name: string; activation_terms: string[]; item_count: number; enabled_item_count: number; effective_item_count: number };
-type Checkpoint = { id: string; file: string; relative_path?: string; step: number; sha256: string; size: number };
-type Run = { id: string; manifest: { run_settings?: { note?: string }; task_id: string; task_name: string; dataset_name: string; created_at: string; config: { max_train_steps: number; resolution?: number; learning_rate?: number; network_dim?: number } }; status: { status: string; completed_at?: string | null; interrupted_at?: string | null; step: number; loss: number | null; loss_history?: LossPoint[]; eta_seconds: number | null; error: string | null; checkpoints: Checkpoint[]; log_tail?: string }; disk_bytes: number };
+type Checkpoint = { id: string; file: string; relative_path?: string; step: number; sha256: string; size: number; available?: boolean };
+type RunResumePointer = { snapshot_id: string; step: number | null; sha256: string | null };
+type RunPerformance = { wall_seconds?: number; phase_seconds?: Record<string, number>; seconds_per_update?: number | null; samples_seen?: number; runner?: unknown };
+// v5 run 的预算在 manifest.run，v4（Anima）历史 run 在 manifest.config；legacy 项可能只有部分字段。
+type Run = { id: string; created_at?: string; legacy?: boolean; legacy_note?: string; resumable?: boolean; manifest: { task_id: string; task_name?: string; dataset_name?: string; created_at?: string; run_settings?: { note?: string }; run?: { max_train_steps?: number; save_every_n_steps?: number; seed?: number; note?: string }; config?: { max_train_steps?: number; resolution?: number; learning_rate?: number; network_dim?: number }; semantic_config?: Partial<SemanticConfig>; resume?: { parent_run_id: string; source_snapshot_id: string; start_step: number } | null } | null; status: { status: string; phase?: string | null; completed_at?: string | null; interrupted_at?: string | null; step: number; loss: number | null; lr?: number | null; samples_seen?: number; cache_progress?: { done: number; total: number } | null; loss_history?: LossPoint[]; eta_seconds: number | null; error: string | null; checkpoints: Checkpoint[]; resume?: RunResumePointer | null; performance?: RunPerformance | null; log_tail?: string }; disk_bytes: number };
 type TaskDetail = { id: string; task: TrainingTask; dataset: DatasetReference; runs: Run[] };
-type TaskSummary = { id: string; name?: string; family?: string; dataset?: DatasetReference; error?: string; runs?: Array<{ id: string; status: string; step: number; created_at: string; disk_bytes: number }> };
+type TaskSummary = { id: string; name?: string; family?: string; dataset?: DatasetReference; error?: string; runs?: Array<{ id: string; status: string; step: number; created_at: string; resumable?: boolean; legacy?: boolean; legacy_note?: string; disk_bytes: number }> };
 type Environment = { available: boolean; runtime: null | { gpu: string; vram_bytes: number; python: string; torch: string; cuda: string }; checks: Array<{ id: string; ok: boolean; message: string }>; reference_models?: Array<{ family: string; kind: string; relative_path: string; exists: boolean; matches: boolean; sha256: string | null; size: number | null }>; optional_capabilities?: { quality?: { ready: boolean; message: string }; upscaler?: { id: string; ready: boolean; path: string | null; relative_path: string | null; message: string; expected_sha256: string | null; sha256: string | null; size_bytes: number | null; output_scales?: number[] } }; captioning: { configured: boolean; ready: boolean; id: string | null; version: string | null; message: string; manifest?: { id: string; name: string } | null; files?: Array<{ id: string; path: string | null; exists: boolean; matches: boolean; sha256: string | null; expected_sha256: string | null }> } };
-type TrainingRecipe = { id: string; version?: number; name: string; description: string; family: "anima"; semantic_config: Record<string, unknown> };
-type RunSettingKey = "max_train_steps" | "save_every_n_steps" | "seed" | "micro_batch_size" | "gradient_accumulation_steps" | "max_data_loader_n_workers" | "blocks_to_swap";
-type RunSettingsDetail = { recipe: { id: string; version: number; name: string }; semantic_config: Record<string, number | string>; values: Partial<Record<RunSettingKey, number>>; last_run: null | { id: string; created_at: string; status: string; config: Record<string, number | string> } };
+type TrainingRecipe = { id: string; version?: number; name: string; description: string; family: "qwen-image-2-1"; semantic_config: SemanticConfig };
+type RunSettingKey = "max_train_steps" | "save_every_n_steps" | "seed" | "gradient_accumulation_steps";
+type RecipeOverrideKey = "network_dim" | "learning_rate" | "gradient_accumulation_steps";
+type SemanticConfig = { max_pixels: number; network_dim: number; network_alpha: number; learning_rate: number; gradient_accumulation_steps: number; micro_batch_size: number; optimizer: { type: string; betas: number[]; eps: number; weight_decay: number }; scheduler: { type: string; factor: number; total_iters: number }; precision: { base: string; lora: string; optimizer_state: string }; gradient_checkpointing: boolean; lora_target_modules: string[] };
+type RunSettingsDetail = { recipe: { id: string; version: number; name: string }; semantic_config: SemanticConfig; values: Partial<Record<RunSettingKey, number>>; last_run: null | { id: string; created_at?: string; status: string; config: Record<string, unknown> | null } };
 type PreflightIssue = { code: string; message: string; item_id?: string; other_item_id?: string; asset_id?: string; group_id?: string };
-type Preflight = { ready: boolean; blockers: PreflightIssue[]; warnings: PreflightIssue[]; recipe?: { id: string; name: string }; semantic_config?: Record<string, unknown>; run_settings?: Partial<Record<RunSettingKey, number>>; effective_config?: Record<string, unknown>; estimated_disk_bytes?: number; available_disk_bytes?: number };
+type PreflightModel = { kind?: string; label?: string; identity?: ModelIdentity; exists: boolean; matches: boolean; sha256: string | null; size: number | null };
+type Preflight = { ready: boolean; blockers: PreflightIssue[]; warnings: PreflightIssue[]; recipe?: { id: string; version?: number; name: string } | null; semantic_config?: SemanticConfig; run_settings?: Partial<Record<RunSettingKey, number>> & { note?: string }; models?: PreflightModel[]; estimated_disk_bytes?: number; available_disk_bytes?: number };
 type SectionKey = "datasets" | "tasks" | "runs";
 type CropDraft = LoraCropRect & { itemId: string; cropEnabled?: boolean; upscale?: boolean; outputScale?: 1 | 2 | 4 };
 type ActivationGuide = { title: string; markdown: string };
@@ -72,25 +78,16 @@ type DatasetContextMenu = { itemId: string; x: number; y: number };
 type PostprocessPreview = { previewId: string; key: string; src: string; width: number; height: number };
 type PrepareResult = { prepared: number; reused: number; enhanced: number; already_good: number; no_gain: number; total: number; failed: Array<{ item_id: string; asset_id: string; error: { code: string; details: unknown[] } }>; dataset: DatasetDetail };
 
-const SEMANTIC_PARAMETER_DEFINITIONS = [
-  { key: "resolution", label: "分辨率", kind: "integer", description: "当前图片准备流程使用 1024 级别分桶；训练分辨率请保持 1024。" },
-  { key: "effective_batch_size", label: "有效 Batch", kind: "integer", description: "训练语义中的总 Batch；等于 Micro Batch × 梯度累积。" },
-  { key: "network_dim", label: "Rank", kind: "integer", description: "LoRA 的容量（秩）；越大能承载更多细节，也更容易过拟合。" },
-  { key: "network_alpha", label: "Alpha", kind: "integer", description: "LoRA 的缩放基准，通常和 Rank 一起调整。" },
-  { key: "learning_rate", label: "学习率", kind: "number", description: "每一步更新参数的幅度；过高不稳定，过低学习慢。" },
+const RECIPE_PARAMETER_DEFINITIONS = [
+  { key: "network_dim", label: "Rank", kind: "integer", description: "LoRA 的容量（秩）；越大能承载更多细节，也更容易过拟合。Alpha 恒等于 Rank。" },
+  { key: "learning_rate", label: "学习率", kind: "number", description: "每一次更新参数的幅度；过高不稳定，过低学习慢。" },
+  { key: "gradient_accumulation_steps", label: "梯度累积", kind: "integer", description: "累积多少张图片再做一次更新；Micro Batch 固定为 1，有效 Batch 等于累积次数。" },
 ] as const;
 
-const EXPERIMENT_PARAMETER_DEFINITIONS = [
-  { key: "max_train_steps", label: "总步数", description: "本次最多更新多少步；过高可能过拟合。" },
-  { key: "save_every_n_steps", label: "保存间隔", kind: "integer", description: "每隔多少步保存一个 checkpoint。" },
+const RUN_PARAMETER_DEFINITIONS = [
+  { key: "max_train_steps", label: "总更新步数", kind: "integer", description: "本轮预算的累计更新次数（optimizer step）；预算用完后可通过续训扩大。" },
+  { key: "save_every_n_steps", label: "保存间隔", kind: "integer", description: "每隔多少更新步保存一个 checkpoint 与完整恢复状态。" },
   { key: "seed", label: "随机种子", kind: "integer", description: "随机种子；固定后便于复现实验。" },
-] as const;
-
-const EXECUTION_PARAMETER_DEFINITIONS = [
-  { key: "micro_batch_size", label: "Micro Batch", description: "单次前后向处理的图片数，主要受显存限制。" },
-  { key: "gradient_accumulation_steps", label: "梯度累积（自动）", description: "累积多少次再更新；与 Micro Batch 的乘积必须等于有效 Batch。" },
-  { key: "max_data_loader_n_workers", label: "数据加载进程数", description: "用于准备训练图片的 CPU 并发数。" },
-  { key: "blocks_to_swap", label: "换入内存的网络块数", description: "Anima 将部分网络块换到内存以降低显存占用。" },
 ] as const;
 
 type TrainingRequester = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -512,6 +509,29 @@ function statusText(status: string) {
   return ({ starting: "正在启动", running: "训练中", stopping: "正在停止", completed: "已完成", failed: "失败", interrupted: "已中断" } as Record<string, string>)[status] ?? status;
 }
 
+function secondsText(value: number | null | undefined) {
+  if (value === null || value === undefined) return "—";
+  if (value < 120) return `${Math.round(value * 10) / 10} 秒`;
+  return duration(value);
+}
+
+function runTarget(run: Run) {
+  return run.manifest?.run?.max_train_steps ?? run.manifest?.config?.max_train_steps ?? null;
+}
+
+function runNoteText(run: Run) {
+  return run.manifest?.run?.note ?? run.manifest?.run_settings?.note ?? "";
+}
+
+function runPhaseText(status: Run["status"]) {
+  if (status.phase === "cache") {
+    const progress = status.cache_progress;
+    return progress ? `缓存 ${progress.done}/${progress.total}` : "缓存";
+  }
+  if (status.phase === "train") return "训练";
+  return "";
+}
+
 function browserId(prefix: string) {
   const value = new Uint8Array(6);
   crypto.getRandomValues(value);
@@ -613,7 +633,7 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
   const [captionDirty, setCaptionDirty] = useState(false);
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
   function syncRunSummary(detail: TaskDetail) {
-    setTasks(current => current.map(task => task.id === detail.id ? { ...task, runs: detail.runs.map(run => ({ id: run.id, status: run.status.status, step: run.status.step, created_at: run.manifest.created_at, disk_bytes: run.disk_bytes })) } : task));
+    setTasks(current => current.map(task => task.id === detail.id ? { ...task, runs: detail.runs.map(run => ({ id: run.id, status: run.status.status, step: run.status.step, created_at: run.created_at ?? run.manifest?.created_at ?? "", resumable: Boolean(run.resumable), ...(run.legacy ? { legacy: true, legacy_note: run.legacy_note } : {}), disk_bytes: run.disk_bytes })) } : task));
   }
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [taskLoading, setTaskLoading] = useState(false);
@@ -645,6 +665,7 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
   const [selectedRunId, setSelectedRunId] = useState("");
   const [runs, setRuns] = useState<Run[]>([]);
   const [runsLoading, setRunsLoading] = useState(true);
+  const [resumeDraft, setResumeDraft] = useState<{ run: Run; target: string; note: string } | null>(null);
   useEffect(() => {
     if (section === "runs" && !runsLoading) onTaskCountsChange?.(tasks.length, runs.length);
   }, [section, runsLoading, tasks.length, runs.length]);
@@ -1102,11 +1123,12 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
   const currentRun = runs.find((run) => run.id === selectedRunId) ?? runs[0];
   const currentModel = useMemo(() => taskDetail?.task.target.base.dit.relative_path ?? "", [taskDetail]);
   const selectedRecipe = useMemo(() => recipes.find((recipe) => recipe.id === taskDetail?.task.training_recipe.id) ?? null, [recipes, taskDetail?.task.training_recipe.id]);
-  const effectiveBatch = Number(taskDetail?.task.training_recipe.overrides.effective_batch_size ?? selectedRecipe?.semantic_config.effective_batch_size ?? runSettings?.semantic_config.effective_batch_size);
-  const microBatch = taskDetail?.task.run_defaults.micro_batch_size ?? 0;
-  const accumulation = effectiveBatch / microBatch;
-  const batchValid = Number.isInteger(effectiveBatch) && effectiveBatch > 0 && Number.isInteger(microBatch) && microBatch > 0 && Number.isInteger(accumulation) && accumulation > 0;
-  const familyRecipes = recipes;
+  const taskOverrides = taskDetail?.task.training_recipe.overrides;
+  const networkDim = Number(taskOverrides?.network_dim ?? selectedRecipe?.semantic_config.network_dim ?? runSettings?.semantic_config.network_dim ?? 0);
+  const accumulation = Number(taskOverrides?.gradient_accumulation_steps ?? selectedRecipe?.semantic_config.gradient_accumulation_steps ?? runSettings?.semantic_config.gradient_accumulation_steps ?? 0);
+  const accumulationValid = Number.isInteger(accumulation) && accumulation >= 1;
+  const maxTrainSteps = taskDetail?.task.run_defaults.max_train_steps ?? 0;
+  const optimizerType = selectedRecipe?.semantic_config.optimizer.type ?? runSettings?.semantic_config.optimizer.type ?? "AdamW";
   const environmentProblems = environment?.checks.filter((check) => !check.ok).map((check) => check.message) ?? [];
   const environmentState = environmentLoading ? "is-checking" : environment?.available ? "is-ready" : "is-blocked";
   const environmentStatusText = environmentLoading ? "环境检查中" : environment?.available ? "环境就绪" : "环境不可用";
@@ -1115,33 +1137,34 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
     : environmentProblems.length
       ? environmentProblems.join("；")
       : environmentError || "无法读取训练环境状态";
-  const setOverride = (key: string, raw: string, kind: "integer" | "number" = "integer") => mutateTask((task) => {
+  const setOverride = (key: RecipeOverrideKey, raw: string, kind: "integer" | "number" = "integer") => mutateTask((task) => {
     const overrides = { ...task.training_recipe.overrides };
     overrides[key] = kind === "integer" ? Math.trunc(Number(raw)) : Number(raw);
     return { ...task, training_recipe: { ...task.training_recipe, overrides } };
   });
-  const setRunSetting = (key: RunSettingKey, raw: string) => {
-    if (key === "gradient_accumulation_steps") return;
+  const setRunSetting = (key: Exclude<RunSettingKey, "gradient_accumulation_steps">, raw: string) => {
     mutateTask(task => ({ ...task, run_defaults: { ...task.run_defaults, [key]: Math.trunc(Number(raw)) } }));
   };
-  const semanticField = (definition: typeof SEMANTIC_PARAMETER_DEFINITIONS[number]) => {
+  const recipeField = (definition: typeof RECIPE_PARAMETER_DEFINITIONS[number]) => {
     const { key, label, kind, description } = definition;
     return <label key={key}><span className="lora-field-label">{label}<i className="lora-info" data-tooltip={description} aria-label={`${label}说明`} tabIndex={0}>?</i></span><input type="number" min={kind === "integer" ? 1 : 0} step={kind === "integer" ? 1 : "any"} value={String(taskDetail?.task.training_recipe.overrides[key] ?? selectedRecipe?.semantic_config[key] ?? "")} onChange={event => setOverride(key, event.target.value, kind)} /></label>;
   };
-  const executionField = ({ key, label, description }: { key: RunSettingKey; label: string; description: string }) => <label key={key}><span className="lora-field-label">{label}<i className="lora-info" data-tooltip={description} aria-label={`${label}说明`} tabIndex={0}>?</i></span><input type="number" min={key === "blocks_to_swap" ? 0 : 1} readOnly={key === "gradient_accumulation_steps"} value={key === "gradient_accumulation_steps" ? (batchValid ? accumulation : "") : taskDetail?.task.run_defaults[key] ?? ""} onChange={event => setRunSetting(key, event.target.value)} /></label>;
+  const runField = (definition: typeof RUN_PARAMETER_DEFINITIONS[number]) => {
+    const { key, label, description } = definition;
+    return <label key={key}><span className="lora-field-label">{label}<i className="lora-info" data-tooltip={description} aria-label={`${label}说明`} tabIndex={0}>?</i></span><input type="number" min={1} step={1} value={String(taskDetail?.task.run_defaults[key] ?? "")} onChange={event => setRunSetting(key, event.target.value)} /></label>;
+  };
   const applyPreset = async (id: string) => {
     const recipe = recipes.find(item => item.id === id);
     if (!recipe || !taskDetail) return;
-    const changes = SEMANTIC_PARAMETER_DEFINITIONS.filter(({ key }) => taskDetail.task.training_recipe.overrides[key] !== recipe.semantic_config[key]).map(({ key, label }) => `${label}：${taskDetail.task.training_recipe.overrides[key]} → ${recipe.semantic_config[key]}`);
-    if (!await confirm({ kind: "warning", title: "应用参数预设", message: `${changes.join("；") || "训练参数与该预设一致"}。总步数、随机种子、检查点和显存设置保持当前值；应用后仍需保存配置。`, confirmLabel: "应用到草稿" })) return;
-    mutateTask(task => ({ ...task, training_recipe: { id, overrides: Object.fromEntries(SEMANTIC_PARAMETER_DEFINITIONS.map(({ key }) => [key, recipe.semantic_config[key]])) } }));
+    const changes = RECIPE_PARAMETER_DEFINITIONS.filter(({ key }) => taskDetail.task.training_recipe.overrides[key] !== recipe.semantic_config[key]).map(({ key, label }) => `${label}：${taskDetail.task.training_recipe.overrides[key]} → ${recipe.semantic_config[key]}`);
+    if (!await confirm({ kind: "warning", title: "应用参数预设", message: `${changes.join("；") || "训练参数与该预设一致"}。总更新步数、保存间隔与随机种子保持当前值；应用后仍需保存配置。`, confirmLabel: "应用到草稿" })) return;
+    mutateTask(task => ({ ...task, training_recipe: { id, overrides: Object.fromEntries(RECIPE_PARAMETER_DEFINITIONS.map(({ key }) => [key, recipe.semantic_config[key]])) } }));
   };
-  const currentParameters: Record<string, unknown> = { ...taskDetail?.task.training_recipe.overrides, ...taskDetail?.task.run_defaults, gradient_accumulation_steps: accumulation };
-  const parameterChanges = runSettings?.last_run ? [...SEMANTIC_PARAMETER_DEFINITIONS, ...EXPERIMENT_PARAMETER_DEFINITIONS, ...EXECUTION_PARAMETER_DEFINITIONS].map(({ key, label }) => {
-    const previous = runSettings.last_run!.config;
-    const before = key === "effective_batch_size" ? Number(previous.train_batch_size) * Number(previous.gradient_accumulation_steps) : previous[key === "micro_batch_size" ? "train_batch_size" : key];
+  const currentParameters: Record<string, unknown> = { ...taskDetail?.task.training_recipe.overrides, ...taskDetail?.task.run_defaults };
+  const parameterChanges = runSettings?.last_run ? [...RECIPE_PARAMETER_DEFINITIONS, ...RUN_PARAMETER_DEFINITIONS].map(({ key, label }) => {
+    const before = runSettings.last_run!.config?.[key];
     return { key, label, before, after: currentParameters[key] };
-  }).filter(item => item.before !== item.after) : [];
+  }).filter(item => item.before !== undefined && item.before !== item.after) : [];
   const checkpointSteps = (() => {
     const total = taskDetail?.task.run_defaults.max_train_steps ?? 0;
     const interval = taskDetail?.task.run_defaults.save_every_n_steps ?? 0;
@@ -1155,8 +1178,40 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
     if (result) await loadRuns();
   };
   const deleteRun = async (run: Run) => {
+    if (!run.manifest?.task_id) return;
     if (!await confirm({ kind: "warning", title: "删除训练记录", message: "只删除训练快照、日志和记录；已经生成的 checkpoint 会保留在 LoRA 目录中。", confirmLabel: "删除记录", danger: true })) return;
     await runAction(fetch, "delete-run", `${base}/tasks/${run.manifest.task_id}/runs/${run.id}`, "DELETE");
+  };
+  const resumeDraftStep = resumeDraft?.run.status.resume?.step ?? 0;
+  const resumeTarget = Math.trunc(Number(resumeDraft?.target));
+  const resumeTargetValid = Boolean(resumeDraft) && Number.isFinite(Number(resumeDraft?.target)) && resumeTarget > resumeDraftStep;
+  const submitResume = async () => {
+    if (!resumeDraft || !resumeTargetValid) return;
+    const run = resumeDraft.run;
+    const pointer = run.status.resume;
+    const taskId = run.manifest?.task_id;
+    if (!pointer || !taskId) return;
+    setBusy("resume");
+    try {
+      // 续训要求 If-Match：先读取任务事实的最新版本，再提交。
+      await readFactsApi(`${base}/tasks/${encodeURIComponent(taskId)}`);
+      const response = await client.write(`${base}/tasks/${encodeURIComponent(taskId)}/runs/${run.id}/resume`, { method: "POST", headers: { accept: "application/json", "content-type": "application/json" }, body: JSON.stringify({ max_train_steps: resumeTarget, ...(resumeDraft.note.trim() ? { note: resumeDraft.note.trim() } : {}), source_snapshot_id: pointer.snapshot_id, source_sha256: pointer.sha256 }) });
+      const value = await response.json().catch(() => ({}));
+      if (response.status === 409 && value?.error === "lora_training_resume_source_stale") {
+        notify({ kind: "warning", message: "恢复状态已被更新的训练取代。已刷新训练记录，请确认最新恢复点后重试。" });
+        setResumeDraft(null);
+        await loadRuns();
+        return;
+      }
+      if (!response.ok) throw new Error(readableError(value) || `请求失败：${response.status}`);
+      setResumeDraft(null);
+      await loadRuns();
+      if (value?.run?.id) setSelectedRunId(value.run.id);
+    } catch (error) {
+      notify({ kind: "error", message: readableError(error) || "请求失败" });
+    } finally {
+      setBusy("");
+    }
   };
   const refreshTraining = async () => {
     if (section === "runs") { await perform("refresh", loadRuns); return; }
@@ -1255,19 +1310,18 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
       <WorkspaceHeader title={`${taskDetail?.task.name ?? "训练项目"} · 训练设置`} actions={<div className="lora-toolbar-actions">{refreshAction}<div className={`training-environment training-environment--inline ${environmentState}`} title={environmentStatusTitle}><i /><div><b>{environmentStatusText}</b>{environment?.runtime && <span>{environment.runtime.gpu} · {Math.round(environment.runtime.vram_bytes / 1024 ** 3)} GB</span>}{!environmentLoading && !environment?.available && environmentProblems.length > 0 && <span>{environmentProblems[0]}</span>}</div></div><button className="button" disabled={environmentLoading || Boolean(busy)} title="跳过缓存，重新检查训练器、GPU、底座模型和打标器" onClick={() => void loadEnvironment(true)}>重新检查环境</button></div>} />
       <div className="lora-training-layout lora-training-layout--dataset">
         {taskLoading || (selectedTaskId && taskDetail?.id !== selectedTaskId && !taskLoadError) ? <div className="lora-panel" role="status" aria-busy="true">正在加载训练设置…</div> : taskLoadError ? <div className="lora-panel" role="alert"><p>方案加载失败：{taskLoadError}</p><button className="button" onClick={() => void loadTask().catch(() => undefined)}>重试</button></div> : !taskDetail ? <EmptyState title={datasets.length ? "暂无训练设置" : "请先建立数据集"} detail={datasets.length ? "请先选择训练项目。" : "创建项目时自动建立训练配置。"} /> : <div className="lora-task-workspace" key={taskDetail.id}>
-          <section className="lora-panel lora-panel--overview"><header><div><h3>训练设置</h3><p>可复用的训练配置</p></div><div className="lora-actions"><span className={`lora-state ${taskDirty ? "is-warning" : "is-ready"}`}>{taskDirty ? "未保存" : "已保存"}</span><button className="button button--primary" disabled={!taskDirty || !batchValid || Boolean(busy)} onClick={() => void saveTask()}>保存配置</button></div></header><p>{taskDetail.task.name} · 当前项目的训练配置</p><details className="lora-model-detail"><summary>底座模型 · Anima Base</summary><p>{currentModel}</p><small>创建方案后固定</small><p>方案 ID · {taskDetail.id}</p></details>
+          <section className="lora-panel lora-panel--overview"><header><div><h3>训练设置</h3><p>可复用的训练配置</p></div><div className="lora-actions"><span className={`lora-state ${taskDirty ? "is-warning" : "is-ready"}`}>{taskDirty ? "未保存" : "已保存"}</span><button className="button button--primary" disabled={!taskDirty || !accumulationValid || Boolean(busy)} onClick={() => void saveTask()}>保存配置</button></div></header><p>{taskDetail.task.name} · 当前项目的训练配置</p><details className="lora-model-detail"><summary>底座模型 · Qwen-Image-2.1</summary><p>{currentModel}</p><small>创建方案后固定</small><p>方案 ID · {taskDetail.id}</p></details>
             <p>实际训练集 {taskEffectiveItemCount} 张 · 以下配置统一保存，后续训练沿用。</p>
             <h4 className="lora-section-title">训练设置</h4>
-            <div className="lora-parameter-grid">{SEMANTIC_PARAMETER_DEFINITIONS.filter(item => !["network_dim", "network_alpha"].includes(item.key)).map(semanticField)}{EXPERIMENT_PARAMETER_DEFINITIONS.filter(item => item.key !== "save_every_n_steps").map(executionField)}</div>
-            <p className="lora-preflight-hint">每次处理 {microBatch} 张，累积 {batchValid ? accumulation : "—"} 次后更新 · 有效 Batch {effectiveBatch}</p>
-            <details className="lora-model-detail"><summary>LoRA 与优化器 · Rank {String(taskDetail.task.training_recipe.overrides.network_dim)} / Alpha {String(taskDetail.task.training_recipe.overrides.network_alpha)} · {String(selectedRecipe?.semantic_config.optimizer_type ?? "")}</summary><div className="lora-parameter-grid">{SEMANTIC_PARAMETER_DEFINITIONS.filter(item => ["network_dim", "network_alpha"].includes(item.key)).map(semanticField)}<label><span>优化器（预设固定）</span><input readOnly value={String(selectedRecipe?.semantic_config.optimizer_type ?? "")} /></label></div><div className="lora-actions"><span>参数预设</span>{familyRecipes.map(recipe => <button className="button" key={recipe.id} onClick={() => void applyPreset(recipe.id)}>应用 {recipe.name}</button>)}</div><small>仅提供初始参数，不限制训练题材。应用前显示变化。</small></details>
-            <h4 className="lora-section-title">显存与性能</h4><div className="lora-parameter-grid">{EXECUTION_PARAMETER_DEFINITIONS.map(executionField)}</div>
-            {!batchValid && <p role="alert" className="run-error">有效 Batch 必须能被 Micro Batch 整除，且两者均为正整数。</p>}
-            <h4 className="lora-section-title">检查点保存</h4><div className="lora-parameter-grid">{EXPERIMENT_PARAMETER_DEFINITIONS.filter(item => item.key === "save_every_n_steps").map(executionField)}</div><p className="lora-preflight-hint">{checkpointSteps}</p>
+            <div className="lora-parameter-grid">{RUN_PARAMETER_DEFINITIONS.filter(item => item.key !== "save_every_n_steps").map(runField)}{RECIPE_PARAMETER_DEFINITIONS.filter(item => item.key === "learning_rate").map(recipeField)}</div>
+            <p className="lora-preflight-hint">Micro Batch 固定 1 · 有效 Batch {accumulationValid ? accumulation : "—"} · 本轮图片处理量 {accumulationValid && maxTrainSteps > 0 ? maxTrainSteps * accumulation : "—"} 张次</p>
+            <details className="lora-model-detail"><summary>LoRA 与优化器 · Rank {networkDim || "—"} / Alpha {networkDim || "—"} · {optimizerType}</summary><div className="lora-parameter-grid">{RECIPE_PARAMETER_DEFINITIONS.filter(item => item.key !== "learning_rate").map(recipeField)}<label><span className="lora-field-label">Alpha<i className="lora-info" data-tooltip="Alpha 恒等于 Rank，不提供独立旋钮。" aria-label="Alpha说明" tabIndex={0}>?</i></span><input readOnly value={networkDim || ""} /></label><label><span className="lora-field-label">Micro Batch<i className="lora-info" data-tooltip="单次前后向固定处理 1 张图片；批量通过梯度累积调整。" aria-label="Micro Batch说明" tabIndex={0}>?</i></span><input readOnly value="1" /></label><label><span>优化器（预设固定）</span><input readOnly value={optimizerType} /></label></div><div className="lora-actions"><span>参数预设</span>{recipes.map(recipe => <button className="button" key={recipe.id} onClick={() => void applyPreset(recipe.id)}>应用 {recipe.name}</button>)}</div><small>仅提供初始参数，不限制训练题材。应用前显示变化。</small></details>
+            {!accumulationValid && <p role="alert" className="run-error">梯度累积必须为正整数。</p>}
+            <h4 className="lora-section-title">检查点保存</h4><div className="lora-parameter-grid">{RUN_PARAMETER_DEFINITIONS.filter(item => item.key === "save_every_n_steps").map(runField)}</div><p className="lora-preflight-hint">{checkpointSteps}</p>
           </section>
           <section className="lora-panel"><header><div><h3>启动本轮训练</h3><p>使用已保存配置创建独立训练记录</p></div></header>
           {runSettings?.last_run ? <details className="lora-model-detail" open><summary>与上次训练的参数差异 · {parameterChanges.length} 项</summary>{parameterChanges.length ? <ul>{parameterChanges.map(item => <li key={item.key}>{item.label}：{String(item.before ?? "未记录")} → {String(item.after)}</li>)}</ul> : <p>训练参数相同。图片与 Caption 仍以启动时的数据集为准。</p>}</details> : <p>尚无历史训练可比较。</p>}
-          <label className="lora-run-note"><span>本次训练备注</span><textarea value={runNote} onChange={event => { setRunNote(event.target.value); setPreflight(null); }} placeholder="例如：学习率改为 0.00005，比较与上一轮的差异" /><small>仅保存到本次训练记录，不写入当前配置。</small></label>{preflight ? <div className="preflight-grid"><div className="preflight-section preflight-section--blockers"><b>阻断项（{preflight.blockers.length}）</b>{preflight.blockers.length ? <ul>{preflight.blockers.map((item, index) => <li key={`${item.code}-${index}`}>{item.message}</li>)}</ul> : <p className="is-good">无</p>}</div><div className="preflight-section preflight-section--warnings"><b>警告（{preflight.warnings.length}）</b>{preflight.warnings.length ? <ul>{preflight.warnings.map((item, index) => <li key={`${item.code}-${index}`}>{item.message}</li>)}</ul> : <p className="is-good">无</p>}</div><small>预计磁盘占用 {bytes(preflight.estimated_disk_bytes)} · 可用 {bytes(preflight.available_disk_bytes)}</small></div> : <p className="lora-preflight-hint">{taskDirty ? "请先保存方案修改，再执行预检。" : "确认本次参数后执行预检。"}</p>}<div className="lora-primary-action"><button className="button" disabled={taskDirty || !runSettings || !batchValid || Boolean(busy)} onClick={() => void runPreflight()}>执行预检</button><button className="button button--primary" disabled={!preflight?.ready || !batchValid || taskDirty || Boolean(busy) || !environment?.available} onClick={() => void startTraining()}>开始训练</button></div></section>
+          <label className="lora-run-note"><span>本次训练备注</span><textarea value={runNote} onChange={event => { setRunNote(event.target.value); setPreflight(null); }} placeholder="例如：学习率改为 0.00005，比较与上一轮的差异" /><small>仅保存到本次训练记录，不写入当前配置。</small></label>{preflight ? <div className="preflight-grid"><div className="preflight-section preflight-section--blockers"><b>阻断项（{preflight.blockers.length}）</b>{preflight.blockers.length ? <ul>{preflight.blockers.map((item, index) => <li key={`${item.code}-${index}`}>{item.message}</li>)}</ul> : <p className="is-good">无</p>}</div><div className="preflight-section preflight-section--warnings"><b>警告（{preflight.warnings.length}）</b>{preflight.warnings.length ? <ul>{preflight.warnings.map((item, index) => <li key={`${item.code}-${index}`}>{item.message}</li>)}</ul> : <p className="is-good">无</p>}</div><small>预计磁盘占用 {bytes(preflight.estimated_disk_bytes)} · 可用 {bytes(preflight.available_disk_bytes)}</small></div> : <p className="lora-preflight-hint">{taskDirty ? "请先保存方案修改，再执行预检。" : "确认本次参数后执行预检。"}</p>}<div className="lora-primary-action"><button className="button" disabled={taskDirty || !runSettings || !accumulationValid || Boolean(busy)} onClick={() => void runPreflight()}>执行预检</button><button className="button button--primary" disabled={!preflight?.ready || !accumulationValid || taskDirty || Boolean(busy) || !environment?.available} onClick={() => void startTraining()}>开始训练</button></div></section>
         </div>}
       </div>
     </>}
@@ -1275,19 +1329,26 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
     {section === "runs" && <>
       <WorkspaceHeader actions={refreshAction} title={allRuns ? "全部训练记录" : "训练记录"} />
       <div className={`lora-training-layout ${runs.length ? "" : "is-empty"}`}>
-        {runs.length > 0 && <aside className="lora-task-list"><header><h3>运行记录</h3><span>{runs.length}</span></header><div>{runs.map(run => <button key={run.id} className={run.id === currentRun?.id ? "is-active" : ""} onClick={() => setSelectedRunId(run.id)}><b>{run.manifest.task_name}</b><span>{new Date(run.status.completed_at ?? run.status.interrupted_at ?? run.manifest.created_at).toLocaleString()}</span><small>{statusText(run.status.status)} · {run.status.step}/{run.manifest.config.max_train_steps} step</small></button>)}</div></aside>}
-        {!currentRun ? <EmptyState title={runsLoading ? "正在读取训练记录" : "暂无训练记录"} detail="每次启动训练独立记录，最近运行优先显示。" /> : <div className="lora-task-workspace"><section className="lora-panel"><header><div><h3>{currentRun.manifest.task_name}</h3><p>{currentRun.manifest.dataset_name} · {currentRun.id}</p><p>{currentRun.manifest.config.resolution} px · Rank {currentRun.manifest.config.network_dim} · 学习率 {currentRun.manifest.config.learning_rate}</p></div></header>
-          {currentRun.manifest.run_settings?.note && <p className="lora-run-note-text"><b>训练备注</b>{currentRun.manifest.run_settings.note}</p>}
+        {runs.length > 0 && <aside className="lora-task-list"><header><h3>运行记录</h3><span>{runs.length}</span></header><div>{runs.map(run => <button key={run.id} className={run.id === currentRun?.id ? "is-active" : ""} onClick={() => setSelectedRunId(run.id)}><b>{run.manifest?.task_name ?? run.id}</b><span>{new Date(run.status.completed_at ?? run.status.interrupted_at ?? run.created_at ?? run.manifest?.created_at ?? "").toLocaleString()}</span><small>{run.legacy ? "历史记录" : statusText(run.status.status)}{run.status.status === "running" && runPhaseText(run.status) ? ` · ${runPhaseText(run.status)}` : ""} · {run.status.step}/{runTarget(run) ?? "—"} step{run.resumable && run.status.resume?.step != null ? ` · 可从第 ${run.status.resume.step} 步恢复` : ""}</small></button>)}</div></aside>}
+        {!currentRun ? <EmptyState title={runsLoading ? "正在读取训练记录" : "暂无训练记录"} detail="每次启动训练独立记录，最近运行优先显示。" /> : <div className="lora-task-workspace"><section className="lora-panel"><header><div><h3>{currentRun.manifest?.task_name ?? currentRun.id}</h3><p>{[currentRun.manifest?.dataset_name, currentRun.id].filter(Boolean).join(" · ")}</p>{!currentRun.legacy && <p>Rank {currentRun.manifest?.semantic_config?.network_dim ?? currentRun.manifest?.config?.network_dim ?? "—"} · 学习率 {currentRun.manifest?.semantic_config?.learning_rate ?? currentRun.manifest?.config?.learning_rate ?? "—"}</p>}</div></header>
+          {currentRun.legacy && <p className="lora-preflight-hint">{currentRun.legacy_note ?? "历史记录，不支持精确续训。"}</p>}
+          {currentRun.manifest?.resume && <p className="lora-preflight-hint">续训自 {currentRun.manifest.resume.parent_run_id} · 从第 {currentRun.manifest.resume.start_step} 步继续</p>}
+          {runNoteText(currentRun) && <p className="lora-run-note-text"><b>训练备注</b>{runNoteText(currentRun)}</p>}
           {currentRun ? (() => {
             const controls = loraRunControls(currentRun.status.status);
-            return <article className="lora-run-card"><header><div><b>{statusText(currentRun.status.status)}</b><span>{new Date(currentRun.manifest.created_at).toLocaleString()}</span></div><div className="lora-actions">
-              {controls.showStop && <button className="button button--danger" disabled={Boolean(busy)} onClick={() => void runAction(fetch, "stop", `${base}/tasks/${currentRun.manifest.task_id}/runs/${currentRun.id}/stop`, "POST")}>停止训练</button>}
-              {controls.showDelete && <button className="button button--danger" disabled={Boolean(busy)} onClick={() => void deleteRun(currentRun)}>删除记录</button>}
+            const resumePointer = currentRun.status.resume ?? null;
+            const performance = currentRun.status.performance ?? null;
+            return <article className="lora-run-card"><header><div><b>{statusText(currentRun.status.status)}{["starting", "running", "stopping"].includes(currentRun.status.status) && runPhaseText(currentRun.status) ? ` · ${runPhaseText(currentRun.status)}` : ""}</b><span>{new Date(currentRun.created_at ?? currentRun.manifest?.created_at ?? "").toLocaleString()}</span></div><div className="lora-actions">
+              {!currentRun.legacy && currentRun.resumable && resumePointer && <button className="button" disabled={Boolean(busy)} title="沿用父 run 冻结的数据集、模型与训练参数，从最新完整恢复状态继续" onClick={() => setResumeDraft({ run: currentRun, target: "", note: "" })}>继续训练</button>}
+              {controls.showStop && currentRun.manifest?.task_id && <button className="button button--danger" disabled={Boolean(busy)} onClick={() => void runAction(fetch, "stop", `${base}/tasks/${currentRun.manifest!.task_id}/runs/${currentRun.id}/stop`, "POST")}>停止训练</button>}
+              {controls.showDelete && currentRun.manifest?.task_id && <button className="button button--danger" disabled={Boolean(busy)} onClick={() => void deleteRun(currentRun)}>删除记录</button>}
             </div></header>
-              <div className="run-metrics"><span><b>{currentRun.status.step}</b> / {currentRun.manifest.config.max_train_steps} step</span><span>loss <b>{currentRun.status.loss?.toFixed(4) ?? "—"}</b></span><span>预计剩余 <b>{duration(currentRun.status.eta_seconds)}</b></span><span>记录磁盘占用 <b>{bytes(currentRun.disk_bytes)}</b></span></div>
+              <div className="run-metrics"><span><b>{currentRun.status.step}</b> / {runTarget(currentRun) ?? "—"} step</span><span>loss <b>{currentRun.status.loss?.toFixed(4) ?? "—"}</b></span><span>当前 LR <b>{typeof currentRun.status.lr === "number" ? currentRun.status.lr.toExponential(2) : "—"}</b></span><span>已处理 <b>{currentRun.status.samples_seen ?? "—"}</b> 张次</span><span>预计剩余 <b>{duration(currentRun.status.eta_seconds)}</b></span><span>记录磁盘占用 <b>{bytes(currentRun.disk_bytes)}</b></span></div>
+              {!currentRun.legacy && currentRun.resumable && resumePointer && <p className="lora-preflight-hint">可从第 {resumePointer.step ?? "—"} 步的完整恢复状态继续训练。</p>}
+              {performance && <p className="lora-preflight-hint">总耗时 {secondsText(performance.wall_seconds)}{performance.phase_seconds?.cache != null && ` · 缓存 ${secondsText(performance.phase_seconds.cache)}`}{performance.phase_seconds?.train != null && ` · 训练 ${secondsText(performance.phase_seconds.train)}`}{performance.seconds_per_update != null && ` · 每更新 ${secondsText(performance.seconds_per_update)}`} · 处理 {performance.samples_seen ?? currentRun.status.samples_seen ?? "—"} 张次</p>}
               <LoraLossChart key={currentRun.id} history={currentRun.status.loss_history} log={currentRun.status.log_tail ?? ""} active={controls.showStop} />
               {currentRun.status.error && <p className="run-error">{currentRun.status.error}</p>}
-              <div className="checkpoint-list">{(currentRun.status.checkpoints ?? []).map((checkpoint) => <article key={checkpoint.id}><div><b>Step {checkpoint.step || "末尾"}</b><span>{checkpoint.relative_path ?? checkpoint.file} · {bytes(checkpoint.size)} · 通用 LoRA</span></div></article>)}</div>
+              <div className="checkpoint-list">{(currentRun.status.checkpoints ?? []).map((checkpoint) => <article key={checkpoint.id}><div><b>Step {checkpoint.step || "末尾"}</b><span>{checkpoint.relative_path ?? checkpoint.file} · {bytes(checkpoint.size)} · {checkpoint.available === false ? "文件缺失" : "通用 LoRA"}</span></div></article>)}</div>
             </article>;
           })() : <div className="lora-empty"><span>该方案暂无训练记录。</span></div>}
           {currentRun?.status.log_tail && <details className="run-log"><summary>日志</summary>{currentRun.status.log_tail.includes("\ufffd") && <p>此记录包含已损坏的编码字符。原始内容保留；UTF-8 修复在更新服务后新启动的训练中生效。</p>}<pre>{currentRun.status.log_tail}</pre></details>}
@@ -1303,5 +1364,10 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
       return same ? current : { itemId: current.itemId, ...draft };
     })} onRestore={() => void restoreOriginal()} onConfirm={(rect, cropEnabled, upscale, outputScale) => void createCrop({ ...cropDraft, ...rect, cropEnabled, upscale, outputScale }, true)} />}
     {imagePreview && <ZoomableImageLightbox fullResolutionOnly src={imagePreview.src} alt={imagePreview.alt} footer={imagePreview.footer} onClose={() => setImagePreview(null)} />}
+    {resumeDraft && <Modal title="继续训练" onClose={() => setResumeDraft(null)} busy={busy === "resume"} footer={<><button type="button" className="button" disabled={busy === "resume"} onClick={() => setResumeDraft(null)}>取消</button><button type="button" className="button button--primary" disabled={busy === "resume" || !resumeTargetValid} onClick={() => void submitResume()}>开始续训</button></>}>
+      <p>从第 {resumeDraftStep} 步的完整恢复状态继续，创建新的训练记录。续训沿用父 run 冻结的数据集、模型、Rank、学习率、梯度累积与随机种子；首版只能修改累计目标步数与备注。</p>
+      <label className="lora-run-note"><span>累计目标步数</span><input type="number" min={resumeDraftStep + 1} step={1} autoFocus value={resumeDraft.target} onChange={event => setResumeDraft(current => current ? { ...current, target: event.target.value } : current)} />{resumeDraft.target.trim() && !resumeTargetValid ? <small className="run-error">累计目标步数必须为大于 {resumeDraftStep} 的整数。</small> : <small>当前已完成 {resumeDraftStep} 步；目标为累计值，例如 {resumeDraftStep} → {resumeDraftStep + (resumeDraft.run.manifest?.run?.max_train_steps ?? resumeDraftStep)}。</small>}</label>
+      <label className="lora-run-note"><span>备注（可选）</span><textarea value={resumeDraft.note} onChange={event => setResumeDraft(current => current ? { ...current, note: event.target.value } : current)} placeholder="例如：预算扩大到 4000，观察后期变化" /></label>
+    </Modal>}
   </section>;
 }

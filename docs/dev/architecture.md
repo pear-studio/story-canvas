@@ -30,7 +30,9 @@ StoryCanvas 把项目创作事实、生成配置、本机执行任务和可重�
 详情见对比实验文档。
 ```
 
-LoRA 训练是独立项目，当前只有 Anima 训练路线。正式项目路径由 `Config/projects.json` 登记；`project.json`、`assets/`、`captioning/` 与唯一 `settings.json` 组成项目事实。项目内 `Saved/` 放执行缓存，`Training/` 放冻结输入和终态归档，权重仍进入外部模型目录。工具 `Saved/` 只保存可清理数据，`workspace/` 仅放临时项目。
+LoRA 训练是独立项目，当前唯一训练路线是 Qwen-Image-2.1：固定 commit 的 DiffSynth-Studio 提供模型、
+LoRA 注入与 loss 实现，仓库内薄 runner（`app/python/qwen-image21-lora-runner.py`）自管更新步、
+采样、保存与恢复，Node 以缓存、训练两个独立子进程执行。正式项目路径由 `Config/projects.json` 登记；`project.json`、`assets/`、`captioning/` 与唯一 `settings.json` 组成项目事实。项目内 `Saved/` 放执行缓存，`Training/` 放冻结输入和终态归档，权重仍进入外部模型目录。工具 `Saved/` 只保存可清理数据，`workspace/` 仅放临时项目。
 顶部名称下拉菜单切换项目、对比实验、LoRA 训练和资源；保留原目录、状态卡片和移动端项目翻页。
 全局工具不受项目加载成功与否影响，URL 不带 project，返回原项目恢复离开时页面。
 训练 HTTP 使用 `/api/lora-training`，通过 `lora-training-operations.mjs` 串行处理，
@@ -38,9 +40,11 @@ LoRA 训练是独立项目，当前只有 Anima 训练路线。正式项目路�
 
 LoRA 顶层是一个深 Module，外部只依赖 `app/server/lora-training-module.mjs` 的四个 Interface：
 
-- `facts`：数据集、素材、Caption 和训练方案等全局训练事实；
-- `plan`：环境、recipe、预检和 frozen run manifest 的计划冻结；
-- `runtime`：只消费已验证 manifest 的启动、停止、checkpoint 和运行媒体；服务启动时只负责终结失联的运行记录，不加载训练 state；
+- `facts`：数据集、素材、Caption 和训练设置等全局训练事实；
+- `plan`：环境（DiffSynth commit、Python/Torch、runner 文件 hash、逐文件模型身份）、recipe、
+  预检和 frozen run manifest 的计划冻结，含续训兼容性校验；
+- `runtime`：只消费已验证 manifest 的两阶段（缓存→训练）子进程启动、停止、checkpoint 盘点、
+  恢复包清理和运行媒体；服务启动时只负责终结失联的运行记录，不接管训练进程；
 - `media` 与 `coordination`：图片后处理、项目媒体和“冻结后启动”的顶层协调。
 
 这不是路由转发层：`lora-training-facts.mjs`、`lora-training-plan.mjs`、
@@ -51,11 +55,13 @@ LoRA 顶层是一个深 Module，外部只依赖 `app/server/lora-training-modul
 仅保留兼容导出，Adapter 不以它作为实现依赖。
 
 LoRA HTTP Adapter 和 Node 主入口不再直接导入 LoRA Implementation 函数。计划冻结把当前项目事实、
-图片与 Caption hash、recipe、实验参数、本机执行参数和 checkpoint 相对目录集中写入 version 4 manifest；
+图片与 Caption hash、加权采样清单、recipe、模型逐文件身份、本机执行参数和 checkpoint 相对目录
+集中写入 version 5 manifest；
 运行时先通过 manifest Interface 校验，再消费这份快照，不重新读取可变 task 或 dataset。Agent 手工登记正式
-LoRA 时也以这份快照解释训练来源。当前不支持从训练 state 继续执行。
-顶层 `coordination.startRun` 明确编排 `plan.freeze` 后调用 `runtime.startManifest`；runtime 不再
-拥有建立 manifest 的启动入口。
+LoRA 时也以这份快照解释训练来源。续训不复用旧进程：从父 run 归档的最新完整恢复包（LoRA、optimizer、
+scheduler、RNG 与采样游标）冻结一个新 run 后按同一路径执行，首版只改累计目标步数与备注。
+顶层 `coordination.startRun`／`resumeRun` 明确编排 `plan.freeze`／`freezeResume` 后调用
+`runtime.startManifest`；runtime 不再拥有建立 manifest 的启动入口。
 
 ## 组件职责
 
@@ -66,7 +72,7 @@ LoRA 时也以这份快照解释训练来源。当前不支持从训练 state �
 | 本地 Node.js 服务 | 受限读写项目事实、确定性编译生成任务、配置诊断、词库搜索和媒体访问 | 内置 LLM、数据库、云同步或 Agent 调度 |
 | `render_profile` | Qwen-Image-2.1 模型（`dit`、`text_encoder`、`vae`）、一段全局 `prompt.text`、文生图与参考图候选工作流、风格 LoRA | 保存角色或页面 Prompt、单页事实或项目创作事实 |
 | ComfyUI | 执行生成工作流 | 管理故事、用户审核或项目版本 |
-| `sd-scripts` | 在独立固定 Python 中执行 Anima 标准 LoRA 训练 | 管理项目、下载环境或决定结果 |
+| 固定 commit 的 DiffSynth-Studio | 提供 Qwen-Image-2.1 的模型加载、LoRA 注入与 loss 实现 | 管理项目、下载环境或决定结果；训练循环、采样、保存与恢复由仓库内 runner 自管 |
 
 工作台导航由 `workbench-navigation.ts` 集中维护当前位置和切换、回退规则；`App.tsx` 统一接纳
 导航并同步 URL，首次加载、后台刷新和导航操作后的快照共用同一回退路径。普通切项目直接进入基本信息，
@@ -196,14 +202,14 @@ Agent 使用“了解现状、分页、页面制作、Prompt 编写、主观探�
 - `GET /api/tasks/:projectId/:taskId?purpose=candidate|comparison`：点击任务卡片时读取单个任务详情，包含条目、冻结执行快照与实际提交记录。活动列表和历史列表只返回摘要，不包含逐张条目、图片预览地址或阶段记录。顶部任务入口与「项目 → 任务记录」共用卡片、历史分页和详情弹窗；记录页展示当前工作台全部项目，不按当前项目过滤；
 - `GET /api/prompt-dictionary`、`POST /api/prompt-dictionary/matches`：搜索固定 Danbooru/中文
   快照，或批量取得标签类别、频次和翻译证据；词库仅供独立查询与训练，不参与剧情页 Prompt 编译与审计；
-- `GET /api/lora-training/environment`：只读诊断固定训练器、Python/Torch/CUDA、GPU、入口脚本
-  与参考模型身份；网页不能触发安装或升级；
+- `GET /api/lora-training/environment`：只读诊断固定 DiffSynth 训练器 commit、Python/Torch/CUDA、GPU、
+  仓库内 runner 身份与模型清单逐文件状态；网页不能触发安装或升级；
 - `GET /api/lora-resources` 与详情、媒体接口：读取当前设备每个正式 LoRA 各自独立的完整本地
   资源记录、身份诊断、预览和示例；
 - `GET/POST/PUT /api/lora-training/datasets...`：独立管理数据集、分组、受限素材导入、
   非破坏性裁剪、同名 Caption 与图片集确认；
 - `GET/PUT /api/lora-training/tasks...`：读取和更新项目唯一训练设置与预检；
-- `POST /api/lora-training/tasks/:taskId/runs` 及停止、删除接口：
+- `POST /api/lora-training/tasks/:taskId/runs` 及停止、删除、续训（`runs/:runId/resume`）接口：
   建立不可变快照并管理本机训练记录；checkpoint 直接写入统一 LoRA 目录，删除记录时保留权重；
 - 受限媒体接口：读取项目的候选、缩略图、输出图片，以及任务内图片。
 
@@ -266,11 +272,15 @@ Agent 在目标或依赖指纹冲突后重新读取并判断，不自动覆盖�
 
 训练项目的 `project.json` 保存名称、激活标签、分组和图片项；Caption 位于各素材目录。`settings.json` 保存唯一当前底座与参数，不持久化独立方案名或数据集引用。素材与设置共享项目 ETag，历史 run 只读取自己的冻结输入。
 
-每次训练先在临时目录复制启用图片和 Caption、计算 SHA、生成数据集 TOML 与结构化 argv，
-不可变 manifest、dataset/ 与 config/ 归档到 <训练项目>/Training/<task-id>/<run-id>/；
-<训练项目>/Saved/Training/<task-id>/<run-id>/ 保留独立工作副本和 status，再以 spawn()、shell: false
-启动固定 Python。终态先归档 result，再更新 runtime 状态；checkpoint 仅在进程退出后校验完整性并登记。
-当前不保存可用于续训的 optimizer state；服务重启时只按 PID、可执行文件、命令行 run 路径与入口脚本
+每次训练先冻结：复制启用图片与 Caption 到归档 `inputs/`、计算 SHA、构建按分组 repeats 加权的
+采样清单，不可变 manifest v5 与 `inputs/`、`resume/` 归档到 <训练项目>/Training/<task-id>/<run-id>/；
+<训练项目>/Saved/Training/<task-id>/<run-id>/ 保留缓存、控制文件、status、事件与日志等工作副本，
+再以 spawn()、shell: false 依次启动缓存与训练两个阶段的固定 Python runner。runner 输出结构化
+JSONL 事件，Node 据此更新进度。终态先归档 result（含性能档案），再更新 runtime 状态；checkpoint
+与恢复包在保存事件到达时即盘点登记，不等进程退出。
+每个保存节点同时产出 models_root 下的小型 LoRA 权重和归档内的完整恢复包（LoRA、optimizer、
+scheduler、RNG 与采样游标）；同一任务只保留最新一份完整恢复状态，新包发布后才清理被取代的旧包。
+服务重启时只按 PID、可执行文件、命令行 run 路径与入口脚本
 验证孤儿进程，并把失联的 running run 标记为中断，不按进程名批量终止。
 
 训练 checkpoint 直接写入 `models_root/loras/training/<task-id>/<run-id>/`。run manifest 只用

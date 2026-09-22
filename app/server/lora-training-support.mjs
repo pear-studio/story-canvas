@@ -11,6 +11,8 @@ import { promisify } from "node:util";
 import sharp from "sharp";
 import { validateLoraTrainingRunManifest } from "./lora-training-run-manifest.mjs";
 
+export { validateLoraTrainingRunManifest };
+
 export const execFileAsync = promisify(execFile);
 export const idPatterns = Object.freeze({
   dataset: /^dataset-[a-f0-9]{12}$/,
@@ -166,7 +168,9 @@ export function runRoot(repositoryRoot, taskId, runId) {
 }
 
 export function checkpointDirectoryFromManifest(manifest, fallback = null) {
-  const outputIndex = manifest?.execution?.argv?.indexOf("--output_dir");
+  // v5 清单直接冻结 checkpoints_dir；v4 历史清单只能从 sd-scripts argv 推断。
+  if (typeof manifest?.paths?.checkpoints_dir === "string" && manifest.paths.checkpoints_dir.trim()) return path.resolve(manifest.paths.checkpoints_dir);
+  const outputIndex = manifest?.execution?.argv?.indexOf("--output_dir") ?? -1;
   const outputDirectory = outputIndex >= 0 ? manifest.execution.argv[outputIndex + 1] : null;
   return typeof outputDirectory === "string" && outputDirectory.trim() ? path.resolve(outputDirectory) : fallback;
 }
@@ -297,16 +301,18 @@ export function postprocessFingerprint({ originalSha256, crop, upscale, outputSc
   return createHash("sha256").update(canonicalJson({ original_sha256: originalSha256, crop, upscale: Boolean(upscale), output_scale: outputScale ?? null, model_sha256: modelSha256 ?? null, downsample_algorithm: postprocessDownsampleAlgorithm, pipeline_version: pipelineVersion })).digest("hex");
 }
 
-export function validateModelIdentity(value, label, errors) {
+export function validateBaseDirIdentity(value, label, errors) {
   if (!isRecord(value)) {
-    errors.push(`${label} 必须是模型身份对象`);
+    errors.push(`${label} 必须是底模目录身份对象`);
     return;
   }
   const relativePath = value.relative_path;
-  if (typeof relativePath !== "string" || path.isAbsolute(relativePath) || relativePath.includes("..") || relativePath.includes("\\")) {
-    errors.push(`${label}.relative_path 必须是 models_root 下的正斜杠相对路径`);
+  // v5 的 base 各项是 models_root 下的目录前缀；逐文件身份以 library/lora-training/qwen-image21-models.json 为准。
+  if (typeof relativePath !== "string" || path.isAbsolute(relativePath) || relativePath.includes("..") || relativePath.includes("\\") || !relativePath.endsWith("/")) {
+    errors.push(`${label}.relative_path 必须是 models_root 下以 / 结尾的正斜杠目录前缀`);
   }
-  if (value.sha256 !== undefined && !sha256Pattern.test(value.sha256)) errors.push(`${label}.sha256 必须是 64 位小写 SHA-256`);
+  if (Object.hasOwn(value, "sha256")) errors.push(`${label} 不带单文件 sha256；逐文件身份见模型清单`);
+  if (value.source !== undefined && (typeof value.source !== "string" || !value.source.trim())) errors.push(`${label}.source 必须是非空字符串`);
 }
 
 export function canonicalJson(value) {
@@ -316,7 +322,7 @@ export function canonicalJson(value) {
 }
 
 export function validateTarget(value, errors) {
-  if (!isRecord(value) || value.family !== "anima") errors.push("target.family 必须为 anima");
+  if (!isRecord(value) || value.family !== "qwen-image-2-1") errors.push("target.family 必须为 qwen-image-2-1");
   if (typeof value?.prompt_family !== "string" || !value.prompt_family.trim()) errors.push("target.prompt_family 不能为空");
   if (!isRecord(value?.usage_defaults)) errors.push("target.usage_defaults 必须是对象");
   else {
@@ -327,10 +333,7 @@ export function validateTarget(value, errors) {
     if (!Number.isInteger(usage.steps) || usage.steps < 1) errors.push("target.usage_defaults.steps 必须是正整数");
     if (typeof usage.cfg !== "number" || usage.cfg < 0) errors.push("target.usage_defaults.cfg 必须是非负数");
   }
-  validateModelIdentity(value.base?.dit, "target.base.dit", errors);
-  validateModelIdentity(value.base?.text_encoder, "target.base.text_encoder", errors);
-  validateModelIdentity(value.base?.vae, "target.base.vae", errors);
-  if (value.base?.llm_adapter) validateModelIdentity(value.base.llm_adapter, "target.base.llm_adapter", errors);
+  for (const kind of ["dit", "text_encoder", "vae", "processor"]) validateBaseDirIdentity(value.base?.[kind], `target.base.${kind}`, errors);
 }
 
 export function validateActivationTerms(value, errors, label = "activation_terms") {
@@ -351,11 +354,9 @@ export function validateActivationTerms(value, errors, label = "activation_terms
 }
 
 export const loraTrainingOverrideDefinitions = Object.freeze({
-  resolution: "integer",
-  effective_batch_size: "integer",
   network_dim: "integer",
-  network_alpha: "integer",
   learning_rate: "number",
+  gradient_accumulation_steps: "integer",
 });
 
 export function validateTrainingRecipeOverrides(value, errors) {
@@ -424,8 +425,8 @@ export function validateLoraTrainingTask(value) {
   const errors = [];
   if (!isRecord(value)) return ["plan.json 必须是 JSON 对象"];
   validateExactKeys(value, ["version", "name", "dataset_id", "target", "training_recipe", "run_defaults"], "plan.json", errors);
-  if (value.version !== 4) errors.push("version 必须为 4");
-  errors.push(...validateSavedRunSettings(value.run_defaults, value.training_recipe?.overrides?.effective_batch_size));
+  if (value.version !== 5) errors.push("version 必须为 5");
+  errors.push(...validateSavedRunSettings(value.run_defaults));
   if (typeof value.name !== "string" || !value.name.trim()) errors.push("name 不能为空");
   if (!idPatterns.dataset.test(value.dataset_id ?? "")) errors.push("dataset_id 无效");
   validateTarget(value.target, errors);

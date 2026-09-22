@@ -26,8 +26,10 @@ npm --prefix <仓库根>/app run setup
   "models_root": "D:/Models/ComfyUI",
   "civitai_api_key": "",
   "lora_training": {
-    "trainer_root": "../story-canvas-trainer/sd-scripts",
-    "python": "../story-canvas-trainer/sd-scripts/.venv/Scripts/python.exe",
+    "diffsynth": {
+      "trainer_root": "../story-canvas-trainer/DiffSynth-Studio",
+      "python": "../story-canvas-trainer/DiffSynth-Studio/.venv/Scripts/python.exe"
+    },
     "quality": {
       "python": "app/data.local/material-tools/.venv/Scripts/python.exe"
     },
@@ -66,7 +68,9 @@ npm --prefix <仓库根>/app run setup
   `comfy install --url` 的来源；留空时使用 comfy-cli 默认上游；
 - `models_root`：包含 `checkpoints/`、`loras/` 等子目录的模型根目录；
 - `civitai_api_key`：可选的 Civitai API Key，供 Agent 认证下载模型或调用 Civitai API；
-- `lora_training.trainer_root` 与 `lora_training.python`：独立的固定 `sd-scripts` 源码和 Python；
+- `lora_training.diffsynth.trainer_root` 与 `lora_training.diffsynth.python`：固定 commit 的
+  DiffSynth-Studio 源码目录和其独立 Python；缺省时按同级默认路径
+  `../story-canvas-trainer/DiffSynth-Studio` 解析；
 - `lora_training.quality.python`：指向共享的素材处理环境 `app/data.local/material-tools/.venv/Scripts/python.exe`，与打标、抠图共用，和训练环境分离；依赖由下述 uv 清单管理。优先使用 CUDA，无 CUDA 时使用 CPU。权重清单在 `library/lora-training/quality/musiq.json`，文件放在 `models_root/quality_assessment/musiq_koniq_ckpt-e95806b9.pth`，大小约 104 MiB；工作台校验 SHA-256，不自动下载。代码与清单进入 Git，Python 环境和权重不进入 Git。缺少配置时暂停图片自动准备；检查显示路径与权重已配置不代表 Python 依赖已经通过实际运行验证；
 - `lora_training.captioning`：可选的 LoRA 数据集基础 Prompt 打标器配置；当前提交的
   `animetimm-eva02-db4-full` 适配器使用素材处理环境的 `onnxruntime-gpu` 和 `CUDAExecutionProvider`，具体版本见 `app/python/materials.lock`，
@@ -92,7 +96,7 @@ npm --prefix <仓库根>/app run setup
 | 相对 `models_root` 的目录 | 内容 |
 |---|---|
 | `checkpoints/` | 完整生成模型 checkpoint |
-| `diffusion_models/` | 分体 diffusion / DiT 权重，如 Anima、Wan |
+| `diffusion_models/` | 分体 diffusion / DiT 权重，如 Qwen-Image-2.1 |
 | `text_encoders/`、`vae/` | 文本编码器与 VAE |
 | `clip_vision/`、`controlnet/`、`embeddings/` | 视觉编码器、控制模型与嵌入 |
 | `loras/` | LoRA；未登记训练权重放 `loras/training/<task-id>/<run-id>/` |
@@ -114,22 +118,22 @@ npm --prefix <仓库根>/app run setup
 
 ## Python 环境维护（uv）
 
-本机保留三套功能环境：ComfyUI 生成、sd-scripts 训练、素材处理（MUSIQ、打标、抠图）。所有安装、依赖检查和同步使用 uv；不通过 `.pth`、`PYTHONPATH` 或复制 `site-packages` 借用另一套环境。comfy-cli 作为 `uv tool` 管理的命令工具，继续是 ComfyUI 启停入口，不与模型依赖混装。
+本机保留三套功能环境：ComfyUI 生成、DiffSynth 训练、素材处理（MUSIQ、打标、抠图）。所有安装、依赖检查和同步使用 uv；不通过 `.pth`、`PYTHONPATH` 或复制 `site-packages` 借用另一套环境。comfy-cli 作为 `uv tool` 管理的命令工具，继续是 ComfyUI 启停入口，不与模型依赖混装。
 
 | 用途 | Python | 环境位置 | 依赖清单 |
 |---|---|---|---|
 | ComfyUI 生成 | 3.13.12 | 已配置 ComfyUI workspace 的 `.venv` | `app/python/comfyui.lock` |
-| sd-scripts 训练 | 3.10.19 | `../story-canvas-trainer/sd-scripts/.venv` | `app/python/training.lock` |
+| DiffSynth 训练 | 3.11.14 | `../story-canvas-trainer/DiffSynth-Studio/.venv` | `app/python/diffsynth.lock` |
 | 评分、打标、抠图 | 3.11.14 | `app/data.local/material-tools/.venv` | `app/python/materials.lock` |
 
 先安装 uv 并确认 `uv --version` 可用；本轮维护使用 uv 0.10.7。实际外部路径只写入被忽略的 `Config/local.json`，表中仓库内路径是默认布局。
 
-`app/python/training.lock` 和 `comfyui.lock` 是当前 Windows 可用环境的精确包版本快照，素材依赖由 `materials.in` 解析为 `materials.lock`。训练器源码版本仍由 `library/lora-training/trainer.json` 管理；ComfyUI 源码仍由 comfy-cli 管理。这些锁文件不承诺 Linux 或其他 Python 版本可直接使用。升级时显式更新对应锁文件并验证功能，不在日常启动时自动升级或同步。
+`app/python/diffsynth.lock` 和 `comfyui.lock` 是当前 Windows 可用环境的精确包版本快照，素材依赖由 `materials.in` 解析为 `materials.lock`。训练器源码版本由 `library/lora-training/diffsynth.json` 固定 commit 管理；ComfyUI 源码仍由 comfy-cli 管理。这些锁文件不承诺 Linux 或其他 Python 版本可直接使用。升级时显式更新对应锁文件并验证功能，不在日常启动时自动升级或同步。
 
 在仓库根目录运行，先确认相关训练、生成和图片处理任务已结束：
 
 ```powershell
-uv python install 3.10.19 3.11.14 3.13.12
+uv python install 3.11.14 3.13.12
 uv tool install comfy-cli==1.16.0 --python 3.13.12
 # 将 uv tool dir --bin 返回目录中的 comfy.exe 写入本机 comfy_cli。
 uv venv --python 3.11.14 app/data.local/material-tools/.venv
@@ -137,9 +141,12 @@ uv pip sync --python app/data.local/material-tools/.venv/Scripts/python.exe app/
 uv pip check --python app/data.local/material-tools/.venv/Scripts/python.exe
 ```
 
-已有环境不重复执行 `uv venv`。训练环境沿用清单规定的源码与 Python，使用 `uv pip sync --python <训练Python> app/python/training.lock --extra-index-url https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match`，然后执行 `uv pip install --python <训练Python> --no-deps -e <训练器目录>`。锁文件不绑定 editable 源码路径；实际路径读取 `Config/local.json`。ComfyUI 使用 `uv pip sync --python <ComfyUI的Python> app/python/comfyui.lock --extra-index-url https://download.pytorch.org/whl/cu130 --index-strategy unsafe-best-match`。同步是精确匹配，会移除清单外的包；安装自定义节点或改变依赖前应先更新相应清单，不能用旧锁覆盖新增功能。
+已有环境不重复执行 `uv venv`。训练环境沿用清单规定的源码与 Python，使用 `uv pip sync --python <训练Python> app/python/diffsynth.lock --extra-index-url https://download.pytorch.org/whl/cu130 --index-strategy unsafe-best-match`，然后执行 `uv pip install --python <训练Python> --no-deps -e <训练器目录>`。锁文件不绑定 editable 源码路径；实际路径读取 `Config/local.json`。ComfyUI 使用 `uv pip sync --python <ComfyUI的Python> app/python/comfyui.lock --extra-index-url https://download.pytorch.org/whl/cu130 --index-strategy unsafe-best-match`。同步是精确匹配，会移除清单外的包；安装自定义节点或改变依赖前应先更新相应清单，不能用旧锁覆盖新增功能。
 
-新建训练环境时先按 `library/lora-training/trainer.json` 下载并检出固定源码 commit，再运行 `uv venv --python 3.10.19 ../story-canvas-trainer/sd-scripts/.venv` 和上述同步命令。ComfyUI 源码安装与 workspace 选择仍走 comfy-cli；需要重建 Python 环境时在已核对的 workspace 下用 `uv venv --python 3.13.12 <ComfyUI目录>/.venv`，再同步对应清单。配置完 Python 路径后重启工作台，使评分和打标读取新配置。
+新建训练环境时先按 `library/lora-training/diffsynth.json` 取得固定 commit 的 DiffSynth-Studio 源码
+（Git 检出或核对该清单 `source_archive` 的 SHA-256 后解压），再运行
+`uv venv --python 3.11.14 ../story-canvas-trainer/DiffSynth-Studio/.venv` 和上述同步命令；复现命令见
+[Qwen 训练环境](../dev/qwen-image-lora.md)。ComfyUI 源码安装与 workspace 选择仍走 comfy-cli；需要重建 Python 环境时在已核对的 workspace 下用 `uv venv --python 3.13.12 <ComfyUI目录>/.venv`，再同步对应清单。配置完 Python 路径后重启工作台，使评分和打标读取新配置。
 
 调整素材依赖时运行 `uv pip compile app/python/materials.in --python-version 3.11 --python-platform windows --index-strategy unsafe-best-match --output-file app/python/materials.lock`。验证包括 MUSIQ 实际评分、CUDA 打标、抠图以及 `uv pip check`。训练和生成还需分别验证训练器入口与 ComfyUI 健康接口。环境和模型保留在本机，不提交 Git。
 
@@ -277,9 +284,9 @@ uv pip check --python $materialPython
 所在系统猜测远程 ComfyUI 的路径格式，也不把反斜杠写回项目事实。
 
 配置还声明 `architecture_family`，支持能力由 `operations` 下存在的 input route 明确表达，不再
-保存重复的 `capabilities`。当前生成侧唯一结构家族是 Anima，分别加载 `diffusion_models`、
-`text_encoders` 与 `vae` 中的三份精确模型。当前 `anima-base-v1` 与 `anima-aesthetic-v1-1` 只声明
-通过 `empty_latent` 生成候选图；未声明的操作或输入会收到明确错误。
+保存重复的 `capabilities`。当前生成侧唯一结构家族是 Qwen-Image-2.1，分别加载 `diffusion_models`、
+`text_encoders` 与 `vae` 中的精确模型。当前 `qwen-image-2-1` 配置声明
+文生图（`empty_latent`）与参考图（`reference_image`）两条候选 route；未声明的操作或输入会收到明确错误。
 
 工作台的“资源 → 基模”和“资源 → LoRA”会合并 `library/resources/catalog.json` 中的人工登记项、
 `library/resources/loras/` 中公开 LoRA 的完整记录、`app/data.local/lora-resources/` 中本机正式
@@ -363,30 +370,35 @@ comfy-cli 的后台 PID 在进程异常退出后可能被 Windows 复用，导�
 
 ## 可选 LoRA 训练环境
 
-LoRA 训练使用独立 Python，不复用 ComfyUI Python，也不增加第二个本地服务。训练器源码与虚拟环境放在工具仓库外、同级的 `story-canvas-trainer/`；设备实际路径只保存在 `Config/local.json`。仓库固定的
-commit、包版本、参考模型 SHA 和四份显存预设位于 `library/lora-training/`。默认本机目录为：
+LoRA 训练使用独立 Python，不复用 ComfyUI Python，也不增加第二个本地服务。唯一训练路线是
+Qwen-Image-2.1：训练器源码为固定 commit 的 DiffSynth-Studio，与虚拟环境放在工具仓库外、同级的
+`story-canvas-trainer/DiffSynth-Studio/`；设备实际路径只保存在 `Config/local.json` 的
+`lora_training.diffsynth.trainer_root` 与 `lora_training.diffsynth.python`。默认本机目录为：
 
 ```text
-../story-canvas-trainer/sd-scripts/
+../story-canvas-trainer/DiffSynth-Studio/
 └─ .venv/
 ```
 
-Qwen-Image-2.1 的独立 DiffSynth 环境放在同级 `story-canvas-trainer/DiffSynth-Studio/`，参见 [Qwen 训练环境](../dev/qwen-image-lora.md)。本机已完成 100 步短训，尚未接入工作台训练调度。
+- 固定源码身份、commit 与官方源码归档 SHA-256 位于 `library/lora-training/diffsynth.json`；
+  依赖快照为 `app/python/diffsynth.lock`；DiffSynth 自身按上述固定源码以 `--no-deps -e` 安装，
+  不包含在锁文件中。安装与复现命令见 [Qwen 训练环境](../dev/qwen-image-lora.md)；
+- 训练使用官方原始 BF16 权重：DiT、文本编码器、VAE 与 processor/tokenizer 配套文件按
+  [模型目录规范](#模型目录规范) 放入 `models_root`；逐文件相对路径、大小、SHA-256 与下载来源
+  （Hugging Face `Qwen/Qwen-Image-2.1`）以 `library/lora-training/qwen-image21-models.json` 为准，
+  预检逐文件校验；Comfy INT8 权重不能当作训练权重；
+- 训练循环由仓库内 runner `app/python/qwen-image21-lora-runner.py` 执行，分缓存与训练两个独立
+  子进程；不要把示例脚本下载的 `models/` 留在训练器目录。
 
 普通 `setup` 不下载或更新训练器。用户请求后由 Agent 使用 `comfyui-runtime` 和
-`lora-training` 技能显式安装、校验或修复；工作台只诊断和安全执行。当前训练只支持官方 Anima Base，模型路径相对 `models_root`：
+`lora-training` 技能显式安装、校验或修复；工作台只诊断和安全执行。
 
-- `diffusion_models/anima-base-v1.0.safetensors`；
-- `diffusion_models/anima-aesthetic-v1.1.safetensors`；
-- `text_encoders/qwen_3_06b_base.safetensors`；
-- `vae/qwen_image_vae.safetensors`。
-
-环境或模型缺失只禁用 LoRA 开始，不影响普通项目编辑和生成。当前不支持从中间状态继续训练。
+环境或模型缺失只禁用 LoRA 开始，不影响普通项目编辑和生成。
+旧 sd-scripts 环境（同级的 `story-canvas-trainer/sd-scripts/`）不再被工作台使用，保留备查，不删除。
 训练、普通生成、对比实验和 ComfyUI 超分之间不建立全局 GPU 准入；用户自行决定是否并发，显存不足
 时由对应运行任务报告失败。空闲但占用显存的 ComfyUI 可由用户在性能面板关闭。
 
-开发设备需要复核完整应用 runner 时，可以运行被忽略临时项目中的一步冒烟；命令会真实加载
-模型、写 checkpoint，并在结束后删除临时项目：
+开发设备需要复核训练 HTTP 边界时，可以运行隔离目录冒烟（不创建故事项目、不启动 GPU 训练）：
 
 ```powershell
 npm --prefix <仓库根>/app run smoke:lora
@@ -400,7 +412,9 @@ npm --prefix <仓库根>/app run doctor
 
 必需项失败时命令返回非零；ComfyUI 路径、模型目录、显式配置的词库覆盖和可选 LoRA 训练环境
 缺失属于警告。LoRA
-诊断会执行两个训练入口的 `--help`，并核对固定 commit、Python、Torch、CUDA 和参考模型 SHA。
+诊断会核对 DiffSynth 固定 commit（无 git 历史的 zipball 安装按 `diffsynth.json` 的 `identity_files`
+关键文件内容指纹核对）、Python、Torch、CUDA/BF16 能力、依赖锁、仓库内 runner 与模型清单
+逐文件 SHA-256。
 工作台还会按
 项目默认生成配置列出每个模型的文件、SHA-256、来源和本机状态。
 
