@@ -6,7 +6,7 @@ import { hashCanonicalJson } from "./workflow-definition.mjs";
 import { ApiError } from "./http-support.mjs";
 
 function draftOperation(domain, kind) {
-  if (domain === "scene" && ["profile", "visual", "prompt", "lora"].includes(kind)) return { read: scene.readSceneFactDraft, commit: scene.commitSceneFact, kind };
+  if (domain === "scene" && ["profile", "visual", "prompt"].includes(kind)) return { read: scene.readSceneFactDraft, commit: scene.commitSceneFact, kind };
   if (domain === "page") {
     if (["content", "prompt"].includes(kind)) return { read: story.readStoryFactDraft, commit: story.commitStoryFact, kind: kind === "content" ? "narrative" : kind };
     if (kind === "text-sources") return { read: story.readTextSourcesDraft, commit: story.commitTextSources, kind };
@@ -23,7 +23,7 @@ function draftOperation(domain, kind) {
   if (domain === "story" && kind === "text-sources") {
     return { read: story.readTextSourcesDraft, commit: story.commitTextSources, kind };
   }
-  if (domain === "character" && ["profile", "visual", "prompt", "lora"].includes(kind)) {
+  if (domain === "character" && ["profile", "visual", "prompt"].includes(kind)) {
     return { read: character.readCharacterFactDraft, commit: character.commitCharacterFact, kind };
   }
   if (domain === "character" && ["page-goal", "page-prompt"].includes(kind)) {
@@ -54,13 +54,13 @@ export async function readFactDraft(root, { domain, kind, projectId, targetId })
 // HTTP 与 CLI 直接调用同一提交逻辑，不托管草稿文件。
 export async function saveFactDraft(root, {
   domain, kind, projectId, targetId, document, expectedSha256, conflictCode,
-  beforeCommit, allowLoraChanges = false, confirmationSha256, expectedContextSha256, contextConflictCode = "page_prompt_upstream_conflict",
+  beforeCommit, expectedContextSha256, contextConflictCode = "page_prompt_upstream_conflict",
 }) {
   const submitted = structuredClone(document);
   const { operation, context } = await currentDraft(root, domain, kind, projectId, targetId);
   if (context.target.sha256 !== expectedSha256) throw new ApiError(409, conflictCode, [targetId]);
   if (expectedContextSha256 !== undefined && hashCanonicalJson(context.upstream) !== expectedContextSha256) throw new ApiError(409, contextConflictCode, [targetId]);
-  return operation.commit(root, context, () => structuredClone(submitted), operation.kind, { beforeCommit, allowLoraChanges, confirmationSha256 });
+  return operation.commit(root, context, () => structuredClone(submitted), operation.kind, { beforeCommit });
 }
 
 export async function pagePromptContextSha256(projectDirectory, kind, pageId) {

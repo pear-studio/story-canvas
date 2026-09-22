@@ -30,11 +30,11 @@
 .generation-details__prompt > header { flex-wrap: wrap; }
 .generation-prompt-sources { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
 .generation-prompt-source { padding: 3px 7px; border-radius: 999px; font-size: var(--text-meta); font-weight: 700; }
-.generation-prompt-source--render_profile, .generation-prompt-part--render_profile { color: #315f88; background: #e8f2fb; }
-.generation-prompt-source--lora_trigger, .generation-prompt-part--lora_trigger { color: #855c16; background: #fff1cc; }
+.generation-prompt-source--global, .generation-prompt-part--global { color: #315f88; background: #e8f2fb; }
 .generation-prompt-source--character, .generation-prompt-part--character { color: #724e90; background: #f2eafa; }
-.generation-prompt-source--visual, .generation-prompt-part--visual { color: #2f6d50; background: #e7f4eb; }
-.generation-prompt-source--avoid, .generation-prompt-part--avoid { color: #984b45; background: #faecea; }
+.generation-prompt-source--scene, .generation-prompt-part--scene { color: #855c16; background: #fff1cc; }
+.generation-prompt-source--attachment, .generation-prompt-part--attachment { color: #984b45; background: #faecea; }
+.generation-prompt-source--page, .generation-prompt-part--page { color: #2f6d50; background: #e7f4eb; }
 .generation-details__prompts { padding: 12px; display: grid; grid-template-columns: 1fr; gap: 10px; }
 .generation-details__prompts article { min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 9px; background: white; }
 .generation-details__prompts article > header { padding: 9px 11px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--line); background: #fbfcfb; }

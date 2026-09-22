@@ -23,33 +23,20 @@ npm --prefix <仓库根>/app run character:fact -- visual save <完整草稿JSON
 ```
 
 视觉制作 Agent 编辑完整 Prompt。若 visual 已新增或删除 variant，`read` 会先把返回的正文归一化到
-当前 variant 集合：保留仍存在配置，给新 variant 补当前 Prompt 的空分类、空 `loras` 与空 `identity_disabled`，移除已删除 variant。
-这一步允许完成必要的下游结构修复；对于仍存在的 variant，入口会显示但拒绝任何 LoRA 变化：
+当前 variant 集合：保留仍存在配置，给新 variant 补空文本与空参考图，移除已删除 variant。
+这一步允许完成必要的下游结构修复：
 
 ```powershell
 npm --prefix <仓库根>/app run character:fact -- prompt read <project-id> <character-id>
 npm --prefix <仓库根>/app run character:fact -- prompt save <完整草稿JSON文件|->
 ```
 
-LoRA 使用独立的全量替换入口。Agent 只有在本轮已取得用户明确同意后才能调用；该约束不额外
-持久化审批 token 或审核记录。返回正文只包含 identity 与各 variant 的完整 LoRA 配置，不包含
-Prompt，variant 之间也没有继承或差分语义。若持久 Prompt 尚未与当前 visual 身份配平，LoRA
-入口会明确要求
-先完成一次 Prompt repair，不会自行创建或删除 Prompt 配置：
-
-```powershell
-npm --prefix <仓库根>/app run character:fact -- lora read <project-id> <character-id>
-npm --prefix <仓库根>/app run character:fact -- lora save <完整草稿JSON文件|->
-```
-
 save 要求携带读取时的目标和依赖指纹。冲突后重新读取并判断，不自动覆盖。
 角色 visual 是上游，合法的 variant 变更可以造成
-下游悬空，并在结果中返回结构化 diagnostics。角色 Prompt 和 LoRA 是下游，不允许未知 variant；Prompt 可暂缺部分 variant 并返回诊断，LoRA
-入口仍要求先配平 Prompt。实际生成检查本次依赖是否完整。
+下游悬空，并在结果中返回结构化 diagnostics。角色 Prompt 是下游，不允许未知 variant；Prompt 可暂缺部分 variant 并返回诊断。实际生成检查本次依赖是否完整。
 
-角色 `prompt save` 还返回 `audit`：以统一角色预算独立审计本次保存的 identity 与各
-variant，不遍历关联页面、不修改 LoRA；identity 改动时响应同时附带 `identity_impact` 影响报告
-（逐 variant 的 `lost_inheritance` / `new_inheritance`）。审计错误或不可用不改变保存成功；CLI 完整保留 `target_file`、`value`、`downstream_diagnostics`、`identity_impact` 和审计结果。详细状态见[Prompt 写入流程](../reference/prompt.md)。
+角色 `prompt save` 还返回 `audit`：按 `variants` 中各造型分别返回结果，不遍历关联页面。
+审计错误或不可用不改变保存成功；CLI 完整保留 `target_file`、`value`、`downstream_diagnostics` 和审计结果。详细状态见[Prompt 写入流程](../reference/prompt.md)。
 
 ## 创建与删除
 
@@ -60,7 +47,7 @@ npm --prefix <仓库根>/app run character:fact -- character create <project-id>
 ```
 
 命令原子创建 profile、visual、prompt 三份最小合法事实并追加到 `characters/index.json`。Prompt
-包含当前 Prompt 的空分类，LoRA 为 `null`；visual 自带一个 `{id: "default", name: "默认"}` 子设定。
+的 `prompt_name` 复制显示名称，自带一个 `{id: "default", name: "默认"}` 子设定（空文本、空参考图）。
 
 删除角色前必须先得到用户明确确认：
 

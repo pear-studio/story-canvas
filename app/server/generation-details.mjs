@@ -1,58 +1,8 @@
-function promptPart(value, polarity, index) {
-  if (typeof value === "string") {
-    return {
-      category: polarity === "negative" ? "avoid" : null,
-      role: null,
-      prompt_type: null,
-      prompt_text: value,
-      weight: 1,
-      origin: "visual",
-      origin_id: null,
-      polarity,
-      path: `prompt_parts.${polarity}[${index}]`,
-      text: value,
-    };
-  }
-  if (!value || typeof value !== "object") return null;
-  const text = typeof value.text === "string"
-    ? value.text
-    : typeof value.prompt_text === "string" ? value.prompt_text : "";
-  return {
-    ...structuredClone(value),
-    category: typeof value.category === "string" ? value.category : null,
-    role: typeof value.role === "string" ? value.role : null,
-    prompt_type: typeof value.prompt_type === "string" ? value.prompt_type : null,
-    prompt_text: typeof value.prompt_text === "string" ? value.prompt_text : text,
-    weight: typeof value.weight === "number" ? value.weight : 1,
-    origin: typeof value.origin === "string" ? value.origin : "visual",
-    origin_id: typeof value.origin_id === "string" ? value.origin_id : null,
-    polarity,
-    path: typeof value.path === "string" ? value.path : `prompt_parts.${polarity}[${index}]`,
-    text,
-  };
+function triggerForLora(lora) {
+  return typeof lora?.trigger === "string" && lora.trigger.trim() ? lora.trigger.trim() : null;
 }
 
-function promptParts(value, polarity) {
-  const source = Array.isArray(value?.[polarity]) ? value[polarity] : [];
-  return source.map((part, index) => promptPart(part, polarity, index)).filter(Boolean);
-}
-
-function triggerForLora(lora, parts) {
-  if (typeof lora.trigger === "string" && lora.trigger.trim()) return lora.trigger.trim();
-  const owner = typeof lora.owner === "string" ? lora.owner : null;
-  if (!owner) return null;
-  const trigger = parts
-    .filter((part) => part.origin === "lora_trigger" && part.origin_id === owner)
-    .map((part) => part.text.trim())
-    .filter(Boolean)
-    .join(", ");
-  return trigger || null;
-}
-
-export function generationDetailsProjection({ profile = null, models = null, recipe = null, prompt = null, promptParts: rawPromptParts = null, canvas = null, loras = [] }) {
-  const positiveParts = promptParts(rawPromptParts, "positive");
-  const negativeParts = promptParts(rawPromptParts, "negative");
-  const allParts = [...positiveParts, ...negativeParts];
+export function generationDetailsProjection({ profile = null, models = null, recipe = null, prompt = null, sections = null, canvas = null, loras = [] }) {
   const dimensions = recipe?.dimensions ?? (typeof canvas === "string" ? recipe?.resolutions?.[canvas] : null);
   return {
     profile_name: typeof profile?.name === "string" && profile.name ? profile.name : null,
@@ -73,17 +23,16 @@ export function generationDetailsProjection({ profile = null, models = null, rec
         ? Object.entries(profile.models).flatMap(([role, model]) => typeof model?.filename === "string" ? [{ role, filename: model.filename }] : [])
         : [],
     loras: (Array.isArray(loras) ? loras : []).flatMap((lora) => typeof lora?.filename === "string" ? [{
-      kind: typeof lora.kind === "string" ? lora.kind : "character",
+      kind: typeof lora.kind === "string" ? lora.kind : "style",
       owner: typeof lora.owner === "string" ? lora.owner : "",
       filename: lora.filename,
       weight: typeof lora.weight === "number" ? lora.weight : null,
-      trigger: triggerForLora(lora, allParts),
+      trigger: triggerForLora(lora),
     }] : []),
     prompt: {
       positive: typeof prompt?.positive === "string" ? prompt.positive : "",
       negative: typeof prompt?.negative === "string" ? prompt.negative : "",
-      separator: typeof rawPromptParts?.separator === "string" ? rawPromptParts.separator : ", ",
-      parts: { positive: positiveParts, negative: negativeParts },
+      sections: structuredClone(Array.isArray(sections) ? sections : []),
     },
   };
 }
@@ -102,7 +51,7 @@ export function candidateDetailProjection(detail) {
       models: detail?.models,
       recipe: detail?.recipe,
       prompt: detail?.prompt,
-      promptParts: detail?.prompt_parts,
+      sections: detail?.prompt_parts?.sections,
       canvas: detail?.canvas,
       loras: detail?.loras,
     }),

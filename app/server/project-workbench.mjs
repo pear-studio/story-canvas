@@ -1,7 +1,7 @@
 import { readPageIndex, pageRelativePath } from './pages-store.mjs';
 import { resolveRenderRecipe } from "./render-task-contract.mjs";
 import { defaultTextPageLayout } from "../shared/text-page-layout.mjs";
-import { readScenes } from './prompt-inheritance-facts.mjs';
+import { readScenes } from './scene-facts.mjs';
 import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -19,13 +19,13 @@ import {
 import { validateLetteringSettingsDocument } from "./lettering-settings.mjs";
 import { createPageKey, encodePageKey } from "./page-key.mjs";
 import { emptyLetteringDocument, validateLetteringDocument, validatePageLettering } from "./lettering-document.mjs";
+import { validateProjectManifest } from "./project-manifest.mjs";
 import { resolveProjectLocation } from "./project-operations.mjs";
 import { compileEffectiveRenderProfile } from "./render-profile-compiler.mjs";
 import { resolveExactPageIdentity, PageRenderError } from "./page-render-resolver.mjs";
 import {
   storyDialogueIdPattern,
   storyPageIdPattern,
-  storyPromptCategories,
   STORY_PAGE_PROMPT_SCHEMA_ID,
   storyNarrativeSpeakerIds,
   validateStoryOutlineDocument,
@@ -69,7 +69,7 @@ function validated(value, validate, relativePath) {
 }
 
 function publicPrompt(prompt) {
-  return { ...(prompt.reference_images ? { reference_images: structuredClone(prompt.reference_images) } : {}), ...(prompt.reference_overrides ? { reference_overrides: structuredClone(prompt.reference_overrides) } : {}), ...(prompt.scene_id ? { scene_id: prompt.scene_id, scene_variant_id: prompt.scene_variant_id } : {}), ...(prompt.inheritance ? { inheritance: structuredClone(prompt.inheritance) } : {}), ...Object.fromEntries(storyPromptCategories.map((category) => [category, structuredClone(prompt[category])])) };
+  return { text: prompt.text ?? "", ...(prompt.scene_id ? { scene_id: prompt.scene_id, scene_variant_id: prompt.scene_variant_id } : {}), ...(prompt.text_overrides ? { text_overrides: structuredClone(prompt.text_overrides) } : {}), ...(prompt.reference_overrides ? { reference_overrides: structuredClone(prompt.reference_overrides) } : {}), ...(prompt.reference_images ? { reference_images: structuredClone(prompt.reference_images) } : {}) };
 }
 
 function publicCharacterPrompt(prompt) {
@@ -154,7 +154,7 @@ async function readRenderCapabilities(repositoryRoot, projectDirectory, projectD
 
 export async function readProjectWorkbenchView(projectRoot, projectId) {
   const project = await resolveProjectLocation(path.resolve(projectRoot), projectId);
-  const projectDocument = await readJson(project.projectDirectory, "project.json");
+  const projectDocument = validated(await readJson(project.projectDirectory, "project.json"), validateProjectManifest, "project.json");
   const [outline, pagesIndex, characters, letteringSettings, letteringDocument, scenes] = await Promise.all([
     readJson(project.projectDirectory, "story/outline.json").then((value) => validated(value, validateStoryOutlineDocument, "story/outline.json")),
     readPageIndex(project.projectDirectory),
@@ -226,7 +226,7 @@ export async function readProjectWorkbenchView(projectRoot, projectId) {
     : null;
   const renderCapabilities = await readRenderCapabilities(path.resolve(projectRoot), project.projectDirectory, projectDocument);
   return {
-    version: 5,
+    version: 6,
     pages, orphan_pages: orphanPages,
     scenes,
     scenes_sha256: hashCanonicalJson(scenes),
@@ -295,7 +295,7 @@ function publicPageContent(kind, document) {
 function contentRelativePath(kind, pageId) { return pageRelativePath(pageId, 'content'); }
 
 export async function savePageContent(projectRoot, projectId, value) {
-  requireExactObject(value, ["page_key", "content", "expected_sha256", "confirmation_sha256"], "invalid_page_content_update");
+  requireExactObject(value, ["page_key", "content", "expected_sha256"], "invalid_page_content_update");
   if (!isRecord(value.page_key) || !isRecord(value.content) || !/^[a-f0-9]{64}$/.test(value.expected_sha256 ?? "")) fail("invalid_page_content_update", [], 400);
   const project = await resolveProjectLocation(path.resolve(projectRoot), projectId);
   const identity = await resolveExactPageIdentity(project.projectDirectory, value.page_key);
@@ -311,11 +311,11 @@ export async function savePageContent(projectRoot, projectId, value) {
   const saved = await saveFactDraft(projectRoot, {
     domain: "page", kind: "content",
     projectId, targetId: identity.page_id, document,
-    expectedSha256: value.expected_sha256, conflictCode: "page_content_target_conflict", confirmationSha256: value.confirmation_sha256,
+    expectedSha256: value.expected_sha256, conflictCode: "page_content_target_conflict",
     beforeCommit: () => resolveExactPageIdentity(project.projectDirectory, value.page_key),
   });
   return { page_key: identity.page_key, content: publicPageContent(identity.kind, saved.value),
-    ...(saved.inherited_prompt ? { prompt: publicPrompt(saved.inherited_prompt), prompt_sha256: hashCanonicalJson(saved.inherited_prompt) } : {}),
+    ...(saved.page_prompt ? { prompt: publicPrompt(saved.page_prompt), prompt_sha256: hashCanonicalJson(saved.page_prompt) } : {}),
     content_sha256: hashCanonicalJson(saved.value),
     prompt_context_sha256: await pagePromptContextSha256(project.projectDirectory, identity.kind, identity.page_id).catch(() => null),
     warnings: saved.warnings ?? [], downstream_diagnostics: saved.downstream_diagnostics ?? [] };
@@ -355,7 +355,6 @@ export async function savePageLettering(projectRoot, projectId, value) {
 
 function requireExactObject(value, allowed, code) {
   if (!isRecord(value)) fail(code, [], 400);
-  allowed = allowed.filter(key => key !== 'confirmation_sha256' || Object.hasOwn(value, key));
   const keys = Object.keys(value);
   if (keys.length !== allowed.length || keys.some((key) => !allowed.includes(key))) fail(code, [], 400);
 }
@@ -379,16 +378,16 @@ export async function deletePageTextSource(projectRoot, projectId, value) {
 }
 
 export async function savePagePrompt(projectRoot, projectId, value) {
-  requireExactObject(value, ["kind", "page_id", "prompt", "expected_sha256", "expected_context_sha256", "confirmation_sha256"], "invalid_page_prompt_update");
+  requireExactObject(value, ["kind", "page_id", "prompt", "expected_sha256", "expected_context_sha256"], "invalid_page_prompt_update");
   const { kind, page_id: pageId, prompt, expected_sha256: expectedSha256 } = value;
   if (!promptKinds.has(kind) || typeof pageId !== "string" || !isRecord(prompt) || !/^[a-f0-9]{64}$/.test(expectedSha256 ?? "")) fail("invalid_page_prompt_update", [], 400);
-  if (Object.keys(prompt).some(key => ![...storyPromptCategories, "reference_images", "reference_overrides", "scene_id", "scene_variant_id", "inheritance"].includes(key))) fail("invalid_page_prompt_update", [], 400);
+  if (Object.keys(prompt).some(key => !["text", "text_overrides", "reference_images", "reference_overrides", "scene_id", "scene_variant_id"].includes(key))) fail("invalid_page_prompt_update", [], 400);
   if (!/^[a-f0-9]{64}$/.test(value.expected_context_sha256 ?? "")) fail("invalid_page_prompt_update", [], 400);
   const saved = await saveFactDraft(projectRoot, {
     expectedContextSha256: value.expected_context_sha256,
     domain: "page", kind: "prompt",
     projectId, targetId: pageId, document: { $schema: STORY_PAGE_PROMPT_SCHEMA_ID, ...structuredClone(prompt) },
-    expectedSha256, conflictCode: "prompt_target_conflict", confirmationSha256: value.confirmation_sha256,
+    expectedSha256, conflictCode: "prompt_target_conflict",
   });
   return { kind, page_id: pageId, prompt: publicPrompt(saved.value), prompt_sha256: hashCanonicalJson(saved.value), audit: saved.audit };
 }
@@ -440,7 +439,7 @@ export async function saveCharacterVisual(projectRoot, projectId, value) {
 }
 
 export async function saveCharacterPrompt(projectRoot, projectId, value) {
-  requireExactObject(value, ["character_id", "prompt", "expected_sha256", "expected_visual_sha256", "confirmation_sha256"], "invalid_character_prompt_update");
+  requireExactObject(value, ["character_id", "prompt", "expected_sha256", "expected_visual_sha256"], "invalid_character_prompt_update");
   if (typeof value.character_id !== "string" || !isRecord(value.prompt) || !/^[a-f0-9]{64}$/.test(value.expected_sha256 ?? "") || !/^[a-f0-9]{64}$/.test(value.expected_visual_sha256 ?? "")) fail("invalid_character_prompt_update", [], 400);
   const project = await resolveProjectLocation(path.resolve(projectRoot), projectId);
   const checkVisual = async () => {
@@ -454,11 +453,11 @@ export async function saveCharacterPrompt(projectRoot, projectId, value) {
     domain: "character", kind: "prompt", projectId, targetId: value.character_id,
     document: { $schema: CHARACTER_PROMPT_SCHEMA_ID, ...structuredClone(value.prompt) },
     expectedSha256: value.expected_sha256, conflictCode: "prompt_target_conflict",
-    allowLoraChanges: true, beforeCommit: checkVisual, confirmationSha256: value.confirmation_sha256,
+    beforeCommit: checkVisual,
   });
   return {
     character_id: value.character_id, prompt: publicCharacterPrompt(saved.value), prompt_sha256: hashCanonicalJson(saved.value),
-    identity_impact: saved.identity_impact, audit: saved.audit, downstream_diagnostics: saved.downstream_diagnostics
+    audit: saved.audit, downstream_diagnostics: saved.downstream_diagnostics
   };
 }
 

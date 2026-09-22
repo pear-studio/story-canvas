@@ -8,7 +8,7 @@ export type LoraCompatibility = { architectureFamily?: string; promptFamily?: st
 
 type RenderProfileSummaryResponse = {
   current_profile_id: string;
-  render_profiles: Array<{ id: string; architecture_family?: string; inspection: { prompt: { family: string } } | null }>;
+  render_profiles: Array<{ id: string; architecture_family?: string; prompt_family?: string | null }>;
 };
 
 /** 与项目生成设置一致：未登记的本机 LoRA 包装成当前基模架构的 synthetic 资源定义。 */
@@ -43,7 +43,7 @@ export function useProjectLoraResources(projectId: string) {
       const current = profile.render_profiles.find((entry) => entry.id === profile.current_profile_id) ?? null;
       setState({
         list,
-        compatibility: current ? { architectureFamily: current.architecture_family, promptFamily: current.inspection?.prompt.family } : null,
+        compatibility: current ? { architectureFamily: current.architecture_family, promptFamily: current.prompt_family ?? undefined } : null,
         error: null,
       });
     }).catch((cause) => {

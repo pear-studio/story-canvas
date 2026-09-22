@@ -2,7 +2,6 @@ import type { ReferenceEntry } from "./ReferenceLibrary";
 import type { TextPageLayout } from "../shared/text-page-layout.mjs";
 import type { PageKey } from "./page-key";
 import { workbenchResponseJson } from "./api-response";
-import type { StoryContentWarning } from "../shared/story-content-guidance.mjs";
 import {
   mutateDerived,
   mutateFacts,
@@ -12,43 +11,29 @@ import {
 } from "./project-write-client";
 import type { LetteringItem, LetteringSettings } from "./lettering";
 
-export const promptCategories = ["subject","person","setting","camera","avoid"] as const;
+export const characterSource = (id: string, variant: string) => `character:${id}:${variant}`;
+export const sceneSource = (id: string, variant: string) => `scene:${id}:${variant}`;
 
-export type PromptCategory = typeof promptCategories[number];
-export type PromptFragment = {
-  id?: string;
-  tag?: string;
-  description?: string;
-  camera_settings?: import("../shared/camera-prompt.mjs").CameraSettings;
-  character_id?: string;
-  weight?: number;
-  enabled?: boolean;
-};
-export type InheritedAdjustments = Record<string, { weight?: number; enabled?: boolean }>;
 export type SettingKind = 'character' | 'scene';
 export type Scene = WorkbenchCharacter;
 export type PageOwner = { page_id: string; owner_kind: 'story' | 'character' | 'scene'; sequence_id?: string; character_id?: string; scene_id?: string; variant_id?: string };
-export type PagePrompt = Record<PromptCategory, PromptFragment[]> & { reference_images?: ReferenceEntry[]; reference_overrides?: Record<string, string[]>; scene_id?: string; scene_variant_id?: string; inheritance?: Record<string, InheritedAdjustments> };
-export type CharacterLora = { filename: string; sha256: string; weight: number; trigger?: string };
-export type CharacterPromptSetting = {
-  reference_images?: ReferenceEntry[];
-  prompt: PagePrompt;
-  loras: CharacterLora[];
-  /** 本造型排除的 identity.prompt 文本键（tag/description 文本）；必有，可为空数组。 */
-  identity_disabled: string[];
-  identity_overrides?: InheritedAdjustments;
+export type PageReferenceEntry = ReferenceEntry & { purpose?: string };
+export type PagePrompt = {
+  text: string;
+  scene_id?: string;
+  scene_variant_id?: string;
+  text_overrides?: Record<string, string>;
+  reference_overrides?: Record<string, string[]>;
+  reference_images?: PageReferenceEntry[];
 };
-export type CharacterPromptIdentity = {
-  prompt: PagePrompt;
-  lora: CharacterLora | null;
+export type CharacterPromptVariant = {
+  text: string;
+  reference_images?: ReferenceEntry[];
 };
 export type CharacterPromptDocument = {
-  identity: CharacterPromptIdentity;
+  prompt_name: string;
   /** 键为子设定 ID，与 visual.variants 一一对应；无保留 id。 */
-  variants: Record<string, CharacterPromptSetting>;
-};
-export type CharacterPromptIdentityImpact = {
-  per_variant: Record<string, { lost_inheritance: string[]; new_inheritance: string[] }>;
+  variants: Record<string, CharacterPromptVariant>;
 };
 export type Candidate = {
   candidate_id: string;
@@ -117,7 +102,7 @@ export type ProjectWorkbenchView = {
   scenes_sha256?: string;
   pages?: WorkbenchPage[];
   orphan_pages?: WorkbenchPage[];
-  version: 4;
+  version: 6;
   project: { id: string; title: string; canvas: string | null; default_render_profile: string | null; lettering_settings: LetteringSettings | null; lettering_settings_sha256: string | null };
   outline: {
     synopsis: string;
@@ -172,16 +157,16 @@ export async function loadPageMedia(
   return result.unchanged ? null : result;
 }
 
-export async function savePagePrompt(projectId: string, page: WorkbenchPage, prompt: PagePrompt, confirmationSha256?: string) {
-  return workbenchResponseJson<{ kind: WorkbenchPage["kind"]; page_id: string; prompt: PagePrompt; prompt_sha256: string }>(await mutateTargetFacts(`${base(projectId)}/page-prompt`, {
+export async function savePagePrompt(projectId: string, page: WorkbenchPage, prompt: PagePrompt) {
+  return workbenchResponseJson<{ kind: WorkbenchPage["kind"]; page_id: string; prompt: PagePrompt; prompt_sha256: string; audit?: import("./prompt-audit-display").PromptAuditReport }>(await mutateTargetFacts(`${base(projectId)}/page-prompt`, {
     method: "PUT",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ kind: page.kind, page_id: page.page_id, prompt, confirmation_sha256: confirmationSha256, expected_sha256: page.prompt_sha256, expected_context_sha256: page.prompt_context_sha256 }),
+    body: JSON.stringify({ kind: page.kind, page_id: page.page_id, prompt, expected_sha256: page.prompt_sha256, expected_context_sha256: page.prompt_context_sha256 }),
   }));
 }
 
-export async function saveCharacterPrompt(projectId: string, character: WorkbenchCharacter, prompt: CharacterPromptDocument, confirmationSha256?: string, kind: SettingKind = "character") {
-  return workbenchResponseJson<{ character_id: string; prompt: CharacterPromptDocument; prompt_sha256: string; identity_impact: CharacterPromptIdentityImpact | null }>(await mutateTargetFacts(`${base(projectId)}/${kind}-prompt`, {
+export async function saveCharacterPrompt(projectId: string, character: WorkbenchCharacter, prompt: CharacterPromptDocument, kind: SettingKind = "character") {
+  return workbenchResponseJson<{ character_id: string; prompt: CharacterPromptDocument; prompt_sha256: string; downstream_diagnostics?: Array<{ code: string }> }>(await mutateTargetFacts(`${base(projectId)}/${kind}-prompt`, {
     method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -189,7 +174,6 @@ export async function saveCharacterPrompt(projectId: string, character: Workbenc
       prompt,
       expected_sha256: character.prompt_sha256,
       expected_visual_sha256: character.visual_sha256,
-      confirmation_sha256: confirmationSha256,
     }),
   }));
 }
@@ -263,28 +247,6 @@ export async function saveStorySummary(projectId: string, target: StorySummaryTa
     method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ target, text, expected_sha256: expectedSha256 }),
-  }));
-}
-
-export async function savePageContent(
-  projectId: string,
-  page: WorkbenchPage,
-  content: StoryPageContentDraft | CharacterPageContentDraft,
-  confirmationSha256?: string,
-) {
-  return workbenchResponseJson<{
-    page_key: WorkbenchPage["page_key"];
-    content: StoryPageContentDraft | CharacterPageContentDraft;
-    content_sha256: string;
-    prompt?: PagePrompt;
-    prompt_sha256?: string;
-    prompt_context_sha256: string | null;
-    downstream_diagnostics: Array<{ code: string }>;
-    warnings: StoryContentWarning[];
-  }>(await mutateTargetFacts(`${base(projectId)}/page-content`, {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ page_key: page.page_key, content, confirmation_sha256: confirmationSha256, expected_sha256: page.content_sha256 }),
   }));
 }
 
@@ -388,19 +350,15 @@ export async function refreshStoryCandidates(projectId: string, options: StoryCa
 
 export type PageRenderInspectionIssue = import("./prompt-audit-display").PromptIssue;
 
-export type PageRenderPromptPart = {
-  category: string | null;
-  role: string | null;
-  prompt_type: string | null;
-  prompt_text: string;
-  weight: number;
-  origin: string;
-  origin_id: string | null;
-  polarity: "positive" | "negative";
-  path: string;
+export type PromptSection = {
+  kind: "global" | "character" | "scene" | "attachment" | "page";
+  source?: string;
+  prompt_name?: string;
   text: string;
-  [key: string]: unknown;
+  image_ids?: string[];
 };
+
+export type CompiledPromptImage = { index: number; source: string; id: string; file: string };
 
 export type GenerationDetails = {
   profile_name: string | null;
@@ -423,11 +381,7 @@ export type GenerationDetails = {
   prompt: {
     positive: string;
     negative: string;
-    separator: string;
-    parts: {
-      positive: PageRenderPromptPart[];
-      negative: PageRenderPromptPart[];
-    };
+    sections: PromptSection[];
   };
 };
 
@@ -443,19 +397,14 @@ export type PageRenderInspection = {
   prompt: {
     positive: string;
     negative: string;
-    separator: string;
-    parts: {
-      positive: PageRenderPromptPart[];
-      negative: PageRenderPromptPart[];
-      by_category: Record<PromptCategory, PageRenderPromptPart[]>;
-    };
+    sections: PromptSection[];
+    images: CompiledPromptImage[];
   };
   characters: Array<{
     character_id: string;
     name: string;
     variant_id: string | null;
     configuration_id: string;
-    loras: Array<CharacterLora & { diagnosis: unknown }>;
   }>;
   loras: Array<{
     kind: string;
@@ -473,7 +422,7 @@ export type PageRenderInspection = {
       id: string;
       name: string;
       architecture_family: string;
-      prompt_family: string;
+      prompt_family?: string;
       base_sha256: string | null;
       effective_sha256: string | null;
     } | null;
@@ -574,16 +523,15 @@ export async function loadCandidateCounts(projectId: string, signal?: AbortSigna
 
 export const saveSettingProfile = (kind: SettingKind, projectId: string, setting: WorkbenchCharacter, draft: CharacterProfileDraft) => saveCharacterProfile(projectId, setting, draft, kind);
 export const saveSettingVisual = (kind: SettingKind, projectId: string, setting: WorkbenchCharacter, draft: CharacterVisualDraft) => saveCharacterVisual(projectId, setting, draft, kind);
-export const saveSettingPrompt = (kind: SettingKind, projectId: string, setting: WorkbenchCharacter, draft: CharacterPromptDocument, confirmation?: string) => saveCharacterPrompt(projectId, setting, draft, confirmation, kind);
+export const saveSettingPrompt = (kind: SettingKind, projectId: string, setting: WorkbenchCharacter, draft: CharacterPromptDocument) => saveCharacterPrompt(projectId, setting, draft, kind);
 export const renameSettingVariant = (kind: SettingKind, projectId: string, setting: WorkbenchCharacter, oldId: string, newId: string) => renameCharacterVariant(projectId, setting, oldId, newId, kind);
 
-export async function saveWholePage(projectId: string, page: WorkbenchPage, content: StoryPageContentDraft, prompt: PagePrompt, items: LetteringItem[], confirmationSha256?: string) {
+export async function saveWholePage(projectId: string, page: WorkbenchPage, content: StoryPageContentDraft, prompt: PagePrompt, items: LetteringItem[]) {
   const reference_inputs = (prompt.reference_images ?? []).filter(entry => entry.draft).map(entry => ({ id: entry.id, ...entry.draft }));
   prompt = { ...prompt, ...(prompt.reference_images ? { reference_images: prompt.reference_images.map(({ draft, ...entry }) => entry) } : {}) };
   return workbenchResponseJson<{ content: StoryPageContentDraft & { dialogue: NonNullable<WorkbenchPage["dialogue"]> }; content_sha256: string; prompt: PagePrompt; prompt_sha256: string; prompt_context_sha256: string; lettering: { page: string; items: LetteringItem[] }; layout_sha256: string }>(await mutateTargetFacts(`${base(projectId)}/page-save`, {
     method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ page_key: page.page_key, content, prompt, reference_inputs,
       expected_content_sha256: page.content_sha256, expected_prompt_sha256: page.prompt_sha256,
-      expected_context_sha256: page.prompt_context_sha256, lettering: { items }, expected_layout_sha256: page.layout_sha256,
-      confirmation_sha256: confirmationSha256 }),
+      expected_context_sha256: page.prompt_context_sha256, lettering: { items }, expected_layout_sha256: page.layout_sha256 }),
   }));
 }

@@ -17,7 +17,7 @@ StoryCanvas 是由多 Agent 协作操作的本地系列图片视觉化工作台�
 | 把当前 sequence 拆页、合页、重排或修改 narrative | `story-editing` |
 | 从用户已验收页面提炼可复用视觉叙事解法 | `story-craft-review` |
 | 需要角色或整组视觉方向、分页机位建议 | `visual-production` |
-| 编写或审计 Prompt 原型、设置机位、生成和严重问题检查 | `prompt-authoring` |
+| 编写或审计 Prompt 原型、生成和严重问题检查 | `prompt-authoring` |
 | 比较画风、角色形象、构图、色彩、氛围等主观方向 | `visual-exploration` |
 | 验证动作、朝向、服装、镜头或 Prompt 是否可靠 | `generation-testing` |
 | 安装、启停或诊断 ComfyUI、模型和自定义节点 | `comfyui-runtime`，阅读[环境搭建](reference/setup.md) |
@@ -25,7 +25,7 @@ StoryCanvas 是由多 Agent 协作操作的本地系列图片视觉化工作台�
 
 用户主导故事、审美和推进节奏。明确小任务直接使用专项技能，完成当前要求后交付，不默认继续下一阶段。完整骨架先讨论，单元分页草案带基础文案分配与简短机位建议，经用户修改确认后执行。
 
-保留剧情导演、剧情编辑、视觉导演、Prompt Agent 四种职责，按任务需要使用，不要求每次启动完整团队。普通出图每页三张，全部交给用户；严重问题检查和一次修正规则集中见[创作指南](creative/guide.md)。角色子设定单独经用户验收后使用，控制器支持的镜头必须通过机位控制设置。文案优化、探索、测试与复盘按用户需要独立开展。
+保留剧情导演、剧情编辑、视觉导演、Prompt Agent 四种职责，按任务需要使用，不要求每次启动完整团队。普通出图每页三张，全部交给用户；严重问题检查和一次修正规则集中见[创作指南](creative/guide.md)。角色子设定单独经用户验收后使用。文案优化、探索、测试与复盘按用户需要独立开展。
 
 项目的位置、临时复制、提升与备份见[本地项目管理](reference/local-projects.md)。
 
@@ -33,10 +33,11 @@ StoryCanvas 是由多 Agent 协作操作的本地系列图片视觉化工作台�
 
 - outline 只保存 synopsis、chapter 和 sequence 粗骨架，后续走向可以存在但不预先分页；
 - 剧情页面 index、narrative 与 Prompt 分开；角色 profile、visual 与 Prompt 分开；
-- 角色 Prompt 为 `{ identity, variants }`：identity 保存全部子设定共享的完整 Prompt 与角色 LoRA，variant 全部同构（至少一个、无默认造型），都是自包含 Prompt/LoRA 配置，variant 之间不做继承；
-- 场景在“场景”页维护共享环境 Prompt，剧情页单选引用；基础与页面继承词可直接改权重和开关，牵连下游时统一确认；
+- 角色与场景 Prompt 为 `{ prompt_name, variants }`：每个 variant 自包含一段自由文本和有序参考图
+  （至少一个、无默认造型），没有 identity 层、LoRA 或逐词继承；prompt_name 创建时复制显示名、之后独立；
+- 场景在“场景”页维护共享环境描述，剧情页单选引用；页面可整段 override 引用文字，恢复继承即删除对应 key，override 不随上游更新；
 - 验证图由系统自动编号；角色 visual 只维护子设定名称，具体视觉以 Prompt 为准；
-- Prompt fragment 使用 `tag` 或 `description` 二选一，不由 Agent 指定 ID；
+- 页面 Prompt 保存本页自由文本、场景引用、整段 text_overrides、图片选择和可带用途的附图；
 - 稳定项目 JSON 可以直接读取，但只能通过 Node.js read/save或语义命令写入；
 - 渲染每次生成一至三张候选，返回任务和图片的完整绝对路径，不携带项目 revision；
 - 普通原型保留全部候选，不替用户筛选、选择或写文字样式；候选删除功能仅在用户明确要求清理时使用；用户可在浏览器编辑并手动保存；
@@ -74,7 +75,7 @@ npm --prefix <仓库根>/app run project:create -- create <完整草稿JSON文�
 ```
 
 创建文件只描述项目 metadata、粗 outline 和最小角色 profile/visual。服务端生成完整项目目录、
-空页面索引和空 Prompt/LoRA 配置；不会复制旧项目页面、候选或临时判断。
+空页面索引和空 Prompt 配置；不会复制旧项目页面、候选或临时判断。
 
 ## 常用创作命令
 

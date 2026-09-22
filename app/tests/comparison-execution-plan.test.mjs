@@ -46,7 +46,6 @@ import {
   STORY_OUTLINE_SCHEMA_ID,
   STORY_PAGE_NARRATIVE_SCHEMA_ID,
   STORY_PAGE_PROMPT_SCHEMA_ID,
-  storyPromptCategories,
 } from "../server/story-files.mjs";
 
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -56,21 +55,10 @@ const minimalPng = Buffer.concat([
   Buffer.alloc(4), Buffer.from("IEND"), Buffer.alloc(4),
 ]);
 
-function pagePrompt(subject = "traveler") {
+function pagePrompt(text = "traveler") {
   return {
     $schema: STORY_PAGE_PROMPT_SCHEMA_ID,
-    ...Object.fromEntries(storyPromptCategories.map((category) => [category, []])),
-    subject: [{ description: subject }],
-  };
-}
-
-function characterPrompt(lora = null) {
-  const prompt = pagePrompt("hero");
-  delete prompt.$schema;
-  return {
-    $schema: CHARACTER_PROMPT_SCHEMA_ID,
-    identity: { prompt: Object.fromEntries(storyPromptCategories.map((category) => [category, []])), lora },
-    variants: { default: { prompt, loras: [], identity_disabled: [] } },
+    text,
   };
 }
 
@@ -85,40 +73,39 @@ async function fixture(context) {
   context.after(() => rm(root, { recursive: true, force: true }));
   const projectRoot = path.join(root, "workspace", "fixture");
   const projectDirs = ["story", "pages", "characters"];
-  const rootDirs = [path.join("library", "render-profiles"), path.join("library", "prompt-policies"), path.join("library", "render-recipes"), path.join("library", "workflows"), path.join("library", "prompt-dictionaries"), path.join("models", "diffusion_models"), path.join("models", "text_encoders"), path.join("models", "vae"), path.join("models", "loras")];
+  const rootDirs = [path.join("library", "render-profiles"), path.join("library", "render-recipes"), path.join("library", "workflows"), path.join("models", "diffusion_models"), path.join("models", "text_encoders"), path.join("models", "vae"), path.join("models", "loras")];
   await Promise.all([
     ...projectDirs.map((dir) => mkdir(path.join(projectRoot, dir), { recursive: true })),
     ...rootDirs.map((dir) => mkdir(path.join(root, dir), { recursive: true })),
   ]);
   const checkpoint = Buffer.from("checkpoint");
   const checkpointSha = createHash("sha256").update(checkpoint).digest("hex");
-  const profile = JSON.parse(await readFile(path.join(sourceRoot, "library", "render-profiles", "anima-base-v1.json"), "utf8"));
+  const profile = JSON.parse(await readFile(path.join(sourceRoot, "library", "render-profiles", "qwen-image-2-1.json"), "utf8"));
   profile.id = "comparison-profile";
   profile.name = "比较测试";
   for (const [role, relativePath] of [["dit", "diffusion_models/base.safetensors"], ["text_encoder", "text_encoders/base.safetensors"], ["vae", "vae/base.safetensors"]]) {
     profile.models[role] = { ...profile.models[role], filename: "base.safetensors", relative_path: relativePath, sha256: checkpointSha };
   }
   profile.operations.candidates.routes.empty_latent.recipe = "comparison-candidate";
-  const recipe = JSON.parse(await readFile(path.join(sourceRoot, "library", "render-recipes", "anima-base-v1-candidate.json"), "utf8"));
+  profile.operations.candidates.routes.empty_latent.workflow = "qwen-image-2-1-text";
+  delete profile.operations.candidates.routes.reference_image;
+  const recipe = JSON.parse(await readFile(path.join(sourceRoot, "library", "render-recipes", "qwen-image-2-1-candidate.json"), "utf8"));
   recipe.id = "comparison-candidate";
   await Promise.all([
-    writeFile(path.join(projectRoot, "project.json"), JSON.stringify({ title: "比较", canvas: "2:3", default_render_profile: profile.id })),
+    writeFile(path.join(projectRoot, "project.json"), JSON.stringify({ format: "story-free-text-v1", title: "比较", canvas: "2:3", default_render_profile: profile.id })),
     writeFile(path.join(projectRoot, "story", "outline.json"), JSON.stringify({ $schema: STORY_OUTLINE_SCHEMA_ID, synopsis: "测试。", chapters: [{ id: "chapter-main", title: "正文", summary: "测试。", sequences: [{ id: "sequence-main", title: "场景", summary: "测试页。" }] }] })),
     writeFile(path.join(projectRoot, "pages", "index.json"), JSON.stringify({ $schema: "https://storyvisualizer.local/schemas/pages-index.schema.json", pages: [{ page_id: "page-001", owner_kind: "story", sequence_id: "sequence-main" }] })),
     writeFile(path.join(projectRoot, "pages", "page-001.content.json"), JSON.stringify({ $schema: STORY_PAGE_NARRATIVE_SCHEMA_ID, title: "测试页", scene_description: "测试画面。", characters: [], dialogue: [] })),
     writeFile(path.join(projectRoot, "pages", "page-001.prompt.json"), JSON.stringify(pagePrompt())),
     writeFile(path.join(projectRoot, "characters", "index.json"), JSON.stringify({ $schema: CHARACTER_INDEX_SCHEMA_ID, characters: [] })),
     writeFile(path.join(root, "library", "render-profiles", `${profile.id}.json`), JSON.stringify(profile)),
-    cp(path.join(sourceRoot, "library", "prompt-policies", "anima-v1.json"), path.join(root, "library", "prompt-policies", "anima-v1.json")),
     writeFile(path.join(root, "library", "render-recipes", `${recipe.id}.json`), JSON.stringify(recipe)),
     writeFile(path.join(root, "models", "diffusion_models", "base.safetensors"), checkpoint),
     writeFile(path.join(root, "models", "text_encoders", "base.safetensors"), checkpoint),
     writeFile(path.join(root, "models", "vae", "base.safetensors"), checkpoint),
     writeFile(path.join(root, "models", "loras", "test.safetensors"), safeTensor()),
-    cp(path.join(sourceRoot, "library", "workflows", "anima-candidate-page.api.json"), path.join(root, "library", "workflows", "anima-candidate-page.api.json")),
-    cp(path.join(sourceRoot, "library", "workflows", "anima-candidate-page.manifest.json"), path.join(root, "library", "workflows", "anima-candidate-page.manifest.json")),
-    cp(path.join(sourceRoot, "library", "prompt-dictionaries", "danbooru.csv"), path.join(root, "library", "prompt-dictionaries", "danbooru.csv")),
-    cp(path.join(sourceRoot, "library", "prompt-dictionaries", "zh.csv"), path.join(root, "library", "prompt-dictionaries", "zh.csv")),
+    cp(path.join(sourceRoot, "library", "workflows", "qwen-image-2-1-text.api.json"), path.join(root, "library", "workflows", "qwen-image-2-1-text.api.json")),
+    cp(path.join(sourceRoot, "library", "workflows", "qwen-image-2-1-text.manifest.json"), path.join(root, "library", "workflows", "qwen-image-2-1-text.manifest.json")),
   ]);
   const lora = await readFile(path.join(root, "models", "loras", "test.safetensors"));
   registerFixtureProjects(root); return { root, projectRoot, loraSha: createHash("sha256").update(lora).digest("hex"), loraSize: lora.length };
@@ -159,134 +146,33 @@ test("Agent 创建默认原样导入页面并自动生成输入轴，文本修�
   await assert.rejects(create({ id: "ambiguous", inputs: [changed], page_import: { project_id: "fixture", page_keys: [pageKey] } }), { code: "comparison_input_source_conflict" });
 });
 
-test("Start 前冻结一 cell 一 workflow，并真正覆盖 seed/CFG/末尾 test LoRA", async (context) => {
+test("Start 前冻结一 cell 一 workflow，并真正覆盖 seed 与 CFG", async (context) => {
   const target = await fixture(context);
   const manifest = createComparisonExperiment({
     id: "execution-plan",
     created_at: "2026-08-24T00:00:00.000Z",
     axes: [
       { type: "input", values: [{ value_id: "page", label: "页面", value: "sample" }] },
-      { type: "lora_config", values: [{ value_id: "baseline", label: "基线", value: "baseline" }, { value_id: "test", label: "测试", value: "test" }] },
-      { type: "lora_weight", values: [{ value_id: "weight", label: "0.8", value: 0.8 }] },
       { type: "seed", values: [{ value_id: "seed", label: "固定", value: 123 }] },
-      { type: "cfg", values: [{ value_id: "cfg", label: "CFG 7", value: 7 }] },
+      { type: "cfg", values: [{ value_id: "cfg-5", label: "CFG 5", value: 5 }, { value_id: "cfg-7", label: "CFG 7", value: 7 }] },
     ],
-    registries: {
-      loras: [{ id: "test-lora", kind: "raw", relative_path: "loras/test.safetensors", sha256: target.loraSha, size_bytes: target.loraSize, metadata: { format: "pt" } }],
-      lora_configs: [{ id: "baseline", label: "基线", lora_ref: null }, { id: "test", label: "测试", lora_ref: "test-lora" }],
-    },
   });
   const preflight = await preflightComparisonExperiment({ repositoryRoot: target.root, projectRoot: target.projectRoot, localConfig: { models_root: "models" }, manifest });
   await createComparisonExperimentStorage({ projectRoot: target.root, manifest, preflight, now: "2026-08-24T00:00:00.000Z" });
   const stored = await prepareComparisonExperimentExecution({ repositoryRoot: target.root, projectRoot: target.root, localConfig: { models_root: "models" }, experimentId: manifest.id });
   assert.ok(stored.execution);
   assert.equal(stored.execution.cells.length, 2);
-  for (const cell of stored.execution.cells) assert.equal(Object.hasOwn(cell, "uploads"), false);
-  const baseline = stored.execution.cells.find((cell) => cell.loras.length === 0);
-  const test = stored.execution.cells.find((cell) => cell.loras.length > 0);
-  assert.equal(baseline.seed, 123);
-  assert.equal(test.cfg, 7);
-  assert.deepEqual(baseline.loras, []);
-  assert.equal(test.loras.at(-1).filename, "test.safetensors");
-  assert.equal(test.loras.at(-1).weight, 0.8);
-  const sampler = Object.values(test.workflow.api).find((node) => node.class_type === "KSampler");
-  assert.equal(sampler.inputs.seed, 123);
-  assert.equal(sampler.inputs.cfg, 7);
-  assert.equal(test.outputs[0].relative_path, `results/${test.id}/image.png`);
+  for (const cell of stored.execution.cells) {
+    assert.equal(Object.hasOwn(cell, "uploads"), false);
+    assert.equal(cell.seed, 123);
+    assert.deepEqual(cell.loras, []);
+    const sampler = Object.values(cell.workflow.api).find((node) => node.class_type === "KSampler");
+    assert.equal(sampler.inputs.seed, 123);
+    assert.equal(sampler.inputs.cfg, cell.cfg);
+    assert.equal(cell.outputs[0].relative_path, `results/${cell.id}/image.png`);
+  }
+  assert.deepEqual(stored.execution.cells.map((cell) => cell.cfg), [5, 7]);
   await assert.rejects(prepareComparisonExperimentExecution({ repositoryRoot: target.root, projectRoot: target.root, localConfig: { models_root: "models" }, experimentId: manifest.id }), /已经存在/);
-});
-
-test("替换角色 LoRA 时基线保留原配置，候选只替换目标角色", async (context) => {
-  const target = await fixture(context);
-  const currentLora = safeTensor();
-  const currentSha = createHash("sha256").update(currentLora).digest("hex");
-  const narrative = {
-    $schema: STORY_PAGE_NARRATIVE_SCHEMA_ID,
-    title: "测试页",
-    scene_description: "测试画面。",
-    characters: [{ character_id: "hero", variant_id: "default" }],
-    dialogue: [],
-  };
-  await Promise.all([
-    writeFile(path.join(target.root, "models", "loras", "current.safetensors"), currentLora),
-    writeFile(path.join(target.projectRoot, "pages", "page-001.content.json"), JSON.stringify(narrative)),
-    writeFile(path.join(target.projectRoot, "characters", "index.json"), JSON.stringify({ $schema: CHARACTER_INDEX_SCHEMA_ID, characters: ["hero"] })),
-    writeFile(path.join(target.projectRoot, "characters", "hero.profile.json"), JSON.stringify({ $schema: CHARACTER_PROFILE_SCHEMA_ID, name: "主角", description: "测试角色。" })),
-    writeFile(path.join(target.projectRoot, "characters", "hero.visual.json"), JSON.stringify({ $schema: CHARACTER_VISUAL_SCHEMA_ID, description: "主角形象。", variants: [{ id: "default", name: "默认", description: "基础形象。" }] })),
-    writeFile(path.join(target.projectRoot, "characters", "hero.prompt.json"), JSON.stringify(characterPrompt({ filename: "current.safetensors", sha256: currentSha, weight: 0.9, trigger: "current_hero" }))),
-  ]);
-  const manifest = createComparisonExperiment({
-    id: "character-lora-replacement",
-    created_at: "2026-08-24T00:00:00.000Z",
-    axes: [
-      { type: "input", values: [{ value_id: "page", label: "页面", value: "sample" }] },
-      { type: "lora_config", values: [{ value_id: "baseline", label: "基线", value: "baseline" }, { value_id: "test", label: "测试", value: "test" }] },
-      { type: "lora_weight", values: [{ value_id: "weight", label: "1.0", value: 1 }] },
-    ],
-    registries: {
-      loras: [{ id: "test-lora", kind: "raw", relative_path: "loras/test.safetensors", sha256: target.loraSha, size_bytes: target.loraSize, metadata: { format: "pt" } }],
-      lora_configs: [
-        { id: "baseline", label: "基线", lora_ref: null },
-        { id: "test", label: "测试", lora_ref: "test-lora", application: { mode: "replace_character", target_character_id: "hero" } },
-      ],
-    },
-  });
-  const imported = await importComparisonPage({ repositoryRoot: target.root, projectDirectory: target.projectRoot, projectId: "fixture", pageKey, localConfig: { models_root: "models" } });
-  imported.id = "sample";
-  imported.prompt.positive = "portrait, current_hero, red hair\nsoft light,  detailed eyes\ncurrent_heroine";
-  imported.loras[0].trigger_words = ["current_hero, red hair"];
-  const frozen = preflight({ manifest, inputs: [imported] });
-  await createComparisonExperimentStorage({ projectRoot: target.root, manifest, preflight: frozen, now: "2026-08-24T00:00:00.000Z" });
-  const stored = await prepareComparisonExperimentExecution({ repositoryRoot: target.root, projectRoot: target.root, localConfig: { models_root: "models" }, experimentId: manifest.id });
-  const baseline = stored.execution.cells.find((cell) => cell.axis_values.lora_config === "baseline");
-  const candidate = stored.execution.cells.find((cell) => cell.axis_values.lora_config === "test");
-  assert.deepEqual(baseline.loras.map((lora) => [lora.filename, lora.kind, lora.owner]), [["current.safetensors", "character", "hero"]]);
-  assert.match(baseline.prompt.positive, /current_hero/);
-  assert.deepEqual(candidate.loras.map((lora) => [lora.filename, lora.kind, lora.owner]), [["test.safetensors", "character", "hero"]]);
-  assert.equal(baseline.prompt.positive, imported.prompt.positive);
-  assert.equal(candidate.prompt.positive, "portrait, \nsoft light,  detailed eyes\ncurrent_heroine");
-});
-
-test("角色与风格 LoRA 权重由独立轴控制且不需要无风格基线", async (context) => {
-  const target = await fixture(context);
-  const currentLora = safeTensor();
-  const currentSha = createHash("sha256").update(currentLora).digest("hex");
-  const narrative = {
-    $schema: STORY_PAGE_NARRATIVE_SCHEMA_ID,
-    title: "测试页",
-    scene_description: "测试画面。",
-    characters: [{ character_id: "hero", variant_id: "default" }],
-    dialogue: [],
-  };
-  await Promise.all([
-    writeFile(path.join(target.root, "models", "loras", "current.safetensors"), currentLora),
-    writeFile(path.join(target.projectRoot, "pages", "page-001.content.json"), JSON.stringify(narrative)),
-    writeFile(path.join(target.projectRoot, "characters", "index.json"), JSON.stringify({ $schema: CHARACTER_INDEX_SCHEMA_ID, characters: ["hero"] })),
-    writeFile(path.join(target.projectRoot, "characters", "hero.profile.json"), JSON.stringify({ $schema: CHARACTER_PROFILE_SCHEMA_ID, name: "主角", description: "测试角色。" })),
-    writeFile(path.join(target.projectRoot, "characters", "hero.visual.json"), JSON.stringify({ $schema: CHARACTER_VISUAL_SCHEMA_ID, description: "主角形象。", variants: [{ id: "default", name: "默认", description: "基础形象。" }] })),
-    writeFile(path.join(target.projectRoot, "characters", "hero.prompt.json"), JSON.stringify(characterPrompt({ filename: "current.safetensors", sha256: currentSha, weight: 0.9, trigger: "current_hero" }))),
-  ]);
-  const manifest = createComparisonExperiment({
-    id: "independent-lora-weights",
-    created_at: "2026-08-24T00:00:00.000Z",
-    axes: [
-      { type: "input", values: [{ value_id: "page", label: "页面", value: "sample" }] },
-      { type: "lora_config", values: [{ value_id: "style", label: "画风", value: "style" }] },
-      { type: "character_lora_weight", values: [{ value_id: "character-05", label: "0.5", value: 0.5 }, { value_id: "character-10", label: "1.0", value: 1 }] },
-      { type: "lora_weight", values: [{ value_id: "style-10", label: "1.0", value: 1 }] },
-    ],
-    registries: {
-      loras: [{ id: "style-lora", kind: "raw", relative_path: "loras/test.safetensors", sha256: target.loraSha, size_bytes: target.loraSize, metadata: { format: "pt" } }],
-      lora_configs: [{ id: "style", label: "画风", lora_ref: "style-lora" }],
-    },
-  });
-  const preflight = await preflightComparisonExperiment({ repositoryRoot: target.root, projectRoot: target.projectRoot, localConfig: { models_root: "models" }, manifest });
-  await createComparisonExperimentStorage({ projectRoot: target.root, manifest, preflight, now: "2026-08-24T00:00:00.000Z" });
-  const stored = await prepareComparisonExperimentExecution({ repositoryRoot: target.root, projectRoot: target.root, localConfig: { models_root: "models" }, experimentId: manifest.id });
-  assert.deepEqual(stored.execution.cells.map((cell) => cell.loras.map((lora) => [lora.kind, lora.weight])), [
-    [["character", 0.5], ["comparison", 1]],
-    [["character", 1], ["comparison", 1]],
-  ]);
 });
 
 test("导入后删除来源项目与全局配置，仍使用冻结输入启动", async context => {

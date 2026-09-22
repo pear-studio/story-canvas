@@ -1,31 +1,22 @@
-import type { GenerationDetails, PageRenderPromptPart } from "./project-workbench-client";
+import type { GenerationDetails, PromptSection } from "./project-workbench-client";
 import { generationPromptSegments } from "./generation-prompt-segments";
 import "./GenerationDetailsPanel.css";
 
-type PromptSource = "render_profile" | "lora_trigger" | "character" | "visual" | "avoid";
+type PromptSource = "global" | "character" | "scene" | "attachment" | "page";
 
 const promptSourceDefinitions: Array<{ id: PromptSource; label: string }> = [
-  { id: "render_profile", label: "模型配置" },
-  { id: "lora_trigger", label: "LoRA 触发词" },
-  { id: "character", label: "角色设定" },
-  { id: "visual", label: "页面 Prompt" },
-  { id: "avoid", label: "避免内容" },
+  { id: "global", label: "全局" },
+  { id: "character", label: "角色" },
+  { id: "scene", label: "场景" },
+  { id: "attachment", label: "附图用途" },
+  { id: "page", label: "本页描述" },
 ];
 
-function promptPartSource(part: PageRenderPromptPart): PromptSource {
-  if (part.origin === "render_profile" || part.origin === "prompt_policy" || part.origin === "project_override") return "render_profile";
-  if (part.origin === "lora_trigger") return "lora_trigger";
-  if (part.origin === "character") return "character";
-  if (part.category === "avoid") return "avoid";
-  return "visual";
-}
-
-function renderPromptParts(parts: PageRenderPromptPart[], text: string, empty: string) {
+function renderPromptSections(sections: PromptSection[], text: string, empty: string) {
   if (!text) return empty;
-  return generationPromptSegments(text, parts).map(({ text, part }, index) => {
-    if (!part) return <span className="generation-prompt-separator" key={index}>{text}</span>;
-    const source = promptPartSource(part);
-    return <mark className={`generation-prompt-part generation-prompt-part--${source}`} key={index}>{text}</mark>;
+  return generationPromptSegments(text, sections).map(({ text: segmentText, part }, index) => {
+    if (!part) return <span className="generation-prompt-separator" key={index}>{segmentText}</span>;
+    return <mark className={`generation-prompt-part generation-prompt-part--${part.kind}`} key={index}>{segmentText}</mark>;
   });
 }
 
@@ -51,8 +42,8 @@ function value(value: string | number | null | undefined) {
 }
 
 export function GenerationDetailsPanel({ details }: { details: GenerationDetails }) {
-  const allParts = [...details.prompt.parts.positive, ...details.prompt.parts.negative];
-  const usedSources = new Set(allParts.map(promptPartSource));
+  const sections = details.prompt.sections ?? [];
+  const usedSources = new Set(sections.map((section) => section.kind));
   const dimensions = details.parameters?.dimensions;
   const dimensionLabel = dimensions?.width && dimensions?.height
     ? `${dimensions.width} × ${dimensions.height}${details.canvas ? `（${details.canvas}）` : ""}`
@@ -90,8 +81,8 @@ export function GenerationDetailsPanel({ details }: { details: GenerationDetails
     <section className="generation-details__section generation-details__prompt" aria-labelledby="generation-prompt-heading">
       <header><h3 id="generation-prompt-heading">Prompt</h3>{usedSources.size > 0 && <div className="generation-prompt-sources" aria-label="Prompt 来源">{promptSourceDefinitions.filter((source) => usedSources.has(source.id)).map((source) => <span className={`generation-prompt-source generation-prompt-source--${source.id}`} key={source.id}>{source.label}</span>)}</div>}</header>
       <div className="generation-details__prompts">
-        <article><header><b>Positive</b><span>{details.prompt.positive.length} 字符</span></header><pre>{renderPromptParts(details.prompt.parts.positive, details.prompt.positive, "尚未编译")}</pre></article>
-        <article><header><b>Negative</b><span>{details.prompt.negative.length} 字符</span></header><pre>{renderPromptParts(details.prompt.parts.negative, details.prompt.negative, "无")}</pre></article>
+        <article><header><b>Positive</b><span>{details.prompt.positive.length} 字符</span></header><pre>{renderPromptSections(sections, details.prompt.positive, "尚未编译")}</pre></article>
+        {details.prompt.negative && <article><header><b>Negative</b><span>{details.prompt.negative.length} 字符</span></header><pre>{details.prompt.negative}</pre></article>}
       </div>
     </section>
   </div>;

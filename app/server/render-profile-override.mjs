@@ -86,11 +86,9 @@ function assertJsonValue(value, path, seen = new Set()) {
 }
 
 function parseTarget(target) {
-  if (target === "prompt.policy") return { kind: "prompt_policy" };
+  if (target === "prompt.text") return { kind: "prompt_text" };
   const model = /^models\.([a-z0-9][a-z0-9_-]*)$/.exec(target);
   if (model && modelRolePattern.test(model[1])) return { kind: "model", role: model[1] };
-  const promptFragment = /^prompt\.fragments\.([a-z0-9][a-z0-9-]*)$/.exec(target);
-  if (promptFragment && stableIdPattern.test(promptFragment[1])) return { kind: "prompt_fragment", id: promptFragment[1] };
   const wholeStyleLora = /^style_loras\.([a-z0-9][a-z0-9-]*)$/.exec(target);
   if (wholeStyleLora && stableIdPattern.test(wholeStyleLora[1])) return { kind: "style_lora", id: wholeStyleLora[1] };
   const styleLora = /^style_loras\.([a-z0-9][a-z0-9-]*)\.weight$/.exec(target);
@@ -251,15 +249,8 @@ function assertModel(value, path) {
   if (value.source !== undefined) assertString(value.source, `${path}.source`);
 }
 
-function assertPromptFragment(value, path) {
-  const allowed = new Set(["polarity", "placement", "order", "prompt_type", "prompt_text", "weight"]);
-  assertExactValueFields(value, allowed, new Set(["polarity", "placement", "order", "prompt_type", "prompt_text"]), path);
-  if (!new Set(["positive", "negative"]).has(value.polarity)) fail(`${path}.polarity 无效`);
-  if (!new Set(["prefix", "suffix"]).has(value.placement)) fail(`${path}.placement 无效`);
-  assertNumber(value.order, `${path}.order`, { minimum: 0, integer: true });
-  if (!new Set(["danbooru", "custom_description"]).has(value.prompt_type)) fail(`${path}.prompt_type 无效`);
-  assertString(value.prompt_text, `${path}.prompt_text`);
-  if (value.weight !== undefined) assertNumber(value.weight, `${path}.weight`, { minimum: 0.2, maximum: 10 });
+function assertPromptTextValue(value, path) {
+  if (typeof value !== "string") fail(`${path} 必须是字符串`);
 }
 
 function assertStyleLora(value, path) {
@@ -338,7 +329,7 @@ function routeAccessor(profile, descriptor, target) {
 function targetAccessor(profile, target) {
   const descriptor = parseTarget(target);
   if (!descriptor) fail(`target 不在允许列表中：${String(target)}`);
-  if (descriptor.kind === "prompt_policy") return validatedAccessor(nestedPropertyAccessor(profile, ["prompt"], "policy"), assertStableId, { required: true });
+  if (descriptor.kind === "prompt_text") return validatedAccessor(nestedPropertyAccessor(profile, ["prompt"], "text"), assertPromptTextValue, { required: true });
 
   if (descriptor.kind === "model") {
     const modelExists = () => existingRecord(profile, ["models", descriptor.role]) !== null;
@@ -347,10 +338,6 @@ function targetAccessor(profile, target) {
       canCreate: modelExists,
       createKind: "model role",
     });
-  }
-
-  if (descriptor.kind === "prompt_fragment") {
-    return validatedAccessor(nestedPropertyAccessor(profile, ["prompt", "fragments"], descriptor.id), assertPromptFragment);
   }
 
   if (descriptor.kind === "style_lora") {

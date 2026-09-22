@@ -1,16 +1,18 @@
 import { readPageEntry, readStoryPagesIndex, writeStoryPagesIndex, pageRelativePath } from "./pages-store.mjs";
-import { planCharacterSwitch, applySceneSwitch, requireImpactConfirmation, commitFactChanges, optionalFact, readInheritanceSources, checkPageInheritance } from './prompt-inheritance-facts.mjs';
+import { checkRemovedSettingReferences, cleanRemovedReferences } from './reference-materials.mjs';
 import { createHash, randomBytes } from "node:crypto";
 import { lstat, mkdir, open, readFile, readdir, realpath, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { resolveProjectLocation } from "./project-operations.mjs";
+import { characterSource } from "./prompt-contract.mjs";
+import { optionalFact } from "./scene-facts.mjs";
 import {
   diagnoseStoryPageFiles,
-  preparePromptForPersistence,
   prepareStoryPageNarrativeForPersistence,
-  promptCharacterIds,
+  checkPagePromptOverrideReferences,
+  promptOverrideCharacterIds,
   storyNarrativeSpeakerIds,
   storyPageIdPattern,
   validateStoryOutlineDocument,
@@ -177,9 +179,9 @@ async function readCharacterReferences(projectDirectory, references, { includePr
         result.push({ character_id: characterId, variant_id: reference.variant_id, missing: "prompt" });
         continue;
       }
-      // 角色身份层与所选造型说明是该引用实际生效内容的一部分,必须进入上游指纹。
+      // 所选造型的说明文字与参考图是该引用实际生效内容的一部分,必须进入上游指纹。
       entry.visual_sha256 = hashCanonicalJson({ variant: { id: visualVariant.id, name: visualVariant.name } });
-      entry.prompt_sha256 = hashCanonicalJson({ identity: prompt?.identity ?? null, configuration });
+      entry.prompt_sha256 = hashCanonicalJson({ prompt_name: prompt?.prompt_name ?? null, configuration });
     }
     result.push(entry);
   }
@@ -248,7 +250,7 @@ async function readSceneReferenceIdentity(projectDirectory, pageId) {
   const variant = visual?.variants?.find(item => item.id === prompt.scene_variant_id);
   const configuration = scenePrompt?.variants?.[prompt.scene_variant_id];
   if (!variant || !configuration) return hashCanonicalJson({ ...reference, missing: "variant" });
-  return hashCanonicalJson({ ...reference, visual: { id: variant.id, name: variant.name }, identity: scenePrompt.identity, configuration });
+  return hashCanonicalJson({ ...reference, visual: { id: variant.id, name: variant.name }, prompt_name: scenePrompt.prompt_name ?? null, configuration });
 }
 
 export async function readStoryPromptUpstream(projectDirectory, pageId) {
@@ -478,20 +480,32 @@ async function assertPromptUpstream(projectDirectory, baselineContext) {
 function createDialogueId(occupiedIds) {
   const occupied = new Set(occupiedIds);
   for (;;) {
-    const id = `dialogue-${randomBytes(6).toString("hex")}`;
+    const id = `dialogue-${randomBytes(6).toString('hex')}`;
     if (!occupied.has(id)) return id;
   }
 }
 
-export function createPromptFragmentId(occupiedIds) {
-  const occupied = new Set(occupiedIds);
-  for (;;) {
-    const id = `token-${randomBytes(6).toString("hex")}`;
-    if (!occupied.has(id)) return id;
+// 剧情引用被移除时，连带清理页面 Prompt 中对应的整段覆盖与图片选择，不保留隐藏草稿。
+async function planRemovedReferenceCleanup(projectDirectory, pageId, persisted) {
+  const relative = targetRelativePath("prompt", pageId);
+  let prompt;
+  try { prompt = await readPlainJson(targetPath(projectDirectory, relative), relative); }
+  catch (error) {
+    if (error instanceof FactError && error.code === "story_edit_file_missing") return { writes: [] };
+    throw error;
   }
+  const keep = new Set((persisted.characters ?? []).map((reference) => characterSource(reference.character_id, reference.variant_id)));
+  const next = structuredClone(prompt);
+  for (const field of ["text_overrides", "reference_overrides"]) {
+    for (const source of Object.keys(next[field] ?? {})) {
+      if (source.startsWith("character:") && !keep.has(source)) delete next[field][source];
+    }
+  }
+  if (hashCanonicalJson(next) === hashCanonicalJson(prompt)) return { writes: [] };
+  return { writes: [{ relative, before: prompt, after: next }] };
 }
 
-export async function commitStoryFact(projectRoot, context, readDocument, kind, { beforeCommit, confirmationSha256 } = {}) {
+export async function commitStoryFact(projectRoot, context, readDocument, kind, { beforeCommit } = {}) {
   const project = await resolveProjectLocation(path.resolve(projectRoot), context.project_id);
   const auditPrepared = kind === "prompt" ? await preparePromptWriteAudit(projectRoot) : null;
   let auditCaptured;
@@ -520,20 +534,15 @@ export async function commitStoryFact(projectRoot, context, readDocument, kind, 
     assertDocument(validateStoryPageNarrativeDocument(persisted));
     await assertPageLetteringAnchors(project.projectDirectory, context.page_id, baseline, persisted);
   } else {
-    try {
-      persisted = preparePromptForPersistence(edited, {
-        baselinePrompt: baseline,
-        createFragmentId: createPromptFragmentId,
-      });
-    } catch (error) {
-      if (error instanceof TypeError) fail("invalid_story_edit_document", [error.message]);
-      throw error;
-    }
+    persisted = structuredClone(edited);
     assertDocument(validateStoryPagePromptDocument(persisted));
-    const switchPlan = await applySceneSwitch(project.projectDirectory, baseline, persisted, currentNarrative.characters);
-    requireImpactConfirmation(switchPlan, confirmationSha256, persisted);
-    const inheritanceErrors = checkPageInheritance(persisted, await readInheritanceSources(project.projectDirectory, currentNarrative.characters, persisted.scene_id, persisted.scene_variant_id, { allowMissing: true }));
-    if (inheritanceErrors.length) fail('invalid_story_edit_document', inheritanceErrors);
+    // 切换或移除场景引用时删除旧场景覆盖，不保留隐藏草稿；角色覆盖必须匹配当前引用，否则拒绝保存。
+    const activeScene = persisted.scene_id ? `scene:${persisted.scene_id}:${persisted.scene_variant_id}` : null;
+    for (const field of ["text_overrides", "reference_overrides"]) {
+      for (const source of Object.keys(persisted[field] ?? {})) if (source.startsWith("scene:") && source !== activeScene) delete persisted[field][source];
+    }
+    const overrideErrors = checkPagePromptOverrideReferences(persisted, currentNarrative.characters);
+    if (overrideErrors.length) fail('invalid_story_edit_document', overrideErrors);
   }
   if (beforeCommit !== undefined) {
     if (typeof beforeCommit !== "function") fail("invalid_story_edit_option", ["beforeCommit 必须是函数"]);
@@ -541,14 +550,13 @@ export async function commitStoryFact(projectRoot, context, readDocument, kind, 
   }
   const downstreamDiagnostics = kind === "narrative"
     ? await narrativeDownstreamDiagnostics(project.projectDirectory, context.page_id, persisted) : [];
-  const switchPlan = kind === 'narrative' ? await planCharacterSwitch(project.projectDirectory, context.page_id, baseline, persisted) : { impacts: [], writes: [] };
-  requireImpactConfirmation(switchPlan, confirmationSha256, kind === "narrative" ? edited : persisted);
-  await commitFactChanges(project.projectDirectory, [...switchPlan.writes, { relative: context.target.relative_path, before: baseline, after: persisted }]);
+  const cleanupPlan = kind === 'narrative' ? await planRemovedReferenceCleanup(project.projectDirectory, context.page_id, persisted) : { writes: [] };
+  await commitFactChanges(project.projectDirectory, [...cleanupPlan.writes, { relative: context.target.relative_path, before: baseline, after: persisted }]);
   if (kind === "prompt" && auditPrepared.value) {
     auditCaptured = await capturePromptAuditInput(() => capturePagePromptSnapshot(project.projectDirectory, context.page_id, createStoryPageKey(context.page_id)));
   }
 
-  const result = { target_file: path.resolve(persistedTarget), value: persisted, downstream_diagnostics: downstreamDiagnostics, ...(switchPlan.writes[0] ? { inherited_prompt: switchPlan.writes[0].after } : {}) };
+  const result = { target_file: path.resolve(persistedTarget), value: persisted, downstream_diagnostics: downstreamDiagnostics, ...(cleanupPlan.writes[0] ? { page_prompt: cleanupPlan.writes[0].after } : {}) };
   if (kind === "prompt") result.audit = await auditSavedPagePrompt(projectRoot, project.projectDirectory, auditPrepared, auditCaptured);
   if (kind === "narrative") result.warnings = storyContentWarnings(result.value);
   return result;
@@ -585,7 +593,7 @@ export async function narrativeDownstreamDiagnostics(projectDirectory, pageId, n
     const dialogueIds = new Set(narrative.dialogue.map(dialogue => dialogue.id));
     const dialogueModes = new Map(narrative.dialogue.map(dialogue => [dialogue.id, dialogue.mode]));
     return [
-      ...promptCharacterIds(prompt).filter(id => !characters.has(id)).map(id => ({ code: "dangling_prompt_character", page_id: pageId, character_id: id })),
+      ...promptOverrideCharacterIds(prompt).filter(id => !characters.has(id)).map(id => ({ code: "dangling_prompt_character", page_id: pageId, character_id: id })),
       ...(layouts.pages.find(page => page.page === pageId)?.items ?? []).filter(item => !dialogueIds.has(item.dialogue_id))
         .map(item => ({ code: "dangling_lettering_dialogue", page_id: pageId, dialogue_id: item.dialogue_id })),
       ...Object.keys(isRecord(textSources) ? textSources : {}).filter(id => id !== "$schema").flatMap(id => {
@@ -800,8 +808,27 @@ export async function cleanupDeletedStoryPages(
   return removed;
 }
 
-async function rollbackCreatedFactFiles(targets, originalError, failureCode) {
-  const rollbackFailures = [];
+// 项目写锁由调用入口持有；失败时恢复已写文件，避免半套连带修改。
+export async function commitFactChanges(directory, writes) {
+  await checkRemovedSettingReferences(directory, writes);
+  const done = [];
+  try {
+    for (const write of writes) {
+      await writeJsonAtomic(targetPath(directory, write.relative), write.after);
+      done.push(write);
+    }
+  } catch (error) {
+    for (const write of done.reverse()) {
+      const target = targetPath(directory, write.relative);
+      if (write.before === null) await unlink(target);
+      else await writeJsonAtomic(target, write.before);
+    }
+    throw error;
+  }
+  for (const write of writes) if (write.relative.endsWith('.prompt.json')) await cleanRemovedReferences(directory, write.before);
+}
+
+async function rollbackCreatedFactFiles(targets, originalError, failureCode) {  const rollbackFailures = [];
   for (const target of targets) {
     try { await unlink(target); }
     catch (error) { if (error?.code !== "ENOENT") rollbackFailures.push({ target, error }); }

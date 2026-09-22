@@ -53,12 +53,11 @@ test("模板直接创建完整项目，重复创建拒绝覆盖", async (context
     pages: [],
   });
   const characterPrompt = await readJson(path.join(directory, "characters", "ellen.prompt.json"));
-  assert.deepEqual(characterPrompt.identity, { prompt: Object.fromEntries(["subject","person","setting","camera","avoid"].map((category) => [category, []])), lora: null });
-  assert.deepEqual(Object.keys(characterPrompt.variants), ["uniform"]);
-  assert.deepEqual(characterPrompt.variants.uniform.loras, []);
-  assert.deepEqual(characterPrompt.variants.uniform.identity_disabled, []);
-  assert.deepEqual(characterPrompt.variants.uniform.prompt.subject, []);
-  assert.deepEqual(characterPrompt.variants.uniform.prompt.avoid, []);
+  assert.equal(characterPrompt.prompt_name, "艾莲");
+  assert.deepEqual(characterPrompt.variants, { uniform: { text: "", reference_images: [] } });
+  const projectManifest = await readJson(path.join(directory, "project.json"));
+  assert.equal(projectManifest.format, "story-free-text-v1");
+  assert.equal(projectManifest.default_render_profile, "qwen-image-2-1");
   for (const forbidden of ["story/storyboard.json", "characters/characters.json", "characters/pages.json", "collaboration", "assessment", "candidates", "tasks", "materials/adaptation.md"]) {
     assert.equal(await readFile(path.join(directory, ...forbidden.split("/")), "utf8").then(() => true, () => false), false, forbidden);
   }

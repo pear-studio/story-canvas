@@ -1,13 +1,15 @@
 export const referenceIdPattern = /^ref-[a-f0-9-]{36}$/;
-export function validateReferenceEntries(entries) {
+export function validateReferenceEntries(entries, { allowPurpose = false } = {}) {
   if (entries === undefined) return [];
   if (!Array.isArray(entries)) return ['reference_images 必须是数组'];
   const errors = [];
   if (new Set(entries.map(e => e?.id)).size !== entries.length) errors.push('参考图 ID 重复');
+  const allowedKeys = allowPurpose ? ['id', 'file', 'title', 'purpose'] : ['id', 'file', 'title'];
   for (const e of entries) if (!e || !referenceIdPattern.test(e.id ?? '')
     || typeof e.title !== 'string' || !e.title.trim() || e.title.length > 200
     || !/^reference-[a-f0-9-]+\.png$/.test(e.file ?? '')
-    || Object.keys(e).some(k => !['id', 'file', 'title'].includes(k))) errors.push('参考图条目无效');
+    || (allowPurpose && e.purpose !== undefined && (typeof e.purpose !== 'string' || !e.purpose.trim() || e.purpose.length > 200))
+    || Object.keys(e).some(k => !allowedKeys.includes(k))) errors.push('参考图条目无效');
   return errors;
 }
 export function validateReferenceOverrides(value) {

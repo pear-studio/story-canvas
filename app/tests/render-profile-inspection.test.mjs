@@ -10,7 +10,7 @@ import { diagnoseRenderProfile } from "../server/render-profile-diagnostics.mjs"
 import { inspectRenderProfile } from "../server/render-profile-inspection.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
-const profileId = "anima-base-v1";
+const profileId = "qwen-image-2-1";
 const stepsTarget = "operations.candidates.routes.empty_latent.recipe.steps";
 
 function state(value) {
@@ -49,8 +49,8 @@ function availableDiagnosis(profile) {
   };
 }
 
-test("Anima inspection 展示已解析候选资产、配方与真实 route", async () => {
-  const bundle = await readResolvedRenderProfile(repositoryRoot, "anima-base-v1");
+test("Qwen inspection 展示已解析候选资产、全局文字与真实 route", async () => {
+  const bundle = await readResolvedRenderProfile(repositoryRoot, "qwen-image-2-1");
   const inspected = inspectRenderProfile({ bundle, diagnosis: availableDiagnosis(bundle.resolved_profile) });
 
   assert.deepEqual(inspected.current_contract, {
@@ -59,39 +59,35 @@ test("Anima inspection 展示已解析候选资产、配方与真实 route", asy
     project_override_supported: true,
     request_effective_render_plan_compiled: false,
   });
-  assert.equal(inspected.base_profile.architecture_family, "anima");
+  assert.equal(inspected.base_profile.architecture_family, "qwen-image-2-1");
   assert.equal(inspected.base_profile.sha256, bundle.resolved_profile_sha256);
   assert.equal(inspected.project_override.status, "none");
   assert.equal(inspected.project_override.effective_sha256, bundle.resolved_profile_sha256);
-  assert.deepEqual(inspected.prompt.fragments.slice(0, 3).map((fragment) => [fragment.id, fragment.polarity, fragment.source.source_kind]), [
-    ["quality-masterpiece", "positive", "render_profile"],
-    ["quality-best", "positive", "render_profile"],
-    ["quality-score-7", "positive", "render_profile"],
-  ]);
-  assert.equal(inspected.prompt.negative_fragments, 11);
+  assert.equal(inspected.prompt.text, "根据以下设定和画面描述创作一幅新画面，动作、表情、视角与构图以画面描述为准。");
   assert.deepEqual(inspected.routes.map((route) => [route.operation, route.input_source, route.recipe.source_id, route.workflow.id]), [
-    ["candidates", "empty_latent", "anima-base-v1-candidate", "anima-candidate-page"],
+    ["candidates", "empty_latent", "qwen-image-2-1-candidate", "qwen-image-2-1-text"],
+    ["candidates", "reference_image", "qwen-image-2-1-candidate", "qwen-image-2-1-reference"],
   ]);
-  assert.ok(inspected.routes.every((route) => route.available && route.workflow.modifiers.includes("lora.model_only")));
+  assert.ok(inspected.routes.every((route) => route.available));
   assert.deepEqual(Object.keys(inspected.models), ["dit", "text_encoder", "vae"]);
 });
 
 test("缺少候选 workflow registry 身份会阻止候选 route", async () => {
-  const bundle = await readResolvedRenderProfile(repositoryRoot, "anima-base-v1");
+  const bundle = await readResolvedRenderProfile(repositoryRoot, "qwen-image-2-1");
   const partialBundle = structuredClone(bundle);
-  delete partialBundle.workflow_definitions["anima-candidate-page"];
-  delete partialBundle.source_identity.workflows["anima-candidate-page"];
+  delete partialBundle.workflow_definitions["qwen-image-2-1-text"];
+  delete partialBundle.source_identity.workflows["qwen-image-2-1-text"];
   const inspected = inspectRenderProfile({ bundle: partialBundle, diagnosis: availableDiagnosis(bundle.resolved_profile) });
   const candidate = inspected.routes.find((route) => route.operation === "candidates" && route.input_source === "empty_latent");
 
   assert.equal(inspected.base_profile.available, true);
   assert.equal(candidate.available, false);
   assert.deepEqual(candidate.diagnostics.map((issue) => issue.code), ["workflow_definition_missing", "workflow_identity_missing"]);
-  assert.equal(inspected.routes.filter((route) => route.available).length, 0);
+  assert.equal(inspected.routes.filter((route) => route.available).length, 1);
 });
 
 test("基础模型不可用是全局 blocker，所有 route 保留身份并统一阻止", async () => {
-  const bundle = await readResolvedRenderProfile(repositoryRoot, "anima-base-v1");
+  const bundle = await readResolvedRenderProfile(repositoryRoot, "qwen-image-2-1");
   const diagnosis = availableDiagnosis(bundle.resolved_profile);
   diagnosis.available = false;
   diagnosis.models.dit = { ...diagnosis.models.dit, status: "hash_mismatch", reason: "sha256_mismatch", actual_sha256: "0".repeat(64) };
@@ -107,7 +103,7 @@ test("基础模型不可用是全局 blocker，所有 route 保留身份并统�
 test("applied override 展示三方值与文件身份，并从 effective profile 投影实际配方", async (context) => {
   const bundle = await effectiveBundle(context, {
     target: stepsTarget,
-    original: state(32),
+    original: state(25),
     project: state(30),
   });
   const baseDiagnosis = availableDiagnosis(bundle.base_bundle.resolved_profile);
@@ -127,12 +123,12 @@ test("applied override 展示三方值与文件身份，并从 effective profile
   assert.deepEqual(inspected.project_override.changes, [{
     target: stepsTarget,
     label: "candidates / empty_latent · recipe.steps",
-    original: state(32),
-    current: state(32),
+    original: state(25),
+    current: state(25),
     project: state(30),
   }]);
   const candidateRoute = inspected.routes.find((route) => route.operation === "candidates" && route.input_source === "empty_latent");
-  assert.equal(candidateRoute.recipe.source_id, "anima-base-v1-candidate");
+  assert.equal(candidateRoute.recipe.source_id, "qwen-image-2-1-candidate");
   assert.equal(candidateRoute.recipe.parameters.steps, 30);
   assert.equal(candidateRoute.available, true);
 });
@@ -154,12 +150,12 @@ test("override 冲突阻断 effective，但仍用基础配置展示关系供排�
     target: stepsTarget,
     label: "candidates / empty_latent · recipe.steps",
     original: state(20),
-    current: state(32),
+    current: state(25),
     project: state(30),
   });
   assert.equal(inspected.base_profile.sha256, base.resolved_profile_sha256);
   const candidateRoute = inspected.routes.find((route) => route.operation === "candidates" && route.input_source === "empty_latent");
-  assert.equal(candidateRoute.recipe.parameters.steps, 32);
+  assert.equal(candidateRoute.recipe.parameters.steps, 25);
   assert.ok(inspected.routes.every((route) => route.available));
 });
 

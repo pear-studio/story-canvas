@@ -1,9 +1,0 @@
-.prompt-population { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 24px; margin: 12px 0 8px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: #f7faf8; font-size: var(--text-label); }
-.prompt-population-title { padding-right: 12px; border-right: 1px solid var(--line); font-weight: 600; line-height: 28px; }
-.prompt-population-counter { display: inline-flex; align-items: center; gap: 4px; }
-.prompt-population-counter span { margin-left: 4px; }
-.prompt-population-counter button { width: 24px; height: 26px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: white; color: var(--ink); }
-.prompt-population-counter button:hover:not(:disabled) { background: #eaf3ed; border-color: #94b7a0; }
-.prompt-population-counter button:disabled { opacity: .4; }
-.prompt-population-counter .prompt-population-count { min-width: 20px; margin: 0; text-align: center; font-variant-numeric: tabular-nums; }
-.prompt-population-result { margin-left: auto; color: var(--muted); font-family: monospace; font-size: var(--text-meta); text-align: right; overflow-wrap: anywhere; }

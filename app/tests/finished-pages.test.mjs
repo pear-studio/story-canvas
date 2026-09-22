@@ -116,7 +116,7 @@ test("文字页成品不需要候选图：黑底直出、记录无候选字段�
   );
   const prepared = await f.operations.mutateDerived("demo", () => prepareFinishedPage(f.root, "demo", f.directory, { page_key: textKey })).then(result => result.value);
   assert.equal(prepared.sourceBuffer, null);
-  assert.deepEqual(prepared.textPage, { width: 1664, height: 2432 });
+  assert.deepEqual(prepared.textPage, { width: 1664, height: 2496 });
   let renderedLettering = null;
   const job = await f.run(prepared, {
     upscale: () => { throw new Error("文字页不应超分"); },
@@ -130,7 +130,7 @@ test("文字页成品不需要候选图：黑底直出、记录无候选字段�
   assert.equal(record.page_kind, "text");
   assert.equal(Object.hasOwn(record, "candidate_id"), false);
   assert.equal(record.width, 1664);
-  assert.equal(record.height, 2432);
+  assert.equal(record.height, 2496);
   const listed = await readFinishedPages(f.root, "demo", f.directory);
   const textPage = listed.pages.find(page => page.page_id === textKey.page_id);
   assert.equal(textPage.status, "ready");
@@ -154,7 +154,7 @@ test("文字页成品不需要候选图：黑底直出、记录无候选字段�
 
 test("文字页成品尺寸对齐当前渲染配置的候选出图尺寸", async t => {
   const f = await fixture(t);
-  await json(path.join(f.directory, "project.json"), { $schema: "https://storyvisualizer.local/schemas/project.schema.json", title: "成品测试", canvas: "3:4", default_render_profile: "anima-base-v1" });
+  await json(path.join(f.directory, "project.json"), { $schema: "https://storyvisualizer.local/schemas/project.schema.json", format: "story-free-text-v1", title: "成品测试", canvas: "3:4", default_render_profile: "qwen-image-2-1" });
   const textKey = { page_id: "page-002" };
   await json(path.join(f.directory, `pages/${textKey.page_id}.content.json`), {
     $schema: "https://storyvisualizer.local/schemas/story-page-narrative.schema.json",
@@ -163,7 +163,7 @@ test("文字页成品尺寸对齐当前渲染配置的候选出图尺寸", async
   await json(path.join(f.directory, `pages/${textKey.page_id}.prompt.json`), await readFile(path.join(f.directory, `pages/${key.page_id}.prompt.json`)).then(JSON.parse));
   await json(path.join(f.directory, "pages/index.json"), { $schema: PAGES_INDEX_SCHEMA_ID, pages: [key.page_id, textKey.page_id].map(page_id => ({ page_id, owner_kind: "story", sequence_id: "sequence" })) });
   const prepared = await f.operations.mutateDerived("demo", () => prepareFinishedPage(f.root, "demo", f.directory, { page_key: textKey })).then(result => result.value);
-  assert.deepEqual(prepared.textPage, { width: 1792, height: 2304 });
+  assert.deepEqual(prepared.textPage, { width: 1728, height: 2304 });
   const job = await f.run(prepared, { upscale: () => { throw new Error("文字页不应超分"); } });
   assert.equal(job.status, "completed");
   const record = await readFinishedRecord(f.directory, textKey.page_id);
@@ -171,7 +171,7 @@ test("文字页成品尺寸对齐当前渲染配置的候选出图尺寸", async
   assert.equal(record.height, prepared.textPage.height);
   const view = await readProjectWorkbenchView(f.root, "demo");
   assert.deepEqual(view.render_capabilities.text_page.dimensions, prepared.textPage, "预览和成品消费同一尺寸投影");
-  await json(path.join(f.directory, "project.json"), { $schema: "https://storyvisualizer.local/schemas/project.schema.json", title: "成品测试", canvas: "3:4", default_render_profile: "missing-profile" });
+  await json(path.join(f.directory, "project.json"), { $schema: "https://storyvisualizer.local/schemas/project.schema.json", format: "story-free-text-v1", title: "成品测试", canvas: "3:4", default_render_profile: "missing-profile" });
   const unavailable = await readProjectWorkbenchView(f.root, "demo");
   assert.equal(unavailable.render_capabilities.text_page.dimensions, null);
   assert.match(unavailable.render_capabilities.text_page.error, /无法确定成品尺寸/);

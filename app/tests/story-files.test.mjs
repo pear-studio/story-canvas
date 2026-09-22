@@ -35,10 +35,16 @@ async function validators() {
 }
 
 function completePrompt() {
-  return { $schema: STORY_PAGE_PROMPT_SCHEMA_ID, subject: [{ tag: "1girl" }], person: [{ description: "walking toward the apartment", character_id: "ellen-joe" }],  setting: [{ description: "apartment district" }], camera: [{ tag: "full_body" }], avoid: [] };
+  return {
+    $schema: STORY_PAGE_PROMPT_SCHEMA_ID,
+    text: "艾莲穿着制服走向民宿，全身镜头。",
+    text_overrides: { "character:ellen-joe:school-uniform": "本页覆盖的完整描述" },
+    reference_overrides: { "character:ellen-joe:school-uniform": ["ref-11111111-1111-4111-8111-111111111111"] },
+    reference_images: [{ id: "ref-22222222-2222-4222-8222-222222222222", file: "reference-22222222-2222-4222-8222-222222222222.png", title: "示意图", purpose: "画风参考" }],
+  };
 }
 
-test("故事文件接受完整契约并拒绝缺失 Prompt 分类或多种片段文本", async () => {
+test("故事文件接受完整契约并拒绝旧分类形状与非法 override", async () => {
   const validate = await validators();
   const outline = {
     $schema: STORY_OUTLINE_SCHEMA_ID,
@@ -77,9 +83,11 @@ test("故事文件接受完整契约并拒绝缺失 Prompt 分类或多种片段
   assert.equal(validate[STORY_PAGE_PROMPT_SCHEMA_ID](prompt), true);
   assert.equal(storyIdPattern.test("night--arrival"), false);
 
-  delete prompt.avoid;
-  prompt.subject[0].description = "girl";
-  assert.equal(validate[STORY_PAGE_PROMPT_SCHEMA_ID](prompt), false);
+  const legacy = { $schema: STORY_PAGE_PROMPT_SCHEMA_ID, subject: [{ tag: "1girl" }], person: [], setting: [], camera: [], avoid: [] };
+  assert.equal(validate[STORY_PAGE_PROMPT_SCHEMA_ID](legacy), false, "旧五分类形状不再是合法页面 Prompt");
+  assert.equal(validate[STORY_PAGE_PROMPT_SCHEMA_ID]({ ...prompt, text: 42 }), false, "text 必须是字符串");
+  assert.equal(validate[STORY_PAGE_PROMPT_SCHEMA_ID]({ ...prompt, text_overrides: { "character:ellen-joe:school-uniform": 1 } }), false);
+  assert.equal(validate[STORY_PAGE_PROMPT_SCHEMA_ID]({ ...prompt, reference_images: [{ id: "ref-22222222-2222-4222-8222-222222222222", file: "reference-22222222-2222-4222-8222-222222222222.png", title: "示意图", purpose: 1 }] }), false, "purpose 必须是字符串");
 });
 
 test("语义校验拒绝跨章节重复 sequence、跨 sequence 重复页面和页面内重复身份", () => {

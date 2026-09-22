@@ -35,7 +35,6 @@ import {
   STORY_PAGES_INDEX_SCHEMA_ID,
   STORY_PAGE_NARRATIVE_SCHEMA_ID,
   STORY_PAGE_PROMPT_SCHEMA_ID,
-  storyPromptCategories
 } from "../server/story-files.mjs";
 import {
   CHARACTER_INDEX_SCHEMA_ID,
@@ -64,17 +63,17 @@ async function exists(target) {
 }
 
 function pagePrompt(characterId = null) {
-  return { $schema: STORY_PAGE_PROMPT_SCHEMA_ID, subject: [{ tag: "1girl", ...(characterId ? { character_id: characterId } : {}) }], person: [],  setting: [], camera: [], avoid: [] };
+  void characterId;
+  return { $schema: STORY_PAGE_PROMPT_SCHEMA_ID, text: "本页画面描述。" };
 }
 
 function characterPrompt() {
-  const prompt = { subject: [], person: [],  setting: [], camera: [], avoid: [] };
   return {
     $schema: CHARACTER_PROMPT_SCHEMA_ID,
-    identity: { prompt: structuredClone(prompt), lora: null },
+    prompt_name: "角色",
     variants: {
-      default: { prompt, loras: [], identity_disabled: [] },
-      uniform: { prompt: structuredClone(prompt), loras: [], identity_disabled: [] },
+      default: { text: "基础外观描述。", reference_images: [] },
+      uniform: { text: "制服外观描述。", reference_images: [] },
     },
   };
 }
@@ -254,7 +253,7 @@ test("Prompt save 忽略其他页面和未引用角色变化", async (context) =
   const fixture = await createFixture(context);
   const session = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
   const draft = structuredClone(session.document);
-  draft.camera.push({ tag: "full_body" });
+  draft.text = "艾莲的全身镜头。";
   session.document = structuredClone(draft);
   const unrelatedPage = path.join(fixture.pagesDirectory, "page-002.content.json");
   const unrelated = await readJson(unrelatedPage);
@@ -267,8 +266,7 @@ test("Prompt save 忽略其他页面和未引用角色变化", async (context) =
 
   const result = await saveStoryPromptDraft(fixture.repositoryRoot, session);
   const persisted = await readJson(result.target_file);
-  assert.equal(persisted.camera[0].tag, "full_body");
-  assert.match(persisted.camera[0].id, /^token-[a-f0-9]{12}$/);
+  assert.equal(persisted.text, "艾莲的全身镜头。");
 });
 
 test("目标文件变化时拒绝陈旧保存", async (context) => {
@@ -276,14 +274,14 @@ test("目标文件变化时拒绝陈旧保存", async (context) => {
   const session = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
   const target = path.join(fixture.pagesDirectory, "page-001.prompt.json");
   const external = await readJson(target);
-  external.setting.push({ description: "cold mood" });
+  external.text = "外部修改的描述。";
   await writeJson(target, external);
 
   await assert.rejects(
     () => saveStoryPromptDraft(fixture.repositoryRoot, session),
     (error) => error?.code === "fact_target_conflict",
   );
-  assert.deepEqual((await readJson(target)).setting, [{ description: "cold mood" }]);
+  assert.equal((await readJson(target)).text, "外部修改的描述。");
 });
 
 test("同页 narrative 与 Prompt 串行保存，Prompt 不会在 narrative 变化后陈旧落盘", async (context) => {
@@ -354,7 +352,7 @@ test("编辑内容验证失败时不覆盖目标", async (context) => {
   const fixture = await createFixture(context);
   const session = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
   const invalid = structuredClone(session.document);
-  delete invalid.avoid;
+  invalid.text = 42;
   session.document = structuredClone(invalid);
   const target = path.join(fixture.pagesDirectory, "page-001.prompt.json");
   const before = await readFile(target, "utf8");
@@ -446,7 +444,7 @@ test("page create 生成服务端 ID、完整文件对并追加到 sequence", as
   assert.equal(narrative.scene_description, "待补充画面内容。");
   assert.deepEqual(narrative.characters, []);
   assert.deepEqual(narrative.dialogue, []);
-  assert.deepEqual(storyPromptCategories.map((category) => [category, prompt[category]]), storyPromptCategories.map((category) => [category, []]));
+  assert.equal(prompt.text, "");
   assert.equal(pagesIndex.by_sequence.arrival.at(-1), result.page_id);
 });
 
@@ -573,9 +571,12 @@ test("公共页面草稿不依赖归属存在，缺失引用与人物绑定可�
   narrativeDraft.document.title = "归属失效但仍能编辑";
   await saveStoryNarrativeDraft(root, narrativeDraft);
   const promptDraft = await readStoryPromptDraft(root, id, "page-001");
-  promptDraft.document.subject.push({ tag: "smile", character_id: "absent" });
+  promptDraft.document.text_overrides = { "character:absent:default": "失效覆盖" };
+  promptDraft.document.text = "仍然可以编辑本页描述。";
+  await assert.rejects(saveStoryPromptDraft(root, promptDraft), { code: "invalid_story_edit_document" });
+  delete promptDraft.document.text_overrides;
   const saved = await saveStoryPromptDraft(root, promptDraft);
-  assert.equal(saved.value.subject.at(-1).character_id, "absent");
+  assert.equal(saved.value.text, "仍然可以编辑本页描述。");
   assert.equal((await readStoryNarrativeDraft(root, id, "page-001")).document.title, "归属失效但仍能编辑");
 });
 
@@ -610,15 +611,15 @@ test("页面 Prompt 只依赖所引场景子设定，场景缺失与恢复会使
   const unrelated = await readStoryPromptDraft(root, id, "page-001");
   const streetPath = path.join(projectDirectory, "scenes", "street.prompt.json");
   const street = await readJson(streetPath);
-  street.identity.prompt.setting.push({ tag: "outdoors" });
+  street.variants.default.text = "街道外观描述。";
   await writeJson(streetPath, street);
-  unrelated.document.camera.push({ tag: "from_side" });
+  unrelated.document.text = "从侧面拍摄。";
   await saveStoryPromptDraft(root, unrelated);
   const stale = await readStoryPromptDraft(root, id, "page-001");
   await writeJson(sceneIndexPath, { $schema: SCENE_INDEX_SCHEMA_ID, scenes: ["street"] });
   await assert.rejects(saveStoryPromptDraft(root, stale), { code: "fact_upstream_conflict" });
   const missing = await readStoryPromptDraft(root, id, "page-001");
-  missing.document.camera.push({ tag: "from_above" });
+  missing.document.text = "从上方拍摄。";
   await saveStoryPromptDraft(root, missing);
   const restored = await readStoryPromptDraft(root, id, "page-001");
   await writeJson(sceneIndexPath, { $schema: SCENE_INDEX_SCHEMA_ID, scenes: ["station", "street"] });
@@ -631,9 +632,9 @@ test("外部登记项目可保存 Prompt 和 outline，仍拒绝越界 pages jun
   await mkdir(root);
   registerProject(root, { id: f.projectId, type: 'story', path: f.projectDirectory });
   const prompt = await readStoryPromptDraft(root, f.projectId, 'page-001');
-  prompt.document.camera = [{ description: 'close up' }];
+  prompt.document.text = '特写镜头。';
   await saveStoryPromptDraft(root, prompt);
-  assert.equal((await readStoryPromptDraft(root, f.projectId, 'page-001')).document.camera[0].description, 'close up');
+  assert.equal((await readStoryPromptDraft(root, f.projectId, 'page-001')).document.text, '特写镜头。');
   const outline = await readStoryOutlineDraft(root, f.projectId);
   outline.document.synopsis = '外部项目正常保存。';
   await saveStoryOutlineDraft(root, outline);

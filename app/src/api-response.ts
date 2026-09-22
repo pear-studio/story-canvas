@@ -1,8 +1,3 @@
-export class InheritanceConfirmationRequired extends Error {
-  confirmation: string;
-  changes: string[];
-  constructor(confirmation: string, changes: string[]) { super('请确认连带修改'); this.confirmation = confirmation; this.changes = changes; }
-}
 type ApiErrorPayload = {
   error?: string;
   message?: string;
@@ -40,10 +35,6 @@ export async function responseJson<T>(response: Response): Promise<T> {
   if (response.headers.get("x-story-canvas-refresh-required") === "true") throw new ProjectRefreshRequiredError();
   const result = await response.json() as T & ApiErrorPayload;
   if (!response.ok) {
-    if (result.error === 'inheritance_confirmation_required' && Array.isArray(result.details)) {
-      const detail = result.details[0] as { confirmation_sha256: string; changes: string[] };
-      throw new InheritanceConfirmationRequired(detail.confirmation_sha256, detail.changes);
-    }
     if (response.status === 409 && result.error === "project_revision_conflict") {
       throw new Error(PROJECT_REVISION_CONFLICT_MESSAGE);
     }

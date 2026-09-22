@@ -19,7 +19,9 @@ export function StoryCandidateDifference({ projectId, row, onClose }: { projectI
     if (candidateId) loadCandidateDetail(projectId, row.page_key, candidateId).then(result => { if (active) setCandidate(result.detail); }, cause => { if (active) setCandidateError(String(cause.message ?? cause)); });
     return () => { active = false; };
   }, [projectId, row.page_key, candidateId]);
-  const labels = { same: '完全一致', format: '仅空格或换行不同', order: '词条相同，顺序或排版不同', content: '词句或权重有变化' };
+  const labels = { same: '完全一致', format: '仅空格或换行不同', order: '段落相同，顺序或排版不同', content: '文字有变化' };
+  // 自由文本 Prompt 没有词条片段；按非空行分段比较，给出旧候选与当前各自的独有行。
+  const promptParts = (text: string) => text.split(/\n+/).map(line => line.trim()).filter(Boolean).map(text => ({ text }));
   return <Modal size="workspace" className="candidate-difference-modal" title="候选差异详情" subtitle={row.title} onClose={onClose} footer={<button type="button" className="button" onClick={onClose}>关闭</button>}>
     <p>比较候选生成时的记录与当前已保存的生成条件；没有候选也会列入补齐范围。</p>
     <p>{row.all_candidate_ids.length ? `共 ${row.all_candidate_ids.length} 张候选，扫描时 ${row.matched} 张相符、${row.candidate_ids.length} 张不符。` : '本页没有候选图，没有旧 Prompt 可比较。'}</p>
@@ -33,7 +35,8 @@ export function StoryCandidateDifference({ projectId, row, onClose }: { projectI
     {candidate && <p>生成时间：{candidate.completed_at ?? candidate.created_at ?? '未记录'} · Seed：{candidate.seed ?? '未记录'}</p>}
     {current && (!candidateId || candidate) && (['positive', 'negative'] as const).map(polarity => {
       const before = candidate?.generation.prompt[polarity] ?? '', after = current.prompt[polarity];
-      const difference = comparePromptText(before, after, candidate?.generation.prompt.parts[polarity], current.prompt.parts[polarity]);
+      if (!before && !after) return null;
+      const difference = comparePromptText(before, after, promptParts(before), promptParts(after));
       return <section className="candidate-prompt-comparison" key={polarity}>
         <h3>{polarity === 'positive' ? '正向 Prompt' : '负向 Prompt'}{candidate ? ` · ${labels[difference.kind]}` : ''}</h3>
         {candidate && (difference.removed.length > 0 || difference.added.length > 0) && <div className="candidate-prompt-comparison-columns">

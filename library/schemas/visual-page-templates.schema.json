@@ -43,73 +43,14 @@
     }
   },
   "$defs": {
-    "fragment": {
-      "type": "object",
-      "required": [
-        "prompt_type",
-        "prompt_text"
-      ],
-      "properties": {
-        "prompt_type": {
-          "enum": [
-            "danbooru",
-            "custom_description"
-          ]
-        },
-        "prompt_text": {
-          "type": "string",
-          "minLength": 1
-        },
-        "role_slot": {
-          "const": "subject"
-        },
-        "weight": {
-          "type": "number",
-          "minimum": 0.2,
-          "maximum": 10
-        }
-      },
-      "additionalProperties": false
-    },
     "visual": {
       "type": "object",
       "required": [
-        "subject",
-        "person",
-        "setting",
-        "camera",
-        "avoid"
+        "text"
       ],
       "properties": {
-        "subject": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/fragment"
-          }
-        },
-        "person": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/fragment"
-          }
-        },
-        "setting": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/fragment"
-          }
-        },
-        "camera": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/fragment"
-          }
-        },
-        "avoid": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/fragment"
-          }
+        "text": {
+          "type": "string"
         }
       },
       "additionalProperties": false
@@ -146,7 +87,8 @@
           "items": {
             "enum": [
               "story",
-              "character", "scene"
+              "character",
+              "scene"
             ]
           }
         },

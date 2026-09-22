@@ -18,18 +18,13 @@ const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 function semanticProfile() {
   return {
     id: "studio-base-v1",
-    architecture_family: "anima",
+    architecture_family: "qwen-image-2-1",
     models: {
       dit: { filename: "base.safetensors", relative_path: "diffusion_models/base.safetensors", sha256: "a".repeat(64) },
       text_encoder: { filename: "encoder.safetensors", relative_path: "text_encoders/encoder.safetensors", sha256: "b".repeat(64) },
       vae: { filename: "vae.safetensors", relative_path: "vae/vae.safetensors", sha256: "c".repeat(64) },
     },
-    prompt: {
-      policy: "anima-v1",
-      fragments: {
-        quality: { polarity: "positive", placement: "prefix", order: 100, prompt_type: "custom_description", prompt_text: "best quality" },
-      },
-    },
+    prompt: { text: "全局基础文字。" },
     operations: {
       candidates: {
         routes: {
@@ -122,9 +117,7 @@ test("最终语义 target 按原值应用且不修改已解析基础配置", () 
     resolvedProfile: base,
     overrideDocument: document([
       { target: "models.dit", original: state(base.models.dit), project: state(replacementModel) },
-      { target: "prompt.policy", original: state("anima-v1"), project: state("anima-project-v1") },
-      { target: "prompt.fragments.atmosphere", original: { exists: false }, project: state({ polarity: "positive", placement: "prefix", order: 300, prompt_type: "custom_description", prompt_text: "misty atmosphere" }) },
-      { target: "prompt.fragments.quality", original: state(base.prompt.fragments.quality), project: { exists: false } },
+      { target: "prompt.text", original: state("全局基础文字。"), project: state("项目替换的全局文字。") },
       { target: "operations.candidates.routes.empty_latent.workflow", original: state("anima-candidate-page"), project: state("project-anima-candidate-page") },
       { target: "operations.candidates.routes.empty_latent.recipe.steps", original: state(24), project: state(30) },
       { target: "operations.candidates.routes.empty_latent.recipe.resolutions.2:3", original: state({ width: 1024, height: 1536 }), project: state({ width: 960, height: 1440 }) },
@@ -135,19 +128,14 @@ test("最终语义 target 按原值应用且不修改已解析基础配置", () 
   assert.equal(result.blocked, false);
   assert.deepEqual(result.changes.map((change) => change.target), [
     "models.dit",
-    "prompt.policy",
-    "prompt.fragments.atmosphere",
-    "prompt.fragments.quality",
+    "prompt.text",
     "operations.candidates.routes.empty_latent.workflow",
     "operations.candidates.routes.empty_latent.recipe.steps",
     "operations.candidates.routes.empty_latent.recipe.resolutions.2:3",
     "style_loras.watercolor.weight",
   ]);
   assert.equal(result.effective_profile.models.dit.filename, "project.safetensors");
-  assert.equal(result.effective_profile.prompt.policy, "anima-project-v1");
-  assert.equal(result.effective_profile.prompt.fragments.atmosphere.prompt_text, "misty atmosphere");
-  assert.equal(Object.hasOwn(result.effective_profile.prompt.fragments, "quality"), false);
-  assert.equal(result.effective_profile.prompt.policy, "anima-project-v1");
+  assert.equal(result.effective_profile.prompt.text, "项目替换的全局文字。");
   assert.equal(result.effective_profile.operations.candidates.routes.empty_latent.workflow, "project-anima-candidate-page");
   assert.equal(result.effective_profile.operations.candidates.routes.empty_latent.recipe.steps, 30);
   assert.deepEqual(result.effective_profile.operations.candidates.routes.empty_latent.recipe.resolutions["2:3"], { width: 960, height: 1440 });
@@ -322,16 +310,16 @@ test("拒绝 aggregate target、重复 target 和 original/value 旧格式", () 
   assert.throws(() => resolveRenderProfileOverride({
     resolvedProfile: semanticProfile(),
     overrideDocument: document([
-      { target: "prompt.policy", original: state("illustrious-v1"), project: state("first") },
-      { target: "prompt.policy", original: state("illustrious-v1"), project: state("second") },
+      { target: "prompt.text", original: state("一"), project: state("二") },
+      { target: "prompt.text", original: state("一"), project: state("三") },
     ]),
-  }), /target 重复：prompt.policy/);
+  }), /target 重复：prompt.text/);
 
   assert.throws(() => resolveRenderProfileOverride({
     resolvedProfile: semanticProfile(),
     overrideDocument: document([{
-      target: "prompt.policy",
-      original: state("illustrious-v1"),
+      target: "prompt.text",
+      original: state("一"),
       value: state("old-shape"),
     }]),
   }), /未知字段：value/);
@@ -341,7 +329,8 @@ test("每类语义 target 校验项目值类型、范围和删除合法性", () 
   const cases = [
     ["operations.candidates.routes.empty_latent.workflow", state("anima-candidate-page"), state(42)],
     ["operations.candidates.routes.empty_latent.workflow", state("anima-candidate-page"), { exists: false }],
-    ["prompt.policy", state("anima-v1"), state("Not Stable")],
+    ["prompt.text", state("全局基础文字。"), state(42)],
+    ["prompt.text", state("全局基础文字。"), { exists: false }],
     ["operations.candidates.routes.empty_latent.recipe.steps", state(24), state(-1)],
     ["operations.candidates.routes.empty_latent.recipe.cfg", state(6), state(0)],
     ["operations.candidates.routes.empty_latent.recipe.resolutions.2:3", state({ width: 1024, height: 1536 }), state({ width: 1025, height: 1536 })],
@@ -349,7 +338,8 @@ test("每类语义 target 校验项目值类型、范围和删除合法性", () 
     ["style_loras.ink-style", { exists: false }, state({ filename: "../unsafe.safetensors", sha256: "c".repeat(64), weight: 0.8 })],
     ["models.dit", state(semanticProfile().models.dit), state({ filename: "bad.safetensors", relative_path: "diffusion_models/bad.safetensors", sha256: "bad" })],
     ["models.dit", state(semanticProfile().models.dit), { exists: false }],
-    ["prompt.fragments.quality", state(semanticProfile().prompt.fragments.quality), state({ polarity: "positive", placement: "prefix", order: 100, prompt_type: "unknown", prompt_text: "bad" })],
+    ["prompt.policy", state("anima-v1"), state("wai-v1")],
+    ["prompt.fragments.quality", { exists: false }, state({ polarity: "positive", placement: "prefix", order: 100, prompt_type: "custom_description", prompt_text: "bad" })],
   ];
   for (const [target, original, project] of cases) {
     assert.throws(() => resolveRenderProfileOverride({
@@ -453,13 +443,13 @@ test("Schema 与运行时 target grammar 对所有语义族保持一致", async 
     "recipe.resolutions.3:4", "recipe.resolutions.9:16", "recipe.resolutions.4:3",
   ];
   const validTargets = [
-    "models.dit", "models.text_encoder", "prompt.policy", "prompt.fragments.quality-masterpiece",
+    "models.dit", "models.text_encoder", "prompt.text",
     "style_loras.ink-style", "style_loras.ink-style.weight",
     ...[["candidates", "empty_latent"]]
       .flatMap(([operation, input]) => routeSuffixes.map((suffix) => `operations.${operation}.routes.${input}.${suffix}`)),
   ];
   const invalidTargets = [
-    "workflow", "recipes.candidate.steps", "models.Checkpoint", "prompt.fragments.quality_masterpiece",
+    "workflow", "recipes.candidate.steps", "models.Checkpoint", "prompt.policy", "prompt.fragments.quality_masterpiece",
     "legacy_targets.pose.workflow", "legacy_targets.normal.defaults.strength", "operations.candidates.routes.current_base.workflow",
     "operations.candidates.routes.empty_latent.recipe.strategy",
     "operations.render.routes.empty_latent.recipe.strategy",

@@ -43,11 +43,11 @@ function readableId(label, prefix, occupied) {
   }
 }
 
-async function editFacts(projectRoot, projectId, domain, kind, targetId, change, confirmationSha256) {
+async function editFacts(projectRoot, projectId, domain, kind, targetId, change) {
   const draft = await readFactDraft(projectRoot, { domain, kind, projectId, targetId });
   const result = change(draft.document);
   const saved = await saveFactDraft(projectRoot, { domain, kind, projectId, targetId,
-    confirmationSha256, document: draft.document, expectedSha256: draft.expected_sha256, expectedContextSha256: draft.expected_context_sha256,
+    document: draft.document, expectedSha256: draft.expected_sha256, expectedContextSha256: draft.expected_context_sha256,
     conflictCode: "fact_target_conflict", contextConflictCode: "fact_upstream_conflict" });
   return { ...saved, ...result };
 }

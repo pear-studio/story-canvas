@@ -1,63 +1,61 @@
 import { readFactDraft } from "./fact-drafts.mjs";
 import { decodePageKey } from "./page-key.mjs";
 import { compilePageRenderInspectionContext } from "./page-render-resolver.mjs";
-import { loadPromptDictionaryForRender } from "./prompt-dictionary-loader.mjs";
-import { applyInheritedPrompt, characterSource, sceneSource, inheritanceCategories } from "../shared/prompt-inheritance.mjs";
+import { characterSource, sceneSource } from "./prompt-contract.mjs";
 
-const settings = fragment => ({ weight: fragment.weight ?? 1, enabled: fragment.enabled !== false });
+function isRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
 
-// 展示原词和各层结果；数值计算只调用生成使用的继承函数，不再实现覆盖算法。
-function inheritedGroup({ source, path, prompt, identityAdjustments, identityDisabled, pageAdjustments = {} }) {
-  const middle = applyInheritedPrompt(prompt, identityAdjustments, identityDisabled);
-  const effective = applyInheritedPrompt(middle, pageAdjustments);
+function referenceProjection(pagePrompt, source, kind, setting) {
+  const overrides = isRecord(pagePrompt?.text_overrides) ? pagePrompt.text_overrides : {};
+  const override = Object.hasOwn(overrides, source) ? overrides[source] : null;
+  const currentText = setting.text ?? "";
+  const selectedIds = pagePrompt?.reference_overrides?.[source]
+    ?? (setting.reference_images ?? []).slice(0, 1).map((entry) => entry.id);
   return {
-    source, path,
-    ...(identityAdjustments ? { identity_overrides: identityAdjustments, identity_disabled: identityDisabled ?? [] } : {}),
-    page_adjustments: pageAdjustments,
-    fragments: inheritanceCategories.flatMap(category => (prompt[category] ?? []).map((fragment, index) => ({
-      category, fragment,
-      ...(identityAdjustments ? { after_identity: settings(middle[category][index]) } : {}),
-      effective: settings(effective[category][index]),
-    }))),
+    source,
+    kind,
+    id: setting.id,
+    variant_id: setting.configuration_id,
+    prompt_name: setting.prompt_name ?? setting.id,
+    current_text: currentText,
+    override,
+    effective_text: override ?? currentText,
+    reference_images: structuredClone(setting.reference_images ?? []),
+    selected_image_ids: structuredClone(selectedIds),
   };
 }
 
 // 调用者必须放在 readFacts 一致性读取边界内；本函数不诊断模型文件，也不访问 ComfyUI。
-export async function readPromptEditContext({ projectRoot, repositoryRoot = projectRoot, projectDirectory, projectId, pageKey, config = {} }) {
+export async function readPromptEditContext({ projectRoot, repositoryRoot = projectRoot, projectDirectory, projectId, pageKey }) {
   const key = decodePageKey(pageKey);
   const domain = "page";
   const kind = "prompt";
   const draft = await readFactDraft(projectRoot, { domain, kind, projectId, targetId: key.page_id });
-  let dictionaryEntries = null, dictionaryError = null;
-  try { dictionaryEntries = (await loadPromptDictionaryForRender(config, repositoryRoot)).entries; }
-  catch (error) { dictionaryError = error.message; }
-  const context = await compilePageRenderInspectionContext({ repositoryRoot, projectDirectory, pageKey: key, dictionaryEntries, dictionaryError });
+  const context = await compilePageRenderInspectionContext({ repositoryRoot, projectDirectory, pageKey: key });
   const { snapshot, compiled_profile: bundle, compiled_page: compiled } = context;
-  const inherited = [];
-  for (const character of snapshot.characters) {
-    const source = characterSource(character.id, character.configuration_id);
-    const pageAdjustments = snapshot.page_prompt.inheritance?.[source] ?? {};
-    inherited.push(inheritedGroup({ source, path: `characters/${character.id}.prompt.json.identity.prompt`, prompt: character.identity.prompt,
-      identityAdjustments: character.identity_overrides ?? {}, identityDisabled: character.identity_disabled ?? [], pageAdjustments }));
-    inherited.push(inheritedGroup({ source, path: `characters/${character.id}.prompt.json.variants.${character.configuration_id}.prompt`, prompt: character.prompt, pageAdjustments }));
-  }
-  for (const scene of snapshot.scenes) {
-    const source = sceneSource(scene.id, scene.configuration_id);
-    const pageAdjustments = snapshot.page_prompt.inheritance?.[source] ?? {};
-    inherited.push(inheritedGroup({ source, path: `scenes/${scene.id}.prompt.json.identity.prompt`, prompt: scene.identity.prompt, identityAdjustments: scene.identity_overrides ?? {}, identityDisabled: scene.identity_disabled ?? [], pageAdjustments }));
-    inherited.push(inheritedGroup({ source, path: `scenes/${scene.id}.prompt.json.variants.${scene.configuration_id}.prompt`, prompt: scene.prompt, pageAdjustments }));
-  }
-  // 配置冲突时 inspection 会提供基础预览；这里不能冒充有效结果。
-  const effective = bundle?.blocked ? null : bundle?.effective_profile ?? null;
-  const complete = Boolean(effective && compiled && !compiled.missing.length && !compiled.errors.length && context.audit.status === "complete");
-  const final = effective && compiled ? {
-    mode: snapshot.page_prompt.mode ?? "structured",
-    positive: compiled.positive_prompt, negative: compiled.negative_prompt,
-    loras: compiled.loras,
-    parts: Object.fromEntries(["positive", "negative"].map(polarity => [polarity, (compiled.prompt_parts?.[polarity] ?? []).map(part => ({
-      text: part.text, origin: part.origin, origin_id: part.origin_id, path: part.path,
-      category: part.category, scope: part.scope,
-    }))])),
+  const pagePrompt = snapshot.page_prompt;
+  const references = [
+    ...snapshot.characters.map((character) => referenceProjection(
+      pagePrompt, characterSource(character.id, character.configuration_id), "character", character,
+    )),
+    ...snapshot.scenes.map((scene) => referenceProjection(
+      pagePrompt, sceneSource(scene.id, scene.configuration_id), "scene", scene,
+    )),
+  ];
+  const overridden = [...(bundle?.override_resolution?.changes ?? []), ...(bundle?.override_resolution?.redundant ?? [])]
+    .some((change) => change.target === "prompt.text");
+  const activeProfile = bundle?.blocked ? null : bundle?.effective_profile ?? null;
+  const globalText = activeProfile?.prompt?.text
+    ?? (bundle?.blocked ? bundle.base_bundle.resolved_profile.prompt.text : null);
+  // 配置冲突时 inspection 只提供基础预览，不能冒充有效结果。
+  const complete = Boolean(activeProfile && compiled && !compiled.missing.length && !compiled.errors.length && context.audit.status === "complete");
+  const final = activeProfile && compiled ? {
+    positive: compiled.positive_prompt,
+    negative: compiled.negative_prompt,
+    images: structuredClone(compiled.images),
+    sections: structuredClone(compiled.sections),
   } : null;
   return {
     page_key: key,
@@ -66,18 +64,14 @@ export async function readPromptEditContext({ projectRoot, repositoryRoot = proj
     context: {
       status: complete ? "complete" : "incomplete",
       title: snapshot.title,
-      mode: snapshot.page_prompt.mode ?? "structured",
-      inherited_usage: "generation",
-      inherited,
-      profile: {
-        id: snapshot.project.default_render_profile,
-        effective_sha256: bundle?.effective_profile_sha256 ?? null,
-        prompt: effective?.prompt ?? null,
-        style_loras: effective?.style_loras ?? null,
-        override_source: bundle?.override_source_identity ?? null,
-        overrides: bundle?.override_resolution?.changes ?? [],
-        redundant_overrides: bundle?.override_resolution?.redundant ?? [],
-        conflicts: bundle?.override_resolution?.conflicts ?? [],
+      global_text: {
+        text: globalText,
+        source: overridden ? "project_override" : "profile",
+      },
+      references,
+      page: {
+        text: typeof pagePrompt.text === "string" ? pagePrompt.text : "",
+        reference_images: structuredClone(pagePrompt.reference_images ?? []),
       },
       final,
       audit: context.audit,

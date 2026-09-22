@@ -1,7 +1,5 @@
 import { cleanRemovedReferences } from './reference-materials.mjs';
 import { readPageIndex, validatePagesIndexDocument } from "./pages-store.mjs";
-import { duplicatePromptWords, variantPrompt } from '../shared/prompt-inheritance.mjs';
-import { planPromptPropagation, requireImpactConfirmation, commitFactChanges } from './prompt-inheritance-facts.mjs';
 import { randomBytes } from "node:crypto";
 import { lstat, mkdir, readdir, rename, stat } from "node:fs/promises";
 import path from "node:path";
@@ -10,17 +8,13 @@ import { validateLetteringSettingsDocument } from "./lettering-settings.mjs";
 
 import {
   CHARACTER_INDEX_SCHEMA_ID,
-  CHARACTER_LORA_SCHEMA_ID,
   CHARACTER_PROFILE_SCHEMA_ID,
   CHARACTER_PROMPT_SCHEMA_ID,
   CHARACTER_VISUAL_SCHEMA_ID,
   characterIdPattern,
-  characterIdentityImpact,
   characterVariantIdPattern,
   diagnoseCharacterCoreDependents,
-  prepareCharacterPromptForPersistence,
   validateCharacterIndexDocument,
-  validateCharacterLoraDocument,
   validateCharacterProfileDocument,
   validateCharacterPromptDocument,
   validateCharacterVisualDocument,
@@ -28,14 +22,13 @@ import {
 import { resolveProjectLocation } from "./project-operations.mjs";
 import { assertNoActivePageRender } from "./render-task-storage.mjs";
 import {
-  createPromptFragmentId,
+  commitFactChanges,
   FactError,
   factStorage as storage,
 } from "./story-facts.mjs";
 import {
   storyPageIdPattern,
   storyNarrativeSpeakerIds,
-  storyPromptCategories,
   validateStoryPageNarrativeDocument,
 } from "./story-files.mjs";
 import { hashCanonicalJson } from "./workflow-definition.mjs";
@@ -69,32 +62,17 @@ function visualIdentity(visual) {
     .sort((left, right) => left.localeCompare(right, "en")));
 }
 
-function loraProjection(promptDocument) {
-  return {
-    $schema: CHARACTER_LORA_SCHEMA_ID,
-    identity: structuredClone(promptDocument.identity.lora),
-    variants: Object.fromEntries(Object.entries(promptDocument.variants).map(([variantId, configuration]) => [variantId, structuredClone(configuration.loras)])),
-  };
-}
-
-function promptWithLoras(promptDocument, loraDocument) {
-  const result = structuredClone(promptDocument);
-  result.identity.lora = structuredClone(loraDocument.identity);
-  for (const variantId of Object.keys(result.variants)) result.variants[variantId].loras = structuredClone(loraDocument.variants[variantId]);
-  return result;
-}
-
-function emptyPrompt() {
-  return Object.fromEntries(storyPromptCategories.map((category) => [category, []]));
+function emptyVariant() {
+  return { text: "", reference_images: [] };
 }
 
 function normalizePromptToVisual(promptDocument, visual) {
   return {
     $schema: CHARACTER_PROMPT_SCHEMA_ID,
-    identity: structuredClone(promptDocument.identity),
+    prompt_name: promptDocument.prompt_name,
     variants: Object.fromEntries(variantIds(visual).map((variantId) => [
       variantId,
-      structuredClone(promptDocument.variants[variantId] ?? { prompt: emptyPrompt(), loras: [], identity_disabled: [] }),
+      structuredClone(promptDocument.variants[variantId] ?? emptyVariant()),
     ])),
   };
 }
@@ -109,11 +87,6 @@ function promptVariantIds(promptDocument) {
 
 function sameStrings(left, right) {
   return left.length === right.length && left.every((value, index) => value === right[index]);
-}
-
-function sameCanonical(left, right) {
-  if (left === undefined || right === undefined) return left === right;
-  return hashCanonicalJson(left) === hashCanonicalJson(right);
 }
 
 function assertPromptMatchesVisual(promptDocument, visual) {
@@ -229,28 +202,15 @@ export async function readCharacterFactDraft(projectRoot, projectId, characterId
   const project = await resolveProjectLocation(path.resolve(projectRoot), projectId);
   await requireCharacter(project.projectDirectory, characterId);
   const visual = await readCharacterVisual(project.projectDirectory, characterId);
-  let targetSuffix = kind;
   let persisted;
   let editable;
   if (kind === "profile") persisted = await readCharacterProfile(project.projectDirectory, characterId);
   else if (kind === "visual") persisted = visual;
   else {
-    targetSuffix = "prompt";
     persisted = await readCharacterPrompt(project.projectDirectory, characterId);
-    if (kind === "lora") {
-      try { assertPromptMatchesVisual(persisted, visual); }
-      catch (error) {
-        if (error?.code === "character_prompt_visual_mismatch") {
-          fail("character_lora_requires_prompt_repair", [`请先完成 ${characterId} 的 prompt edit/write`]);
-        }
-        throw error;
-      }
-      editable = loraProjection(persisted);
-    } else {
-      editable = normalizePromptToVisual(persisted, visual);
-    }
+    editable = normalizePromptToVisual(persisted, visual);
   }
-  const targetRelative = characterRelativePath(characterId, targetSuffix);
+  const targetRelative = characterRelativePath(characterId, kind);
   await storage.assertProjectFactBoundary(projectRoot, project.projectDirectory, storage.targetPath(project.projectDirectory, targetRelative), targetRelative);
   return {
     project, definition: {
@@ -258,14 +218,14 @@ export async function readCharacterFactDraft(projectRoot, projectId, characterId
       persisted,
       ...(editable === undefined ? {} : { editable, targetBaseline: persisted }),
       identity: { character_id: characterId },
-      upstream: kind === "prompt" || kind === "lora"
+      upstream: kind === "prompt"
         ? { visual: { relative_path: characterRelativePath(characterId, "visual"), identity_sha256: visualIdentity(visual) } }
         : {},
     }
   };
 }
 
-async function prepareCharacterPersistence(kind, baseline, edited, currentVisual, { allowLoraChanges = false } = {}) {
+async function prepareCharacterPersistence(kind, baseline, edited, currentVisual) {
   if (kind === "profile") {
     assertDocument(validateCharacterProfileDocument(edited));
     return { persisted: edited };
@@ -278,43 +238,16 @@ async function prepareCharacterPersistence(kind, baseline, edited, currentVisual
       persisted: edited,
     };
   }
-  if (kind === "prompt") {
-    let persisted;
-    try {
-      persisted = prepareCharacterPromptForPersistence(edited, {
-        baselinePrompt: baseline,
-        createFragmentId: createPromptFragmentId,
-      });
-    } catch (error) {
-      if (error instanceof TypeError) fail("invalid_character_edit_document", [error.message]);
-      throw error;
-    }
-    const unknownVariants = promptVariantIds(persisted).filter(id => !variantIds(currentVisual).includes(id));
-    if (unknownVariants.length) fail("character_prompt_visual_mismatch", unknownVariants);
-    const normalizedBaseline = normalizePromptToVisual(baseline, currentVisual);
-    if (!allowLoraChanges && !sameCanonical(loraProjection(normalizePromptToVisual(persisted, currentVisual)), loraProjection(normalizedBaseline))) {
-      fail("character_prompt_lora_change_forbidden");
-    }
-    return {
-      persisted,
-    };
-  }
-  assertDocument(validateCharacterLoraDocument(edited));
-  try { assertPromptMatchesVisual(baseline, currentVisual); }
-  catch (error) {
-    if (error?.code === "character_prompt_visual_mismatch") fail("character_lora_requires_prompt_repair", ["请先完成 prompt edit/write"]);
-    throw error;
-  }
-  if (!sameStrings(Object.keys(edited.variants).sort(), variantIds(currentVisual))) fail("character_prompt_visual_mismatch");
-  const persisted = promptWithLoras(baseline, edited);
+  const persisted = structuredClone(edited);
+  const unknownVariants = promptVariantIds(persisted).filter(id => !variantIds(currentVisual).includes(id));
+  if (unknownVariants.length) fail("character_prompt_visual_mismatch", unknownVariants);
   assertDocument(validateCharacterPromptDocument(persisted));
-  assertPromptMatchesVisual(persisted, currentVisual);
   return {
     persisted,
   };
 }
 
-export async function commitCharacterFact(projectRoot, context, readDocument, kind, { beforeCommit, allowLoraChanges = false, confirmationSha256 } = {}) {
+export async function commitCharacterFact(projectRoot, context, readDocument, kind, { beforeCommit } = {}) {
   const project = await resolveProjectLocation(path.resolve(projectRoot), context.project_id);
   const characterId = context.character_id;
   const auditPrepared = kind === "prompt" ? await preparePromptWriteAudit(projectRoot) : null;
@@ -323,15 +256,9 @@ export async function commitCharacterFact(projectRoot, context, readDocument, ki
   await storage.assertProjectFactBoundary(projectRoot, project.projectDirectory, target, context.target.relative_path);
   const baseline = await storage.assertTargetBaseline(project.projectDirectory, context);
   const edited = await readDocument();
-  const visual = ["prompt", "lora"].includes(kind) ? await readCharacterVisual(project.projectDirectory, characterId) : null;
+  const visual = kind === "prompt" ? await readCharacterVisual(project.projectDirectory, characterId) : null;
   if (visual && visualIdentity(visual) !== context.upstream.visual.identity_sha256) fail("character_edit_upstream_conflict", [characterId]);
-  const prepared = await prepareCharacterPersistence(kind, baseline, edited, visual, { allowLoraChanges });
-  const plan = kind === 'prompt' ? await planPromptPropagation(project.projectDirectory, { characterId, baseline, next: prepared.persisted }) : { impacts: [], writes: [] };
-  if (kind === 'prompt') {
-    assertDocument(validateCharacterPromptDocument(prepared.persisted));
-    for (const [id, variant] of Object.entries(prepared.persisted.variants)) assertDocument(duplicatePromptWords([{ scope: characterId, label: characterId + ' · ' + id, prompt: variantPrompt(prepared.persisted.identity, variant) }]));
-  }
-  requireImpactConfirmation(plan, confirmationSha256, prepared.persisted);
+  const prepared = await prepareCharacterPersistence(kind, baseline, edited, visual);
   const downstreamDiagnostics = kind === "visual" || kind === "prompt"
     ? (await currentCharacterDiagnostics(projectRoot, project.projectDirectory, characterId, {
       exists: true,
@@ -342,10 +269,9 @@ export async function commitCharacterFact(projectRoot, context, readDocument, ki
     if (typeof beforeCommit !== "function") fail("invalid_character_edit_option", ["beforeCommit 必须是函数"]);
     await beforeCommit();
   }
-  await commitFactChanges(project.projectDirectory, [...plan.writes, { relative: context.target.relative_path, before: baseline, after: prepared.persisted }]);
+  await commitFactChanges(project.projectDirectory, [{ relative: context.target.relative_path, before: baseline, after: prepared.persisted }]);
   const result = {
     target_file: path.resolve(target), value: prepared.persisted, downstream_diagnostics: downstreamDiagnostics,
-    ...(kind === "prompt" ? { identity_impact: characterIdentityImpact(baseline, prepared.persisted) } : {})
   };
   if (kind === "prompt") {
     const captured = auditPrepared.value ? await capturePromptAuditInput(() => ({ characterId, prompt: structuredClone(prepared.persisted) })) : undefined;
@@ -368,8 +294,8 @@ function defaultCharacterFacts(characterId, name) {
     },
     prompt: {
       $schema: CHARACTER_PROMPT_SCHEMA_ID,
-      identity: { prompt: emptyPrompt(), lora: null },
-      variants: { default: { prompt: emptyPrompt(), loras: [], identity_disabled: [] } },
+      prompt_name: displayName,
+      variants: { default: emptyVariant() },
     },
   };
 }
@@ -646,9 +572,9 @@ export async function renameCharacterVariant(projectRoot, projectId, characterId
       const relativePath = storage.projectRelativePath('pages', pageId + '.prompt.json');
       const previous = await storage.readJson(storage.targetPath(project.projectDirectory, relativePath), relativePath);
       const oldSource = 'character:' + characterId + ':' + oldId;
-      if (!previous.inheritance?.[oldSource] && !previous.reference_overrides?.[oldSource]) continue;
+      if (!Object.hasOwn(previous.text_overrides ?? {}, oldSource) && !Object.hasOwn(previous.reference_overrides ?? {}, oldSource)) continue;
       const next = structuredClone(previous);
-      for (const field of ['inheritance', 'reference_overrides']) if (next[field]?.[oldSource]) {
+      for (const field of ['text_overrides', 'reference_overrides']) if (Object.hasOwn(next[field] ?? {}, oldSource)) {
         next[field]['character:' + characterId + ':' + newId] = next[field][oldSource];
         delete next[field][oldSource];
       }

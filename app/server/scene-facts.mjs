@@ -1,24 +1,40 @@
 import { cleanRemovedReferences } from './reference-materials.mjs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { mkdir, rename, readdir, stat } from 'node:fs/promises';
+import { lstat, mkdir, readFile, rename, readdir, stat } from 'node:fs/promises';
 import { resolveProjectLocation } from './project-operations.mjs';
-import { optionalFact, readScenes, planPromptPropagation, requireImpactConfirmation, commitFactChanges } from './prompt-inheritance-facts.mjs';
 import { hashCanonicalJson } from './workflow-definition.mjs';
-import { factStorage as storage, createPromptFragmentId } from './story-facts.mjs';
+import { factStorage as storage, commitFactChanges } from './story-facts.mjs';
 import { ApiError } from './http-support.mjs';
 import { assertNoActivePageRender } from './render-task-storage.mjs';
-import { duplicatePromptWords, variantPrompt, emptyCategories, sceneSource } from '../shared/prompt-inheritance.mjs';
-import { SCENE_INDEX_SCHEMA_ID, SCENE_PROMPT_SCHEMA_ID, SCENE_LORA_SCHEMA_ID, validateSceneLoraDocument, sceneIdPattern, validateSceneIndexDocument, validateSceneProfileDocument, validateSceneVisualDocument, validateScenePromptDocument, prepareScenePromptForPersistence, defaultSceneFacts } from './scene-files.mjs';
+import { sceneSource } from './prompt-contract.mjs';
+import { SCENE_INDEX_SCHEMA_ID, SCENE_PROMPT_SCHEMA_ID, sceneIdPattern, validateSceneIndexDocument, validateSceneProfileDocument, validateSceneVisualDocument, validateScenePromptDocument, defaultSceneFacts } from './scene-files.mjs';
 
-export { readScenes };
+export async function optionalFact(directory, relative, fallback = null) {
+  const target = storage.targetPath(directory, relative);
+  const info = await lstat(target).catch(e => e.code === 'ENOENT' ? null : Promise.reject(e));
+  if (!info) return structuredClone(fallback);
+  await storage.assertProjectFactBoundary(directory, directory, target, relative);
+  return JSON.parse(await readFile(target, 'utf8'));
+}
+
+export async function readScenes(directory) {
+  const index = await optionalFact(directory, 'scenes/index.json', { scenes: [] });
+  const scenes = await Promise.all(index.scenes.map(async id => {
+    const [profile, visual, prompt] = await Promise.all(['profile', 'visual', 'prompt'].map(kind => optionalFact(directory, `scenes/${id}.${kind}.json`)));
+    if (!profile || !visual || !prompt) throw new ApiError(422, 'scene_fact_missing', [id]);
+    return { id, name: profile.name, description: profile.description, profile_sha256: hashCanonicalJson(profile), visual,
+      visual_sha256: hashCanonicalJson(visual), prompt, prompt_sha256: hashCanonicalJson(prompt), pages: [] };
+  }));
+  return { scenes };
+}
+
 export const DELETED_SCENE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const relative = (id, kind) => `scenes/${id}.${kind}.json`;
 const fail = (code, details = []) => { throw new ApiError(422, code, details); };
 function validId(id) { if (typeof id !== 'string' || !sceneIdPattern.test(id)) fail('invalid_scene_id', [String(id)]); }
 function assertValid(errors) { if (errors.length) fail('invalid_scene_document', errors); }
 const visualIdentity = visual => hashCanonicalJson(visual.variants.map(v => v.id).sort());
-const loras = doc => ({ identity: doc.identity.lora, variants: Object.fromEntries(Object.entries(doc.variants).map(([id, v]) => [id, v.loras])) });
 const validators = { profile: validateSceneProfileDocument, visual: validateSceneVisualDocument, prompt: validateScenePromptDocument };
 async function sceneIndex(directory) {
   const index = await optionalFact(directory, 'scenes/index.json', { $schema: SCENE_INDEX_SCHEMA_ID, scenes: [] });
@@ -37,50 +53,34 @@ async function sceneFact(directory, id, kind) {
   assertValid(validators[kind](value));
   return value;
 }
+const emptyVariant = () => ({ text: '', reference_images: [] });
 function normalizedPrompt(prompt, visual) {
-  return { ...prompt, variants: Object.fromEntries(visual.variants.map(v => [v.id, prompt.variants[v.id] ?? { prompt: emptyCategories(), loras: [], identity_disabled: [] }])) };
+  return { ...prompt, variants: Object.fromEntries(visual.variants.map(v => [v.id, prompt.variants[v.id] ?? emptyVariant()])) };
 }
 export async function readSceneFactDraft(root, projectId, sceneId, kind = 'profile') {
   const project = await resolveProjectLocation(path.resolve(root), projectId);
   await requireScene(project.projectDirectory, sceneId);
-  if (!validators[kind] && kind !== 'lora') fail('invalid_scene_edit_kind', [kind]);
-  const persisted = await sceneFact(project.projectDirectory, sceneId, kind === 'lora' ? 'prompt' : kind);
-  const visual = ['prompt', 'lora'].includes(kind) ? await sceneFact(project.projectDirectory, sceneId, 'visual') : null;
-  return { project, definition: { targetRelative: relative(sceneId, kind === 'lora' ? 'prompt' : kind), persisted,
-    ...(visual ? { editable: kind === 'lora' ? { $schema: SCENE_LORA_SCHEMA_ID, ...loras(normalizedPrompt(persisted, visual)) } : normalizedPrompt(persisted, visual), targetBaseline: persisted } : {}),
+  if (!validators[kind]) fail('invalid_scene_edit_kind', [kind]);
+  const persisted = await sceneFact(project.projectDirectory, sceneId, kind);
+  const visual = kind === 'prompt' ? await sceneFact(project.projectDirectory, sceneId, 'visual') : null;
+  return { project, definition: { targetRelative: relative(sceneId, kind), persisted,
+    ...(visual ? { editable: normalizedPrompt(persisted, visual), targetBaseline: persisted } : {}),
     identity: { scene_id: sceneId }, upstream: visual ? { visual: { identity_sha256: visualIdentity(visual) } } : {} } };
 }
-export async function commitSceneFact(root, context, readDocument, kind, { confirmationSha256, beforeCommit, allowLoraChanges = false } = {}) {
+export async function commitSceneFact(root, context, readDocument, kind, { beforeCommit } = {}) {
   const project = await resolveProjectLocation(path.resolve(root), context.project_id);
   const id = context.scene_id;
   await requireScene(project.projectDirectory, id);
   const baseline = await storage.assertTargetBaseline(project.projectDirectory, context);
-  let next = structuredClone(await readDocument());
-  if (!validators[kind] && kind !== 'lora') fail('invalid_scene_edit_kind', [kind]);
+  const next = structuredClone(await readDocument());
+  if (!validators[kind]) fail('invalid_scene_edit_kind', [kind]);
   const writes = [];
-  if (kind === 'lora') {
-    assertValid(validateSceneLoraDocument(next));
+  if (kind === 'prompt') {
     const visual = await sceneFact(project.projectDirectory, id, 'visual');
     if (visualIdentity(visual) !== context.upstream.visual.identity_sha256) throw new ApiError(409, 'scene_edit_upstream_conflict');
-    if (JSON.stringify(Object.keys(next.variants).sort()) !== JSON.stringify(visual.variants.map(v => v.id).sort())) fail('scene_prompt_visual_mismatch');
-    const merged = normalizedPrompt(baseline, visual);
-    merged.identity.lora = next.identity;
-    for (const [variantId, definitions] of Object.entries(next.variants)) merged.variants[variantId].loras = definitions;
-    next = merged;
-  } else if (kind === 'prompt') {
-    const visual = await sceneFact(project.projectDirectory, id, 'visual');
-    if (visualIdentity(visual) !== context.upstream.visual.identity_sha256) throw new ApiError(409, 'scene_edit_upstream_conflict');
-    if (next?.$schema !== SCENE_PROMPT_SCHEMA_ID || !next.identity || !next.variants || Array.isArray(next.variants)) fail('invalid_scene_document', ['场景 Prompt 结构无效']);
-    try { next = prepareScenePromptForPersistence(next, { baselinePrompt: baseline, createFragmentId: createPromptFragmentId }); }
-    catch (error) { if (error instanceof TypeError) fail('invalid_scene_document', [error.message]); throw error; }
+    if (next?.$schema !== SCENE_PROMPT_SCHEMA_ID || !next.variants || typeof next.variants !== 'object' || Array.isArray(next.variants)) fail('invalid_scene_document', ['场景 Prompt 结构无效']);
     const expected = visual.variants.map(v => v.id).sort();
     if (JSON.stringify(Object.keys(next.variants).sort()) !== JSON.stringify(expected)) fail('scene_prompt_visual_mismatch');
-    if (!allowLoraChanges && hashCanonicalJson(loras(next)) !== hashCanonicalJson(loras(normalizedPrompt(baseline, visual)))) fail('scene_prompt_lora_change_forbidden');
-    const plan = await planPromptPropagation(project.projectDirectory, { sceneId: id, baseline, next });
-    assertValid(validateScenePromptDocument(next));
-    for (const [variantId, variant] of Object.entries(next.variants)) assertValid(duplicatePromptWords([{ scope: 'environment', label: `${id} · ${variantId}`, prompt: variantPrompt(next.identity, variant) }]));
-    requireImpactConfirmation(plan, confirmationSha256, next);
-    writes.push(...plan.writes);
   } else if (kind === 'visual') {
     assertValid(validateSceneVisualDocument(next));
     // 子设定列表与 Prompt 同次提交，新增立即可用；删除须经过引用检查。
@@ -90,7 +90,7 @@ export async function commitSceneFact(root, context, readDocument, kind, { confi
     const after = normalizedPrompt(before, next);
     writes.push({ relative: relative(id, 'prompt'), before, after });
   }
-  assertValid(validators[kind === 'lora' ? 'prompt' : kind](next));
+  assertValid(validators[kind](next));
   if (beforeCommit) await beforeCommit();
   await commitFactChanges(project.projectDirectory, [...writes, { relative: context.target.relative_path, before: baseline, after: next }]);
   return { value: next, sha256: hashCanonicalJson(next), downstream_diagnostics: [], target_file: path.join(project.projectDirectory, context.target.relative_path) };
@@ -169,8 +169,12 @@ export async function renameSceneVariant(root, projectId, sceneId, oldId, newId,
     const file = `pages/${page.page_id}.prompt.json`, before = await optionalFact(project.projectDirectory, file);
     if (before?.scene_id !== sceneId || before.scene_variant_id !== oldId) continue;
     const after = structuredClone(before); after.scene_variant_id = newId;
-    if (after.reference_overrides?.[sceneSource(sceneId, oldId)]) { after.reference_overrides[sceneSource(sceneId, newId)] = after.reference_overrides[sceneSource(sceneId, oldId)]; delete after.reference_overrides[sceneSource(sceneId, oldId)]; }
-    if (after.inheritance?.[sceneSource(sceneId, oldId)]) { after.inheritance[sceneSource(sceneId, newId)] = after.inheritance[sceneSource(sceneId, oldId)]; delete after.inheritance[sceneSource(sceneId, oldId)]; }
+    for (const field of ['text_overrides', 'reference_overrides']) {
+      if (Object.hasOwn(after[field] ?? {}, sceneSource(sceneId, oldId))) {
+        after[field][sceneSource(sceneId, newId)] = after[field][sceneSource(sceneId, oldId)];
+        delete after[field][sceneSource(sceneId, oldId)];
+      }
+    }
     writes.push({ relative: file, before, after }); ids.add(page.page_id);
   }
   if (hashCanonicalJson(index) !== hashCanonicalJson(nextIndex)) writes.push({ relative: 'pages/index.json', before: index, after: nextIndex });

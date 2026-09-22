@@ -4,9 +4,12 @@
 
 StoryCanvas 把项目创作事实、生成配置、本机执行任务和可重建媒体分成四层：
 
-剧情页 Prompt 总览复用工作台事实快照和单页保存、生成接口，浏览器按全部剧情页排列窄列并对齐
-分类，不增加服务或跨页事实。外观和动作统一为 `person`（人物），网页、Agent 和底层五类存储、编译使用同一契约。
-描述的自动标签识别用于行内翻译和 Wiki 展示；显式 `{标签}` 由共享规则校验命中词库，编译与任务复验统一去除花括号。
+剧情项目唯一生成路线是 Qwen-Image-2.1；`project.json` 以必填 `format: "story-free-text-v1"` 标识，
+旧格式项目不能打开。角色、场景与页面 Prompt 都是自由文本整段：角色／场景的每个子设定一段文字和
+有序参考图，页面一段本页描述加整段 override，编译按全局文字、逐角色段、场景段、附图用途、本页
+描述确定性拼接，负向恒空。剧情页 Prompt 总览复用工作台事实快照和单页保存、生成接口，浏览器按
+全部剧情页排列窄列、每页一个本页文本框，不增加服务或跨页事实。
+词库 API 保留供独立查询与训练使用，生成路径不使用词库。
 
 ```text
 剧情章节与角色设定
@@ -59,9 +62,9 @@ LoRA 时也以这份快照解释训练来源。当前不支持从训练 state �
 | 组件 | 负责 | 不负责 |
 |---|---|---|
 | 外部 Agent | 与用户确定当前工作单元，整理分页和页面事实，通过 `prompt-authoring` 编写与审计 Prompt，维护配置和运行环境，并直接读图判断候选 | 在生成按钮中临时组织 Prompt，或把创作过程写成全项目阶段状态机 |
-| 浏览器工作台 | 通过原工作台布局读取项目事实；让最高权限的用户编辑单页 narrative/goal、角色 profile/visual、页面与角色 Prompt、角色 LoRA 和嵌字布局，并生成、预览和删除候选 | 提供万能 JSON 编辑、替 Agent 选图或保存创作阶段状态机 |
+| 浏览器工作台 | 通过原工作台布局读取项目事实；让最高权限的用户编辑单页 narrative/goal、角色 profile/visual、页面与角色 Prompt 和嵌字布局，并生成、预览和删除候选 | 提供万能 JSON 编辑、替 Agent 选图或保存创作阶段状态机 |
 | 本地 Node.js 服务 | 受限读写项目事实、确定性编译生成任务、配置诊断、词库搜索和媒体访问 | 内置 LLM、数据库、云同步或 Agent 调度 |
-| `render_profile` | Anima 基础模型（`dit`、`text_encoder`、`vae`）、结构化基础正负向 Prompt 片段、候选工作流、风格 LoRA、分类顺序和 `avoid` 策略 | 保存角色身份 LoRA、单页 Prompt 或项目创作事实 |
+| `render_profile` | Qwen-Image-2.1 模型（`dit`、`text_encoder`、`vae`）、一段全局 `prompt.text`、文生图与参考图候选工作流、风格 LoRA | 保存角色或页面 Prompt、单页事实或项目创作事实 |
 | ComfyUI | 执行生成工作流 | 管理故事、用户审核或项目版本 |
 | `sd-scripts` | 在独立固定 Python 中执行 Anima 标准 LoRA 训练 | 管理项目、下载环境或决定结果 |
 
@@ -111,7 +114,7 @@ revision 写入 `x-story-canvas-revision`；响应工具不读取请求级隐式
 `app/src/project-request-guard.ts` 隔离项目切换后的 stale 响应；事实读写集中在
 `app/src/project-workbench-client.ts`，底层写入仍由 `project-write-client` 串行化并携带当前事实版本。
 
-剧情页内容、页面 Prompt、嵌字、角色 profile、角色 visual 和角色 Prompt/LoRA 都使用显式手动保存。
+剧情页内容、页面 Prompt、嵌字、角色 profile、角色 visual 和角色 Prompt 都使用显式手动保存。
 每个编辑区分别维护草稿、dirty 状态和目标内容指纹；过期保存被拒绝后后台同步最新版，
 仅资源确实变化时覆盖对应草稿，不重放旧保存。浏览器刷新或关闭含未保存事实草稿的页面前会使用原生离开警告。工作台没有 debounce
 自动保存会话，也不维护第二套页面事实状态机。
@@ -164,17 +167,16 @@ Agent 使用“了解现状、分页、页面制作、Prompt 编写、主观探�
   情节单元摘要，仍校验项目 revision，不允许总览写入页面内容或修改故事结构；
 - `PUT /api/projects/:id/workbench/page-prompt`：以目标 Prompt SHA 完整替换单个剧情页或角色视觉页 Prompt；
 - `PUT /api/projects/:id/workbench/character-prompt`：以目标 Prompt SHA 完整替换单个角色的
-  identity（共享完整 Prompt 与角色 LoRA）与各 variant 子设定配置（Prompt、子设定 LoRA 与 `identity_disabled`）；identity 改动时响应附带 `identity_impact`
-  影响报告（逐 variant 的 `lost_inheritance` / `new_inheritance`），浏览器保存 identity 前弹确认；
+  `prompt_name` 与各 variant 子设定的自由文本和参考图；
 - `GET /api/projects/:id/workbench/candidate-counts`：共享按页媒体索引，汇总各完整 PageKey 的可用候选数量，不重复检查图片文件；
 - `POST /api/projects/:id/workbench/candidate-detail` 与
   `DELETE /api/projects/:id/workbench/candidates/:candidateId`：按完整 PageKey 读取冻结生成详情或删除候选；
 - `PUT /api/projects/:id/workbench/lettering-settings`：以目标 SHA 原子保存项目排版预设和全部角色文字颜色；
-- 浏览器用单页窄契约编辑 narrative/goal，用独立入口编辑 Prompt 与角色 LoRA，不提供全量 JSON 写入口；
+- 浏览器用单页窄契约编辑 narrative/goal，用独立入口编辑 Prompt，不提供全量 JSON 写入口；
 - `PUT /api/projects/:id/workbench/page-lettering`：校验对白稳定 ID 与归一化位置，只替换目标页文字布局；
 - 主候选预览默认通过 DOM 叠加文案并支持直接拖动；位置草稿仅在「嵌字」子菜单显式保存，不合成 PNG；
 - `POST /api/projects/:id/workbench/page-render-inspection`：以完整 PageKey 编译只读流程预览，可临时带入尚未保存的页面 Prompt 草稿；
-  返回正负 Prompt、分类来源、角色 variant 与 LoRA、有效生成配置、候选 route、recipe、workflow、画布、审计和阻断，
+  返回正负 Prompt（负向恒空）、按 sections 来源分段、编号参考图、出场角色 variant、有效生成配置、候选 route、recipe、workflow、画布、审计和阻断，
   不生成 Prompt ID、不落盘、不创建任务，也不要求 expected revision；
 - `POST /api/projects/:id/workbench/render`：完整 PageKey 单页候选生成入口；渲染读取提交时最新事实，
   不要求 project revision，候选允许 1 到 3 张与可选 seed；
@@ -193,7 +195,7 @@ Agent 使用“了解现状、分页、页面制作、Prompt 编写、主观探�
 - 任务控制响应返回任务身份、状态、`pending_control` 和队列 revision，浏览器立即应用，并拒绝控制完成前发起的旧轮询响应；按钮请求期间用转圈反馈，延后生效的取消由服务端状态明确提示；
 - `GET /api/tasks/:projectId/:taskId?purpose=candidate|comparison`：点击任务卡片时读取单个任务详情，包含条目、冻结执行快照与实际提交记录。活动列表和历史列表只返回摘要，不包含逐张条目、图片预览地址或阶段记录。顶部任务入口与「项目 → 任务记录」共用卡片、历史分页和详情弹窗；记录页展示当前工作台全部项目，不按当前项目过滤；
 - `GET /api/prompt-dictionary`、`POST /api/prompt-dictionary/matches`：搜索固定 Danbooru/中文
-  快照，或批量取得标签类别、频次和翻译证据；
+  快照，或批量取得标签类别、频次和翻译证据；词库仅供独立查询与训练，不参与剧情页 Prompt 编译与审计；
 - `GET /api/lora-training/environment`：只读诊断固定训练器、Python/Torch/CUDA、GPU、入口脚本
   与参考模型身份；网页不能触发安装或升级；
 - `GET /api/lora-resources` 与详情、媒体接口：读取当前设备每个正式 LoRA 各自独立的完整本地
@@ -232,7 +234,8 @@ Agent 在目标或依赖指纹冲突后重新读取并判断，不自动覆盖�
 
 `story/outline.json` 保存 synopsis、chapter 和 sequence；`pages/index.json` 保存所有页面的稳定 ID、
 归属与同组顺序。页面 content 保存标题、画面内容、明确角色引用及文案，Prompt 独立保存。
-角色与场景分别在 characters/、scenes/ 保存 index 和 profile、visual、Prompt；共享基础／子设定契约。
+角色与场景分别在 characters/、scenes/ 保存 index 和 profile、visual、Prompt，两者共用同一设定契约：
+`prompt_name` 加各子设定一段自由文本与有序参考图，没有身份层、LoRA 或逐词继承。
 页面归属与生成引用分离：新建时默认填入所属设定，之后允许移除；移动归属不修改内容。
 三种归属共用页面编辑、生成、候选、嵌字及单页成品；系列导出只包含剧情目录。
 `lettering/dialogue-layouts.json` 只保存对白稳定 ID 的归一化位置与尺寸，不复制文本或单条样式。
@@ -249,7 +252,7 @@ Agent 在目标或依赖指纹冲突后重新读取并判断，不自动覆盖�
 三者在 staging 完成后原子发布，再更新任务状态；中断恢复保留已经发布的成功结果。媒体列表和详情
 不再依赖任务 manifest/state。删除整个成果目录，并尽力标记仍存在的历史；历史标记失败不能复活图片。
 旧存量通过离线一次性迁移转换，原始 manifest 只作为不可执行的来源证据保存。当前预览不持久保存选用关联；用户点击输出时，独立成品制作记录冻结本次候选和排版，见 [成品输出](finished-pages.md)。
-候选请求只接受当前页面输入、Prompt、LoRA 与 route 契约；冻结任务使用版本化当前字段。
+候选请求只接受当前页面输入、Prompt、参考图与 route 契约；冻结任务使用版本化当前字段。
 候选与对比实验通过 `generation-lifecycle.mjs` 集中处理提交、取消、失败收尾和启动恢复。
 `generation-queue.mjs` 只负责跨进程排序、执行单元租约和取消请求；`generation-scheduler.mjs` 只管理
 当前服务的 worker，不巡检重试失败任务。任务列表只读取状态和队列顺序，不补建或清理队列。
@@ -287,34 +290,33 @@ mutation lock。底层进程资源不足时按各自运行错误收束。训练�
 
 PageKey 统一为 `{ page_id }`，编码为 `v3/<page-id>`。`app/server/page-key.mjs` 是 API、任务、
 缓存键和媒体路径的唯一编解码入口。生成解析按 pages/index.json 读取页面，并根据页面明确引用的角色
-与场景子设定冻结 Prompt、LoRA 和生成身份；归属只用于组织，不推导出场对象。
+与场景子设定冻结最终 Prompt 文本、有序参考图和生成身份；归属只用于组织，不推导出场对象。
 
 生成配置是根仓库资源，项目用 `default_render_profile` 选择一个基础配置，并在独立的
 `render-profile.override.json` 中按 profile ID 保存一层稀疏项目调整；override 只保存语义 target、
-记录的原值和项目值，不复制完整 profile。每个 profile 以稳定角色映射声明模型，
-并引用独立的 Prompt policy、recipe 和 workflow；operation 与输入来源的固定 route 就是能力边界，
-不再保存重复的 `capabilities`。模型 SHA-256 必填、来源可缺失。当前唯一生成结构家族是 Anima，
-使用独立的 `UNETLoader`、`CLIPLoader` 和 `VAELoader`。第一版只声明生成候选图 route，其他入口
-因 route 不存在而在界面、API 和执行器统一阻止。
+记录的原值和项目值，不复制完整 profile。每个 profile 以稳定角色映射声明模型，保存一段全局
+`prompt.text`，并引用独立的 recipe 和 workflow；operation 与输入来源的固定 route 就是能力边界，
+不再保存重复的 `capabilities`。模型 SHA-256 必填、来源可缺失。当前唯一生成结构家族是
+`qwen-image-2-1`；全局 `prompt.text` 默认是“根据以下设定和画面描述创作一幅新画面，动作、表情、
+视角与构图以画面描述为准。”，项目 override 的语义 target 也是 `prompt.text`，用户清空时编译直接
+省略。不再保留独立 Prompt policy 文件、prefix/suffix、分类、权重、负向或 AVOID 转换。
 `library/resources/catalog.json` 额外维护供浏览和人工登记的资源
 元数据，包括模型结构家族和模型预览图；生成配置按模型路径与 SHA 复用图片，不另存副本。
 资源目录不是执行身份的替代品。项目与生成配置仍各自保存精确文件名和 SHA，项目不保存全局
-目录副本，也不要求两台设备拥有相同模型或 ComfyUI 版本。Prompt policy 显式保存家族规则和
-基础片段；recipe 只保存各画面比例尺寸、CLIP skip 与采样参数，不选择 workflow。当前 Anima profile
-只声明 candidates/empty_latent。
+目录副本，也不要求两台设备拥有相同模型或 ComfyUI 版本。recipe 只保存各画面比例尺寸与采样参数，不选择 workflow。当前 qwen-image-2-1 profile
+声明 candidates 的 `empty_latent` 与 `reference_image` 两条 route，其他入口因 route 不存在而在
+界面、API 和执行器统一阻止。
 
-项目生成设置可以从正式 LoRA 资源中选择与当前结构家族和 Prompt 家族匹配的条目。选择不会把
+项目生成设置可以从正式 LoRA 资源中选择与当前结构家族匹配的条目。选择不会把
 资源说明复制进项目，而是在当前 profile 的 sparse override 中新增、移除完整 `style_lora` 语义
 target；单独修改既有 LoRA 权重仍可使用窄 `weight` target。资源记录提供选择用预览或示例图、
 来源链接与版本、底座身份、触发词、标签、推荐权重和采样建议；有效配置只保留生成需要的文件名、
-SHA-256、权重与触发词，继续经过统一诊断、Prompt 编译和任务冻结。
-资源提供的触发词在选择时写入 `style_lora.trigger`，编译时作为独立来源自动加入 Positive；资源
-未提供触发词时只加载 LoRA 权重，不从名称或说明推断补词。工作台在 LoRA 卡片和最终 Prompt
-来源中分别标明两种情况。
+SHA-256、权重与触发词，继续经过统一诊断和任务冻结。剧情事实不再包含角色／场景 LoRA；
+当前 qwen-image-2-1 profile 未声明任何风格 LoRA。
 
 每份当前工作流由同 ID 的 API JSON 与 manifest 成对组成。manifest 已经是结构家族、operation、
 输入来源、modifier 和节点绑定的唯一事实来源；任务同时冻结模板与 manifest 及各自 SHA-256。
-生成配置不再保存节点绑定。`render-profile-compiler.mjs` 只读取当前格式，把 profile、policy、recipe 和 workflow
+生成配置不再保存节点绑定。`render-profile-compiler.mjs` 只读取当前格式，把 profile、recipe 和 workflow
 解析成单一语义配置与来源身份；旧聚合字段不兼容。新建任务还会为每个条目冻结唯一的
 `render_route`，明确记录本次 operation、输入来源、workflow ID、来源 recipe ID 和由有效参数
 canonical SHA-256 组成的 recipe instance ID；任务快照只用 `workflows` 与按实例身份索引的
@@ -332,8 +334,8 @@ workflow，也不兼容缺少 `render_route` 的旧任务。候选生成详情�
 Prompt 的关联。`visual:produce` 通过 `page-render-resolver.mjs` 直接读取当前 PageKey 对应的页面、
 角色和生成配置，由 `page-render.mjs` 原子保存完整 `queued` 任务后只按 task ID 启动执行器。
 排队策略冻结在任务快照中，恢复不能由命令行覆盖，且不再读取当前项目、
-profile、policy、recipe 或 override。编译器同时冻结逐执行单元的最终 ComfyUI workflow、
-输出节点和 batch 索引；当前仅支持空白画布生成，不保存图片上传声明或准备输入字节。执行器复核模型，在提交前按目标 ComfyUI
+profile、recipe 或 override。编译器同时冻结逐执行单元的最终 ComfyUI workflow、
+输出节点和 batch 索引；参考图在冻结时按内容 SHA 保存有序输入字节与来源。执行器复核模型，在提交前按目标 ComfyUI
 实例的 LoRA 节点枚举适配路径分隔符，再按冻结输出映射落盘和提升图片，不再选择 route、解析 recipe
 或重建 modifier 拓扑。任务中的模型身份与 workflow 语义保持不变。详细目标契约见
 [渲染计划目标契约](render-plan.md)。冻结任务的 version、effective profile 来源身份、Prompt 审计、
@@ -345,17 +347,18 @@ route/registry 与 execution unit 由 `render-task-contract.mjs` 的主要 Inter
 执行器 `render-project-runtime.mjs` 只接受已持久化 task ID。PageKey 输出路径、项目媒体文件身份和 PNG 完整性
 由 `render-media.mjs` 统一提供，避免计划和执行侧各自复制路径与媒体校验。
 
-页面与角色 Prompt 片段保持模型无关，使用统一 `prompt_type`、`prompt_text` 和可选 `weight`、
-`enabled`。`enabled: false` 只保留在项目事实中，用于暂时关闭单条片段；编译、审计、预算、
-生成运行时只消费启用片段，缺省值表示启用。
-页面片段可以用 `role` 引用本页角色；编译器先加入 render profile 正向前缀与风格 trigger，
-再按有效角色上下文输出角色分类片段、身份 trigger 和绑定页面片段，然后按分类与作者顺序
-输出未绑定片段，最后加入正向后缀。频次和类型不参与排序，所有输出保留来源追踪。完整契约
+页面与角色／场景 Prompt 保持模型无关，都是自由文本整段。角色／场景设定保存 `prompt_name` 和
+各子设定一段自包含文字与有序参考图；页面保存本页 `text`、场景引用、按 `character:<id>:<variant>` /
+`scene:<id>:<variant>` 键的整段 `text_overrides` 与图片选择 `reference_overrides`，以及可带用途的
+本页附图。key 存在即使用该字符串（含空串），恢复继承就是删除 key；override 不随上游更新，切换
+子设定或移除引用时删除对应 key。编译按全局 `prompt.text`、逐角色段（名称、图片说明、文字）、
+场景段、附图用途、本页描述拼接；最终图片序列按人物、场景、本页附图排序后统一编号 `<imageN>`
+（单图用“参考图：……”），上限十张，负向恒空。所有输出保留 sections 来源追踪。完整契约
 见 [Prompt 编写与审计](../reference/prompt.md)。
 
-角色与场景的基础／子设定 LoRA 属于设定事实，风格 LoRA 属于生成配置事实。页面渲染统一按
-content 的 `characters` 与 Prompt 的场景子设定引用解析 LoRA，经过相同的合并与兼容检查。生成任务冻结配置、页面 LoRA、
-解析后的 recipe、工作流模板及每页 seed，恢复时优先使用快照，不受后来配置修改影响。
+风格 LoRA 属于生成配置事实，剧情事实不再包含角色／场景 LoRA。页面渲染统一按
+content 的 `characters` 与 Prompt 的场景子设定引用解析出场对象。生成任务冻结配置、最终文本、
+解析后的 recipe、工作流模板、有序参考图及每页 seed，恢复时优先使用快照，不受后来配置修改影响。
 
 ## 本机配置
 
@@ -368,8 +371,8 @@ Python 路径。共享地址命中当前主机名时以本机直连地址替代�
 
 全局资源目录采用“仓库登记 + 独立本地 LoRA 记录 + 本机发现”三层：登记项提供稳定 ID、模型
 结构家族、精确身份和来源；正式 LoRA 从各自的本地记录提供完整信息；发现项只说明
-`models_root` 中存在某个文件，家族保持“其他 / 未登记”，不自动猜测。生成侧当前只登记 Anima
-模型；LoRA 训练与资源记录仍按各自的训练契约保存家族信息。
+`models_root` 中存在某个文件，家族保持“其他 / 未登记”，不自动猜测。生成侧当前只登记
+Qwen-Image-2.1 模型；LoRA 训练与资源记录仍按各自的训练契约保存家族信息。
 
 固定 Danbooru 标签与中文翻译快照位于 `library/prompt-dictionaries/`，清单记录上游、取得日期
 和 SHA-256。应用启动时读取仓库快照，不自动联网更新，也不把词库复制进故事项目。
@@ -386,6 +389,6 @@ LoRA 页区分正式资源与包含训练 checkpoint 在内的未登记本机文
 - 用创作阶段状态机、自动执行的审批流或批次历史表达创作过程；
 - 在项目之间建立依赖、自动合并实验副本，或自动把实验经验提升为全局规范；
 - 同步模型、候选、输出或机器绝对路径；
-- 静默替换缺失模型或忽略无法处理的 `avoid`；
+- 静默替换缺失模型或忽略无法处理的输入；
 - 让用户直接维护 ComfyUI 工作流图。
 - 从网页安装训练器或模型，自动开始训练，自动选择或导出唯一 LoRA 结果。

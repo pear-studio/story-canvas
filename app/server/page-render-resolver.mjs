@@ -1,8 +1,7 @@
-import { resolveReferenceEntries } from "../shared/reference-images.mjs";
 import { readReferenceImage } from "./reference-image.mjs";
 import { readPageIndex } from './pages-store.mjs';
 import { resolveSceneConfiguration } from './scene-files.mjs';
-import { readScenes, readInheritanceSources, checkPageInheritanceReferences } from './prompt-inheritance-facts.mjs';
+import { readScenes } from './scene-facts.mjs';
 import { createHash } from "node:crypto";
 import { lstat, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
@@ -15,13 +14,15 @@ import {
 } from "./character-files.mjs";
 import { compileCurrentPagePrompt } from "./current-page-prompt.mjs";
 import { createPageKey, decodePageKey, encodePageKey } from "./page-key.mjs";
+import { characterSource, sceneSource, PAGE_REFERENCE_IMAGE_LIMIT } from "./prompt-contract.mjs";
+import { validateProjectManifest } from "./project-manifest.mjs";
 import { compileEffectiveRenderProfile } from "./render-profile-compiler.mjs";
 import { freezeRenderRoutes } from "./render-plan-route.mjs";
 import { freezePageLorasForTask } from "./render-task-helpers.mjs";
 import {
-  promptCharacterIds,
   STORY_PAGE_PROMPT_SCHEMA_ID,
-  storyPromptCategories,
+  checkPagePromptOverrideReferences,
+  promptOverrideCharacterIds,
   validateStoryPageNarrativeDocument,
   validateStoryPagePromptDocument,
 } from "./story-files.mjs";
@@ -66,12 +67,14 @@ function inspectionBlocker(code, message, details = []) {
 
 function normalizeInspectionPromptDraft(value) {
   const source = isRecord(value) ? value : {};
-  const prompt = { $schema: STORY_PAGE_PROMPT_SCHEMA_ID, reference_images: source.reference_images, reference_overrides: source.reference_overrides, ...(source.scene_id ? { scene_id: source.scene_id, scene_variant_id: source.scene_variant_id } : {}), ...(source.inheritance ? { inheritance: structuredClone(source.inheritance) } : {}) };
-  for (const category of storyPromptCategories) {
-    prompt[category] = Array.isArray(source[category])
-      ? source[category].filter(isRecord).map((fragment) => structuredClone(fragment))
-      : [];
-  }
+  const prompt = {
+    $schema: STORY_PAGE_PROMPT_SCHEMA_ID,
+    text: typeof source.text === "string" ? source.text : "",
+    ...(source.scene_id ? { scene_id: source.scene_id, scene_variant_id: source.scene_variant_id } : {}),
+    ...(isRecord(source.text_overrides) ? { text_overrides: structuredClone(source.text_overrides) } : {}),
+    ...(isRecord(source.reference_overrides) ? { reference_overrides: structuredClone(source.reference_overrides) } : {}),
+    ...(Array.isArray(source.reference_images) ? { reference_images: source.reference_images.filter(isRecord).map((entry) => structuredClone(entry)) } : {}),
+  };
   const submitted = { $schema: STORY_PAGE_PROMPT_SCHEMA_ID, ...(isRecord(value) ? structuredClone(value) : {}) };
   return { prompt, errors: validateStoryPagePromptDocument(submitted) };
 }
@@ -131,22 +134,15 @@ async function readCharacter(projectDirectory, characterIndex, reference) {
     fail("character_variant_dangling", [`${characterId} 不存在 variant：${reference.variant_id}`]);
   }
   const configuration = promptDocument.variants[reference.variant_id];
-  if (!configuration) fail("character_configuration_dangling", [`${characterId}: variant ${reference.variant_id} 缺少完整 Prompt/LoRA 配置`]);
+  if (!configuration) fail("character_configuration_dangling", [`${characterId}: variant ${reference.variant_id} 缺少 Prompt 设定`]);
   const character = {
     id: characterId,
     name: profile.name,
-    description: profile.description,
-    identity: { prompt: structuredClone(promptDocument.identity.prompt) },
-    prompt: structuredClone(configuration.prompt),
-    identity_disabled: structuredClone(configuration.identity_disabled),
-    identity_overrides: structuredClone(configuration.identity_overrides ?? {}),
-    reference_images: structuredClone(configuration.reference_images ?? []),
+    prompt_name: promptDocument.prompt_name,
     configuration_id: reference.variant_id,
     configuration_path: `variants.${reference.variant_id}`,
-    loras: [
-      ...(promptDocument.identity.lora === null ? [] : [structuredClone(promptDocument.identity.lora)]),
-      ...structuredClone(configuration.loras),
-    ],
+    text: configuration.text ?? "",
+    reference_images: structuredClone(configuration.reference_images ?? []),
   };
   return {
     character,
@@ -202,8 +198,8 @@ async function loadPageSnapshot(projectDirectory, pageId, exactPageKey = null) {
   const sources = [...identity.sources, contentSource, promptSource, characterIndexSource];
   const referenceErrors = [];
   const activeIds = new Set(references.map(reference => reference.character_id));
-  const invalidOwners = promptCharacterIds(pagePrompt).filter(id => !activeIds.has(id));
-  if (invalidOwners.length) referenceErrors.push(...invalidOwners.map(id => `页面 Prompt 绑定了未出场角色：${id}`));
+  const invalidOwners = promptOverrideCharacterIds(pagePrompt).filter(id => !activeIds.has(id));
+  if (invalidOwners.length) referenceErrors.push(...invalidOwners.map(id => `页面 Prompt 覆盖了未出场角色：${id}`));
   const resolvedCharacters = [];
   for (const reference of references) {
     try { resolvedCharacters.push(await readCharacter(projectDirectory, characterIndex, reference)); }
@@ -223,16 +219,14 @@ async function loadPageSnapshot(projectDirectory, pageId, exactPageKey = null) {
       sources.push(...await Promise.all(['profile', 'visual', 'prompt'].map(kind => readJsonFact(projectDirectory, `scenes/${scene.id}.${kind}.json`))));
     }
   }
-  let inheritanceErrors = [];
-  try { inheritanceErrors = checkPageInheritanceReferences(pagePrompt, await readInheritanceSources(projectDirectory, references, pagePrompt.scene_id, pagePrompt.scene_variant_id)); }
-  catch (error) { inheritanceErrors.push(...(error.details ?? [error.message])); }
+  referenceErrors.push(...checkPagePromptOverrideReferences(pagePrompt, references));
   return {
     kind: identity.kind, owner_kind: identity.kind, page_id: pageId, page_key: createPageKey(pageId),
     owner_id: identity.membership.character_id ?? identity.membership.scene_id,
     ...(identity.kind === "story" ? { sequence_id: identity.membership.sequence_id } : {}),
     title: content.title, scene_description: content.scene_description, page_kind: content.page_kind ?? null,
     character_references: references, page_prompt: pagePrompt, scenes,
-    inheritance_errors: [...referenceErrors, ...inheritanceErrors],
+    reference_errors: referenceErrors,
     characters: resolvedCharacters.map(entry => entry.character),
     character_facts: Object.fromEntries(resolvedCharacters.map(entry => [entry.character.id, entry.facts])),
     sources,
@@ -251,7 +245,63 @@ export async function capturePagePromptSnapshot(projectDirectory, pageId, pageKe
   return { ...snapshot, project: projectSource.value, project_source: projectSource };
 }
 
-export function compilePagePromptSnapshot(snapshot, profile, dictionaryEntries, profilePromptFragmentSources = null) {
+function assertStoryProjectFormat(project) {
+  const errors = validateProjectManifest(project);
+  if (errors.length) fail("project_manifest_invalid", errors);
+}
+
+/**
+ * 参考图解析的唯一入口：编译器与任务冻结共用同一份每来源有序条目与扁平最终序列，
+ * 不分别排序。返回 errors 而不抛出，调用方决定阻断或投影为 blocker。
+ */
+export function planPageReferenceImages(snapshot) {
+  const errors = [];
+  const overrides = isRecord(snapshot.page_prompt?.reference_overrides) ? snapshot.page_prompt.reference_overrides : {};
+  const groups = [
+    ...snapshot.characters.map((character) => ({
+      source: characterSource(character.id, character.configuration_id),
+      kind: "character",
+      id: character.id,
+      variant_id: character.configuration_id,
+      available: character.reference_images ?? [],
+    })),
+    ...snapshot.scenes.map((scene) => ({
+      source: sceneSource(scene.id, scene.configuration_id),
+      kind: "scene",
+      id: scene.id,
+      variant_id: scene.configuration_id,
+      available: scene.reference_images ?? [],
+    })),
+  ].map((group) => {
+    const ids = overrides[group.source] ?? group.available.slice(0, 1).map((entry) => entry.id);
+    const entries = [];
+    for (const id of ids) {
+      const entry = group.available.find((item) => item.id === id);
+      if (!entry) {
+        errors.push(`参考图已移除：${group.source}，请重新选择或恢复默认`);
+        continue;
+      }
+      entries.push({ ...structuredClone(entry), source: group.source });
+    }
+    return { source: group.source, kind: group.kind, id: group.id, variant_id: group.variant_id, entries };
+  });
+  const pageEntries = (Array.isArray(snapshot.page_prompt?.reference_images) ? snapshot.page_prompt.reference_images : [])
+    .map((entry) => ({ ...structuredClone(entry), source: "page" }));
+  const sequence = [...groups.flatMap((group) => group.entries), ...pageEntries];
+  if (sequence.length > PAGE_REFERENCE_IMAGE_LIMIT) {
+    errors.push(`本页引用了 ${sequence.length} 张图片，最多支持 ${PAGE_REFERENCE_IMAGE_LIMIT} 张，请取消部分图片`);
+  }
+  return { groups, page: { source: "page", kind: "page", entries: pageEntries }, sequence, errors };
+}
+
+export async function resolvePageReferenceImages(projectDirectory, snapshot) {
+  const plan = planPageReferenceImages(snapshot);
+  if (plan.errors.length) throw new Error(plan.errors.join("；"));
+  return Promise.all(plan.sequence.map(async entry => ({ ...await readReferenceImage(projectDirectory, entry.file), entry })));
+}
+
+export function compilePagePromptSnapshot(snapshot, profile) {
+  const referencePlan = planPageReferenceImages(snapshot);
   const compiled = compileCurrentPagePrompt({
     pageId: snapshot.page_id,
     pageKey: snapshot.page_key,
@@ -260,11 +310,10 @@ export function compilePagePromptSnapshot(snapshot, profile, dictionaryEntries, 
     characters: snapshot.characters,
     scenes: snapshot.scenes ?? [],
     participantIds: snapshot.character_references.map((reference) => reference.character_id),
-    dictionaryEntries,
-    profilePromptFragmentSources,
+    referencePlan,
   });
-  compiled.errors.push(...(snapshot.inheritance_errors ?? []));
-  if (profile.architecture_family === "qwen-image-2-1" && compiled.loras.length) compiled.errors.push("当前 Qwen 配置暂不支持 LoRA；请使用无 LoRA 的页面或保留 Anima 配置");
+  compiled.errors.push(...(snapshot.reference_errors ?? []));
+  if (profile.architecture_family === "qwen-image-2-1" && compiled.loras.length) compiled.errors.push("当前 Qwen 配置暂不支持 LoRA");
   compiled.ready = compiled.ready && !compiled.errors.length;
   return compiled;
 }
@@ -281,15 +330,14 @@ export async function compilePageRenderTarget({
   repositoryRoot,
   projectDirectory,
   pageKey,
-  dictionaryEntries = null,
 }) {
   const requestedPageKey = decodeFullPageKey(pageKey);
   const pageId = requestedPageKey.page_id;
   const snapshot = await capturePagePromptSnapshot(projectDirectory, pageId, requestedPageKey);
   const { project, project_source: projectSource } = snapshot;
-  if (typeof project.default_render_profile !== "string" || !project.default_render_profile
-    || !new Set(["2:3", "3:4", "9:16", "4:3"]).has(project.canvas)) {
-    fail("project_render_settings_invalid", ["project.json 缺少 default_render_profile 或有效 canvas"]);
+  assertStoryProjectFormat(project);
+  if (!new Set(["2:3", "3:4", "9:16", "4:3"]).has(project.canvas)) {
+    fail("project_render_settings_invalid", ["project.json 缺少有效 canvas"]);
   }
   if (encodePageKey(snapshot.page_key) !== encodePageKey(requestedPageKey)) {
     fail("page_owner_mismatch", [`请求 ${encodePageKey(requestedPageKey)}，实际 ${encodePageKey(snapshot.page_key)}`], 404);
@@ -305,17 +353,14 @@ export async function compilePageRenderTarget({
   if (compiledProfile.blocked) {
     fail("render_profile_override_conflict", compiledProfile.override_resolution.conflicts.map((item) => item.target));
   }
-  const compiledPage = compilePagePromptSnapshot(snapshot, compiledProfile.effective_profile, dictionaryEntries, compiledProfile.source_identity.prompt_fragments);
+  const compiledPage = compilePagePromptSnapshot(snapshot, compiledProfile.effective_profile);
   if (!compiledPage.ready) {
     fail("page_not_renderable", [...compiledPage.missing, ...compiledPage.errors, ...compiledPage.audit.errors.map((issue) => issue.message)]);
   }
   const participants = snapshot.character_references.map((reference) => reference.character_id);
   const pageLoras = freezePageLorasForTask(compiledPage, {
-    active_scene_settings: snapshot.scenes.map(scene => ({scene_id:scene.id,loras:structuredClone(scene.loras)})),
-    active_character_settings: snapshot.characters.map((character) => ({
-      character_id: character.id,
-      loras: structuredClone(character.loras),
-    })),
+    active_scene_settings: [],
+    active_character_settings: [],
   });
   const referenceImages = await resolvePageReferenceImages(projectDirectory, snapshot);
   const routed = freezeRenderRoutes([{ reference_images: referenceImages.map(r => r.identity), id: `target.${encodePageKey(snapshot.page_key).replaceAll("/", ".")}`, page_key: snapshot.page_key }], {
@@ -333,7 +378,6 @@ export async function compilePageRenderTarget({
   }]));
   const renderIdentity = {
     architecture_family: compiledProfile.effective_profile.architecture_family,
-    prompt_family: compiledProfile.effective_profile.prompt.family,
     profile_id: compiledProfile.effective_profile.id,
     profile_sha256: hashCanonicalJson(compiledProfile.effective_profile),
     canvas: project.canvas,
@@ -386,8 +430,6 @@ export async function compilePageRenderInspectionContext({
   projectDirectory,
   pageKey,
   pagePromptDraft = undefined,
-  dictionaryEntries = null,
-  dictionaryError = null,
 }) {
   const requestedPageKey = decodeFullPageKey(pageKey);
   const pageId = requestedPageKey.page_id;
@@ -397,6 +439,7 @@ export async function compilePageRenderInspectionContext({
     fail("page_owner_mismatch", [`请求 ${encodePageKey(requestedPageKey)}，实际 ${encodePageKey(snapshot.page_key)}`], 404);
   }
   const blockers = [];
+  blockers.push(...validateProjectManifest(project).map((message) => inspectionBlocker("project_manifest_invalid", message)));
 
   if (snapshot.page_kind === "text") {
     blockers.push(inspectionBlocker("text_page_not_renderable", "文字页不生成候选图；编辑标题与正文后直接输出成品"));
@@ -413,8 +456,7 @@ export async function compilePageRenderInspectionContext({
         catch (error) { blockers.push(inspectionBlocker("scene_variant_dangling", error.message)); }
       } else blockers.push(inspectionBlocker("scene_dangling", `场景不存在：${normalized.prompt.scene_id}`));
     }
-    try { snapshot.inheritance_errors = checkPageInheritanceReferences(normalized.prompt, await readInheritanceSources(projectDirectory, snapshot.character_references, normalized.prompt.scene_id, normalized.prompt.scene_variant_id)); }
-    catch (error) { snapshot.inheritance_errors = error.details ?? [error.message]; }
+    snapshot.reference_errors = checkPagePromptOverrideReferences(normalized.prompt, snapshot.character_references);
     blockers.push(...normalized.errors.map((message) => inspectionBlocker("page_prompt_draft_invalid", message)));
   }
 
@@ -451,34 +493,35 @@ export async function compilePageRenderInspectionContext({
   const activeProfile = compiledProfile?.blocked
     ? compiledProfile.base_bundle.resolved_profile
     : compiledProfile?.effective_profile ?? null;
-  const activeSourceIdentity = compiledProfile?.blocked
-    ? compiledProfile.base_bundle.source_identity
-    : compiledProfile?.source_identity ?? null;
   const workflowDefinitions = compiledProfile?.blocked
     ? compiledProfile.base_bundle.workflow_definitions
     : compiledProfile?.workflow_definitions ?? {};
 
   let compiledPage = null;
   let audit = { status: "unavailable", diagnostics: [] };
-  const auditUnavailableReason = (dictionaryError
-    || (!Array.isArray(dictionaryEntries) || !dictionaryEntries.length ? "Prompt 审计词库不可用" : null))
-    || (compiledProfile?.blocked ? "项目生成配置调整存在冲突，无法审计有效 Prompt" : null)
-    || (!activeProfile ? "无法取得有效生成配置" : null);
-  if (activeProfile) {
+  // 配置冲突时 activeProfile 仅是基础配置预览，不能冒充有效结果审计通过。
+  if (activeProfile && !compiledProfile?.blocked) {
     try {
-      compiledPage = compilePagePromptSnapshot(snapshot, activeProfile, auditUnavailableReason ? null : dictionaryEntries, activeSourceIdentity?.prompt_fragments);
+      compiledPage = compilePagePromptSnapshot(snapshot, activeProfile);
       blockers.push(...pagePromptDiagnostics(compiledPage));
-      if (!auditUnavailableReason) {
-        audit = { status: "complete", ...compiledPage.audit, diagnostics: pagePromptDiagnostics(compiledPage) };
-        blockers.push(...compiledPage.audit.errors);
-      }
+      audit = { status: "complete", ...compiledPage.audit, diagnostics: pagePromptDiagnostics(compiledPage) };
+    } catch (error) {
+      blockers.push(inspectionBlocker("page_prompt_compilation_failed", error?.message ?? String(error)));
+    }
+  } else if (activeProfile) {
+    try {
+      compiledPage = compilePagePromptSnapshot(snapshot, activeProfile);
+      blockers.push(...pagePromptDiagnostics(compiledPage));
     } catch (error) {
       blockers.push(inspectionBlocker("page_prompt_compilation_failed", error?.message ?? String(error)));
     }
   }
 
   if (audit.status === "unavailable") {
-    const diagnostic = inspectionBlocker("prompt_audit_unavailable", `Prompt 审计未完成：${auditUnavailableReason || "Prompt 编译失败"}`);
+    const reason = compiledProfile?.blocked
+      ? "项目生成配置调整存在冲突，无法审计有效 Prompt"
+      : !activeProfile ? "无法取得有效生成配置" : "Prompt 编译失败";
+    const diagnostic = inspectionBlocker("prompt_audit_unavailable", `Prompt 审计未完成：${reason}`);
     audit.diagnostics.push(diagnostic);
     blockers.push(diagnostic);
   }
@@ -530,16 +573,7 @@ export async function compilePageRenderInspectionContext({
   };
 }
 
-export async function resolvePageForRender({ repositoryRoot, projectDirectory, pageId, dictionaryEntries = null }) {
+export async function resolvePageForRender({ repositoryRoot, projectDirectory, pageId }) {
   const identity = await resolvePageIdentity(projectDirectory, pageId);
-  return compilePageRenderTarget({ repositoryRoot, projectDirectory, pageKey: identity.page_key, dictionaryEntries });
-}
-
-export async function resolvePageReferenceImages(projectDirectory, snapshot) {
-  const groups = [
-    ...snapshot.characters.map(c => ({ source: 'character:' + c.id + ':' + c.configuration_id, entries: c.reference_images ?? [] })),
-    ...snapshot.scenes.map(c => ({ source: 'scene:' + c.id + ':' + c.configuration_id, entries: c.reference_images ?? [] })),
-  ];
-  const entries = resolveReferenceEntries(groups, snapshot.page_prompt.reference_overrides, snapshot.page_prompt.reference_images);
-  return Promise.all(entries.map(async entry => ({ ...await readReferenceImage(projectDirectory, entry.file), entry })));
+  return compilePageRenderTarget({ repositoryRoot, projectDirectory, pageKey: identity.page_key });
 }

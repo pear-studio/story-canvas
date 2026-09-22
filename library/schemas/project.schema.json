@@ -2,9 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://storyvisualizer.local/schemas/project.schema.json",
   "type": "object",
-  "required": ["title", "canvas", "default_render_profile"],
+  "required": ["format", "title", "canvas", "default_render_profile"],
   "properties": {
     "$schema": { "type": "string" },
+    "format": { "const": "story-free-text-v1" },
     "title": { "type": "string", "minLength": 1 },
     "canvas": { "enum": ["3:4", "2:3", "9:16", "4:3"] },
     "default_render_profile": { "type": "string", "minLength": 1 }

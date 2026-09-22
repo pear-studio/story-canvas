@@ -89,7 +89,7 @@ test("HTTP 工作台只公开当前项目视图", async (context) => {
   const body = await response.json();
 
   assert.equal(response.status, 200);
-  assert.equal(body.version, 5);
+  assert.equal(body.version, 6);
   assert.equal(body.project.title, "当前故事");
   assert.equal(body.outline.chapters[0].sequences[0].id, "doorstep");
   assert.equal(JSON.stringify(body).includes('"media"'), false);
@@ -728,15 +728,14 @@ test("Agent read/save 共用领域规则，依赖冲突与 LoRA 分离在无文�
   assert.equal((await call("story", "narrative", "save", narrative)).value.scene_description, "女孩站在门口");
   assert.equal((await call("story", "prompt", "save", prompt, 409)).error, "fact_upstream_conflict");
   const freshPrompt = await read("story", "prompt", storyPage.page_id);
-  freshPrompt.document.setting = [{ description: "quiet doorway" }];
+  freshPrompt.document.text = "女孩站在安静的门口。";
   const savedPrompt = await call("story", "prompt", "save", freshPrompt);
-  assert.equal(savedPrompt.value.setting[0].description, "quiet doorway");
-  assert.match(savedPrompt.value.setting[0].id, /^token-[a-f0-9]{12}$/);
+  assert.equal(savedPrompt.value.text, "女孩站在安静的门口。");
   for (const [domain, kind, targetId, change, field, expected] of [
     ["character", "profile", "ellen", document => { document.name = "新名字"; }, value => value.name, "新名字"],
     ["character", "visual", "ellen", document => { document.variants[0].name = "日常服"; }, value => value.variants[0].name, "日常服"],
     ["page", "content", characterPage.page_id, document => { document.scene_description = "验证目标"; }, value => value.scene_description, "验证目标"],
-    ["page", "prompt", characterPage.page_id, document => { document.setting = [{ description: "plain background" }]; }, value => value.setting[0].description, "plain background"],
+    ["page", "prompt", characterPage.page_id, document => { document.text = "干净背景。"; }, value => value.text, "干净背景。"],
   ]) {
     const draft = await read(domain, kind, targetId);
     change(draft.document);
@@ -745,20 +744,13 @@ test("Agent read/save 共用领域规则，依赖冲突与 LoRA 分离在无文�
     assert.deepEqual(JSON.parse(await readFile(saved.target_file, "utf8")), saved.value);
   }
   const characterPrompt = await read("character", "prompt", "ellen");
-  characterPrompt.document.identity.prompt.person = [{ description: "silver hair" }];
-  const impact = await call('character', 'prompt', 'save', characterPrompt, 422);
-  assert.equal(impact.error, 'inheritance_confirmation_required');
-  const characterSaved = await call('character', 'prompt', 'save', { ...characterPrompt, confirmation_sha256: impact.details[0].confirmation_sha256 });
-  assert.deepEqual(characterSaved.identity_impact.per_variant.default.new_inheritance, ["silver hair"]);
-  const lora = { filename: "characters/ellen.safetensors", sha256: "a".repeat(64), weight: 0.8, trigger: "ellen" };
-  const forbidden = await read("character", "prompt", "ellen");
-  forbidden.document.identity.lora = lora;
-  forbidden.allowLoraChanges = true;
-  assert.equal((await call("character", "prompt", "save", forbidden, 422)).error, "character_prompt_lora_change_forbidden");
-  const loraDraft = await read("character", "lora", "ellen");
-  loraDraft.document.identity = lora;
-  const loraSaved = await call("character", "lora", "save", loraDraft);
-  assert.deepEqual(loraSaved.value.identity.lora, lora);
+  characterPrompt.document.variants.default.text = "银发少女。";
+  const characterSaved = await call('character', 'prompt', 'save', characterPrompt);
+  assert.equal(characterSaved.value.variants.default.text, "银发少女。");
+  const staleCharacterPrompt = await call('character', 'prompt', 'save', characterPrompt, 409);
+  assert.equal(staleCharacterPrompt.error, 'fact_target_conflict');
+  const lora = await call("character", "lora", "read", { project_id: "current-story", target_id: "ellen" }, 400);
+  assert.equal(lora.error, "fact_draft_not_supported");
   const draftsDirectory = path.join(projectRoot, "Saved/state/edit-sessions/current-story");
   await assert.rejects(readdir(draftsDirectory), { code: "ENOENT" });
 });

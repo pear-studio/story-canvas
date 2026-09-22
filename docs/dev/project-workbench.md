@@ -14,7 +14,7 @@ http://127.0.0.1:3000/?project=<project-id>&tab=story
 普通切换项目进入「项目」管理页，不记各项目上次位置；复制或重命名后进入目标项目也使用这一入口。
 浏览器刷新按当前 URL 恢复标签、页面或角色子设定，从任务详情跳转直接打开对应项目页面。
 离开有未保存修改的编辑区仍先提示，取消离开时保留草稿与当前位置。
-同一角色的身份设定与各子设定共用草稿，内部切换保留修改、不提示放弃；离开该角色编辑器时仍提示。
+同一角色设定的各子设定共用草稿，内部切换保留修改、不提示放弃；离开该角色编辑器时仍提示。
 
 左侧固定分区为「设定、系列、输出、工具」，切换分区只改变目录，实际打开内容才切换工作区。
 设定内部保留角色与场景分组。目录默认收起内部内容，按项目记住折叠；定位时展开目标路径，保留其他分支。
@@ -111,7 +111,7 @@ http://127.0.0.1:3000/?project=<project-id>&tab=story
 组件默认点击外部、再次点击入口或按 Esc 收起，三个入口互斥；选择项目和跳转页面通过
 组件提供的 `close` 回调关闭，刷新环境和任务控制等内部操作不自动关闭。
 
-右键菜单和 Prompt 权重面板等自定义定位浮层复用 `use-dismissable-layer.ts`。
+右键菜单等自定义定位浮层复用 `use-dismissable-layer.ts`。
 入口与面板共同算内部区域；外部指针事件在捕获阶段判断，但不阻止外部目标的正常操作。
 Esc 只关闭最上层临时浮层；右键菜单在外部滚动时收起，内部滚动不关闭。
 调用方保留自身保存／取消语义，公共关闭逻辑不自动提交输入。
@@ -150,12 +150,10 @@ Esc 只关闭最上层临时浮层；右键菜单在外部滚动时收起，内�
 - `PUT /api/projects/:id/workbench/page-prompt`：完整替换一个剧情页或角色视觉页 Prompt；
   body 包含 `kind`、`page_id`、`prompt`、`expected_sha256` 和 `expected_context_sha256`；
   后者取工作台 page.prompt_context_sha256，保护页面内容与实际角色配置。
-- `PUT /api/projects/:id/workbench/character-prompt`：完整替换一名角色的身份层（完整 Prompt 与角色 LoRA）和各子设定
-  Prompt/子设定 LoRA/`identity_disabled`；body 包含 `character_id`、`prompt`、`expected_sha256` 和 `expected_visual_sha256`。保存时重新读取
-  visual 并要求其指纹未变化。Prompt variant key 必须来自当前 visual；空 variant 合法，允许暂时缺少尚未建立的下游
-  variant Prompt，但拒绝任何已经悬空的 key；`identity_disabled` 中的键必须真实存在于 identity.prompt，
-  空挂拒绝。identity 改动时响应附带 `identity_impact` 影响报告
-  （逐 variant 的 `lost_inheritance` / `new_inheritance`），浏览器保存 identity 前弹确认。
+- `PUT /api/projects/:id/workbench/character-prompt`：完整替换一名角色的 `prompt_name` 和各子设定的
+  自由文本与参考图；body 包含 `character_id`、`prompt`、`expected_sha256` 和 `expected_visual_sha256`。保存时重新读取
+  visual 并要求其指纹未变化。Prompt variant key 必须来自当前 visual；暂时缺少尚未建立的下游
+  variant Prompt 只返回诊断，悬空 key 拒绝。
 - `PUT /api/projects/:id/workbench/character-profile`：完整替换一名角色的 `name` 和 `description`；
   body 携带目标 `profile_sha256`。
 - `PUT /api/projects/:id/workbench/character-visual`：完整替换角色视觉描述和已有子设定的名称、描述；
@@ -181,8 +179,7 @@ Esc 只关闭最上层临时浮层；右键菜单在外部滚动时收起，内�
 - `POST /api/projects/:id/workbench/render`：以完整 `PageKey` 发起单页候选任务，支持
   `count` 1 到 3 和可选 `seed`；服务端在当前事实下重新编译并冻结任务。
 - 两个 Prompt 写入均通过目标级 Interface 核对目标 SHA-256 与必要依赖，不因无关页面变化失败。冲突返回 409，
-  浏览器拒绝旧保存并后台重新载入最新事实，不重试旧写入。新增 fragment 不由浏览器指定持久 ID，
-  服务端在保存时生成 `token-<12hex>` 并返回正规化文档与新 SHA。
+  浏览器拒绝旧保存并后台重新载入最新事实，不重试旧写入；服务端返回正规化文档与新 SHA。
 - `POST /api/projects/:id/workbench/candidate-detail`：以完整 `PageKey` 和 `candidate_id` 读取该候选冻结的
   Prompt、LoRA、seed、route、recipe 与 workflow 身份；不依赖任务里的陈旧绝对路径。
 - `DELETE /api/projects/:id/workbench/candidates/:candidateId`：以完整 `PageKey` 删除候选，尽力把仍存在的
@@ -199,16 +196,12 @@ Esc 只关闭最上层临时浮层；右键菜单在外部滚动时收起，内�
   冲突返回 409，不自动重试。
 
 浏览器用户是最高权限操作主体：总览中的梗概和摘要，单页中的标题、画面内容、出场角色、文案，角色视觉页的标题与目标，
-角色 profile、visual 描述和已有子设定内容，以及两类页面 Prompt 均可编辑；Prompt 支持片段的新增、删除、
-排序、类型、中英文文本、权重、角色绑定和启用状态；角色「身份设定」区编辑所有子设定共享的完整 Prompt
-与角色 LoRA，各子设定页只编辑自己的 Prompt 与子设定 LoRA（可多条，叠加在角色 LoRA 之上），并以折叠
-预览显示继承的身份内容；身份继承区域可开关，关掉某个 identity 词即写入该造型的 `identity_disabled`。
+角色 profile、visual 描述和已有子设定内容，以及两类页面 Prompt 均可编辑：设定页编辑 `prompt_name`、各子设定
+整段文字和参考图；剧情页编辑本页文本、引用文字（编辑即整段 override，可恢复继承）、图片选择和可带用途的附图。
 这些修改使用显式保存；切换项目、页面或
 角色设定前必须处理未保存修改。
 
-页面 Prompt 与角色 Prompt 共用唯一的紧凑表格式编辑器和草稿转换模块。角色 Prompt 没有角色绑定语义，
-因此只省略“角色”列；分类、片段字段、拖拽排序、词库输入、撤销和空分类入口保持一致。LoRA 仍是角色专属
-配置，并与角色 Prompt 按现有完整角色配置入口一起保存。
+页面 Prompt 与设定 Prompt 共用自由文本编辑控件和草稿转换模块。
 
 Agent 的 Prompt 自主调整范围和 LoRA 授权要求仅约束 Agent 行为，不限制用户在工作台的直接编辑权。
 章节、sequence、页面归属、角色与子设定的增删和排序继续使用导航语义命令或 Agent 编辑入口；工作台
@@ -282,7 +275,7 @@ Agent 修改当前 Prompt 或内容时直接覆盖对应浏览器草稿，不保
 浏览器验证：`node --test app/tests/browser/heart-lettering.test.mjs`，使用临时 Vite 与本机 Edge，
 不读取或修改用户故事项目；覆盖独立调整、骰子、拖动缩放、类型切换与重载复现。
 
-工作台仅通过明确领域入口编辑页面内容、Prompt、角色 LoRA、统一嵌字设置、逐页嵌字布局、候选生成与删除和导航结构，不恢复 assessment、
+工作台仅通过明确领域入口编辑页面内容、Prompt、统一嵌字设置、逐页嵌字布局、候选生成与删除和导航结构，不恢复 assessment、
 Prompt reference、旧聚合文档、万能 JSON 编辑器或兼容写路径。所有保留候选均可预览，不再维护选用状态。项目复制只携带事实和输入，不复制候选、输出、任务或缓存；Git 同样忽略生成结果。
 
 左侧导航保留原工作台的右键入口：数据集节点创建数据集；角色、设定和角色视觉页按当前文件边界
@@ -292,8 +285,8 @@ Prompt reference、旧聚合文档、万能 JSON 编辑器或兼容写路径。�
 角色子设定 ID 由 `visual.json` 定义，可在角色页「子设定」区块直接改名；保存时服务端原子联动更新
 visual/prompt/角色视觉页/剧情 narrative 的全部引用。导航中新建子设定只写 visual，并返回缺少下游
 Prompt 的诊断；
-用户可在角色设定页显式建立并保存该子设定的 Prompt/LoRA。从左侧导航删除子设定时，同一显式删除动作会
-一并清理对应 Prompt/LoRA；仍被剧情页或角色视觉页使用的子设定会被拒绝，最后一个子设定也禁止删除。
+用户可在角色设定页显式建立并保存该子设定的 Prompt。从左侧导航删除子设定时，同一显式删除动作会
+一并清理对应 Prompt；仍被剧情页或角色视觉页使用的子设定会被拒绝，最后一个子设定也禁止删除。
 这个组合操作不建立日常双向同步。
 
 文字页预览和输出共用工作台 `render_capabilities.text_page` 的实际成品尺寸（生效 recipe 尺寸 ×2），不以项目名义宽高比代替。尺寸解析失败时仍可编辑文字，预览标明草稿并禁用输出。

@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "status": "standalone-short-training-validated",
+  "repository": "https://github.com/modelscope/DiffSynth-Studio",
+  "commit": "7686e54d41d25c0e8ed5f1318acc23b6bb832654",
+  "source_archive": {
+    "url": "https://api.github.com/repos/modelscope/DiffSynth-Studio/zipball/7686e54d41d25c0e8ed5f1318acc23b6bb832654",
+    "sha256": "e4e40b3013746247310280eb0be42434f6f27c3eb004f7c0f60dd183088b1b33"
+  },
+  "architecture_family": "qwen-image-2-1",
+  "entry": "examples/qwen_image_21/model_training/train.py",
+  "dependency_lock": "app/python/diffsynth.lock",
+  "verification": "bf16-flex-forward-backward-100-step-training-and-comfy-int8-inference-passed",
+  "runtime": {
+    "python": "3.11.14",
+    "torch": "2.13.0+cu130",
+    "torchvision": "0.28.0+cu130",
+    "triton-windows": "3.7.1.post27"
+  },
+  "notes": "2026-09-21 RTX 4090 24GB 完成 10 图、rank 16、最大 1MP、100 步技术验证及 15 张对照图；尚未接入工作台训练调度，不代表正式角色质量达标。"
+}

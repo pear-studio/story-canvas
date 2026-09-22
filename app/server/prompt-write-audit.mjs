@@ -1,7 +1,3 @@
-import path from "node:path";
-import { loadLocalConfig } from "./http-support.mjs";
-import { loadPromptDictionaryForRender } from "./prompt-dictionary-loader.mjs";
-import { auditCharacterPromptConfiguration } from "./current-page-prompt.mjs";
 import { compilePagePromptSnapshot, pagePromptDiagnostics } from "./page-render-resolver.mjs";
 import { compileEffectiveRenderProfile } from "./render-profile-compiler.mjs";
 
@@ -18,10 +14,7 @@ export async function capturePromptAuditInput(read) {
 }
 
 export function preparePromptWriteAudit(repositoryRoot) {
-  return capturePromptAuditInput(async () => {
-    const config = await loadLocalConfig(path.join(repositoryRoot, "app"));
-    return loadPromptDictionaryForRender(config, repositoryRoot);
-  });
+  return capturePromptAuditInput(async () => true);
 }
 
 export async function auditSavedPagePrompt(repositoryRoot, projectDirectory, prepared, captured) {
@@ -38,7 +31,7 @@ export async function auditSavedPagePrompt(repositoryRoot, projectDirectory, pre
       error.details = bundle.override_resolution.conflicts.map((item) => item.target);
       throw error;
     }
-    const compiled = compilePagePromptSnapshot(snapshot, bundle.effective_profile, prepared.value.entries, bundle.source_identity.prompt_fragments);
+    const compiled = compilePagePromptSnapshot(snapshot, bundle.effective_profile);
     return {
       status: "complete", ...compiled.audit,
       diagnostics: pagePromptDiagnostics(compiled),
@@ -51,15 +44,11 @@ export async function auditSavedCharacterPrompt(prepared, captured) {
   const diagnostics = [...(prepared.diagnostics ?? []), ...(captured?.diagnostics ?? [])];
   if (diagnostics.length) return { status: "unavailable", diagnostics };
   const result = await capturePromptAuditInput(() => {
-    const { characterId, prompt } = captured.value;
-    const audit = (configuration, configurationPath) => auditCharacterPromptConfiguration({
-      id: characterId, configuration_path: configurationPath,
-      identity: prompt.identity, prompt: configuration.prompt, identity_disabled: configuration.identity_disabled,
-    }, prepared.value.entries);
+    const { prompt } = captured.value;
     return {
       status: "complete",
       scope: "character_configurations",
-      variants: Object.fromEntries(Object.entries(prompt.variants).map(([id, configuration]) => [id, audit(configuration, `variants.${id}`)])),
+      variants: Object.fromEntries(Object.keys(prompt.variants).map((id) => [id, { valid: true, errors: [], warnings: [] }])),
       diagnostics: [],
     };
   });

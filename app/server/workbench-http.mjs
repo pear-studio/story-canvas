@@ -116,8 +116,7 @@ export async function handleWorkbenchRequest({
       }
       const saved = await saveFactDraft(projectRoot, { domain: "scene", kind, projectId, targetId: value.scene_id,
         document: { ...value[kind], $schema: schemas[kind] }, expectedSha256: value.expected_sha256,
-        expectedContextSha256: value.expected_context_sha256, conflictCode: "scene_target_conflict", contextConflictCode: "scene_upstream_conflict",
-        confirmationSha256: value.confirmation_sha256, allowLoraChanges: true });
+        expectedContextSha256: value.expected_context_sha256, conflictCode: "scene_target_conflict", contextConflictCode: "scene_upstream_conflict" });
       const document = structuredClone(saved.value); delete document.$schema;
       return { scene_id: value.scene_id, [kind]: document, [`${kind}_sha256`]: hashCanonicalJson(saved.value), downstream_diagnostics: saved.downstream_diagnostics };
     });
@@ -207,7 +206,7 @@ export async function handleWorkbenchRequest({
       "move-character-variant": () => moveWorkbenchCharacterVariant(projectRoot, projectId, value?.character_id, value?.variant_id, value?.before_variant_id ?? null),
       "delete-character-variant": () => deleteWorkbenchCharacterVariant(projectRoot, projectId, value?.character_id, value?.variant_id),
       "create-character-page": () => createWorkbenchCharacterPage(projectRoot, projectId, value?.character_id, value?.variant_id, value?.template_id ?? null, value?.after_page_id ?? null),
-      "move-character-page": () => moveWorkbenchCharacterPage(projectRoot, projectId, value?.page_id, value?.variant_id, value?.before_page_id ?? null, value?.confirmation_sha256),
+      "move-character-page": () => moveWorkbenchCharacterPage(projectRoot, projectId, value?.page_id, value?.variant_id, value?.before_page_id ?? null),
       "duplicate-character-page": () => duplicateWorkbenchCharacterPage(projectRoot, projectId, value?.page_id),
       "delete-character-page": () => deleteWorkbenchCharacterPage(projectRoot, projectId, value?.page_id),
     };

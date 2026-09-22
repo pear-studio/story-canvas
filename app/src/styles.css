@@ -505,6 +505,15 @@ input.is-missing, textarea.is-missing { border-color: #d9a451; background: #fffb
 .page-storyboard-fields label > span { color: var(--muted); font-size: var(--text-label); font-weight: 600; }
 .page-storyboard-fields textarea { min-height: 70px; resize: vertical; line-height: 1.65; }
 .page-storyboard-fields .page-scene-description { min-height: 38px; max-height: 120px; padding: 6px 9px; field-sizing: content; }
+
+/* 自由文本 Prompt：原生 textarea，field-sizing 自适应高度，触屏最小 44px。 */
+.prompt-free-text { width: 100%; box-sizing: border-box; min-height: 44px; max-height: 340px; padding: 8px 10px; field-sizing: content; font-size: var(--text-body); line-height: 1.65; resize: vertical; }
+.page-prompt-field { display: grid; gap: 5px; margin: 12px 0 4px; min-width: 0; }
+.page-prompt-field > span { color: var(--muted); font-size: var(--text-label); font-weight: 600; }
+.page-reference-text { display: grid; gap: 5px; margin-top: 8px; min-width: 0; }
+.page-reference-override-status { display: flex; align-items: center; justify-content: flex-end; gap: 8px; color: var(--muted); font-size: var(--text-meta); }
+.page-reference-override-status > span { margin-right: auto; padding: 2px 8px; border-radius: 999px; background: #eef3ef; color: var(--green); font-weight: 600; }
+.page-reference-override-status .button { min-height: 32px; }
 .page-storyboard-fields label > span { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .page-storyboard-fields small { color: var(--muted); font-size: var(--text-meta); font-weight: normal; }
 

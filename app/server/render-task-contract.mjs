@@ -1,25 +1,16 @@
 import { referenceImageFilename } from "./reference-image.mjs";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { encodePageKey } from "./page-key.mjs";
-import { applyPromptAvoidance, encodePromptFragment, formatPromptParagraphs } from "./current-page-prompt.mjs";
-import { auditPromptContext, hasInlinePromptWeight, isAsciiPromptText } from "./prompt-audit.mjs";
-import { CHARACTER_PROMPT_CATEGORIES, PAGE_PROMPT_CATEGORIES, PROMPT_TYPES } from "./prompt-contract.mjs";
-import { lookupPromptDictionaryEntry, promptDictionaryCategory } from "./prompt-dictionary.mjs";
 import { freezeRenderPlanRegistries, resolveRenderUnitPlan } from "./render-plan-route.mjs";
 import { hashCanonicalJson } from "./workflow-definition.mjs";
 import { createRenderOutputAdapter, createRenderOutputDescriptor } from "./render-media.mjs";
 
-const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const repositoryRoot = path.resolve(appRoot, "..");
-const sourceIdentityFields = new Set(["profile", "prompt_policy", "shared_assets", "recipes", "workflows", "prompt_fragments", "project_override"]);
+const sourceIdentityFields = new Set(["profile", "shared_assets", "recipes", "workflows", "project_override"]);
 const sourceProvenanceFields = new Set(["id", "file", "sha256"]);
 const workflowIdentityFields = new Set(["id", "template", "manifest"]);
 const workflowAssetIdentityFields = new Set(["file", "sha256"]);
-const promptFragmentSourceFields = new Set(["source_kind", "source_id"]);
 const sha256Pattern = /^[0-9a-f]{64}$/;
 const sourceIdPattern = /^[a-z0-9][a-z0-9-]*$/;
 const frozenTaskFields = new Set([
@@ -28,8 +19,8 @@ const frozenTaskFields = new Set([
 ]);
 const frozenSnapshotFields = new Set([
   "canvas", "profile", "effective_profile_sha256", "source_identity", "effective_source_identity_sha256",
-  "workflows", "recipes", "seeds", "loras", "prompt_contract", "prompt_audit", "prompt_dictionary",
-  "prompt_revalidation", "prompt_binding_fingerprints", "execution", "execution_units",
+  "workflows", "recipes", "seeds", "loras", "prompt_contract", "prompt_audit",
+  "prompt_binding_fingerprints", "execution", "execution_units",
   "execution_units_sha256",
 ]);
 const frozenItemFields = new Set([
@@ -101,13 +92,6 @@ export function assertEffectiveSourceIdentity({ profile, sourceIdentity, workflo
     file: `library/render-profiles/${profile.id}.json`,
     label: "source_identity.profile",
   });
-  const policyId = profile.prompt?.policy;
-  requireSourceId(policyId, "profile.prompt.policy");
-  assertSourceProvenance(sourceIdentity.prompt_policy, {
-    id: policyId,
-    file: `library/prompt-policies/${policyId}.json`,
-    label: "source_identity.prompt_policy",
-  });
 
   assertExactIdentityIds(sourceIdentity.shared_assets, new Set(), "source_identity.shared_assets");
 
@@ -135,19 +119,6 @@ export function assertEffectiveSourceIdentity({ profile, sourceIdentity, workflo
       }
       requireSourceSha256(asset.sha256, `source_identity.workflows.${id}.${kind}.sha256`);
     }
-  }
-
-  requireSourceRecord(sourceIdentity.prompt_fragments, "source_identity.prompt_fragments");
-  const fragmentIds = new Set(Object.keys(profile.prompt?.fragments ?? {}));
-  assertExactIdentityIds(sourceIdentity.prompt_fragments, fragmentIds, "source_identity.prompt_fragments");
-  for (const id of fragmentIds) {
-    const source = sourceIdentity.prompt_fragments[id];
-    requireExactSourceFields(source, promptFragmentSourceFields, `source_identity.prompt_fragments.${id}`);
-    if (!["prompt_policy", "render_profile", "project_override"].includes(source.source_kind)) {
-      sourceIdentityError(`source_identity.prompt_fragments.${id}.source_kind 无效`);
-    }
-    const expectedSourceId = source.source_kind === "prompt_policy" ? policyId : profile.id;
-    if (source.source_id !== expectedSourceId) sourceIdentityError(`source_identity.prompt_fragments.${id}.source_id 与来源类型不一致`);
   }
 
   requireExactSourceFields(sourceIdentity.project_override, workflowAssetIdentityFields, "source_identity.project_override");
@@ -196,7 +167,7 @@ function compareStableIds(left, right) { return left < right ? -1 : left > right
 
 function promptItemBindingFingerprint(item) {
   return hashJson({
-    version: 4,
+    version: 5,
     id: typeof item?.id === "string" ? item.id : "",
     page_key: item?.page_key ? encodePageKey(item.page_key) : null,
     positive_prompt: typeof item?.positive_prompt === "string" ? item.positive_prompt : null,
@@ -207,34 +178,12 @@ function promptItemBindingFingerprint(item) {
   });
 }
 
-function promptPolicySourceIdentity() {
-  const files = [
-    new URL("./prompt-contract.mjs", import.meta.url),
-    new URL("./prompt-audit.mjs", import.meta.url),
-    new URL("./prompt-dictionary.mjs", import.meta.url),
-    new URL("../shared/prompt-tags.mjs", import.meta.url),
-  ];
-  return createHash("sha256")
-    .update(files.map((file) => readFileSync(file)).reduce((result, value) => Buffer.concat([result, value]), Buffer.alloc(0)))
-    .digest("hex");
-}
-
-export function currentPromptContractIdentity(dictionaryIdentity = null) {
+export function currentPromptContractIdentity() {
   return {
-    version: 5,
+    version: 6,
     sha256: hashJson({
-      prompt_types: PROMPT_TYPES,
-      page_categories: PAGE_PROMPT_CATEGORIES,
-      character_categories: CHARACTER_PROMPT_CATEGORIES,
-      prompt_policy_source_sha256: promptPolicySourceIdentity(),
-      lora_trigger_policy: {
-        version: 1,
-        prompt_type: "custom_description",
-        reject_inline_weight: true,
-        reject_exact_danbooru_artist: true,
-        deduplicate: "normalized_global_first_wins",
-      },
-      dictionary: dictionaryIdentity,
+      prompt_format: "story-free-text-v1",
+      negative_prompt: "empty",
     }),
   };
 }
@@ -243,197 +192,30 @@ function sameJson(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function recordMatchesPart(record, part) {
-  return record?.path === part?.path
-    && record?.source_kind === part?.audit_source_kind
-    && record?.source_id === part?.audit_source_id
-    && record?.category === part?.category
-    && (record?.role ?? null) === (part?.role ?? null)
-    && record?.scope === part?.scope
-    && record?.polarity === part?.polarity
-    && record?.fragment?.prompt_type === part?.prompt_type
-    && String(record?.fragment?.prompt_text ?? "").trim() === part?.prompt_text
-    && (record?.fragment?.weight ?? 1) === part?.weight
-    && encodePromptFragment(record.fragment) === part?.text;
-}
-
-function normalizedTrigger(value) {
-  return String(value ?? "").trim().toLowerCase().replaceAll("_", " ").replace(/\s+/g, " ");
-}
-
-function triggerText(lora) {
-  return typeof lora?.trigger === "string" ? lora.trigger.trim() : "";
-}
-
-function resolvedStyleLoraBindings(profile) {
-  const result = [];
-  const filenames = new Set();
-  const ids = Object.keys(profile?.style_loras ?? {}).sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
-  for (const id of ids) {
-    const lora = profile.style_loras[id];
-    if (filenames.has(lora.filename)) continue;
-    filenames.add(lora.filename);
-    result.push({ kind: "style", owner: profile.id, filename: lora.filename, sha256: lora.sha256, weight: lora.weight });
-  }
-  return result;
-}
-
-function assertTriggerText(trigger, owner, dictionaryEntries) {
-  if (!trigger || !isAsciiPromptText(trigger)) throw new Error(`LoRA ${owner} 的 trigger 必须是非空 ASCII 文本`);
-  if (hasInlinePromptWeight(trigger)) throw new Error(`LoRA ${owner} 的 trigger 不能包含内嵌权重、括号加权或 LoRA 语法`);
-  const dictionaryEntry = lookupPromptDictionaryEntry(dictionaryEntries, trigger);
-  if (dictionaryEntry && promptDictionaryCategory(dictionaryEntry) === "artist") {
-    throw new Error(`LoRA ${owner} 的 trigger 精确命中 Artist 类 Danbooru 标签，禁止生成`);
-  }
-}
-
-function expectedLoraTriggers(profile, item, dictionaryEntries) {
-  if (!Array.isArray(item?.loras)) throw new Error(`${item?.id ?? "渲染条目"} 缺少冻结的 LoRA 绑定`);
-  const actualStyleBindings = item.loras
-    .filter((lora) => lora?.kind === "style")
-    .map(({ kind, owner, filename, sha256, weight }) => ({ kind, owner, filename, sha256, weight }));
-  if (!sameJson(actualStyleBindings, resolvedStyleLoraBindings(profile))) {
-    throw new Error(`${item.id} 的 style LoRA 绑定与冻结 render profile 不一致`);
-  }
-  if (item.loras.some((lora) => !["style", "character", "scene"].includes(lora?.kind))) {
-    throw new Error(`${item.id} 包含未知类型的 LoRA 绑定`);
-  }
-  const activationTriggers = [];
-  for (const lora of item.loras) {
-    if (lora.activation_triggers !== undefined && !Array.isArray(lora.activation_triggers)) {
-      throw new Error(`${item.id} 的 LoRA activation_triggers 必须是数组`);
-    }
-    for (const trigger of lora.activation_triggers ?? []) {
-      if (!["character", "scene"].includes(trigger?.kind) || typeof trigger.owner !== "string" || !trigger.owner
-        || typeof trigger.text !== "string" || !trigger.text.trim()) {
-        throw new Error(`${item.id} 的设定 LoRA trigger 绑定无效`);
-      }
-      activationTriggers.push({ text: trigger.text.trim(), owner: trigger.owner, kind: trigger.kind });
-    }
-  }
-  const candidates = [
-    ...Object.keys(profile?.style_loras ?? {})
-      .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0))
-      .map((id) => ({ text: triggerText(profile.style_loras[id]), owner: profile.id, kind: "style" })),
-    ...activationTriggers,
-  ].filter((entry) => entry.text);
-  const seen = new Set();
-  return candidates.filter((entry) => {
-    assertTriggerText(entry.text, entry.owner, dictionaryEntries);
-    const normalized = normalizedTrigger(entry.text);
-    if (seen.has(normalized)) return false;
-    seen.add(normalized);
-    return true;
-  });
-}
-
-function loraTriggerPartMatches(part, expected) {
-  return part?.origin === "lora_trigger"
-    && part.origin_id === expected.owner
-    && part.audit_source_kind === "lora_trigger"
-    && part.audit_source_id === expected.owner
-    && part.scope === "lora_trigger"
-    && part.category === "trigger"
-    && part.polarity === "positive"
-    && part.prompt_type === "custom_description"
-    && part.prompt_text === expected.text
-    && part.text === encodePromptFragment({ prompt_type: "custom_description", prompt_text: expected.text })
-    && part.weight === 1;
-}
-
-function withoutLoraTriggers(promptParts) {
-  return {
-    separator: promptParts?.separator,
-    positive: promptParts?.positive?.filter((part) => part?.origin !== "lora_trigger"),
-    negative: promptParts?.negative?.filter((part) => part?.origin !== "lora_trigger"),
-  };
-}
-
-function assertPromptProjection(pageKey, evidence, profile, dictionaryEntries, item, allowedLoraTriggers) {
-  const positiveRecords = evidence?.records?.positive;
-  const negativeRecords = evidence?.records?.negative;
-  const positiveParts = item?.prompt_parts?.positive;
-  const negativeParts = item?.prompt_parts?.negative;
-  const separator = item?.prompt_parts?.separator;
-  if (!Array.isArray(positiveRecords) || !Array.isArray(negativeRecords)
-    || !Array.isArray(positiveParts) || !Array.isArray(negativeParts) || typeof separator !== "string"
-    || !sameJson(withoutLoraTriggers(item.prompt_parts), withoutLoraTriggers(evidence?.prompt_parts))) {
-    throw new Error(`${pageKey} 缺少可重审计的结构化 Prompt 投影`);
-  }
-  const expectedSeparator = typeof profile?.prompt?.separator === "string" ? profile.prompt.separator : ", ";
-  if (separator !== expectedSeparator) throw new Error(`${pageKey} 的 Prompt 分隔符与冻结 render profile 不一致`);
-  const audit = auditPromptContext({ positive: positiveRecords, negative: negativeRecords }, { dictionaryEntries });
-  if (!audit.valid || audit.errors.length) {
-    throw new Error(`${pageKey} 的当前 Prompt 重审失败：${audit.errors.map((issue) => issue.message).join("；")}`);
-  }
-  const assertParts = (parts, records, polarity) => {
-    const remainingRecords = records.filter((record) => record?.fragment?.enabled !== false && String(record?.fragment?.prompt_text ?? "").trim());
-    const remainingLoraTriggers = polarity === "positive" ? [...allowedLoraTriggers] : [];
-    for (const part of parts) {
-      if (part?.origin === "lora_trigger") {
-        const triggerIndex = remainingLoraTriggers.findIndex((trigger) => loraTriggerPartMatches(part, trigger));
-        if (triggerIndex < 0) throw new Error(`${pageKey} 包含未冻结或重复的 LoRA trigger：${String(part?.text ?? "")}`);
-        remainingLoraTriggers.splice(triggerIndex, 1);
-        continue;
-      }
-      const recordIndex = remainingRecords.findIndex((record) => recordMatchesPart(record, part));
-      if (recordIndex < 0) throw new Error(`${pageKey} 的最终 Prompt 片段没有对应审计记录：${String(part?.text ?? "")}`);
-      remainingRecords.splice(recordIndex, 1);
-    }
-    if (remainingRecords.length) throw new Error(`${pageKey} 的审计记录未进入最终 Prompt 投影`);
-    if (remainingLoraTriggers.length) throw new Error(`${pageKey} 的冻结 LoRA trigger 未进入最终 Prompt 投影`);
-  };
-  assertParts(positiveParts, positiveRecords, "positive");
-  assertParts(negativeParts, negativeRecords, "negative");
-  const { positive_prompt: positivePrompt, negative_prompt: negativePrompt } = applyPromptAvoidance(formatPromptParagraphs(positiveParts, separator, profile.id), formatPromptParagraphs(negativeParts, separator, profile.id), profile);
-  return { positivePrompt, negativePrompt, promptParts: item.prompt_parts };
-}
-
-export function assertRenderTaskPromptAudit(task, { dictionaryEntries = null, dictionaryIdentity = null } = {}) {
-  if (!Array.isArray(dictionaryEntries)) throw new Error("恢复渲染任务前必须加载当前 Prompt 固定词库");
-  const expected = currentPromptContractIdentity(dictionaryIdentity);
+// 复验只检查冻结形状与逐条目绑定指纹，不再逐 part 重审。
+export function assertRenderTaskPromptAudit(task) {
+  const expected = currentPromptContractIdentity();
   if (task?.snapshot?.prompt_contract?.version !== expected.version || task.snapshot.prompt_contract.sha256 !== expected.sha256) {
     throw new Error("渲染任务缺少当前 Prompt 契约身份，不能恢复旧任务");
-  }
-  if (!dictionaryIdentity || !sameJson(task.snapshot.prompt_dictionary, dictionaryIdentity)) {
-    throw new Error("渲染任务的 Prompt 词库身份与当前固定快照不一致");
-  }
-  const revalidationPages = task.snapshot.prompt_revalidation?.pages;
-  if (!revalidationPages || typeof revalidationPages !== "object" || Array.isArray(revalidationPages)) {
-    throw new Error("渲染任务缺少可重审计的结构化 Prompt 记录，不能恢复旧任务");
   }
   const bindings = task.snapshot.prompt_binding_fingerprints;
   if (!bindings || typeof bindings !== "object" || Array.isArray(bindings)) {
     throw new Error("渲染任务缺少逐条目 Prompt 绑定指纹，不能恢复旧任务");
   }
   const itemIds = new Set();
-  const pageKeys = new Set();
   for (const item of task.items ?? []) {
     if (typeof item?.id !== "string" || !item.id || itemIds.has(item.id)
       || typeof item.positive_prompt !== "string" || typeof item.negative_prompt !== "string") {
       throw new Error("渲染任务的逐条目 Prompt 绑定无效，不能恢复生成");
     }
     itemIds.add(item.id);
-    const pageKey = encodePageKey(item.page_key);
-    pageKeys.add(pageKey);
-    const evidence = revalidationPages[pageKey];
-    if (!evidence) throw new Error(`${pageKey} 缺少冻结的 Prompt 重审记录`);
     if (!sameJson(task.snapshot.loras?.[item.id], item.loras)) throw new Error(`${item.id} 的 LoRA 绑定与任务快照不一致`);
-    const allowedLoraTriggers = expectedLoraTriggers(task.snapshot.profile, item, dictionaryEntries);
-    const projection = assertPromptProjection(pageKey, evidence, task.snapshot.profile, dictionaryEntries, item, allowedLoraTriggers);
-    if (item.positive_prompt !== projection.positivePrompt || item.negative_prompt !== projection.negativePrompt
-      || !sameJson(item.prompt_parts, projection.promptParts)) {
-      throw new Error(`${item.id} 的 Prompt 与当前重审投影不一致，拒绝恢复生成`);
-    }
     if (bindings[item.id] !== promptItemBindingFingerprint(item)) {
       throw new Error(`${item.id} 的 Prompt 或来源追踪已变化，拒绝恢复生成`);
     }
   }
   if (Object.keys(bindings).length !== itemIds.size || Object.keys(bindings).some((itemId) => !itemIds.has(itemId))) {
     throw new Error("渲染任务的逐条目 Prompt 绑定集合已变化，拒绝恢复生成");
-  }
-  if (Object.keys(revalidationPages).length !== pageKeys.size || Object.keys(revalidationPages).some((pageKey) => !pageKeys.has(pageKey))) {
-    throw new Error("渲染任务的 Prompt 重审页面集合已变化，拒绝恢复生成");
   }
 }
 
@@ -517,7 +299,8 @@ export function buildWorkflow(definition, profile, recipe, item) {
     dit: profileModelFilename(profile, "dit"),
     text_encoder: profileModelFilename(profile, "text_encoder"),
     vae: profileModelFilename(profile, "vae"),
-    ...applyPromptAvoidance(item.positive_prompt, item.negative_prompt, profile),
+    positive_prompt: item.positive_prompt,
+    negative_prompt: item.negative_prompt,
     reference_image: item.reference_images?.length ? referenceImageFilename(item.reference_images[0]) : null,
     width: dimensions.width,
     height: dimensions.height,
@@ -760,7 +543,7 @@ function assertFrozenExecutionPlan(task) {
   return task.snapshot.execution_units;
 }
 
-export function createTaskSnapshot({ purpose, canvas, profile, effectiveProfileSha256, sourceIdentity, workflowDefinitions, items, promptAudit = null, promptRevalidation = null, promptDictionary = null, execution = { candidate_batch: false, queue_all: false } }) {
+export function createTaskSnapshot({ purpose, canvas, profile, effectiveProfileSha256, sourceIdentity, workflowDefinitions, items, promptAudit = null, execution = { candidate_batch: false, queue_all: false } }) {
   if (typeof effectiveProfileSha256 !== "string" || effectiveProfileSha256 !== hashCanonicalJson(profile)) {
     throw new Error("effective render profile 身份校验失败");
   }
@@ -780,10 +563,8 @@ export function createTaskSnapshot({ purpose, canvas, profile, effectiveProfileS
     ...registries,
     seeds: Object.fromEntries(items.map((item) => [item.id, item.seed])),
     loras: Object.fromEntries(items.map((item) => [item.id, clone(item.loras ?? [])])),
-    prompt_contract: currentPromptContractIdentity(promptDictionary),
+    prompt_contract: currentPromptContractIdentity(),
     prompt_audit: clone(promptAudit ?? { valid: false, pages: {} }),
-    prompt_dictionary: clone(promptDictionary),
-    prompt_revalidation: clone(promptRevalidation),
     prompt_binding_fingerprints: Object.fromEntries(items.map((item) => [item.id, promptItemBindingFingerprint(item)])),
     execution: clone(execution),
   };
@@ -805,7 +586,7 @@ export function createTaskSnapshot({ purpose, canvas, profile, effectiveProfileS
  * 冻结渲染任务契约的主要 Interface：一次性校验 version、effective profile 来源身份、
  * route/registry、Prompt 可重审计证据和 execution unit，并返回可供执行器消费的原任务。
  */
-export function validateFrozenRenderTask(task, { dictionaryEntries = null, dictionaryIdentity = null } = {}) {
+export function validateFrozenRenderTask(task) {
   if (task?.version !== 2 || !task?.snapshot || !Array.isArray(task.items)) {
     throw new Error("只支持当前 version=2 的冻结渲染任务，请重新创建任务");
   }
@@ -844,6 +625,6 @@ export function validateFrozenRenderTask(task, { dictionaryEntries = null, dicti
     resolveRenderUnitPlan(unitItems, { purpose: task.purpose, snapshot: task.snapshot, resolvedProfile: task.snapshot.profile });
   }
   assertFrozenExecutionPlan(task);
-  assertRenderTaskPromptAudit(task, { dictionaryEntries, dictionaryIdentity });
+  assertRenderTaskPromptAudit(task);
   return { task, execution: projectFrozenRenderExecution(task) };
 }

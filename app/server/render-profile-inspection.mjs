@@ -135,33 +135,17 @@ function recipeSummary(recipe) {
   ].join(" · ");
 }
 
-function promptProjection(profile, sourceIdentity) {
-  const fragments = Object.entries(profile.prompt.fragments).map(([id, fragment]) => ({
-    id,
-    ...clone(fragment),
-    source: clone(sourceIdentity.prompt_fragments?.[id] ?? null),
-  }));
+function promptProjection(profile) {
   return {
-    family: profile.prompt.family,
-    policy_id: profile.prompt.policy,
-    policy_source_file: sourceIdentity.prompt_policy?.file ?? null,
-    policy_sha256: sourceIdentity.prompt_policy?.sha256 ?? null,
-    positive_fragments: fragments.filter((fragment) => fragment.polarity === "positive").length,
-    negative_fragments: fragments.filter((fragment) => fragment.polarity === "negative").length,
-    summary: `${profile.prompt.family} · ${profile.prompt.category_order.length} 个页面分类`,
-    category_order: clone(profile.prompt.category_order),
-    separator: profile.prompt.separator,
-    fragments,
+    text: profile.prompt.text,
     diagnostics: [],
   };
 }
 
 function overrideTargetLabel(target) {
-  if (target === "prompt.policy") return "Prompt 策略";
+  if (target === "prompt.text") return "全局 Prompt";
   const model = /^models\.(.+)$/.exec(target);
   if (model) return `模型 · ${model[1]}`;
-  const fragment = /^prompt\.fragments\.(.+)$/.exec(target);
-  if (fragment) return `Prompt 片段 · ${fragment[1]}`;
   const route = /^operations\.([^.]+)\.routes\.([^.]+)\.(.+)$/.exec(target);
   if (route) return `${route[1]} / ${route[2]} · ${route[3]}`;
   const wholeStyleLora = /^style_loras\.([^.]+)$/.exec(target);
@@ -264,7 +248,6 @@ export function inspectRenderProfile({ bundle, diagnosis, baseDiagnosis = diagno
       name: context.base.resolved_profile.name,
       description: context.base.resolved_profile.description ?? "",
       architecture_family: context.base.resolved_profile.architecture_family,
-      prompt_family: context.base.resolved_profile.prompt.family,
       sha256: context.base.resolved_profile_sha256,
       source_file: context.base.source_identity.profile?.file ?? null,
       source_sha256: context.base.source_identity.profile?.sha256 ?? null,
@@ -272,7 +255,7 @@ export function inspectRenderProfile({ bundle, diagnosis, baseDiagnosis = diagno
       diagnostics: baseDiagnostics,
     },
     project_override: overrideProjection(context),
-    prompt: promptProjection(profile, context.active.source_identity),
+    prompt: promptProjection(profile),
     models: Object.fromEntries(Object.entries(profile.models).map(([id, model]) => [id, modelProjection(id, model, diagnosis.models?.[id])])),
     style_loras: Object.fromEntries(Object.entries(profile.style_loras).map(([id, lora]) => [id, loraProjection(id, lora, diagnosis.style_loras?.[id])])),
     routes,

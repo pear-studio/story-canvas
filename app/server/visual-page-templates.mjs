@@ -1,30 +1,13 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { PAGE_PROMPT_CATEGORIES, PROMPT_TYPES } from "./prompt-contract.mjs";
-
 export const VISUAL_PAGE_TEMPLATES_SCHEMA_ID = "https://storyvisualizer.local/schemas/visual-page-templates.schema.json";
 
 const appliesTo = new Set(["story", "character", "scene"]);
 const templatePageKeys = new Set(["title", "visual_goal", "visual"]);
-const visualCategories = new Set(PAGE_PROMPT_CATEGORIES);
-const fragmentKeys = new Set(["prompt_type", "prompt_text", "role_slot", "weight"]);
-const roleSlots = new Set(["subject"]);
 
 function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function validateFragment(fragment, pathName, errors) {
-  if (!isRecord(fragment)) {
-    errors.push(`${pathName} 必须是对象`);
-    return;
-  }
-  for (const key of Object.keys(fragment)) if (!fragmentKeys.has(key)) errors.push(`${pathName} 包含未知字段：${key}`);
-  if (!PROMPT_TYPES.includes(fragment.prompt_type)) errors.push(`${pathName}.prompt_type 无效`);
-  if (typeof fragment.prompt_text !== "string" || !fragment.prompt_text.trim()) errors.push(`${pathName}.prompt_text 必须是非空字符串`);
-  if (fragment.role_slot !== undefined && !roleSlots.has(fragment.role_slot)) errors.push(`${pathName}.role_slot 只能是 subject`);
-  if (fragment.weight !== undefined && (typeof fragment.weight !== "number" || !Number.isFinite(fragment.weight) || fragment.weight < 0.2 || fragment.weight > 10)) errors.push(`${pathName}.weight 必须是 0.2 至 10 的有限数字`);
 }
 
 function validateTemplate(template, index, declaredCategoryIds = new Set()) {
@@ -59,12 +42,8 @@ function validateTemplate(template, index, declaredCategoryIds = new Set()) {
   }
   if (!isRecord(template.page.visual)) errors.push(`${prefix}.page.visual 必须是对象`);
   else {
-    for (const key of Object.keys(template.page.visual)) if (!visualCategories.has(key)) errors.push(`${prefix}.page.visual.${key} 不是页面 Prompt 分类`);
-    for (const category of PAGE_PROMPT_CATEGORIES) {
-      const fragments = template.page.visual[category];
-      if (!Array.isArray(fragments)) errors.push(`${prefix}.page.visual.${category} 必须是数组`);
-      else fragments.forEach((fragment, fragmentIndex) => validateFragment(fragment, `${prefix}.page.visual.${category}[${fragmentIndex}]`, errors));
-    }
+    for (const key of Object.keys(template.page.visual)) if (key !== "text") errors.push(`${prefix}.page.visual 包含未知字段：${key}`);
+    if (typeof template.page.visual.text !== "string") errors.push(`${prefix}.page.visual.text 必须是字符串`);
   }
   return errors;
 }
@@ -121,19 +100,11 @@ export async function readVisualPageTemplates(projectRoot) {
   return { version: 1, categories: structuredClone(value.categories), templates: structuredClone(value.templates), errors: [] };
 }
 
-export function materializeVisualPageTemplate(template, characterId) {
+export function materializeVisualPageTemplate(template) {
   return {
     title: template.page.title,
     visual_goal: [template.page.visual_goal.content, ...template.page.visual_goal.criteria.map((criterion) => criterion.text)].join("\n"),
-    prompt: Object.fromEntries(PAGE_PROMPT_CATEGORIES.map((category) => [
-      category,
-      template.page.visual[category].map((fragment) => ({
-        ...(fragment.prompt_type === "danbooru" ? { tag: fragment.prompt_text }
-          : { description: fragment.prompt_text }),
-        ...(fragment.role_slot === "subject" && characterId ? { character_id: characterId } : {}),
-        ...(fragment.weight === undefined ? {} : { weight: fragment.weight }),
-      })),
-    ])),
+    prompt: { text: template.page.visual.text },
   };
 }
 

@@ -10,7 +10,7 @@
 每个测试输入包含 `id`、`label`、`prompt.positive/negative`、`loras`、`render` 和可选的 `source`。
 `render` 保存完整有效 profile、workflow definitions 与 canvas；source 只记录来源项目、PageKey、导入时间和内容摘要，不参与启动或恢复。
 
-- 从页面一次性导入：通过项目一致性读取与现有页面编译器，展开当前实际生效的 Prompt、角色/风格 LoRA、项目生成配置及覆盖；支持剧情页和角色视觉页。
+- 从页面一次性导入：通过项目一致性读取与现有页面编译器，展开当前实际生效的单段正向 Prompt、风格 LoRA、项目生成配置及覆盖；支持剧情页和角色视觉页，带参考图页面的导入仍明确不支持。
 - 空白输入：选择全局生成配置，不需要项目、页面或词库。正负向文本表示完整目标输入，LoRA 单独设置。
 - 浏览器复用自由编辑文本控件，可改文本、权重、画幅、复制或移除输入。没有继承同步、结构化片段编辑或来源变化确认。
 - 创建实验时冻结所有输入；Start 从冻结输入构建一 cell 一 workflow，不再读取来源页面或当前生成配置。项目更改、重命名、删除均不影响已创建实验。
@@ -41,7 +41,7 @@
 
 - `GET /`、`GET /:id`：列表与详情。
 - `GET /input-options`：新输入可选全局生成配置。
-- `POST /blank-input`：`{ "profile_id": "anima-base-v1", "canvas": "2:3" }` 返回可编辑 input。
+- `POST /blank-input`：`{ "profile_id": "qwen-image-2-1", "canvas": "2:3" }` 返回可编辑 input。
 - `POST /import`：`{ "project_id": "项目ID", "page_keys": [完整PageKey] }` 返回独立 inputs。
 - `POST /input-lora`：`{ "source": 正式或未登记LoRA引用 }` 冻结一项基础 LoRA。
 - `POST /`：`{ id, page_import?, inputs?, axes?, lora_sources?, include_lora_baseline?, lora_application? }` 创建并冻结实验；`page_import` 与 `inputs` 二选一；省略 input 轴时按输入自动生成。也可直接提供严格 registries。

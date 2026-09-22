@@ -19,29 +19,21 @@ const profileIdPattern = /^[a-z0-9][a-z0-9-]*$/;
 const stableIdPattern = /^[a-z0-9][a-z0-9_-]*$/;
 const fragmentIdPattern = /^[a-z0-9][a-z0-9-]*$/;
 const sha256Pattern = /^[0-9a-f]{64}$/;
-const architectures = new Set(["anima", "qwen-image-2-1"]);
-const promptFamilies = new Set(["anima", "qwen-image-2-1"]);
-const promptTypes = new Set(["danbooru", "custom_description"]);
-const polarities = new Set(["positive", "negative"]);
-const placements = new Set(["prefix", "suffix"]);
-const avoidanceStrategies = new Set(["negative_prompt", "positive_avoid", "unsupported"]);
-const pageCategories = ["subject","person","setting","camera"];
+const architectures = new Set(["qwen-image-2-1"]);
 const canvases = new Set(["2:3", "3:4", "9:16", "4:3"]);
 const operationInputs = Object.freeze({
   candidates: new Set(["empty_latent", "reference_image"]),
 });
 const requiredOperations = new Set(["candidates"]);
 const profileFields = new Set(["$schema", "id", "name", "description", "tags", "architecture_family", "models", "prompt", "operations", "style_loras"]);
-const policyFields = new Set(["$schema", "id", "name", "family", "separator", "avoidance_strategy", "category_order", "fragments"]);
 const recipeFields = new Set([
   "$schema", "id", "name", "resolutions", "steps", "cfg", "sampler", "scheduler", "clip_skip",
   "scale", "denoise", "second_pass_steps", "second_pass_cfg", "second_pass_sampler", "second_pass_scheduler",
 ]);
 const modelFields = new Set(["filename", "relative_path", "size_bytes", "sha256", "source"]);
 const loraFields = new Set(["filename", "sha256", "weight", "trigger"]);
-const fragmentFields = new Set(["polarity", "placement", "order", "prompt_type", "prompt_text", "weight"]);
 const routeFields = new Set(["workflow", "recipe"]);
-const promptFields = new Set(["policy", "fragments"]);
+const promptFields = new Set(["text"]);
 const operationFields = new Set(["routes"]);
 const relativeAssetPattern = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))(?!.*\\).+$/;
 
@@ -113,38 +105,10 @@ function assertModel(value, label) {
   if (value.source !== undefined) assertNonEmptyString(value.source, `${label}.source`);
 }
 
-function assertFragment(value, label) {
+function assertPromptText(value, label) {
   assertRecord(value, label);
-  assertExactFields(value, fragmentFields, label);
-  if (!polarities.has(value.polarity)) fail(`${label}.polarity 无效`);
-  if (!placements.has(value.placement)) fail(`${label}.placement 无效`);
-  assertFiniteNumber(value.order, `${label}.order`, { min: 0, integer: true });
-  if (!promptTypes.has(value.prompt_type)) fail(`${label}.prompt_type 无效`);
-  assertNonEmptyString(value.prompt_text, `${label}.prompt_text`);
-  if (value.weight !== undefined) assertFiniteNumber(value.weight, `${label}.weight`, { min: 0.2, max: 10 });
-}
-
-function assertFragmentMap(value, label) {
-  assertRecord(value, label);
-  for (const [id, fragment] of Object.entries(value)) {
-    if (!fragmentIdPattern.test(id)) fail(`${label} 的片段 ID 无效：${id}`);
-    assertFragment(fragment, `${label}.${id}`);
-  }
-}
-
-function assertPromptPolicy(value, expectedId) {
-  assertRecord(value, `Prompt policy ${expectedId}`);
-  assertExactFields(value, policyFields, `Prompt policy ${expectedId}`);
-  if (value.$schema !== undefined && typeof value.$schema !== "string") fail(`${expectedId}.$schema 必须是字符串`);
-  if (value.id !== expectedId) fail(`Prompt policy 文件 ID 不匹配：期望 ${expectedId}，实际 ${String(value.id)}`);
-  assertNonEmptyString(value.name, `${expectedId}.name`);
-  if (!promptFamilies.has(value.family)) fail(`${expectedId}.family 无效`);
-  if (typeof value.separator !== "string") fail(`${expectedId}.separator 必须是字符串`);
-  if (!avoidanceStrategies.has(value.avoidance_strategy)) fail(`${expectedId}.avoidance_strategy 无效`);
-  if (!Array.isArray(value.category_order) || value.category_order.length !== pageCategories.length
-    || new Set(value.category_order).size !== pageCategories.length
-    || pageCategories.some((category) => !value.category_order.includes(category))) fail(`${expectedId}.category_order 无效`);
-  assertFragmentMap(value.fragments, `${expectedId}.fragments`);
+  assertExactFields(value, promptFields, label);
+  if (typeof value.text !== "string") fail(`${label}.text 必须是字符串`);
 }
 
 function assertRecipe(value, expectedId) {
@@ -198,10 +162,7 @@ function assertProfile(value, expectedId) {
     assertModel(model, `${expectedId}.models.${role}`);
   }
 
-  assertRecord(value.prompt, `${expectedId}.prompt`);
-  assertExactFields(value.prompt, promptFields, `${expectedId}.prompt`);
-  if (typeof value.prompt.policy !== "string" || !profileIdPattern.test(value.prompt.policy)) fail(`${expectedId}.prompt.policy 无效`);
-  assertFragmentMap(value.prompt.fragments, `${expectedId}.prompt.fragments`);
+  assertPromptText(value.prompt, `${expectedId}.prompt`);
 
   assertRecord(value.operations, `${expectedId}.operations`);
   for (const operation of requiredOperations) if (!Object.hasOwn(value.operations, operation)) fail(`${expectedId}.operations 缺少 ${operation}`);
@@ -233,29 +194,6 @@ function assertProfile(value, expectedId) {
 
 }
 
-function mergeFragments(policy, profile) {
-  const entries = [];
-  for (const [sourceKind, sourceId, values] of [
-    ["prompt_policy", policy.id, policy.fragments],
-    ["render_profile", profile.id, profile.prompt.fragments],
-  ]) {
-    for (const [id, fragment] of Object.entries(values)) {
-      if (entries.some((entry) => entry.id === id)) fail(`Prompt 片段 ID 冲突：${id}`);
-      entries.push({ id, fragment: clone(fragment), source: { source_kind: sourceKind, source_id: sourceId } });
-    }
-  }
-  const polarityRank = new Map([["positive", 0], ["negative", 1]]);
-  const placementRank = new Map([["prefix", 0], ["suffix", 1]]);
-  entries.sort((left, right) => polarityRank.get(left.fragment.polarity) - polarityRank.get(right.fragment.polarity)
-    || placementRank.get(left.fragment.placement) - placementRank.get(right.fragment.placement)
-    || left.fragment.order - right.fragment.order
-    || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
-  return {
-    fragments: Object.fromEntries(entries.map((entry) => [entry.id, entry.fragment])),
-    sources: Object.fromEntries(entries.map((entry) => [entry.id, entry.source])),
-  };
-}
-
 function materializeRecipe(recipe, definition, { architectureFamily, operation, inputSource }) {
   const value = clone(Object.fromEntries(Object.entries(recipe).filter(([field]) => !new Set(["$schema", "id", "name"]).has(field))));
   const bindings = definition.manifest.bindings;
@@ -283,51 +221,9 @@ function materializeRecipe(recipe, definition, { architectureFamily, operation, 
   for (const [field, consumed] of topologyConsumers) {
     if (value[field] !== undefined && !consumed) fail(`${recipe.id} 提供了 ${definition.id} 不消费的参数：${field}`);
   }
-  if (["anima", "qwen-image-2-1"].includes(architectureFamily) && value.clip_skip !== 1) fail(`${recipe.id} 的 clip_skip 必须为 1`);
+  if (architectureFamily === "qwen-image-2-1" && value.clip_skip !== 1) fail(`${recipe.id} 的 clip_skip 必须为 1`);
   assertWorkflowSupports(definition, { architectureFamily, operation, inputSource });
   return value;
-}
-
-function applyPromptFragmentChanges(fragments, sources, changes, profileId) {
-  for (const change of changes) {
-    const match = /^prompt\.fragments\.([a-z0-9][a-z0-9-]*)$/.exec(change.target);
-    if (!match) continue;
-    if (change.project.exists) {
-      fragments[match[1]] = clone(change.project.value);
-      sources[match[1]] = { source_kind: "project_override", source_id: profileId };
-    } else {
-      delete fragments[match[1]];
-      delete sources[match[1]];
-    }
-  }
-}
-
-async function resolveEffectivePrompt(repositoryRoot, baseBundle, resolution, effectiveProfile) {
-  const sourceIdentity = clone(baseBundle.source_identity);
-  const policyChanged = resolution.changes.some((change) => change.target === "prompt.policy");
-  if (!policyChanged) {
-    applyPromptFragmentChanges(effectiveProfile.prompt.fragments, sourceIdentity.prompt_fragments, resolution.changes, resolution.profile_id);
-    return sourceIdentity;
-  }
-
-  const policyId = effectiveProfile.prompt.policy;
-  const policySource = await readJsonSource(repositoryRoot, "prompt-policies", policyId, "Prompt policy");
-  assertPromptPolicy(policySource.value, policyId);
-  const profileFragments = Object.fromEntries(Object.entries(baseBundle.resolved_profile.prompt.fragments)
-    .filter(([id]) => baseBundle.source_identity.prompt_fragments?.[id]?.source_kind === "render_profile"));
-  const merged = mergeFragments(policySource.value, { id: effectiveProfile.id, prompt: { fragments: profileFragments } });
-  applyPromptFragmentChanges(merged.fragments, merged.sources, [...resolution.changes, ...resolution.redundant], resolution.profile_id);
-  effectiveProfile.prompt = {
-    policy: policySource.value.id,
-    family: policySource.value.family,
-    separator: policySource.value.separator,
-    avoidance_strategy: policySource.value.avoidance_strategy,
-    category_order: clone(policySource.value.category_order),
-    fragments: merged.fragments,
-  };
-  sourceIdentity.prompt_policy = policySource.provenance;
-  sourceIdentity.prompt_fragments = merged.sources;
-  return sourceIdentity;
 }
 
 function assertEffectiveContent(profile) {
@@ -337,12 +233,7 @@ function assertEffectiveContent(profile) {
     fail(`${profile.id}.models 与结构家族不一致`);
   }
   for (const [role, model] of Object.entries(profile.models)) assertModel(model, `${profile.id}.models.${role}`);
-  assertFragmentMap(profile.prompt?.fragments, `${profile.id}.prompt.fragments`);
-  if (!promptFamilies.has(profile.prompt?.family) || typeof profile.prompt.separator !== "string"
-    || !avoidanceStrategies.has(profile.prompt.avoidance_strategy)) fail(`${profile.id}.prompt 语义无效`);
-  if (!Array.isArray(profile.prompt.category_order) || profile.prompt.category_order.length !== pageCategories.length
-    || new Set(profile.prompt.category_order).size !== pageCategories.length
-    || pageCategories.some((category) => !profile.prompt.category_order.includes(category))) fail(`${profile.id}.prompt.category_order 无效`);
+  assertPromptText(profile.prompt, `${profile.id}.prompt`);
   for (const [id, lora] of Object.entries(profile.style_loras ?? {})) {
     assertRecord(lora, `${profile.id}.style_loras.${id}`);
     assertNonEmptyString(lora.filename, `${profile.id}.style_loras.${id}.filename`);
@@ -411,7 +302,7 @@ async function compileEffectiveRenderProfileImplementation({ repositoryRoot, pro
   }
 
   const effectiveProfile = clone(overrideResolution.effective_profile);
-  const sourceIdentity = await resolveEffectivePrompt(repositoryRoot, baseBundle, overrideResolution, effectiveProfile);
+  const sourceIdentity = clone(baseBundle.source_identity);
   assertEffectiveContent(effectiveProfile);
   const workflows = await resolveEffectiveWorkflows(repositoryRoot, baseBundle, effectiveProfile);
   sourceIdentity.workflows = Object.fromEntries(Object.entries(workflows).map(([id, definition]) => [id, {
@@ -440,10 +331,6 @@ async function readResolvedRenderProfileImplementation(repositoryRoot, profileId
 
   const profileOperations = profile.operations;
   const sharedAssetIdentity = {};
-
-  const policySource = await readJsonSource(repositoryRoot, "prompt-policies", profile.prompt.policy, "Prompt policy");
-  assertPromptPolicy(policySource.value, profile.prompt.policy);
-  const mergedPrompt = mergeFragments(policySource.value, profile);
 
   const recipeSources = new Map();
   const workflowDefinitions = new Map();
@@ -490,24 +377,15 @@ async function readResolvedRenderProfileImplementation(repositoryRoot, profileId
     ...(profile.tags ? { tags: clone(profile.tags) } : {}),
     architecture_family: profile.architecture_family,
     models: clone(profile.models),
-    prompt: {
-      policy: policySource.value.id,
-      family: policySource.value.family,
-      separator: policySource.value.separator,
-      avoidance_strategy: policySource.value.avoidance_strategy,
-      category_order: clone(policySource.value.category_order),
-      fragments: mergedPrompt.fragments,
-    },
+    prompt: { text: profile.prompt.text },
     operations,
     style_loras: clone(profile.style_loras),
   };
   const sourceIdentity = {
     profile: profileSource.provenance,
-    prompt_policy: policySource.provenance,
     shared_assets: sharedAssetIdentity,
     recipes: recipeProvenance,
     workflows: workflowProvenance,
-    prompt_fragments: mergedPrompt.sources,
   };
   return {
     resolved_profile: resolvedProfile,

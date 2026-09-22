@@ -24,7 +24,6 @@ import {
   STORY_OUTLINE_SCHEMA_ID,
   STORY_PAGE_NARRATIVE_SCHEMA_ID,
   STORY_PAGE_PROMPT_SCHEMA_ID,
-  storyPromptCategories,
 } from "../server/story-files.mjs";
 import { hashCanonicalJson } from "../server/workflow-definition.mjs";
 import { defaultSceneFacts, SCENE_INDEX_SCHEMA_ID } from "../server/scene-files.mjs";
@@ -35,21 +34,18 @@ const sourceRepositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta
 const storyPageKey = { page_id: "page-001" };
 const characterPageKey = { page_id: "page-002" };
 
-function prompt(subject) {
+function prompt(text) {
   return {
     $schema: STORY_PAGE_PROMPT_SCHEMA_ID,
-    ...Object.fromEntries(storyPromptCategories.map((category) => [category, []])),
-    subject: [{ description: subject }],
+    text,
   };
 }
 
 function characterPrompt() {
-  const base = prompt("hero");
-  delete base.$schema;
   return {
     $schema: CHARACTER_PROMPT_SCHEMA_ID,
-    identity: { prompt: Object.fromEntries(storyPromptCategories.map((category) => [category, []])), lora: null },
-    variants: { default: { prompt: base, loras: [], identity_disabled: [] } },
+    prompt_name: "主角",
+    variants: { default: { text: "主角的基础形象描述。", reference_images: [] } },
   };
 }
 
@@ -62,27 +58,27 @@ async function createFixture(context) {
     mkdir(path.join(projectRoot, "story"), { recursive: true }),
     mkdir(path.join(projectRoot, "characters"), { recursive: true }),
     mkdir(path.join(root, "library", "render-profiles"), { recursive: true }),
-    mkdir(path.join(root, "library", "prompt-policies"), { recursive: true }),
     mkdir(path.join(root, "library", "render-recipes"), { recursive: true }),
     mkdir(path.join(root, "library", "workflows"), { recursive: true }),
-    mkdir(path.join(root, "library", "prompt-dictionaries"), { recursive: true }),
     mkdir(path.join(root, "models", "diffusion_models"), { recursive: true }),
     mkdir(path.join(root, "models", "text_encoders"), { recursive: true }),
     mkdir(path.join(root, "models", "vae"), { recursive: true }),
   ]);
   const model = Buffer.from("checkpoint");
   const modelSha256 = createHash("sha256").update(model).digest("hex");
-  const profile = JSON.parse(await readFile(path.join(sourceRepositoryRoot, "library", "render-profiles", "anima-base-v1.json"), "utf8"));
+  const profile = JSON.parse(await readFile(path.join(sourceRepositoryRoot, "library", "render-profiles", "qwen-image-2-1.json"), "utf8"));
   profile.id = "comparison-profile";
   profile.name = "比较测试配置";
   for (const [role, relativePath] of [["dit", "diffusion_models/base.safetensors"], ["text_encoder", "text_encoders/base.safetensors"], ["vae", "vae/base.safetensors"]]) {
     profile.models[role] = { ...profile.models[role], filename: "base.safetensors", relative_path: relativePath, sha256: modelSha256 };
   }
   profile.operations.candidates.routes.empty_latent.recipe = "comparison-candidate";
-  const recipe = JSON.parse(await readFile(path.join(sourceRepositoryRoot, "library", "render-recipes", "anima-base-v1-candidate.json"), "utf8"));
+  profile.operations.candidates.routes.empty_latent.workflow = "qwen-image-2-1-text";
+  delete profile.operations.candidates.routes.reference_image;
+  const recipe = JSON.parse(await readFile(path.join(sourceRepositoryRoot, "library", "render-recipes", "qwen-image-2-1-candidate.json"), "utf8"));
   recipe.id = "comparison-candidate";
   await Promise.all([
-    writeFile(path.join(projectRoot, "project.json"), JSON.stringify({ title: "比较测试", canvas: "2:3", default_render_profile: profile.id })),
+    writeFile(path.join(projectRoot, "project.json"), JSON.stringify({ format: "story-free-text-v1", title: "比较测试", canvas: "2:3", default_render_profile: profile.id })),
     writeFile(path.join(projectRoot, "story", "outline.json"), JSON.stringify({
       $schema: STORY_OUTLINE_SCHEMA_ID,
       synopsis: "比较剧情页与角色页。",
@@ -98,15 +94,12 @@ async function createFixture(context) {
     writeFile(path.join(projectRoot, "pages", "page-002.content.json"), JSON.stringify({ $schema: STORY_PAGE_NARRATIVE_SCHEMA_ID, title: "肖像", scene_description: "主角肖像。", characters: [{ character_id: "hero", variant_id: "default" }], dialogue: [] })),
     writeFile(path.join(projectRoot, "pages", "page-002.prompt.json"), JSON.stringify(prompt("portrait"))),
     writeFile(path.join(root, "library", "render-profiles", `${profile.id}.json`), JSON.stringify(profile)),
-    cp(path.join(sourceRepositoryRoot, "library", "prompt-policies", "anima-v1.json"), path.join(root, "library", "prompt-policies", "anima-v1.json")),
     writeFile(path.join(root, "library", "render-recipes", `${recipe.id}.json`), JSON.stringify(recipe)),
     writeFile(path.join(root, "models", "diffusion_models", "base.safetensors"), model),
     writeFile(path.join(root, "models", "text_encoders", "base.safetensors"), model),
     writeFile(path.join(root, "models", "vae", "base.safetensors"), model),
-    cp(path.join(sourceRepositoryRoot, "library", "workflows", "anima-candidate-page.api.json"), path.join(root, "library", "workflows", "anima-candidate-page.api.json")),
-    cp(path.join(sourceRepositoryRoot, "library", "workflows", "anima-candidate-page.manifest.json"), path.join(root, "library", "workflows", "anima-candidate-page.manifest.json")),
-    cp(path.join(sourceRepositoryRoot, "library", "prompt-dictionaries", "danbooru.csv"), path.join(root, "library", "prompt-dictionaries", "danbooru.csv")),
-    cp(path.join(sourceRepositoryRoot, "library", "prompt-dictionaries", "zh.csv"), path.join(root, "library", "prompt-dictionaries", "zh.csv")),
+    cp(path.join(sourceRepositoryRoot, "library", "workflows", "qwen-image-2-1-text.api.json"), path.join(root, "library", "workflows", "qwen-image-2-1-text.api.json")),
+    cp(path.join(sourceRepositoryRoot, "library", "workflows", "qwen-image-2-1-text.manifest.json"), path.join(root, "library", "workflows", "qwen-image-2-1-text.manifest.json")),
   ]);
   registerFixtureProjects(root); return { root, projectRoot, profile, modelSha256 };
 }
@@ -118,29 +111,24 @@ function loraRegistry() {
   };
 }
 
-test("Qwen 对比预检和共用构建器拒绝裸 LoRA，Anima 保持支持", async () => {
+test("Qwen 对比预检和共用构建器拒绝裸 LoRA", async () => {
   const { buildWorkflow, resolveRenderRecipe } = await import("../server/render-task-contract.mjs");
-  for (const profileId of ["qwen-image-2-1", "anima-base-v1"]) {
-    const input = await createBlankComparisonInput(sourceRepositoryRoot, profileId);
-    input.prompt.positive = "anime portrait";
-    const manifest = createComparisonExperiment({ id: "lora-support", registries: loraRegistry(), axes: [
-      { type: "input", values: [{ value_id: input.id, label: "测试", value: input.id }] },
-      { type: "lora_config", values: [{ value_id: "baseline", label: "基线", value: "baseline" }, { value_id: "raw", label: "裸 LoRA", value: "test" }] },
-      { type: "lora_weight", values: [{ value_id: "weight", label: "0.7", value: 0.7 }] },
-    ] });
-    const route = input.render.profile.operations.candidates.routes.empty_latent;
-    const definition = input.render.workflows[route.workflow];
-    const item = { positive_prompt: input.prompt.positive, negative_prompt: "", seed: 1, output_prefix: "test",
-      loras: [{ filename: "test.safetensors", sha256: "a".repeat(64), weight: 0.7 }] };
-    const preflight = () => preflightComparisonExperiment({ manifest, inputs: [input] });
-    const build = () => buildWorkflow(definition, input.render.profile, resolveRenderRecipe(route.recipe, input.render.canvas), item);
-    if (profileId === "qwen-image-2-1") {
-      assert.throws(preflight, /不支持 LoRA/); assert.throws(build, /不支持 LoRA/);
-      input.loras = item.loras;
-      const baseline = createComparisonExperiment({ id: "input-lora", axes: [{ type: "input", values: [{ value_id: input.id, label: "测试", value: input.id }] }] });
-      assert.throws(() => preflightComparisonExperiment({ manifest: baseline, inputs: [input] }), /不支持 LoRA/);
-    } else { assert.doesNotThrow(preflight); assert.ok(Object.values(build()).some(node => node.class_type === "LoraLoaderModelOnly")); }
-  }
+  const input = await createBlankComparisonInput(sourceRepositoryRoot, "qwen-image-2-1");
+  input.prompt.positive = "anime portrait";
+  const manifest = createComparisonExperiment({ id: "lora-support", registries: loraRegistry(), axes: [
+    { type: "input", values: [{ value_id: input.id, label: "测试", value: input.id }] },
+    { type: "lora_config", values: [{ value_id: "baseline", label: "基线", value: "baseline" }, { value_id: "raw", label: "裸 LoRA", value: "test" }] },
+    { type: "lora_weight", values: [{ value_id: "weight", label: "0.7", value: 0.7 }] },
+  ] });
+  const route = input.render.profile.operations.candidates.routes.empty_latent;
+  const definition = input.render.workflows[route.workflow];
+  const item = { positive_prompt: input.prompt.positive, negative_prompt: "", seed: 1, output_prefix: "test",
+    loras: [{ filename: "test.safetensors", sha256: "a".repeat(64), weight: 0.7 }] };
+  assert.throws(() => preflightComparisonExperiment({ manifest, inputs: [input] }), /不支持 LoRA/);
+  assert.throws(() => buildWorkflow(definition, input.render.profile, resolveRenderRecipe(route.recipe, input.render.canvas), item), /不支持 LoRA/);
+  input.loras = item.loras;
+  const baseline = createComparisonExperiment({ id: "input-lora", axes: [{ type: "input", values: [{ value_id: input.id, label: "测试", value: input.id }] }] });
+  assert.throws(() => preflightComparisonExperiment({ manifest: baseline, inputs: [input] }), /不支持 LoRA/);
 });
 
 test("剧情和角色页一次性导入为可编辑文本，之后预检不读项目", async context => {
@@ -174,31 +162,21 @@ test("空白输入不需要 workspace、页面或词库，完整文本及LoRA身
   assert.throws(() => preflightComparisonExperiment({ manifest, inputs: [input] }), { code: "invalid_comparison_input" });
 });
 
-test("场景 LoRA 从页面导入实验与冻结正式任务，删除设定后检查仍可返回诊断", async context => {
+test("场景引用从页面导入实验，删除设定后检查仍可返回诊断", async context => {
   const fixture = await createFixture(context);
   const scene = defaultSceneFacts("station", "车站");
-  scene.prompt.identity.prompt.setting = [{ description: "station platform" }];
-  scene.prompt.identity.lora = { filename: "station.safetensors", sha256: "a".repeat(64), weight: 0.8, trigger: "station_token" };
-  scene.prompt.variants.default.loras = [{ filename: "night.safetensors", sha256: "b".repeat(64), weight: 0.6, trigger: "night_token" }];
+  scene.prompt.variants.default.text = "车站站台环境。";
   await mkdir(path.join(fixture.projectRoot, "scenes"));
   await writeFile(path.join(fixture.projectRoot, "scenes/index.json"), JSON.stringify({ $schema: SCENE_INDEX_SCHEMA_ID, scenes: ["station"] }));
   for (const kind of ["profile", "visual", "prompt"]) await writeFile(path.join(fixture.projectRoot, `scenes/station.${kind}.json`), JSON.stringify(scene[kind]));
   await writeFile(path.join(fixture.projectRoot, "pages/page-001.prompt.json"), JSON.stringify({ ...prompt("traveler"), scene_id: "station", scene_variant_id: "default" }));
   const input = await importComparisonPage({ repositoryRoot: fixture.root, projectDirectory: fixture.projectRoot, projectId: "fixture", pageKey: storyPageKey, localConfig: {} });
-  assert.deepEqual(input.loras.map(lora => lora.kind), ["scene", "scene"]);
-  assert.deepEqual(input.loras.map(lora => lora.trigger_words), [["station_token"], ["night_token"]]);
-  const profileFile = path.join(fixture.root, `library/render-profiles/${fixture.profile.id}.json`);
-  const profile = JSON.parse(await readFile(profileFile, "utf8"));
-  profile.style_loras = { shared: { ...scene.prompt.identity.lora, trigger: "style_token" } };
-  await writeFile(profileFile, JSON.stringify(profile));
-  const sharedInput = await importComparisonPage({ repositoryRoot: fixture.root, projectDirectory: fixture.projectRoot, projectId: "fixture", pageKey: storyPageKey, localConfig: {} });
-  assert.equal(sharedInput.loras[0].kind, "style");
-  assert.deepEqual(sharedInput.loras[0].trigger_words, ["station_token", "style_token"]);
-  assert.deepEqual(sharedInput.loras[1].trigger_words, ["night_token"]);
-  await writeFile(profileFile, JSON.stringify(fixture.profile));
+  assert.deepEqual(input.loras, []);
+  assert.match(input.prompt.positive, /车站：\n车站站台环境。/);
+  assert.match(input.prompt.positive, /本页描述：\ntraveler/);
+  assert.equal(input.prompt.negative, "");
   const { task } = await compileAndPersistWorkbenchRenderTask(fixture.root, "fixture", { page_key: storyPageKey, count: 1 });
-  assert.deepEqual(task.items[0].loras.map(lora => lora.kind), ["scene", "scene"]);
-  assert.equal(task.items[0].loras[0].activation_triggers[0].kind, "scene");
+  assert.deepEqual(task.items[0].loras, []);
   await writeFile(path.join(fixture.projectRoot, "scenes/index.json"), JSON.stringify({ $schema: SCENE_INDEX_SCHEMA_ID, scenes: [] }));
   const inspection = await inspectPageRender({ repositoryRoot: fixture.root, projectDirectory: fixture.projectRoot, pageKey: storyPageKey, config: { comfyui_urls: ["http://192.0.2.1:8188"] } });
   assert.match(JSON.stringify(inspection), /场景不存在|找不到场景|scene_dangling/);

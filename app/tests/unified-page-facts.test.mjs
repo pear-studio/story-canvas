@@ -8,7 +8,7 @@ import {savePage,movePage,duplicatePage} from '../server/page-facts.mjs';
 import {readPageContent,readPagePrompt,PAGES_INDEX_SCHEMA_ID} from '../server/pages-store.mjs';
 import {readStoryPromptUpstream} from '../server/story-facts.mjs';
 import {hashCanonicalJson} from '../server/workflow-definition.mjs';
-import {STORY_OUTLINE_SCHEMA_ID,STORY_PAGE_NARRATIVE_SCHEMA_ID,STORY_PAGE_PROMPT_SCHEMA_ID,storyPromptCategories} from '../server/story-files.mjs';
+import {STORY_OUTLINE_SCHEMA_ID,STORY_PAGE_NARRATIVE_SCHEMA_ID,STORY_PAGE_PROMPT_SCHEMA_ID} from '../server/story-files.mjs';
 import {emptyLetteringDocument} from '../server/lettering-document.mjs';
 async function fixture(t) {
  const root=await mkdtemp(path.join(os.tmpdir(),'unified-save-'));t.after(()=>rm(root,{recursive:true,force:true}));
@@ -20,7 +20,7 @@ async function fixture(t) {
  await write('scenes/index.json',{$schema:'https://storyvisualizer.local/schemas/scene-index.schema.json',scenes:[]});
  await write('pages/index.json',{$schema:PAGES_INDEX_SCHEMA_ID,pages:[{page_id:'page-001',owner_kind:'scene',scene_id:'removed',variant_id:'default'}]});
  await write('pages/page-001.content.json',{$schema:STORY_PAGE_NARRATIVE_SCHEMA_ID,title:'验证',scene_description:'',characters:[],dialogue:[]});
- await write('pages/page-001.prompt.json',{$schema:STORY_PAGE_PROMPT_SCHEMA_ID,...Object.fromEntries(storyPromptCategories.map(key=>[key,[]]))});
+ await write('pages/page-001.prompt.json',{$schema:STORY_PAGE_PROMPT_SCHEMA_ID,text:''});
  async function request(){const content=await readPageContent(directory,'page-001'),prompt=await readPagePrompt(directory,'page-001');return {page_key:{page_id:'page-001'},content,prompt,expected_content_sha256:hashCanonicalJson(content),expected_prompt_sha256:hashCanonicalJson(prompt),expected_context_sha256:hashCanonicalJson(await readStoryPromptUpstream(directory,'page-001'))};}
  registerFixtureProjects(root); return {root,directory,write,request};
 }
@@ -32,14 +32,15 @@ test('整页保存同时分配对白ID并映射布局，失效归属不阻止编
 });
 test('整页保存先验证所有草稿，布局失败不留下内容或Prompt半次保存',async t=>{
  const f=await fixture(t),request=await f.request(),before=await readPageContent(f.directory,'page-001');request.content.title='不会落盘';request.content.dialogue=[{id:'draft-dialogue-0',mode:'speech',speaker:'npc',text:'你好'}];
- request.prompt.setting=[{tag:'sky'}];request.lettering={items:[{dialogue_id:'draft-dialogue-0',box:{x:-1,y:.1,w:.3,h:.2}}]};request.expected_layout_sha256=hashCanonicalJson(emptyLetteringDocument());
- await assert.rejects(savePage(f.root,'test',request),error=>error.code==='invalid_page_document');assert.deepEqual(await readPageContent(f.directory,'page-001'),before);assert.deepEqual((await readPagePrompt(f.directory,'page-001')).setting,[]);
+ request.prompt.text=42;request.lettering={items:[{dialogue_id:'draft-dialogue-0',box:{x:-1,y:.1,w:.3,h:.2}}]};request.expected_layout_sha256=hashCanonicalJson(emptyLetteringDocument());
+ await assert.rejects(savePage(f.root,'test',request),error=>error.code==='invalid_page_document');assert.deepEqual(await readPageContent(f.directory,'page-001'),before);assert.equal((await readPagePrompt(f.directory,'page-001')).text,'');
 });
-test('整页保存拒绝陈旧Prompt且保留失效实际引用与绑定供修复',async t=>{
- const f=await fixture(t),request=await f.request();request.content.characters=[{character_id:'missing',variant_id:'default'}];request.prompt.person=[{tag:'standing',character_id:'missing'}];
+test('整页保存拒绝陈旧Prompt，移除引用时清理对应覆盖',async t=>{
+ const f=await fixture(t),request=await f.request();request.content.characters=[{character_id:'missing',variant_id:'default'}];request.prompt.text_overrides={'character:missing:default':'失效角色的覆盖'};
  await savePage(f.root,'test',request);
+ assert.equal((await readPagePrompt(f.directory,'page-001')).text_overrides['character:missing:default'],'失效角色的覆盖');
  const next=await f.request();next.content.characters=[];next.content.title='修复中';await savePage(f.root,'test',next);
- assert.equal((await readPagePrompt(f.directory,'page-001')).person[0].character_id,'missing');
+ assert.deepEqual((await readPagePrompt(f.directory,'page-001')).text_overrides,{});
  await assert.rejects(savePage(f.root,'test',request),error=>error.code.endsWith('_conflict'));
 });
 test('重新归属只更改索引，复制保留内容和布局但不复制生成媒体',async t=>{
@@ -48,17 +49,20 @@ test('重新归属只更改索引，复制保留内容和布局但不复制生�
  assert.deepEqual(await readPagePrompt(f.directory,result.page_id),before);
  const index=JSON.parse(await readFile(path.join(f.directory,'pages/index.json'),'utf8'));assert.equal(index.pages.find(page=>page.page_id===result.page_id).sequence_id,'b');
 });
-test('引用切换影响确认与新对白同时保存时确认指纹稳定',async t=>{
- const f=await fixture(t),categories=Object.fromEntries(storyPromptCategories.map(key=>[key,[]]));
+test('移除场景引用时删除旧场景覆盖，并与新对白同时保存',async t=>{
+ const f=await fixture(t);
  await f.write('scenes/index.json',{$schema:'https://storyvisualizer.local/schemas/scene-index.schema.json',scenes:['park']});
  await f.write('scenes/park.profile.json',{$schema:'https://storyvisualizer.local/schemas/scene-profile.schema.json',name:'公园',description:''});
  await f.write('scenes/park.visual.json',{$schema:'https://storyvisualizer.local/schemas/scene-visual.schema.json',variants:[{id:'default',name:'默认'}]});
- await f.write('scenes/park.prompt.json',{$schema:'https://storyvisualizer.local/schemas/scene-prompt.schema.json',identity:{prompt:{...categories,setting:[{tag:'tree'}]},lora:null},variants:{default:{prompt:categories,loras:[],identity_disabled:[]}}});
- await f.write('pages/page-001.prompt.json',{$schema:STORY_PAGE_PROMPT_SCHEMA_ID,...categories,scene_id:'park',scene_variant_id:'default',inheritance:{'scene:park:default':{tree:{weight:2}}}});
+ await f.write('scenes/park.prompt.json',{$schema:'https://storyvisualizer.local/schemas/scene-prompt.schema.json',prompt_name:'公园',variants:{default:{text:'公园环境。',reference_images:[]}}});
+ await f.write('pages/page-001.prompt.json',{$schema:STORY_PAGE_PROMPT_SCHEMA_ID,text:'',scene_id:'park',scene_variant_id:'default',text_overrides:{'scene:park:default':'本页覆盖'},reference_overrides:{'scene:park:default':[]}});
  const request=await f.request();delete request.prompt.scene_id;delete request.prompt.scene_variant_id;
  request.content.dialogue=[{id:'draft-dialogue-0',mode:'speech',speaker:'npc',text:'你好'}];
- await assert.rejects(savePage(f.root,'test',request),error=>{assert.equal(error.code,'inheritance_confirmation_required');request.confirmation_sha256=error.details[0].confirmation_sha256;return true;});
- const result=await savePage(f.root,'test',request);assert.equal(result.content.dialogue[0].text,'你好');assert.equal(result.prompt.scene_id,undefined);
+ const result=await savePage(f.root,'test',request);
+ assert.equal(result.content.dialogue[0].text,'你好');
+ assert.equal(result.prompt.scene_id,undefined);
+ assert.deepEqual(result.prompt.text_overrides,{});
+ assert.deepEqual(result.prompt.reference_overrides,{});
 });
 test('新对白出处映射到正式ID，heart出处被拒绝且不落盘',async t=>{
  const f=await fixture(t),request=await f.request();const corpus=path.join(f.root,'library/writing-corpus');await mkdir(corpus,{recursive:true});await writeFile(path.join(corpus,'test.txt'),'你好');

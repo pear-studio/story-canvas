@@ -8,9 +8,9 @@
 
 单元分页草案包含基本画面、基础文案分配和简短机位建议，用户确认后再执行。基础文案原样落实，文案优化另行处理。画面内容简短白描，20 字为创作规范，不是生成门槛。
 
-新增角色子设定先经用户同意，再单独生成验证图，用户验收后才能用于页面。验证页只补展示所需的人数、姿态和机位，不重复完整角色描述。已验收且未变的配置复用。
+新增角色子设定先经用户同意，再单独生成验证图，用户验收后才能用于页面。验证页只补展示所需的姿态和镜头，不重复完整角色描述。已验收且未变的配置复用。
 
-准备 Prompt 时核对当前确认稿、实际角色配置及有效生成配置。机位优先用 camera:prompt 生成带参数标记的片段，再通过 read/save 保存；详见[机位控制](prompt.md#机位控制)。
+准备 Prompt 时核对当前确认稿、实际角色配置及有效生成配置。页面与设定 Prompt 都是自由文本整段，镜头用简短语言直接写进本页描述；契约见 [Prompt 编写与审计](prompt.md)。
 
 ## 编译预览与生成
 
@@ -21,7 +21,7 @@ npm --prefix <仓库根绝对路径>/app run visual:produce -- preview page <pro
 npm --prefix <仓库根绝对路径>/app run visual:produce -- render page <project-id> <page-id> --count 3 --wait
 ```
 
-preview 返回最终正负向、来源、审计与配置诊断。当前 inspection.generation_signature 与候选 result.json 的 generation_signature 相同，说明候选对应当前生成条件。渲染从提交时的最新稳定事实冻结，不携带项目 revision，不接受临时 Prompt 覆盖。固定种子 --seed 仅用于受控对照。
+preview 返回最终正负向（负向恒空）、sections 来源、审计与配置诊断。当前 inspection.generation_signature 与候选 result.json 的 generation_signature 相同，说明候选对应当前生成条件。渲染从提交时的最新稳定事实冻结，不携带项目 revision，不接受临时 Prompt 覆盖。固定种子 --seed 仅用于受控对照。
 
 render 默认排队后返回；需要等待结果时加 --wait。任务返回完整 task_directory 与 candidate_paths，直接按路径查看，不拼文件名。当前范围内已准备好的独立页面可并发提交，依赖当前结果的改法不得预排；切换方案前确认旧任务已冻结。
 

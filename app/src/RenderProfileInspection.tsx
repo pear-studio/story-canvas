@@ -69,26 +69,8 @@ export type RenderProfileInspectionProjection = {
     redundant: InspectionChange[];
   };
   prompt: {
-    family: string | null;
-    policy_id: string;
-    policy_source_file: string | null;
-    policy_sha256: string | null;
-    positive_fragments: number;
-    negative_fragments: number;
-    summary?: string;
+    text: string;
     diagnostics?: InspectionDiagnostic[];
-    category_order?: string[];
-    separator?: string | null;
-    fragments: Array<{
-      id: string;
-      polarity: "positive" | "negative";
-      placement: "prefix" | "suffix";
-      order: number;
-      prompt_type: string;
-      prompt_text: string;
-      weight?: number;
-      source: { source_kind: string; source_id: string } | null;
-    }>;
   };
   models: Record<string, InspectionAsset>;
   style_loras: Record<string, InspectionAsset & { weight?: number; trigger?: string }>;
@@ -171,21 +153,6 @@ function TechnicalIdentity({ id, hashes }: { id: string; hashes?: Array<{ label:
       {visibleHashes?.map((hash) => <div key={hash.label}><dt>{hash.label}</dt><dd><code>{hash.value || "未记录"}</code></dd></div>)}
     </dl>
   </details>;
-}
-
-type InspectionPromptFragment = RenderProfileInspectionProjection["prompt"]["fragments"][number];
-
-function PromptFragmentPreview({ title, polarity, fragments, separator }: { title: string; polarity: "positive" | "negative"; fragments: InspectionPromptFragment[]; separator: string }) {
-  return <article className="rpi-prompt-preview-card">
-    <header><b>{title}</b><span>{fragments.length} 个片段</span></header>
-    <div className="rpi-prompt-fragments">
-      {fragments.length ? fragments.map((fragment, index) => <span className="rpi-prompt-fragment" key={fragment.id}>
-        <mark className={`rpi-prompt-mark--${polarity}`}>{fragment.prompt_text}</mark>
-        {fragment.weight !== undefined && <small>{fragment.weight}</small>}
-        {index < fragments.length - 1 && <i>{separator}</i>}
-      </span>) : <span className="rpi-prompt-empty">无</span>}
-    </div>
-  </article>;
 }
 
 function OverrideInspection({ override, isCurrent, onResetChange, resettingTarget }: { override: RenderProfileInspectionProjection["project_override"]; isCurrent: boolean; onResetChange?: (target: string) => void; resettingTarget?: string | null }) {
@@ -298,18 +265,9 @@ export default function RenderProfileInspection({ inspection, isCurrent, classNa
         ]} />
       </section>
       <section className="rpi-panel rpi-panel--prompt" aria-labelledby={`${id}-prompt-title`}>
-        <header><div><h3 id={`${id}-prompt-title`}>Prompt 摘要</h3></div></header>
-        <div className="rpi-prompt-counts"><span><b>{inspection.prompt.positive_fragments}</b>正向片段</span><span><b>{inspection.prompt.negative_fragments}</b>负向片段</span></div>
-        {inspection.prompt.summary && <p>{inspection.prompt.summary}</p>}
+        <header><div><h3 id={`${id}-prompt-title`}>全局 Prompt</h3></div></header>
+        <pre className="rpi-prompt-text">{inspection.prompt.text || "（空，生成时省略全局文字）"}</pre>
         <Diagnostics items={inspection.prompt.diagnostics} />
-        <TechnicalIdentity id={inspection.prompt.policy_id} hashes={[
-          { label: "策略源文件", value: inspection.prompt.policy_source_file },
-          { label: "策略 SHA-256", value: inspection.prompt.policy_sha256 },
-        ]} />
-        <div className="rpi-prompt-preview">
-          <PromptFragmentPreview title="正向 Prompt" polarity="positive" fragments={inspection.prompt.fragments.filter((fragment) => fragment.polarity === "positive")} separator={inspection.prompt.separator || ", "} />
-          <PromptFragmentPreview title="负向 Prompt" polarity="negative" fragments={inspection.prompt.fragments.filter((fragment) => fragment.polarity === "negative")} separator={inspection.prompt.separator || ", "} />
-        </div>
       </section>
       </div>
 

@@ -117,3 +117,30 @@ test('同一设定外部参考图更新后重新读取列表与指纹',async t=>
  await page.getByRole('menuitem',{name:'移除',exact:true}).click();await page.getByRole('dialog').getByRole('button',{name:'确认',exact:true}).click();
  await page.waitForFunction(()=>document.querySelectorAll('[data-reference-card]').length===0);assert.equal(writes.at(-1).expected_sha256,'1');
 });
+
+test('剧情页附图：上传确认时填写用途，添加后经右键菜单编辑与清除',async t=>{
+ const {page}=await open(t,false,'?page-draft');
+ const entries=()=>page.evaluate(()=>JSON.parse(document.querySelector('output').textContent));
+ await page.getByRole('button',{name:'添加参考图',exact:true}).click();
+ await page.getByLabel('上传参考图').click();
+ const file={name:'photo.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j1ioAAAAASUVORK5CYII=','base64')};
+ await page.locator('input[type=file]').setInputFiles(file);
+ const upload=page.getByRole('dialog',{name:'确认上传',exact:true});await upload.waitFor();
+ await upload.getByLabel('图片名称 1').fill('示意图');
+ await upload.getByLabel('图片用途 1').fill('画风参考');
+ await upload.getByRole('button',{name:'确认添加',exact:true}).click();
+ await page.getByRole('dialog',{name:'选择参考图',exact:true}).waitFor({state:'hidden'});
+ assert.equal((await entries())[0].title,'示意图');
+ assert.equal((await entries())[0].purpose,'画风参考','添加确认弹窗中可填用途');
+ await page.locator('[data-reference-card]').first().click({button:'right'});
+ await page.getByRole('menuitem',{name:'编辑用途',exact:true}).click();
+ const edit=page.getByRole('dialog',{name:'编辑附图用途',exact:true});await edit.waitFor();
+ await edit.getByLabel('附图用途').fill('构图参考');
+ await edit.getByRole('button',{name:'确定',exact:true}).click();
+ assert.equal((await entries())[0].purpose,'构图参考');
+ await page.locator('[data-reference-card]').first().click({button:'right'});
+ await page.getByRole('menuitem',{name:'编辑用途',exact:true}).click();
+ await edit.getByLabel('附图用途').fill('');
+ await edit.getByRole('button',{name:'确定',exact:true}).click();
+ assert.equal((await entries())[0].purpose,undefined,'清空用途回到未填状态');
+});

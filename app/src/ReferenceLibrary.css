@@ -101,3 +101,6 @@
 .page-attached-references .setting-reference-image { height: 62px; padding: 0; }
 .page-attached-references .setting-reference-default { top: auto; left: 0; bottom: 0; font-size: 9px; padding: 0 3px; }
 .page-attached-references .reference-grip { top: 0; right: 0; width: 22px; height: 22px; padding: 2px; }
+.reference-purpose-field { display: grid; gap: 6px; }
+.reference-purpose-field > span { color: var(--muted); font-size: var(--text-meta); }
+.reference-purpose-field input { min-height: 44px; }

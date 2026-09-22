@@ -2,8 +2,8 @@
 
 > 状态：普通页面生成的当前入口是 `visual:produce`。`page-render-resolver.mjs` 直接读取当前
 > outline、页面 index、页面 Prompt、角色和生成配置，`page-render.mjs` 原子保存完整 `queued` 任务并排队；
-> 执行器只按 task ID 加载冻结任务，恢复不再读取当前项目、profile、policy、recipe 或 override。
-> 当前格式的 profile、Prompt policy、独立 recipe、workflow manifest、逐条目 `render_route` 与项目
+> 执行器只按 task ID 加载冻结任务，恢复不再读取当前项目、profile、recipe 或 override。
+> 当前格式的 profile、独立 recipe、workflow manifest、逐条目 `render_route` 与项目
 > sparse override 已经落地。冻结任务契约 Module 会一次性校验这些身份、Prompt 审计、route/registry
 > 与 execution unit；最终 ComfyUI workflow 与输出映射已经按执行单元冻结，
 > 执行器不再解析 route、recipe 或 modifier。当前可用行为以[架构](architecture.md)、
@@ -29,8 +29,8 @@ submit/collect 循环中添加分支。
 - 一个项目只选择一个基础 `render_profile`，不建立 profile `extends` 或多层继承。
 - 项目只保存一层稀疏调整，不保存基础配置全量副本。
 - 可复用资产通过引用组合；不同资产不能用“后者覆盖前者”的方式解决重名，语义 ID 冲突直接报错。
-- 每个可调整集合项必须有稳定语义 ID；模型按角色、operation 按名称、输入来源按名称、Prompt
-  片段和 LoRA 按稳定 ID 定位，不允许用数组下标作为调整目标。
+- 每个可调整集合项必须有稳定语义 ID；模型按角色、operation 按名称、输入来源按名称、LoRA 按稳定
+  ID 定位，全局文字按 `prompt.text` 定位，不允许用数组下标作为调整目标。
 - 工作流节点绑定只存在于 workflow manifest；生成配置和执行器不再各保留一份绑定。
 - 能力由 operation 路由、workflow manifest 和 modifier 配置推导，不再维护独立
   `capabilities` 布尔值。
@@ -42,13 +42,11 @@ submit/collect 循环中添加分支。
 
 ## 可复用事实
 
-### Prompt 策略
+### 全局 Prompt
 
-`library/prompt-policies/<id>.json` 保存 Anima Prompt 家族的确定性行为和带稳定 ID 的家族基础片段，
-从而参与统一审计、来源追踪和项目调整。
-
-生成配置仍可增加自己的基础正向、后缀和负向片段。策略片段与配置片段解析后组成同一组语义
-片段；ID 重复是配置错误，不执行覆盖。
+每个 profile 保存一段全局 `prompt.text`，编译时放在各设定文字之前；项目 sparse override 的语义
+target 也是 `prompt.text`（整段替换），用户清空时编译直接省略。不再有独立 prompt-policies 文件、
+prefix/suffix、分类片段、权重或负向。
 
 ### 生成参数
 
@@ -56,13 +54,13 @@ submit/collect 循环中添加分支。
 
 ```json
 {
-  "id": "anima-candidate-v1",
+  "id": "qwen-image-2-1-candidate",
   "resolutions": {
-    "3:4": { "width": 768, "height": 1024 },
-    "2:3": { "width": 704, "height": 1056 }
+    "2:3": { "width": 832, "height": 1248 },
+    "3:4": { "width": 864, "height": 1152 }
   },
-  "steps": 28,
-  "cfg": 3.5,
+  "steps": 25,
+  "cfg": 1,
   "sampler": "euler",
   "scheduler": "simple",
   "clip_skip": 1
@@ -74,32 +72,32 @@ submit/collect 循环中添加分支。
 
 ### Workflow manifest
 
-每个 `library/workflows/<id>.api.json` 配套一个 `<id>.manifest.json`。当前 Anima 候选工作流使用
-扁平 binding 名称保存固定节点路径，并显式声明唯一的 `lora.model_only` modifier。以下示例与
-`anima-candidate-page.manifest.json` 保持一致：
+每个 `library/workflows/<id>.api.json` 配套一个 `<id>.manifest.json`。当前 Qwen 候选工作流使用
+扁平 binding 名称保存固定节点路径，不声明 modifier。以下示例与
+`qwen-image-2-1-text.manifest.json` 保持一致：
 
 ```json
 {
-  "id": "anima-candidate-page",
-  "template": "anima-candidate-page.api.json",
-  "architecture_families": ["anima"],
+  "id": "qwen-image-2-1-text",
+  "template": "qwen-image-2-1-text.api.json",
+  "architecture_families": ["qwen-image-2-1"],
   "operations": ["candidates"],
   "input_sources": ["empty_latent"],
-  "modifiers": ["lora.model_only"],
+  "modifiers": [],
   "bindings": {
     "dit": "1.inputs.unet_name",
     "text_encoder": "2.inputs.clip_name",
     "vae": "3.inputs.vae_name",
-    "positive_prompt": "4.inputs.text",
-    "negative_prompt": "5.inputs.text",
+    "positive_prompt": "4.inputs.prompt",
+    "negative_prompt": "4.inputs.negative_prompt",
     "width": "6.inputs.width",
     "height": "6.inputs.height",
+    "filename_prefix": "9.inputs.filename_prefix",
     "seed": "7.inputs.seed",
     "steps": "7.inputs.steps",
     "cfg": "7.inputs.cfg",
     "sampler": "7.inputs.sampler_name",
-    "scheduler": "7.inputs.scheduler",
-    "filename_prefix": "9.inputs.filename_prefix"
+    "scheduler": "7.inputs.scheduler"
   }
 }
 ```
@@ -110,37 +108,38 @@ submit/collect 循环中添加分支。
 ### Modifier
 
 modifier 是渲染计划编译模块内部的确定性实现，不为只有一种实现的行为额外建立公开 adapter。
-当前 Anima 候选工作流只保留 `lora.model_only`：在不通过 CLIP 应用 LoRA 的结构中串联模型 LoRA。
+当前 Qwen 候选工作流不声明任何 modifier；负向槽由绑定写空字符串。
 
 workflow manifest 声明它能接入哪些 modifier；生成配置提供风格 LoRA。modifier 不能选择另一份
 workflow。
 
 ### Render profile
 
-`render_profile` 成为组合入口，直接保存精确基础模型身份，并引用 Prompt 策略、配方和工作流：
+`render_profile` 成为组合入口，直接保存精确基础模型身份、一段全局 `prompt.text`，并引用配方和工作流：
 
 ```json
 {
-  "id": "anima-base-v1",
-  "name": "Anima Base",
-  "architecture_family": "anima",
+  "id": "qwen-image-2-1",
+  "name": "Qwen-Image-2.1",
+  "architecture_family": "qwen-image-2-1",
   "models": {
     "dit": { "filename": "...", "relative_path": "...", "sha256": "..." },
     "text_encoder": { "filename": "...", "relative_path": "...", "sha256": "..." },
     "vae": { "filename": "...", "relative_path": "...", "sha256": "..." }
   },
   "prompt": {
-    "policy": "anima-v1",
-    "positive_prefix": [],
-    "positive_suffix": [],
-    "negative_prefix": []
+    "text": "根据以下设定和画面描述创作一幅新画面，动作、表情、视角与构图以画面描述为准。"
   },
   "operations": {
     "candidates": {
       "routes": {
         "empty_latent": {
-          "workflow": "anima-candidate-page",
-          "recipe": "anima-candidate-v1"
+          "workflow": "qwen-image-2-1-text",
+          "recipe": "qwen-image-2-1-candidate"
+        },
+        "reference_image": {
+          "workflow": "qwen-image-2-1-reference",
+          "recipe": "qwen-image-2-1-candidate"
         }
       }
     }
@@ -150,7 +149,7 @@ workflow。
 ```
 
 输入来源为 `empty_latent`（文生图）或 `reference_image`（页面有效参考图）；
-参考图仅由声明该路由的 Qwen 配置支持，冻结与上传约定见 [Qwen 接入](qwen-image.md)。
+参考图冻结与上传约定见 [Qwen 接入](qwen-image.md)。
 
 operation 与输入来源使用固定矩阵，不参与自由优先级竞争：
 
@@ -160,7 +159,7 @@ operation 与输入来源使用固定矩阵，不参与自由优先级竞争：
 | `candidates` | `reference_image` | 使用冻结的有序参考图（最多十张）和文字条件，输出仍遵循项目画布 |
 
 route 不存在时直接报错，不回退到另一来源。结构家族不匹配或 manifest 不支持
-实际 modifier 时同样报错。Anima 保留 `empty_latent`，Qwen 提供上述两条 route。
+实际 modifier 时同样报错。当前 qwen-image-2-1 提供上述两条 route。
 
 ## 项目稀疏调整
 
@@ -171,11 +170,11 @@ route 不存在时直接报错，不回退到另一来源。结构家族不匹�
 {
   "version": 1,
   "profiles": {
-    "anima-base-v1": {
+    "qwen-image-2-1": {
       "changes": [
         {
           "target": "operations.candidates.routes.empty_latent.recipe.steps",
-          "original": { "exists": true, "value": 28 },
+          "original": { "exists": true, "value": 25 },
           "project": { "exists": true, "value": 32 }
         }
       ]
@@ -187,8 +186,7 @@ route 不存在时直接报错，不回退到另一来源。结构家族不匹�
 `target` 指向解析后基础配置暴露的语义目标，不指向某个源 JSON 文件，也不使用数组下标。例如：
 
 - `models.dit`；
-- `prompt.policy`；
-- `prompt.fragments.quality-masterpiece`；
+- `prompt.text`；
 - `operations.candidates.routes.empty_latent.workflow`；
 - `operations.candidates.routes.empty_latent.recipe.steps`；
 - `style_loras.watercolor.weight`；
@@ -220,17 +218,17 @@ route 不存在时直接报错，不回退到另一来源。结构家族不匹�
 
 工作台不能只展示扁平有效值。验收视图应同时表达：基础 profile 与当前项目 override 形成哪些
 有效值；每项 override 的原值、当前基础值、调整值及冲突状态；每个 operation 和输入来源实际
-引用哪份 workflow 与 recipe；模型、LoRA 和 Prompt 策略从哪里进入计划；当前候选最终冻结了哪条
+引用哪份 workflow 与 recipe；模型、LoRA 和全局文字从哪里进入计划；当前候选最终冻结了哪条
 执行链和哪些身份 hash。无冲突时用户能顺着关系定位来源，有冲突时同一位置直接显示
 阻断原因和需要处理的调整项，不再让用户比较多份全量配置。
 
 内部按固定顺序执行：
 
-1. 解析基础 profile 及其 Prompt policy、recipe、workflow manifest 和 API JSON；
+1. 解析基础 profile 及其 recipe、workflow manifest 和 API JSON；
 2. 生成解析后的基础配置，检查稳定 ID、重复项、引用、结构家族和 manifest 绑定；
 3. 对当前 profile 应用项目稀疏调整并检查冲突；
 4. 解析 operation 和 input source，选择唯一 route；
-5. 编译并审计 Prompt，解析风格与角色 LoRA；
+5. 编译并审计 Prompt，解析风格 LoRA；
 6. 读取页面 Prompt 与底稿输入，校验页面事实和模型身份；
 7. 按 manifest 支持情况应用 LoRA modifier，实例化每个条目的 ComfyUI workflow；
 8. 产出完整渲染计划、诊断和来源身份。
@@ -248,7 +246,7 @@ route 不存在时直接报错，不回退到另一来源。结构家族不匹�
 任务快照保存：
 
 - 基础 profile ID 与文件 SHA-256；
-- 所有 Prompt policy、来源 recipe、workflow manifest 和 API JSON 的 ID 与 SHA-256；
+- 来源 recipe、workflow manifest 和 API JSON 的 ID 与 SHA-256；
 - 项目调整文件 SHA-256，以及应用后的完整 effective render profile 和整体 hash；
 - operation、input source、route、Prompt 来源、seed、精确模型和 modifier 参数；每条 route 同时
   冻结来源 recipe ID 与按有效参数 canonical SHA-256 标识的 recipe instance ID，recipe registry
@@ -260,7 +258,7 @@ route 不存在时直接报错，不回退到另一来源。结构家族不匹�
 数值与字符串按 JSON 编码为 UTF-8，不加入空白；不允许 `undefined`、`NaN` 或无穷值进入待哈希事实。
 文件继续按原始字节计算 SHA-256，不经过 JSON canonicalization。
 
-当前仅支持 `empty_latent`，任务不保存图片上传声明或输入字节统计；LoRA 超分的素材上传由独立模块负责。
+参考图路由的任务同时冻结有序参考图字节与来源；LoRA 超分的素材上传由独立模块负责。
 
 恢复任务只读取快照并复核实际使用的本机模型，不重新解析当前基础配置，也不重新进行
 workflow 选择。所有活动执行单元的输入都在 ComfyUI 请求、任务状态和文件副作用前完成复核；批量
@@ -271,8 +269,8 @@ workflow 选择。所有活动执行单元的输入都在 ComfyUI 请求、任�
 
 1. 先把 profile 读取与验证、workflow 读取收进共享实现，不改变外部数据格式或行为；
    服务端与 CLI 不再各自读取和解释同一批事实。
-2. 建立目标 Schema、Prompt policy、recipe 和 workflow manifest，迁移仓库内五份 profile；
-   同时把隐藏 Prompt 家族文字改为显式稳定片段，并删除硬编码 `workflowBindings`、`defaults`
+2. 建立目标 Schema、recipe 和 workflow manifest，迁移仓库内 profile；
+   全局文字保存在 profile 的 `prompt.text`，并删除硬编码 `workflowBindings`、`defaults`
    合并和重复 `capabilities` 事实。
 3. 让渲染计划编译模块输出完整 task snapshot，再把 LoRA 输入和最终 workflow 实例化全部移入
    编译阶段；服务端和 CLI 共用同一个 seam。

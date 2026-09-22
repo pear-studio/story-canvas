@@ -26,8 +26,8 @@ npm --prefix <仓库根>/app run setup
   "models_root": "D:/Models/ComfyUI",
   "civitai_api_key": "",
   "lora_training": {
-    "trainer_root": "app/data.local/lora-training/sd-scripts",
-    "python": "app/data.local/lora-training/sd-scripts/.venv/Scripts/python.exe",
+    "trainer_root": "../story-canvas-trainer/sd-scripts",
+    "python": "../story-canvas-trainer/sd-scripts/.venv/Scripts/python.exe",
     "quality": {
       "python": "app/data.local/material-tools/.venv/Scripts/python.exe"
     },
@@ -119,7 +119,7 @@ npm --prefix <仓库根>/app run setup
 | 用途 | Python | 环境位置 | 依赖清单 |
 |---|---|---|---|
 | ComfyUI 生成 | 3.13.12 | 已配置 ComfyUI workspace 的 `.venv` | `app/python/comfyui.lock` |
-| sd-scripts 训练 | 3.10.19 | `app/data.local/lora-training/sd-scripts/.venv` | `app/python/training.lock` |
+| sd-scripts 训练 | 3.10.19 | `../story-canvas-trainer/sd-scripts/.venv` | `app/python/training.lock` |
 | 评分、打标、抠图 | 3.11.14 | `app/data.local/material-tools/.venv` | `app/python/materials.lock` |
 
 先安装 uv 并确认 `uv --version` 可用；本轮维护使用 uv 0.10.7。实际外部路径只写入被忽略的 `Config/local.json`，表中仓库内路径是默认布局。
@@ -137,9 +137,9 @@ uv pip sync --python app/data.local/material-tools/.venv/Scripts/python.exe app/
 uv pip check --python app/data.local/material-tools/.venv/Scripts/python.exe
 ```
 
-已有环境不重复执行 `uv venv`。训练环境沿用清单规定的源码与 Python，使用 `uv pip sync --python <训练Python> app/python/training.lock --extra-index-url https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match`；其中 editable 路径按本仓库默认的 `app/data.local/lora-training/sd-scripts` 布局，非默认源码位置应先调整本机安装输入。ComfyUI 使用 `uv pip sync --python <ComfyUI的Python> app/python/comfyui.lock --extra-index-url https://download.pytorch.org/whl/cu130 --index-strategy unsafe-best-match`。同步是精确匹配，会移除清单外的包；安装自定义节点或改变依赖前应先更新相应清单，不能用旧锁覆盖新增功能。
+已有环境不重复执行 `uv venv`。训练环境沿用清单规定的源码与 Python，使用 `uv pip sync --python <训练Python> app/python/training.lock --extra-index-url https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match`，然后执行 `uv pip install --python <训练Python> --no-deps -e <训练器目录>`。锁文件不绑定 editable 源码路径；实际路径读取 `Config/local.json`。ComfyUI 使用 `uv pip sync --python <ComfyUI的Python> app/python/comfyui.lock --extra-index-url https://download.pytorch.org/whl/cu130 --index-strategy unsafe-best-match`。同步是精确匹配，会移除清单外的包；安装自定义节点或改变依赖前应先更新相应清单，不能用旧锁覆盖新增功能。
 
-新建训练环境时先按 `library/lora-training/trainer.json` 下载并检出固定源码 commit，再运行 `uv venv --python 3.10.19 app/data.local/lora-training/sd-scripts/.venv` 和上述同步命令。ComfyUI 源码安装与 workspace 选择仍走 comfy-cli；需要重建 Python 环境时在已核对的 workspace 下用 `uv venv --python 3.13.12 <ComfyUI目录>/.venv`，再同步对应清单。配置完 Python 路径后重启工作台，使评分和打标读取新配置。
+新建训练环境时先按 `library/lora-training/trainer.json` 下载并检出固定源码 commit，再运行 `uv venv --python 3.10.19 ../story-canvas-trainer/sd-scripts/.venv` 和上述同步命令。ComfyUI 源码安装与 workspace 选择仍走 comfy-cli；需要重建 Python 环境时在已核对的 workspace 下用 `uv venv --python 3.13.12 <ComfyUI目录>/.venv`，再同步对应清单。配置完 Python 路径后重启工作台，使评分和打标读取新配置。
 
 调整素材依赖时运行 `uv pip compile app/python/materials.in --python-version 3.11 --python-platform windows --index-strategy unsafe-best-match --output-file app/python/materials.lock`。验证包括 MUSIQ 实际评分、CUDA 打标、抠图以及 `uv pip check`。训练和生成还需分别验证训练器入口与 ComfyUI 健康接口。环境和模型保留在本机，不提交 Git。
 
@@ -363,13 +363,15 @@ comfy-cli 的后台 PID 在进程异常退出后可能被 Windows 复用，导�
 
 ## 可选 LoRA 训练环境
 
-LoRA 训练使用独立 Python，不复用 ComfyUI Python，也不增加第二个本地服务。仓库固定的
+LoRA 训练使用独立 Python，不复用 ComfyUI Python，也不增加第二个本地服务。训练器源码与虚拟环境放在工具仓库外、同级的 `story-canvas-trainer/`；设备实际路径只保存在 `Config/local.json`。仓库固定的
 commit、包版本、参考模型 SHA 和四份显存预设位于 `library/lora-training/`。默认本机目录为：
 
 ```text
-app/data.local/lora-training/sd-scripts/
+../story-canvas-trainer/sd-scripts/
 └─ .venv/
 ```
+
+Qwen-Image-2.1 的独立 DiffSynth 环境放在同级 `story-canvas-trainer/DiffSynth-Studio/`，参见 [Qwen 训练环境](../dev/qwen-image-lora.md)。本机已完成 100 步短训，尚未接入工作台训练调度。
 
 普通 `setup` 不下载或更新训练器。用户请求后由 Agent 使用 `comfyui-runtime` 和
 `lora-training` 技能显式安装、校验或修复；工作台只诊断和安全执行。当前训练只支持官方 Anima Base，模型路径相对 `models_root`：

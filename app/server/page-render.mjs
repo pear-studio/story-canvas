@@ -10,7 +10,6 @@ import { createRenderTaskId } from "./render-task-id.mjs";
 import { candidateSeedSequence } from "./render-task-helpers.mjs";
 import { freezeRenderRoutes } from "./render-plan-route.mjs";
 import { runPersistedRenderTask } from "./render-project-runtime.mjs";
-import { loadPromptDictionaryForRender } from "./prompt-dictionary-loader.mjs";
 import { compileFrozenExecutionUnits, createTaskSnapshot, validateFrozenRenderTask } from "./render-task-contract.mjs";
 import { createRenderTask, readRenderTask } from "./render-task-storage.mjs";
 import { compilePageRenderTarget, PageRenderError, resolveExactPageIdentity, resolvePageIdentity } from "./page-render-resolver.mjs";
@@ -72,7 +71,7 @@ async function taskDisplay(resolved, projectDirectory) {
   };
 }
 
-function compileTask({ resolved, projectDirectory, projectId, taskId, count, seed, promptDictionary }) {
+function compileTask({ resolved, projectDirectory, projectId, taskId, count, seed }) {
   const compiled = resolved.compiled_page;
   const pageLoras = resolved.page_loras;
   const seeds = candidateSeedSequence(count, seed);
@@ -89,7 +88,7 @@ function compileTask({ resolved, projectDirectory, projectId, taskId, count, see
       reference_images: structuredClone(resolved.reference_images),
       positive_prompt: compiled.positive_prompt,
       negative_prompt: compiled.negative_prompt,
-      prompt_parts: structuredClone(compiled.prompt_parts),
+      prompt_parts: { sections: structuredClone(compiled.sections) },
       loras: structuredClone(pageLoras),
       status: "queued",
     };
@@ -107,20 +106,7 @@ function compileTask({ resolved, projectDirectory, projectId, taskId, count, see
     workflowDefinitions: profileBundle.workflow_definitions,
     items: routedItems,
     promptAudit: { valid: compiled.audit.valid, pages: { [pageKey]: structuredClone(compiled.audit) } },
-    promptDictionary: promptDictionary.identity,
     execution: { candidate_batch: false, queue_all: false },
-    promptRevalidation: {
-      version: 1,
-      pages: {
-        [pageKey]: {
-          records: structuredClone(compiled.audit_records),
-          positive_prompt: compiled.positive_prompt,
-          negative_prompt: compiled.negative_prompt,
-          prompt_parts: structuredClone(compiled.prompt_parts),
-          lora_trigger_parts: structuredClone(compiled.prompt_parts.positive.filter((part) => part.origin === "lora_trigger")),
-        },
-      },
-    },
   });
   snapshot.execution_units = compileFrozenExecutionUnits({
     items: routedItems,
@@ -143,10 +129,7 @@ function compileTask({ resolved, projectDirectory, projectId, taskId, count, see
     items: routedItems,
     project: projectId,
   };
-  validateFrozenRenderTask(task, {
-    dictionaryEntries: promptDictionary.entries,
-    dictionaryIdentity: promptDictionary.identity,
-  });
+  validateFrozenRenderTask(task);
   return task;
 }
 
@@ -157,13 +140,11 @@ async function compileAndPersistExactPageRenderTask(
   const count = normalizeCount(requestedCount);
   const seed = normalizeSeed(requestedSeed, count);
   const project = await resolveProjectLocation(path.resolve(projectRoot), projectId);
-  const promptDictionary = await loadPromptDictionaryForRender(localConfig, repositoryRoot);
   const identity = await resolveExactPageIdentity(project.projectDirectory, pageKey);
   const resolved = await compilePageRenderTarget({
     repositoryRoot,
     projectDirectory: project.projectDirectory,
     pageKey: identity.page_key,
-    dictionaryEntries: promptDictionary.entries,
   });
 
   const task = compileTask({
@@ -173,7 +154,6 @@ async function compileAndPersistExactPageRenderTask(
     taskId,
     count,
     seed,
-    promptDictionary,
   });
   let persisted;
   try { persisted = await createRenderTask(project.projectDirectory, task, await taskDisplay(resolved, project.projectDirectory), { referenceImage: resolved.reference_image_bytes }); }

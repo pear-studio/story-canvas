@@ -31,7 +31,7 @@ import {
   CHARACTER_VISUAL_SCHEMA_ID
 } from "../server/character-files.mjs";
 import { defaultLetteringSettings } from "../server/lettering-settings.mjs";
-import { STORY_PAGE_PROMPT_SCHEMA_ID, STORY_PAGE_NARRATIVE_SCHEMA_ID, storyPromptCategories } from "../server/story-files.mjs";
+import { STORY_PAGE_PROMPT_SCHEMA_ID, STORY_PAGE_NARRATIVE_SCHEMA_ID } from "../server/story-files.mjs";
 
 async function writeJson(target, value) {
   await mkdir(path.dirname(target), { recursive: true });
@@ -48,20 +48,16 @@ async function exists(target) {
 }
 
 function emptyPrompt(schema = STORY_PAGE_PROMPT_SCHEMA_ID) {
-  return { $schema: schema, ...Object.fromEntries(storyPromptCategories.map((category) => [category, []])) };
-}
-
-function barePrompt() {
-  return Object.fromEntries(storyPromptCategories.map((category) => [category, []]));
+  return { $schema: schema, text: "" };
 }
 
 function characterPrompt(id, withVariant = false) {
   return {
     $schema: CHARACTER_PROMPT_SCHEMA_ID,
-    identity: { prompt: barePrompt(), lora: null },
+    prompt_name: id,
     variants: {
-      default: { prompt: { ...barePrompt(), subject: [{ tag: id }] }, loras: [], identity_disabled: [] },
-      ...(withVariant ? { uniform: { prompt: { ...barePrompt(), person: [{ description: "school uniform" }] }, loras: [], identity_disabled: [] } } : {}),
+      default: { text: `${id} 的基础形象。`, reference_images: [] },
+      ...(withVariant ? { uniform: { text: "穿学校制服的艾莲。", reference_images: [] } } : {}),
     },
   };
 }
@@ -99,7 +95,7 @@ async function createFixture(context, { templates = false } = {}) {
     $schema: STORY_PAGE_NARRATIVE_SCHEMA_ID, title: "制服", scene_description: "展示制服全身。", characters: [{ character_id: "ellen", variant_id: "uniform" }], dialogue: [],
   });
   await writeJson(path.join(pagesDirectory, "page-101.prompt.json"), {
-    ...emptyPrompt(), subject: [{ tag: "1girl", character_id: "ellen" }],
+    ...emptyPrompt(), text: "制服全身验证图。",
   });
   await writeJson(path.join(projectDirectory, "lettering", "settings.json"), {
     ...defaultLetteringSettings(),
@@ -154,15 +150,15 @@ test("页面内容与 Prompt 分权写入，标题可编辑且归属移动不改
 
   const promptSession = await readCharacterPagePromptDraft(fixture.repositoryRoot, fixture.projectId, "page-101");
   const prompt = structuredClone(promptSession.document);
-  prompt.setting.push({ description: "calm mood" });
+  prompt.text = "换一个机位的制服全身。";
   promptSession.document = structuredClone(prompt);
   const guestVisual = await readJson(path.join(fixture.charactersDirectory, "guest.visual.json"));
   guestVisual.description = "无关 guest 变化";
   await writeJson(path.join(fixture.charactersDirectory, "guest.visual.json"), guestVisual);
   await saveCharacterPagePromptDraft(fixture.repositoryRoot, promptSession);
-  assert.match(
-    (await readJson(path.join(fixture.pagesDirectory, "page-101.prompt.json"))).setting.at(-1).id,
-    /^token-[a-f0-9]{12}$/,
+  assert.equal(
+    (await readJson(path.join(fixture.pagesDirectory, "page-101.prompt.json"))).text,
+    "换一个机位的制服全身。",
   );
 
   const conflictSession = await readCharacterPagePromptDraft(fixture.repositoryRoot, fixture.projectId, "page-101");
@@ -189,9 +185,7 @@ test("page create 一次性转换显式模板，模板后续变化不回写页�
   assert.equal(goal.visual_goal, undefined);
   assert.ok(goal.title);
   assert.deepEqual(goal.characters, [{ character_id: 'guest', variant_id: 'default' }]);
-  assert.equal(prompt.person[0].tag, "standing");
-  assert.equal(prompt.person[0].character_id, "guest");
-  assert.match(prompt.person[0].id, /^token-[a-f0-9]{12}$/);
+  assert.match(prompt.text, /自然|站立|全身/, "模板展开为本页自由文本");
 
   const beforeInvalid = await readJson(path.join(fixture.pagesDirectory, "index.json"));
   await writeFile(path.join(fixture.repositoryRoot, "library", "visual-page-templates", "catalog.json"), "{ broken", "utf8");
@@ -228,7 +222,7 @@ test("角色配置写入与实际引用它的 character-page Prompt 串行保存
   const pageSession = await readCharacterPagePromptDraft(fixture.repositoryRoot, fixture.projectId, "page-101");
   const characterSession = await readCharacterPromptDraft(fixture.repositoryRoot, fixture.projectId, "ellen");
   const characterDraft = structuredClone(characterSession.document);
-  characterDraft.variants.uniform.prompt.setting.push({ description: "warm mood" });
+  characterDraft.variants.uniform.text = "穿更新制服的艾莲。";
   characterSession.document = structuredClone(characterDraft);
   let release;
   const held = new Promise((resolve) => { release = resolve; });

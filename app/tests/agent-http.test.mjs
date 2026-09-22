@@ -29,10 +29,10 @@ test("Agent 公共页 content/prompt/text-sources read 返回的草稿可直接 
     const draft = await call(kind, "read", { project_id: "demo", target_id: page.page_id });
     assert.equal(draft.target_id, page.page_id);
     if (kind === "content") draft.document.title = "场景中的角色验证";
-    if (kind === "prompt") draft.document.setting.push({ description: "platform", enabled: true });
+    if (kind === "prompt") draft.document.text = "站台全景。";
     await call(kind, "save", draft);
     const reread = await call(kind, "read", { project_id: "demo", target_id: page.page_id });
     if (kind === "content") assert.equal(reread.document.title, "场景中的角色验证");
-    if (kind === "prompt") assert.equal(reread.document.setting[0].description, "platform");
+    if (kind === "prompt") assert.equal(reread.document.text, "站台全景。");
   }
 });

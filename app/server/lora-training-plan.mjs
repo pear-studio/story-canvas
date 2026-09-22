@@ -51,8 +51,8 @@ export async function entryHelp(python, trainerRoot, entry) {
 
 export async function readLoraTrainingEnvironment(projectRoot, config) {
   const manifest = await readJson(path.join(projectRoot, "library", "lora-training", "trainer.json"), { optional: true });
-  const trainerRoot = configuredPath(projectRoot, config?.lora_training?.trainer_root, "app/data.local/lora-training/sd-scripts");
-  const python = configuredPath(projectRoot, config?.lora_training?.python, "app/data.local/lora-training/sd-scripts/.venv/Scripts/python.exe");
+  const trainerRoot = configuredPath(projectRoot, config?.lora_training?.trainer_root, "../story-canvas-trainer/sd-scripts");
+  const python = configuredPath(projectRoot, config?.lora_training?.python, "../story-canvas-trainer/sd-scripts/.venv/Scripts/python.exe");
   const captioning = await inspectCaptioningProvider(projectRoot, config);
   const upscaler = await readUpscaleModelStatus(projectRoot, config);
   const quality = await readMusiqStatus(projectRoot, config);
@@ -106,8 +106,8 @@ export async function loraEnvironmentFileSignature(target) {
 }
 
 export async function loraEnvironmentDependencyFingerprint(projectRoot, config) {
-  const trainerRoot = configuredPath(projectRoot, config?.lora_training?.trainer_root, "app/data.local/lora-training/sd-scripts");
-  const python = configuredPath(projectRoot, config?.lora_training?.python, "app/data.local/lora-training/sd-scripts/.venv/Scripts/python.exe");
+  const trainerRoot = configuredPath(projectRoot, config?.lora_training?.trainer_root, "../story-canvas-trainer/sd-scripts");
+  const python = configuredPath(projectRoot, config?.lora_training?.python, "../story-canvas-trainer/sd-scripts/.venv/Scripts/python.exe");
   const trainerManifestPath = path.join(projectRoot, "library", "lora-training", "trainer.json");
   const trainerManifest = await readJson(trainerManifestPath, { optional: true });
   const captioning = config?.lora_training?.captioning;

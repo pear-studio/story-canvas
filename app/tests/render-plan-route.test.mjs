@@ -13,7 +13,7 @@ import { hashCanonicalJson } from "../server/workflow-definition.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-async function compiledProfile(id = "anima-base-v1") {
+async function compiledProfile(id = "qwen-image-2-1") {
   return readResolvedRenderProfile(repositoryRoot, id);
 }
 
@@ -36,7 +36,7 @@ function expectedRoute(profile, operation, inputSource) {
   };
 }
 
-test("候选 route 只由 operation 和已解析 Anima profile 决定", async () => {
+test("候选 route 只由 operation 和已解析 Qwen profile 决定", async () => {
   const compiled = await compiledProfile();
   const profile = compiled.resolved_profile;
   const items = freezeRenderRoutes([
@@ -65,11 +65,11 @@ test("任务按 source ID 与有效参数 hash 冻结唯一 recipe instance", as
   });
   const snapshot = freezeRegistries(items, compiled);
 
-  assert.deepEqual(Object.keys(snapshot.workflows), ["anima-candidate-page"]);
+  assert.deepEqual(Object.keys(snapshot.workflows), ["qwen-image-2-1-text"]);
   const sharedInstanceId = items[0].render_route.recipe_instance_id;
   assert.deepEqual(Object.keys(snapshot.recipes), [sharedInstanceId]);
   assert.deepEqual(snapshot.recipes[sharedInstanceId], {
-    source_id: "anima-base-v1-candidate",
+    source_id: "qwen-image-2-1-candidate",
     canonical_sha256: hashCanonicalJson(profile.operations.candidates.routes.empty_latent.recipe),
     parameters: profile.operations.candidates.routes.empty_latent.recipe,
   });
@@ -88,9 +88,9 @@ test("普通候选从 route 解析 workflow 与 recipe", async () => {
     purpose: "candidate", snapshot, resolvedProfile: profile,
   });
 
-  assert.equal(plan.definition.id, "anima-candidate-page");
-  assert.equal(plan.route.recipe_source_id, "anima-base-v1-candidate");
-  assert.equal(plan.route.recipe_instance_id, `anima-base-v1-candidate@${hashCanonicalJson(plan.recipe)}`);
+  assert.equal(plan.definition.id, "qwen-image-2-1-text");
+  assert.equal(plan.route.recipe_source_id, "qwen-image-2-1-candidate");
+  assert.equal(plan.route.recipe_instance_id, `qwen-image-2-1-candidate@${hashCanonicalJson(plan.recipe)}`);
   assert.deepEqual(plan.recipe, profile.operations.candidates.routes.empty_latent.recipe);
 });
 
@@ -106,7 +106,7 @@ test("恢复按 route、双 registry 身份和 manifest modifier 解析完整执
   });
 
   assert.deepEqual(plan.route, ordinary.render_route);
-  assert.equal(plan.definition.id, "anima-candidate-page");
+  assert.equal(plan.definition.id, "qwen-image-2-1-text");
   assert.deepEqual(plan.recipe, profile.operations.candidates.routes.empty_latent.recipe);
 });
 
@@ -122,7 +122,7 @@ test("旧 route、旧 snapshot、route 篡改和 recipe registry 篡改统一要
     purpose: "candidate", snapshot, resolvedProfile: profile,
   }), /缺少 recipe_instance_id，请重新创建任务/);
   assert.throws(() => resolveRenderUnitPlan([item], {
-    purpose: "candidate", snapshot: { ...snapshot, base_workflow_id: "anima-candidate-page" }, resolvedProfile: profile,
+    purpose: "candidate", snapshot: { ...snapshot, base_workflow_id: "qwen-image-2-1-text" }, resolvedProfile: profile,
   }), /旧工作流或全局 recipe 字段，请重新创建任务/);
 
   const tamperedRoute = structuredClone(item);

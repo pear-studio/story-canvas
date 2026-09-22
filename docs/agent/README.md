@@ -75,7 +75,7 @@ node docs\agent\sync.mjs doctor
 | `story-editing` | 剧情编辑把当前 sequence 滚动拆分成页面并维护 index 与 narrative |
 | `story-craft-review` | 从用户明确验收的页面提炼解法，经再次确认后更新生成解法库 |
 | `visual-production` | 提出角色与整组视觉方向、机位建议，组织用户验收子设定 |
-| `prompt-authoring` | 编写 Prompt 原型、通过机位控制设置镜头、出图与有限修正；LoRA 改动需用户同意 |
+| `prompt-authoring` | 编写 Prompt 原型、出图与有限修正；LoRA 改动需用户同意 |
 | `visual-exploration` | 用可比较候选校准画风、角色形象、构图和其他主观偏好 |
 | `generation-testing` | Prompt Agent 受控验证动作、镜头或 Prompt 是否可靠，与视觉导演确认视觉目标 |
 | `comfyui-runtime` | 安装、启动、停止或诊断本机生成环境 |

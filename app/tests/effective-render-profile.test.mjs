@@ -13,7 +13,7 @@ import {
 import { hashCanonicalJson } from "../server/workflow-definition.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
-const profileId = "anima-base-v1";
+const profileId = "qwen-image-2-1";
 const stepsTarget = "operations.candidates.routes.empty_latent.recipe.steps";
 
 function state(value) {
@@ -42,7 +42,7 @@ test("effective compiler 区分 applied、redundant、conflict 且冲突不返�
   assert.deepEqual(Object.keys(inherited.workflow_definitions).sort(), Object.keys(inherited.base_bundle.workflow_definitions).sort());
 
   await writeOverride(projectRoot, override([{
-    target: stepsTarget, original: state(32), project: state(30),
+    target: stepsTarget, original: state(25), project: state(30),
   }]));
   const applied = await compileEffectiveRenderProfile({ repositoryRoot, projectRoot, profileId });
   assert.equal(applied.blocked, false);
@@ -52,12 +52,12 @@ test("effective compiler 区分 applied、redundant、conflict 且冲突不返�
   assert.match(applied.source_identity.project_override.sha256, /^[0-9a-f]{64}$/);
 
   await writeOverride(projectRoot, override([{
-    target: stepsTarget, original: state(20), project: state(32),
+    target: stepsTarget, original: state(20), project: state(25),
   }]));
   const redundant = await compileEffectiveRenderProfile({ repositoryRoot, projectRoot, profileId });
   assert.equal(redundant.blocked, false);
   assert.deepEqual(redundant.override_resolution.redundant.map((change) => change.target), [stepsTarget]);
-  assert.equal(redundant.effective_profile.operations.candidates.routes.empty_latent.recipe.steps, 32);
+  assert.equal(redundant.effective_profile.operations.candidates.routes.empty_latent.recipe.steps, 25);
 
   await writeOverride(projectRoot, override([{
     target: stepsTarget, original: state(20), project: state(30),
@@ -75,7 +75,7 @@ test("workflow override 不存在或 definition 非法时不保留基础 registr
   const projectRoot = await withProject(context);
   await writeOverride(projectRoot, override([{
     target: "operations.candidates.routes.empty_latent.workflow",
-    original: state("anima-candidate-page"),
+    original: state("qwen-image-2-1-text"),
     project: state("missing-project-workflow"),
   }]));
   await assert.rejects(
@@ -84,28 +84,20 @@ test("workflow override 不存在或 definition 非法时不保留基础 registr
   );
 });
 
-test("Prompt fragment override 保留项目来源并进入 effective profile", async (context) => {
+test("prompt.text override 进入 effective profile 且来源身份不含片段映射", async (context) => {
   const projectRoot = await withProject(context);
-  const original = {
-    polarity: "negative",
-    placement: "prefix",
-    order: 190,
-    prompt_type: "custom_description",
-    prompt_text: "text",
-  };
-  const project = { ...original, prompt_text: "visible text" };
+  const inherited = await compileEffectiveRenderProfile({ repositoryRoot, projectRoot, profileId });
+  const baseText = inherited.base_bundle.resolved_profile.prompt.text;
   await writeOverride(projectRoot, override([{
-    target: "prompt.fragments.avoid-text",
-    original: state(original),
-    project: state(project),
+    target: "prompt.text",
+    original: state(baseText),
+    project: state("项目替换的全局文字。"),
   }]));
 
   const result = await compileEffectiveRenderProfile({ repositoryRoot, projectRoot, profileId });
-  assert.equal(result.effective_profile.prompt.fragments["avoid-text"].prompt_text, project.prompt_text);
-  assert.deepEqual(result.source_identity.prompt_fragments["avoid-text"], {
-    source_kind: "project_override",
-    source_id: profileId,
-  });
+  assert.equal(result.effective_profile.prompt.text, "项目替换的全局文字。");
+  assert.equal(Object.hasOwn(result.source_identity, "prompt_fragments"), false);
+  assert.equal(Object.hasOwn(result.source_identity, "prompt_policy"), false);
 });
 
 test("inactive 组的三方冲突不参与当前编译，但损坏的完整项目事实仍被拒绝", async (context) => {
@@ -136,7 +128,7 @@ test("显式候选 override 是 compiler 的单一输入，不读取磁盘旧文
   await writeFile(path.join(projectRoot, "render-profile.override.json"), "{broken-json\n", "utf8");
   const candidate = override([{
     target: stepsTarget,
-    original: state(32),
+    original: state(25),
     project: state(31),
   }]);
 

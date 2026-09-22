@@ -23,15 +23,6 @@ export type PromptAuditResult = {
   valid: boolean;
   errors: PromptIssue[];
   warnings: PromptIssue[];
-  stats: {
-    total: number;
-    positive: number;
-    negative: number;
-    weighted: number;
-    custom_description: number;
-    by_source_kind: Record<string, number>;
-    by_category: Record<string, number>;
-  };
 };
 
 export type PromptAuditReport = ({ status: "complete" } & PromptAuditResult & { diagnostics: PromptIssue[] })

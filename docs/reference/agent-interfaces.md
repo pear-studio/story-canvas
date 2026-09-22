@@ -37,7 +37,7 @@ npm --silent --prefix C:/Workspace/story-canvas/app run workbench:api -- GET /ap
 | story:page | sequence | sequence-id | 仅 title、summary |
 | story:page | index | 不传 | 剧情页顺序与归属 |
 | story:page | narrative、prompt | page-id | 对应页面事实 |
-| character:fact | profile、visual、prompt、lora | character-id | 对应角色事实；LoRA 独立投影 |
+| character:fact | profile、visual、prompt | character-id | 对应角色事实 |
 | character:fact | page-index | 不传 | 角色视觉页顺序与归属 |
 | character:fact | page-goal、page-prompt | page-id | 对应角色视觉页事实 |
 
@@ -62,10 +62,15 @@ npm --silent --prefix D:/Workplace/story-canvas/app run visual:produce -- contex
 返回 `{ page_key, save, draft, context }`：
 
 - `save` 给出原有保存接口的 domain/kind；`draft` 是可直接提交的原有 read/save 草稿。只修改 `draft.document`。
-- `context` 只读，不能写回本页。`inherited` 按来源列出原始片段、身份调整后的权重／开关、页面调整后的最终值；关闭项仍保留。组内保留原始调整映射，方便发现失效键。
-- `profile` 包含有效基础词、风格 LoRA、项目配置覆盖及冲突，已经应用 render-profile.override.json；不返回模型可用性扫描或完整工作流。
-- `final` 为当前模式实际编译的正负向文本、LoRA 与来源。自由模式的 `inherited_usage` 为 `structured_base_only`，继承区解释结构化基础，不代表这些词仍参与自由文本生成。
-- `status: complete` 表示读取和审计可完成，不代表没有内容错误或本机可以生成；同时阅读 `audit` 和 `diagnostics`。缺少有效配置／词库等依赖时为 `incomplete`；配置覆盖冲突时 `final` 为 null，不冒充有效配置。事实文件损坏、引用对象缺失等无法读取的情况直接返回明确错误。
+- `context` 只读，不能写回本页：
+  - `global_text: { text, source: "profile" | "project_override" }`：有效全局文字及其来源，已经应用 render-profile.override.json；
+  - `references`：按页面引用顺序列出角色与场景，每项含 `source`、`kind`、`id`、`variant_id`、
+    `prompt_name`、`current_text`（上游当前文本）、`override`（本页整段覆盖，`null` 表示跟随上游）、
+    `effective_text`、`reference_images` 和 `selected_image_ids`；
+  - `page: { text, reference_images }`：本页文本与可带 `purpose` 的本页附图；
+  - `final`：当前实际编译的 `{ positive, negative, images, sections }`；负向恒为空字符串，
+    images 是编号后的最终参考图序列。配置冲突或无法编译时 `final` 为 null，不冒充有效结果。
+- `status: complete` 表示读取和审计可完成，不代表没有内容错误或本机可以生成；同时阅读 `audit` 和 `diagnostics`。缺少有效配置等依赖时为 `incomplete`。事实文件损坏、引用对象缺失等无法读取的情况直接返回明确错误。
 
 读取在同一 `readFacts` 一致性边界内完成，不新增持久化上下文。正常读取不要求模型文件或 ComfyUI 在线；生成前仍用 `preview page` 检查生成条件。同轮未变内容不用重复读，发生目标或依赖冲突后重新读取判断。
 
@@ -73,7 +78,7 @@ npm --silent --prefix D:/Workplace/story-canvas/app run visual:produce -- contex
 $promptContext = node app/scripts/visual-production.mjs context page <project-id> v3/<page-id> | ConvertFrom-Json
 # 先阅读 $promptContext.context；仅修改下方草稿正文。
 $promptDraft = $promptContext.draft
-$promptDraft.document.setting = @(@{ description = "quiet room" })
+$promptDraft.document.text = "希格莉德坐在窗边，望向窗外。"
 $promptDraft | ConvertTo-Json -Depth 100 | node app/scripts/story-page.mjs prompt save -
 # 角色视觉页使用 character-fact.mjs page-prompt save -。
 ```
@@ -104,7 +109,8 @@ HTTP 均为 POST：
 - `/api/agent/facts/:domain/:kind/read`：body 为 `{ project_id, target_id? }`，通过一致性事实读取返回草稿和指纹；
 - `/api/agent/facts/:domain/:kind/save`：body 为 read 返回的完整 JSON，要求两个指纹；
 - 场景使用 `domain=scene, kind=index`，不传 target_id；工作台对应 `/api/projects/:id/workbench/scenes` 的 GET/PUT。
-- 上游 Prompt 或引用切换有下游影响时，save 返回 422 `inheritance_confirmation_required`，details 首项含 `changes` 清单与 `confirmation_sha256`。用户确认后将该 token 加入原请求再次提交；下游变化后须重新确认。
+- 页面 `text_overrides`／`reference_overrides` 的 key 必须匹配当前引用：切换子设定或移除引用时删除
+  对应 key，残留 key 保存被拒绝。override 不随上游更新，恢复继承就是删除 key。
 - `/api/agent/story-context`：body 为 `{ project_id, sequence_id }`，返回上述只读创作上下文。
 
 save 返回实际保存的 value、target_file 及领域诊断。目标过期返回 409 `fact_target_conflict`，依赖过期返回
@@ -115,8 +121,7 @@ save 返回实际保存的 value、target_file 及领域诊断。目标过期返
 不要求全项目 expected revision。导航、项目设置、材料、生成配置、训练事实与生命周期的现有 HTTP 接口
 继续使用各自的 revision 契约；通用 HTTP 命令不自动刷新版本后重提旧请求。
 
-上游合法修改可以留下下游诊断；生成检查当前页面实际依赖。Prompt 保存不能修改 LoRA，LoRA read/save
-使用独立 lora 入口，修改前仍需用户明确同意；这些命令不授权 Agent 开始或继续训练。
+上游合法修改可以留下下游诊断；生成检查当前页面实际依赖。这些命令不授权 Agent 开始或继续训练。
 
 ## 项目创建
 
@@ -134,7 +139,7 @@ template 返回 `{ project_id, document }`，document 包含 metadata、letterin
 
 ## 返回与传输
 
-领域命令成功输出 JSON，完整保留 warnings、downstream_diagnostics、audit、identity_impact 等结果。
+领域命令成功输出 JSON，完整保留 warnings、downstream_diagnostics、audit 等结果。
 合法保存后的审计错误不回滚保存。失败以非零退出码结束，stderr 输出 `{ error, message, status?, details? }`，
 stdout 不混入错误或进度日志。直接解析输出时使用 node 或 `npm --silent --prefix <仓库根>/app run …`。
 

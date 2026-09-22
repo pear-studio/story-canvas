@@ -24,9 +24,9 @@ import {
   emptyMaterialMetadata,
   requireProjectDirectoryName,
 } from "./project-contracts.mjs";
+import { STORY_PROJECT_FORMAT } from "./project-manifest.mjs";
 import {
   STORY_OUTLINE_SCHEMA_ID,
-  storyPromptCategories,
   validateStoryOutlineDocument,
 } from "./story-files.mjs";
 import { factStorage as storage } from "./story-facts.mjs";
@@ -67,16 +67,12 @@ export function createEmptyProjectCreationDocument(projectId) {
     metadata: {
       title: safeProjectId,
       canvas: "2:3",
-      default_render_profile: "anima-base-v1",
+      default_render_profile: "qwen-image-2-1",
     },
     lettering_settings: defaultLetteringSettings(),
     outline: defaultOutline(),
     characters: [],
   };
-}
-
-function emptyPrompt() {
-  return Object.fromEntries(storyPromptCategories.map((category) => [category, []]));
 }
 
 function validateCreationCharacter(character, index, errors) {
@@ -159,8 +155,8 @@ function materializeCreation(document, now) {
     };
     const prompt = {
       $schema: CHARACTER_PROMPT_SCHEMA_ID,
-      identity: { prompt: emptyPrompt(), lora: null },
-      variants: Object.fromEntries(character.variants.map((variant) => [variant.id, { prompt: emptyPrompt(), loras: [], identity_disabled: [] }])),
+      prompt_name: character.name,
+      variants: Object.fromEntries(character.variants.map((variant) => [variant.id, { text: "", reference_images: [] }])),
     };
     return { id: character.id, profile, visual, prompt };
   });
@@ -179,7 +175,7 @@ function materializeCreation(document, now) {
   if (contractErrors.length) fail(422, "invalid_project_creation", contractErrors);
 
   return {
-    project: { $schema: projectSchemaId, ...structuredClone(document.metadata), title: document.metadata.title.trim() },
+    project: { $schema: projectSchemaId, format: STORY_PROJECT_FORMAT, ...structuredClone(document.metadata), title: document.metadata.title.trim() },
     outline,
     characterIndex,
     letteringSettings,

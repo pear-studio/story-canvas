@@ -4,8 +4,7 @@ import { factFixture, fixtureMutation } from "./fact-fixture.mjs";
 const { read: readStoryNarrativeDraft, save: saveStoryNarrativeDraft } = factFixture("story", "narrative");
 const { read: readStoryPromptDraft, save: saveStoryPromptDraft } = factFixture("story", "prompt");
 const { read: readCharacterVisualDraft, save: saveCharacterVisualDraft } = factFixture("character", "visual");
-const { read: readCharacterPromptDraft, saveConfirmed: saveCharacterPromptDraft } = factFixture("character", "prompt");
-const { read: readCharacterLoraDraft, save: saveCharacterLoraDraft } = factFixture("character", "lora");
+const { read: readCharacterPromptDraft, save: saveCharacterPromptDraft } = factFixture("character", "prompt");
 import assert from "node:assert/strict";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -15,20 +14,13 @@ import test from "node:test";
 import {
   DELETED_CHARACTER_RETENTION_MS,
   cleanupDeletedCharacters,
-
-
-
   createCharacter as createCharacterDirect,
-
-
-
   deleteCharacter as deleteCharacterDirect,
   deleteCharacterVariant as deleteCharacterVariantDirect,
   renameCharacterVariant as renameCharacterVariantDirect
 } from "../server/character-facts.mjs";
 import {
   CHARACTER_INDEX_SCHEMA_ID,
-  CHARACTER_LORA_SCHEMA_ID,
   CHARACTER_PROFILE_SCHEMA_ID,
   CHARACTER_PROMPT_SCHEMA_ID,
   CHARACTER_VISUAL_SCHEMA_ID
@@ -39,7 +31,6 @@ import {
   STORY_PAGES_INDEX_SCHEMA_ID,
   STORY_PAGE_NARRATIVE_SCHEMA_ID,
   STORY_PAGE_PROMPT_SCHEMA_ID,
-  storyPromptCategories
 } from "../server/story-files.mjs";
 
 async function writeJson(target, value) {
@@ -59,21 +50,14 @@ async function exists(target) {
   catch { return false; }
 }
 
-function emptyPrompt() {
-  return Object.fromEntries(storyPromptCategories.map((category) => [category, []]));
-}
-
 function characterPrompt(characterId) {
-  const prompt = emptyPrompt();
-  // 片段带稳定 id:写入不会再分配新 id,上游指纹变化只能来自真实内容变化。
-  prompt.subject.push({ tag: characterId, id: `token-${characterId === "ellen" ? "aa0000000001" : "bb0000000001"}` });
   return {
     $schema: CHARACTER_PROMPT_SCHEMA_ID,
-    identity: { prompt: emptyPrompt(), lora: null },
+    prompt_name: characterId,
     variants: {
-      default: { prompt, loras: [], identity_disabled: [] },
+      default: { text: `${characterId} 的基础外观描述。`, reference_images: [] },
       ...(characterId === "ellen" ? {
-        uniform: { prompt: { ...emptyPrompt(), person: [{ description: "school uniform", id: "token-aa0000000002" }] }, loras: [], identity_disabled: [] },
+        uniform: { text: "艾莲穿深色学校制服。", reference_images: [] },
       } : {}),
     },
   };
@@ -104,8 +88,7 @@ async function createFixture(context) {
   });
   await writeJson(path.join(pagesDirectory, "page-001.prompt.json"), {
     $schema: STORY_PAGE_PROMPT_SCHEMA_ID,
-    ...emptyPrompt(),
-    subject: [{ tag: "1girl", character_id: "ellen" }],
+    text: "艾莲抵达车站。",
   });
   await writeJson(path.join(charactersDirectory, "index.json"), {
     $schema: CHARACTER_INDEX_SCHEMA_ID,
@@ -119,87 +102,35 @@ async function createFixture(context) {
     });
     await writeJson(path.join(charactersDirectory, `${characterId}.visual.json`), {
       $schema: CHARACTER_VISUAL_SCHEMA_ID,
-      description: `${characterId} 的基础外观。`,
       variants: characterId === "ellen"
-        ? [{ id: "default", name: "默认", description: "基础外观。" }, { id: "uniform", name: "制服", description: "穿制服。" }]
-        : [{ id: "default", name: "默认", description: "基础外观。" }],
+        ? [{ id: "default", name: "默认" }, { id: "uniform", name: "制服" }]
+        : [{ id: "default", name: "默认" }],
     });
     await writeJson(path.join(charactersDirectory, `${characterId}.prompt.json`), characterPrompt(characterId));
   }
   registerFixtureProjects(repositoryRoot); return { repositoryRoot, projectId, projectDirectory, pagesDirectory, charactersDirectory };
 }
 
-test("Prompt read 修复 variant 结构但仍拒绝存续 identity 的 LoRA 变化", async (context) => {
+test("Prompt read 修复 variant 结构，保存保留 prompt_name 与自由文本", async (context) => {
   const fixture = await createFixture(context);
   const promptTarget = path.join(fixture.charactersDirectory, "ellen.prompt.json");
-  const originalPrompt = await readJson(promptTarget);
-  originalPrompt.identity.lora = { filename: "characters/ellen.safetensors", sha256: "a".repeat(64), weight: 0.8 };
-  originalPrompt.variants.uniform.loras = [{ filename: "characters/uniform.safetensors", sha256: "b".repeat(64), weight: 0.7 }];
-  await writeJson(promptTarget, originalPrompt);
   await writeJson(path.join(fixture.charactersDirectory, "ellen.visual.json"), {
     $schema: CHARACTER_VISUAL_SCHEMA_ID,
-    description: "ellen 的基础外观。",
-    variants: [{ id: "coat", name: "外套", description: "穿外套。" }],
+    variants: [{ id: "coat", name: "外套" }],
   });
 
   const session = await readCharacterPromptDraft(fixture.repositoryRoot, fixture.projectId, "ellen");
   const draft = structuredClone(session.document);
   assert.deepEqual(Object.keys(draft.variants), ["coat"]);
-  assert.deepEqual(draft.identity.lora, originalPrompt.identity.lora);
-  assert.deepEqual(draft.variants.coat.loras, []);
-  draft.variants.coat.prompt.setting.push({ description: "gentle mood" });
+  assert.deepEqual(draft.variants.coat, { text: "", reference_images: [] });
+  assert.equal(draft.prompt_name, "ellen");
+  draft.variants.coat.text = "艾莲穿长外套。";
   session.document = structuredClone(draft);
   await saveCharacterPromptDraft(fixture.repositoryRoot, session);
   const persistedPrompt = await readJson(promptTarget);
   assert.deepEqual(Object.keys(persistedPrompt.variants), ["coat"]);
-  assert.match(persistedPrompt.variants.coat.prompt.setting.at(-1).id, /^token-[a-f0-9]{12}$/);
-
-  const invalidSession = await readCharacterPromptDraft(fixture.repositoryRoot, fixture.projectId, "ellen");
-  const invalidDraft = structuredClone(invalidSession.document);
-  invalidDraft.identity.lora.weight = 0.9;
-  invalidSession.document = structuredClone(invalidDraft);
-  await assert.rejects(
-    () => saveCharacterPromptDraft(fixture.repositoryRoot, invalidSession),
-    (error) => error?.code === "character_prompt_lora_change_forbidden",
-  );
-  assert.equal((await readJson(promptTarget)).identity.lora.weight, 0.8);
-});
-
-test("独立 LoRA save 全量替换配置且无法携带 Prompt", async (context) => {
-  const fixture = await createFixture(context);
-  const session = await readCharacterLoraDraft(fixture.repositoryRoot, fixture.projectId, "ellen");
-  const draft = structuredClone(session.document);
-  assert.equal(draft.$schema, CHARACTER_LORA_SCHEMA_ID);
-  assert.equal(Object.hasOwn(draft, "prompt"), false);
-  assert.equal(draft.identity, null);
-  assert.ok(Array.isArray(draft.variants.default) && Array.isArray(draft.variants.uniform), "每个配置投影为 loras 数组");
-  draft.identity = { filename: "characters/ellen.safetensors", sha256: "a".repeat(64), weight: 0.8, trigger: "ellen" };
-  draft.variants.uniform = [{ filename: "characters/ellen-uniform.safetensors", sha256: "b".repeat(64), weight: 0.7 }];
-  session.document = structuredClone(draft);
-
-  const result = await saveCharacterLoraDraft(fixture.repositoryRoot, session);
-  const persisted = await readJson(result.target_file);
-  assert.deepEqual(persisted.identity.lora, draft.identity);
-  assert.deepEqual(persisted.variants.default.loras, []);
-  assert.deepEqual(persisted.variants.uniform.loras, draft.variants.uniform);
-  assert.deepEqual(persisted.variants.uniform.prompt.person, [{ description: "school uniform", id: "token-aa0000000002" }]);
-
-  const invalidSession = await readCharacterLoraDraft(fixture.repositoryRoot, fixture.projectId, "ellen");
-  const invalid = structuredClone(invalidSession.document);
-  invalid.prompt = emptyPrompt();
-  invalidSession.document = structuredClone(invalid);
-  await assert.rejects(
-    () => saveCharacterLoraDraft(fixture.repositoryRoot, invalidSession),
-    (error) => error?.code === "invalid_character_edit_document",
-  );
-
-  const visual = await readJson(path.join(fixture.charactersDirectory, "ellen.visual.json"));
-  visual.variants.push({ id: "coat", name: "外套", description: "穿外套。" });
-  await writeJson(path.join(fixture.charactersDirectory, "ellen.visual.json"), visual);
-  await assert.rejects(
-    () => readCharacterLoraDraft(fixture.repositoryRoot, fixture.projectId, "ellen"),
-    (error) => error?.code === "character_lora_requires_prompt_repair",
-  );
+  assert.equal(persistedPrompt.variants.coat.text, "艾莲穿长外套。");
+  assert.equal(persistedPrompt.prompt_name, "ellen");
 });
 
 test("Visual save 可移除多余 variant 并返回下游 dangling diagnostics", async (context) => {
@@ -251,10 +182,8 @@ test("character create 原子维护index，并与dangling speaker修复共享项
   assert.equal((await readJson(result.profile_file)).name, "店主");
   assert.deepEqual((await readJson(result.visual_file)).variants.map((variant) => variant.id), ["default"]);
   const createdPrompt = await readJson(result.prompt_file);
-  assert.deepEqual(createdPrompt.identity, { prompt: emptyPrompt(), lora: null });
-  assert.deepEqual(Object.keys(createdPrompt.variants), ["default"]);
-  assert.deepEqual(createdPrompt.variants.default.loras, []);
-  assert.deepEqual(createdPrompt.variants.default.identity_disabled, []);
+  assert.equal(createdPrompt.prompt_name, "店主");
+  assert.deepEqual(createdPrompt.variants, { default: { text: "", reference_images: [] } });
   assert.deepEqual((await readJson(result.index_file)).characters, ["ellen", "guest", "shop-owner"]);
 });
 
@@ -295,12 +224,12 @@ test("character delete 归档核心事实、记录位置并返回引用诊断", 
   );
 });
 
-test("角色配置与 variant 身份写入分别阻止陈旧 story Prompt/narrative 落盘", async (context) => {
+test("角色设定与 variant 身份写入分别阻止陈旧 story Prompt/narrative 落盘", async (context) => {
   const fixture = await createFixture(context);
   const storyPromptSession = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
   const characterPromptSession = await readCharacterPromptDraft(fixture.repositoryRoot, fixture.projectId, "ellen");
   const characterPromptDraft = structuredClone(characterPromptSession.document);
-  characterPromptDraft.variants.uniform.prompt.setting.push({ description: "warm mood" });
+  characterPromptDraft.variants.uniform.text = "艾莲穿更新的制服。";
   characterPromptSession.document = structuredClone(characterPromptDraft);
   let releasePrompt;
   const holdPrompt = new Promise((resolve) => { releasePrompt = resolve; });
@@ -385,47 +314,8 @@ test("角色配置与 variant 身份写入分别阻止陈旧 story Prompt/narrat
   );
 });
 
-test("identity 删除的键对所有造型报告 lost_inheritance，无 diff 时报告为 null", async (context) => {
+test("子设定文字变化使仅引用该造型的旧页面草稿失效", async (context) => {
   const fixture = await createFixture(context);
-  const promptTarget = path.join(fixture.charactersDirectory, "ellen.prompt.json");
-  const original = await readJson(promptTarget);
-  original.identity.prompt.person = [{ description: "amber eyes", id: "token-aa0000000003" }];
-  await writeJson(promptTarget, original);
-
-  // 删除涉及继承词时先要求确认，不写入任何文件。
-  const blockedSession = await readCharacterPromptDraft(fixture.repositoryRoot, fixture.projectId, "ellen");
-  const blockedDraft = structuredClone(blockedSession.document);
-  blockedDraft.identity.prompt.person = [];
-  blockedDraft.variants.uniform.identity_disabled = ["amber eyes"];
-  blockedSession.document = structuredClone(blockedDraft);
-  await assert.rejects(
-    () => factFixture("character", "prompt").save(fixture.repositoryRoot, blockedSession),
-    (error) => error?.code === "inheritance_confirmation_required",
-  );
-
-  const session = await readCharacterPromptDraft(fixture.repositoryRoot, fixture.projectId, "ellen");
-  const draft = structuredClone(session.document);
-  draft.identity.prompt.person = [];
-  session.document = structuredClone(draft);
-  const result = await saveCharacterPromptDraft(fixture.repositoryRoot, session);
-  assert.deepEqual(result.identity_impact, {
-    per_variant: {
-      default: { lost_inheritance: ["amber eyes"], new_inheritance: [] },
-      uniform: { lost_inheritance: ["amber eyes"], new_inheritance: [] },
-    },
-  }, "能落盘的删除必然没有 identity_disabled 引用，对所有造型报告 lost_inheritance");
-
-  const unchangedSession = await readCharacterPromptDraft(fixture.repositoryRoot, fixture.projectId, "ellen");
-  const unchangedDraft = structuredClone(unchangedSession.document);
-  unchangedDraft.variants.default.prompt.setting.push({ description: "quiet mood" });
-  unchangedSession.document = structuredClone(unchangedDraft);
-  const unchanged = await saveCharacterPromptDraft(fixture.repositoryRoot, unchangedSession);
-  assert.equal(unchanged.identity_impact, null, "identity.prompt 无 diff 时无影响报告");
-});
-
-test("identity 变化视为所有配置变化，使仅引用 base 配置的旧页面草稿失效", async (context) => {
-  const fixture = await createFixture(context);
-  // page-002 引用 default 造型；identity 之外的配置不变也必须被锁定。
   await writeJson(path.join(fixture.pagesDirectory, "index.json"), {
     $schema: STORY_PAGES_INDEX_SCHEMA_ID,
     by_sequence: { arrival: ["page-001", "page-002"] },
@@ -439,14 +329,13 @@ test("identity 变化视为所有配置变化，使仅引用 base 配置的旧�
   });
   await writeJson(path.join(fixture.pagesDirectory, "page-002.prompt.json"), {
     $schema: STORY_PAGE_PROMPT_SCHEMA_ID,
-    ...emptyPrompt(),
-    subject: [{ tag: "1girl", character_id: "ellen" }],
+    text: "艾莲穿便装。",
   });
 
   const storyPromptSession = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-002");
   const characterPromptSession = await readCharacterPromptDraft(fixture.repositoryRoot, fixture.projectId, "ellen");
   const characterPromptDraft = structuredClone(characterPromptSession.document);
-  characterPromptDraft.identity.prompt.person.push({ description: "upright posture" });
+  characterPromptDraft.variants.default.text = "艾莲的新基础形象。";
   characterPromptSession.document = structuredClone(characterPromptDraft);
   let releasePrompt;
   const holdPrompt = new Promise((resolve) => { releasePrompt = resolve; });
@@ -464,31 +353,11 @@ test("identity 变化视为所有配置变化，使仅引用 base 配置的旧�
   );
   releasePrompt();
   await pendingSave;
-  const promptResult = await characterPromptWrite;
-  assert.deepEqual(promptResult.identity_impact, {
-    per_variant: {
-      default: { lost_inheritance: [], new_inheritance: ["upright posture"] },
-      uniform: { lost_inheritance: [], new_inheritance: ["upright posture"] },
-    },
-  });
-  assert.deepEqual(
-    (await readJson(path.join(fixture.charactersDirectory, "ellen.prompt.json"))).identity.prompt.person.map((fragment) => fragment.description),
-    ["upright posture"],
+  await characterPromptWrite;
+  assert.equal(
+    (await readJson(path.join(fixture.charactersDirectory, "ellen.prompt.json"))).variants.default.text,
+    "艾莲的新基础形象。",
   );
-  await assert.rejects(
-    () => saveStoryPromptDraft(fixture.repositoryRoot, storyPromptSession),
-    (error) => error?.code === "fact_upstream_conflict",
-  );
-});
-
-test("identity.lora 变化同样使在途页面 Prompt 会话上游冲突", async (context) => {
-  const fixture = await createFixture(context);
-  const storyPromptSession = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
-  const loraSession = await readCharacterLoraDraft(fixture.repositoryRoot, fixture.projectId, "ellen");
-  const draft = structuredClone(loraSession.document);
-  draft.identity = { filename: "characters/ellen.safetensors", sha256: "a".repeat(64), weight: 0.8, trigger: "ellen" };
-  loraSession.document = structuredClone(draft);
-  await saveCharacterLoraDraft(fixture.repositoryRoot, loraSession);
   await assert.rejects(
     () => saveStoryPromptDraft(fixture.repositoryRoot, storyPromptSession),
     (error) => error?.code === "fact_upstream_conflict",
@@ -536,8 +405,7 @@ test("重命名子设定联动更新 visual、prompt 与全部引用，键序与
   });
   await writeJson(path.join(fixture.pagesDirectory, "page-002.prompt.json"), {
     $schema: STORY_PAGE_PROMPT_SCHEMA_ID,
-    ...emptyPrompt(),
-    subject: [{ tag: "1girl", character_id: "ellen" }],
+    text: "艾莲再次登场。",
   });
 
   const result = await renameCharacterVariant(fixture.repositoryRoot, fixture.projectId, "ellen", "uniform", "casual");
@@ -548,11 +416,7 @@ test("重命名子设定联动更新 visual、prompt 与全部引用，键序与
   assert.deepEqual(result.visual.variants.map((variant) => variant.id), ["default", "casual"], "visual 条目位置不变");
   assert.equal(result.visual.variants[1].name, "制服");
   assert.deepEqual(Object.keys(result.prompt.variants), ["default", "casual"], "prompt 键序不变");
-  assert.deepEqual(
-    result.prompt.variants.casual.prompt.person,
-    [{ description: "school uniform", id: "token-aa0000000002" }],
-    "配置内容随键一起改名",
-  );
+  assert.equal(result.prompt.variants.casual.text, "艾莲穿深色学校制服。", "配置内容随键一起改名");
   for (const pageId of ["page-001", "page-002"]) {
     const narrative = await readJson(path.join(fixture.pagesDirectory, `${pageId}.content.json`));
     assert.deepEqual(narrative.characters, [{ character_id: "ellen", variant_id: "casual" }]);
@@ -590,8 +454,8 @@ const deleteCharacter = fixtureMutation(deleteCharacterDirect);
 const deleteCharacterVariant = fixtureMutation(deleteCharacterVariantDirect);
 const renameCharacterVariant = fixtureMutation(renameCharacterVariantDirect);
 
-
-test("子设定重命名同时更新跨归属画面引用、页面归属和继承调整", async context => {
+for (const [text, withReferences] of [["本页覆盖", true], ["", true], ["", false]]) {
+test(`子设定重命名同时更新跨归属画面引用、页面归属和覆盖键：${JSON.stringify({ text, withReferences })}`, async context => {
   const fixture = await createFixture(context);
   const index = await readPageIndex(fixture.projectDirectory);
   index.pages[0] = { page_id: "page-001", owner_kind: "scene", scene_id: "station", variant_id: "night" };
@@ -599,9 +463,11 @@ test("子设定重命名同时更新跨归属画面引用、页面归属和继�
   await writeJson(path.join(fixture.pagesDirectory, "index.json"), index);
   const source = await readJson(path.join(fixture.pagesDirectory, "page-001.content.json"));
   await writeJson(path.join(fixture.pagesDirectory, "page-002.content.json"), { ...source, characters: [], dialogue: [] });
-  await writeJson(path.join(fixture.pagesDirectory, "page-002.prompt.json"), { $schema: STORY_PAGE_PROMPT_SCHEMA_ID, ...emptyPrompt() });
+  await writeJson(path.join(fixture.pagesDirectory, "page-002.prompt.json"), { $schema: STORY_PAGE_PROMPT_SCHEMA_ID, text: "" });
   const prompt = await readJson(path.join(fixture.pagesDirectory, "page-001.prompt.json"));
-  prompt.inheritance = { "character:ellen:uniform": { "person|school uniform": { weight: 0.5 } } };
+  prompt.text_overrides = { "character:ellen:uniform": text };
+  if (withReferences) prompt.reference_overrides = { "character:ellen:uniform": [] };
+  else delete prompt.reference_overrides;
   await writeJson(path.join(fixture.pagesDirectory, "page-001.prompt.json"), prompt);
   const result = await renameCharacterVariant(fixture.repositoryRoot, fixture.projectId, "ellen", "uniform", "casual");
   assert.deepEqual(result.updated_page_ids, ["page-001", "page-002"]);
@@ -610,7 +476,8 @@ test("子设定重命名同时更新跨归属画面引用、页面归属和继�
   assert.equal(nextIndex.pages[1].variant_id, "casual");
   assert.equal((await readJson(path.join(fixture.pagesDirectory, "page-001.content.json"))).characters[0].variant_id, "casual");
   assert.deepEqual((await readJson(path.join(fixture.pagesDirectory, "page-002.content.json"))).characters, []);
-  assert.deepEqual((await readJson(path.join(fixture.pagesDirectory, "page-001.prompt.json"))).inheritance, {
-    "character:ellen:casual": { "person|school uniform": { weight: 0.5 } },
-  });
+  const renamed = await readJson(path.join(fixture.pagesDirectory, "page-001.prompt.json"));
+  assert.deepEqual(renamed.text_overrides, { "character:ellen:casual": text });
+  assert.deepEqual(renamed.reference_overrides, withReferences ? { "character:ellen:casual": [] } : undefined);
 });
+}

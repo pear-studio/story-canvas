@@ -4,12 +4,11 @@ import {PAGES_INDEX_SCHEMA_ID} from '../server/pages-store.mjs';
 import { factFixture } from "./fact-fixture.mjs";
 const { read: readStoryNarrativeDraft } = factFixture("story", "narrative");
 const { read: readStoryPromptDraft, save: saveStoryPromptDraft } = factFixture("story", "prompt");
-const { read: readCharacterPromptDraft, saveConfirmed: saveCharacterPromptDraft } = factFixture("character", "prompt");
+const { read: readCharacterPromptDraft, save: saveCharacterPromptDraft } = factFixture("character", "prompt");
 const { read: readCharacterPagePromptDraft, save: saveCharacterPagePromptDraft } = factFixture("character", "page-prompt");
 import { createServer } from "node:http";
 import { createHttpRequestHandler } from "../server/http-app.mjs";
 import { createProjectOperations } from "../server/project-operations.mjs";
-import { pagePromptContextSha256 } from "../server/fact-drafts.mjs";
 import assert from "node:assert/strict";
 import { access, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
@@ -31,21 +30,15 @@ import { enqueueGenerationTask, generationReference, readGenerationQueue, waitFo
 import { compilePageRenderTarget, resolvePageForRender } from "../server/page-render-resolver.mjs";
 import {
   CHARACTER_INDEX_SCHEMA_ID,
-  CHARACTER_PAGE_GOAL_SCHEMA_ID,
-  CHARACTER_PAGES_INDEX_SCHEMA_ID,
   CHARACTER_PROFILE_SCHEMA_ID,
   CHARACTER_PROMPT_SCHEMA_ID,
   CHARACTER_VISUAL_SCHEMA_ID
 } from "../server/character-files.mjs";
 import {
   STORY_OUTLINE_SCHEMA_ID,
-  STORY_PAGES_INDEX_SCHEMA_ID,
   STORY_PAGE_NARRATIVE_SCHEMA_ID,
   STORY_PAGE_PROMPT_SCHEMA_ID,
-  storyPromptCategories
 } from "../server/story-files.mjs";
-import { loadPromptDictionaryForRender } from "../server/prompt-dictionary-loader.mjs";
-
 
 import { renameCharacterVariant } from "../server/character-facts.mjs";
 import { capturePagePromptSnapshot, compilePageRenderInspectionContext } from "../server/page-render-resolver.mjs";
@@ -56,89 +49,6 @@ import { inspectionGenerationSignature, taskGenerationSignature } from "../serve
 
 const sourceRepositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-test("Qwen 的 AVOID、单图路由和冻结输入贯通；源材料变化不改变排队输入", async context => {
-  const fixture = await createFixture(context);
-  const sharp = (await import("sharp")).default;
-  const { saveMaterial } = await import("../server/project-materials.mjs");
-  const writeProjectMaterial = (directory, value) => saveMaterial(directory, fixture.projectId, value);
-  const { uploadFrozenReferenceImage } = await import("../server/reference-image.mjs");
-  const { validateFrozenRenderTask } = await import("../server/render-task-contract.mjs");
-  await writeJson(path.join(fixture.projectDirectory, "project.json"), { title: "Qwen", canvas: "2:3", default_render_profile: "qwen-image-2-1" });
-  const narrativeFile = path.join(fixture.projectDirectory, "pages/page-001.content.json");
-  const narrative = await readJson(narrativeFile); narrative.characters = [];
-  await writeJson(narrativeFile, narrative);
-  const bytes = await sharp({ create: { width: 64, height: 96, channels: 3, background: "#123456" } }).png().toBuffer();
-  await writeProjectMaterial(fixture.projectDirectory, { file: "reference-11111111-1111-4111-8111-111111111111.png", title: "参考", encoding: "base64", content: bytes.toString("base64") });
-  const draft = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
-  draft.document.reference_images = [{ id: "ref-11111111-1111-4111-8111-111111111111", file: "reference-11111111-1111-4111-8111-111111111111.png", title: "参考" }];
-  await saveStoryPromptDraft(fixture.repositoryRoot, draft);
-  const { task, task_directory } = await compileAndPersistPageRenderTask(fixture.repositoryRoot, fixture.projectId, "page-001", { count: 3, repositoryRoot: sourceRepositoryRoot });
-  const dictionarySnapshot = await dictionary();
-  validateFrozenRenderTask(task, { dictionaryEntries: dictionarySnapshot.entries, dictionaryIdentity: dictionarySnapshot.identity });
-  assert.equal(task.items.length, 3);
-  assert.equal(task.snapshot.execution_units.length, 3);
-  assert.match(task.items[0].positive_prompt, /AVOID: crowded background/);
-  assert.equal(task.items[0].negative_prompt, "");
-  assert.equal(task.items[0].render_route.input_source, "reference_image");
-  const workflow = task.snapshot.execution_units[0].workflow.api;
-  assert.equal(workflow["4"].inputs.prompt, task.items[0].positive_prompt);
-  assert.equal(workflow["4"].inputs.negative_prompt, "");
-  assert.deepEqual(workflow["7"].inputs.model, ["10", 0]);
-  assert.deepEqual(workflow["10"].inputs.model, ["1", 0]);
-  assert.equal(workflow["6"].inputs.width, 832);
-  const identity = task.items[0].reference_images[0];
-  const inspectSignature = async () => inspectionGenerationSignature(await compilePageRenderInspectionContext({
-    repositoryRoot: sourceRepositoryRoot, projectDirectory: fixture.projectDirectory, pageKey: task.items[0].page_key,
-    dictionaryEntries: dictionarySnapshot.entries,
-  }));
-  assert.equal(await inspectSignature(), taskGenerationSignature(task, task.items[0]));
-  const frozen = await readFile(path.join(task_directory, "inputs", `${identity.sha256}.png`));
-  await writeProjectMaterial(fixture.projectDirectory, { file: "reference-11111111-1111-4111-8111-111111111111.png", title: "替换", encoding: "base64", content: (await sharp(bytes).negate().png().toBuffer()).toString("base64") });
-  assert.notEqual(await inspectSignature(), taskGenerationSignature(task, task.items[0]), "同名参考图内容变化使旧候选不再匹配");
-  let received;
-  const server = createServer(async (request, response) => {
-    const buffers = []; for await (const buffer of request) buffers.push(buffer);
-    received = Buffer.concat(buffers);
-    response.setHeader("content-type", "application/json");
-    response.end(JSON.stringify({ subfolder: "StoryCanvas/references", name: `${identity.sha256}.png` }));
-  });
-  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
-  context.after(() => new Promise(resolve => server.close(resolve)));
-  const url = `http://127.0.0.1:${server.address().port}`;
-  assert.equal(await uploadFrozenReferenceImage(url, task_directory, identity), workflow["20"].inputs.image);
-  assert.ok(received.includes(frozen), "上传任务冻结图片，而非后来替换的材料");
-  const tampered = structuredClone(task); tampered.items[0].reference_images[0].sha256 = "f".repeat(64);
-  assert.throws(() => validateFrozenRenderTask(tampered, { dictionaryEntries: dictionarySnapshot.entries, dictionaryIdentity: dictionarySnapshot.identity }), /指纹|变化|不一致/);
-  await writeFile(path.join(task_directory, "inputs", `${identity.sha256}.png`), "broken");
-  await assert.rejects(uploadFrozenReferenceImage(url, task_directory, identity), /校验失败/);
-  await writeJson(path.join(fixture.projectDirectory, "project.json"), { title: "Anima", canvas: "2:3", default_render_profile: "anima-base-v1" });
-  await assert.rejects(compileAndPersistPageRenderTask(fixture.repositoryRoot, fixture.projectId, "page-001", { repositoryRoot: sourceRepositoryRoot }), /不支持参考图/);
-});
-
-test("圈选标签保存原文，冻结任务与复验使用无花括号的加权 Prompt；未知圈选只阻止生成", async context => {
-  const fixture = await createFixture(context);
-  const draft = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
-  draft.document.setting.push({ description: "a person with ({blue eyes}:0.8)" });
-  await saveStoryPromptDraft(fixture.repositoryRoot, draft);
-  const { task } = await compileAndPersistPageRenderTask(fixture.repositoryRoot, fixture.projectId, "page-001", { repositoryRoot: sourceRepositoryRoot });
-  const stored = await readRenderTask(fixture.projectDirectory, task.id);
-  const { validateFrozenRenderTask } = await import("../server/render-task-contract.mjs");
-  const snapshot = await dictionary();
-  validateFrozenRenderTask(stored.task, { dictionaryEntries: snapshot.entries, dictionaryIdentity: snapshot.identity });
-  assert.match(stored.task.items[0].positive_prompt, /a person with \(blue eyes:0\.8\)/);
-  assert.equal(stored.task.items[0].positive_prompt.includes("{"), false);
-  const persisted = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
-  assert.equal(persisted.document.setting.at(-1).description, "a person with ({blue eyes}:0.8)");
-  persisted.document.setting.at(-1).description = "a person with {this_tag_does_not_exist_123456}";
-  await saveStoryPromptDraft(fixture.repositoryRoot, persisted);
-  await assert.rejects(compileAndPersistPageRenderTask(fixture.repositoryRoot, fixture.projectId, "page-001", { repositoryRoot: sourceRepositoryRoot }), error => {
-    assert.equal(error.code, "page_not_renderable");
-    assert.match(JSON.stringify(error.details), /圈选标签不在词库中：this_tag_does_not_exist_123456/);
-    return true;
-  });
-});
-
-
 async function writeJson(target, value) {
   await mkdir(path.dirname(target), { recursive: true });
   await writeFile(target, `${JSON.stringify(value, null, 2)}\n`, "utf8");
@@ -148,27 +58,17 @@ async function readJson(target) {
   return JSON.parse(await readFile(target, "utf8"));
 }
 
-function prompt(schema = STORY_PAGE_PROMPT_SCHEMA_ID) {
-  return { $schema: schema, ...Object.fromEntries(storyPromptCategories.map((category) => [category, []])) };
+function pagePrompt(text = "", extra = {}) {
+  return { $schema: STORY_PAGE_PROMPT_SCHEMA_ID, text, ...extra };
 }
 
 function characterPrompt() {
-  const base = prompt(undefined);
-  delete base.$schema;
-  base.subject = [{ description: "ellen identity" }];
-  base.avoid = [{ description: "incorrect identity" }];
-  const uniform = structuredClone(base);
-  uniform.person.push({ description: "school uniform" });
   return {
     $schema: CHARACTER_PROMPT_SCHEMA_ID,
-    identity: { prompt: Object.fromEntries(storyPromptCategories.map((category) => [category, []])), lora: null },
+    prompt_name: "艾莲",
     variants: {
-      default: { prompt: base, loras: [], identity_disabled: [] },
-      uniform: {
-        prompt: uniform,
-        loras: [{ filename: "characters/ellen-uniform.safetensors", sha256: "a".repeat(64), weight: 0.8, trigger: "ellen_uniform" }],
-        identity_disabled: [],
-      },
+      default: { text: "艾莲，银发少女，琥珀色眼睛。", reference_images: [] },
+      uniform: { text: "艾莲，银发少女，穿深色学校制服。", reference_images: [] },
     },
   };
 }
@@ -179,9 +79,8 @@ async function createFixture(context) {
   const projectId = "demo";
   const projectDirectory = path.join(repositoryRoot, "workspace", projectId);
   await mkdir(path.join(projectDirectory, "pages"), { recursive: true });
-  await mkdir(path.join(projectDirectory, "pages"), { recursive: true });
   await writeJson(path.join(projectDirectory, "project.json"), {
-    title: "页面渲染测试", canvas: "2:3", default_render_profile: "anima-base-v1",
+    format: "story-free-text-v1", title: "页面渲染测试", canvas: "2:3", default_render_profile: "qwen-image-2-1",
   });
   await writeJson(path.join(projectDirectory, "story", "outline.json"), {
     $schema: STORY_OUTLINE_SCHEMA_ID,
@@ -201,12 +100,7 @@ async function createFixture(context) {
     characters: [{ character_id: "ellen", variant_id: "uniform" }],
     dialogue: [{ id: "dialogue-aaaaaaaaaaaa", mode: "speech", speaker: "guest", text: "画外传来声音。" }],
   });
-  await writeJson(path.join(projectDirectory, "pages", "page-001.prompt.json"), {
-    ...prompt(),
-    subject: [{ tag: "1girl" }, { description: "disabled subject", enabled: false }],
-    setting: [{ description: "warm sunset light" }],
-    avoid: [{ description: "crowded background" }],
-  });
+  await writeJson(path.join(projectDirectory, "pages", "page-001.prompt.json"), pagePrompt("艾莲站在站台边，望向远处的列车。"));
   await writeJson(path.join(projectDirectory, "characters", "index.json"), {
     $schema: CHARACTER_INDEX_SCHEMA_ID, characters: ["ellen", "guest"],
   });
@@ -215,16 +109,22 @@ async function createFixture(context) {
   });
   await writeJson(path.join(projectDirectory, "characters", "ellen.visual.json"), {
     $schema: CHARACTER_VISUAL_SCHEMA_ID,
-    description: "银发少女。",
-    variants: [{ id: "default", name: "默认", description: "基础形象。" }, { id: "uniform", name: "制服", description: "深色学校制服。" }],
+    variants: [{ id: "default", name: "默认" }, { id: "uniform", name: "制服" }],
   });
   await writeJson(path.join(projectDirectory, "characters", "ellen.prompt.json"), characterPrompt());
+  await writeJson(path.join(projectDirectory, "characters", "guest.profile.json"), {
+    $schema: CHARACTER_PROFILE_SCHEMA_ID, name: "路人", description: "画外音。",
+  });
+  await writeJson(path.join(projectDirectory, "characters", "guest.visual.json"), {
+    $schema: CHARACTER_VISUAL_SCHEMA_ID, variants: [{ id: "default", name: "默认" }],
+  });
+  await writeJson(path.join(projectDirectory, "characters", "guest.prompt.json"), {
+    $schema: CHARACTER_PROMPT_SCHEMA_ID, prompt_name: "路人", variants: { default: { text: "", reference_images: [] } },
+  });
   await writeJson(path.join(projectDirectory, "pages", "page-101.content.json"), {
     $schema: STORY_PAGE_NARRATIVE_SCHEMA_ID, title: "基础形象", scene_description: "展示艾莲的基础形象。", characters:[{character_id:"ellen",variant_id:"default"}], dialogue:[],
   });
-  await writeJson(path.join(projectDirectory, "pages", "page-101.prompt.json"), {
-    ...prompt(), subject: [{ tag: "1girl" }], camera: [{ tag: "full_body" }],
-  });
+  await writeJson(path.join(projectDirectory, "pages", "page-101.prompt.json"), pagePrompt("艾莲的基础形象验证图。"));
   registerFixtureProjects(repositoryRoot); return { repositoryRoot, projectId, projectDirectory };
 }
 
@@ -241,25 +141,200 @@ async function serveCliFixture(context, fixture) {
   });
 }
 
-async function dictionary() {
-  return loadPromptDictionaryForRender({}, sourceRepositoryRoot);
-}
-
 async function prepareWriteAuditFixture(fixture) {
   await mkdir(path.join(fixture.repositoryRoot, "app"), { recursive: true });
   await cp(
     path.join(sourceRepositoryRoot, "app", "comfyui-endpoints.json"),
     path.join(fixture.repositoryRoot, "app", "comfyui-endpoints.json"),
   );
-  for (const directory of ["render-profiles", "prompt-policies", "render-recipes", "workflows"]) {
+  for (const directory of ["render-profiles", "render-recipes", "workflows"]) {
     await cp(path.join(sourceRepositoryRoot, "library", directory), path.join(fixture.repositoryRoot, "library", directory), { recursive: true });
   }
-  const dictionaryRoot = path.join(fixture.repositoryRoot, "library", "prompt-dictionaries");
-  await mkdir(dictionaryRoot, { recursive: true });
-  await writeFile(path.join(dictionaryRoot, "danbooru.csv"), [
-    "1girl", "1boy", "2girls", "solo", "standing", "full_body", "artist_name", "blurry", "jpeg_artifacts", "chromatic_aberration", "watermark",
-  ].map((tag) => `${tag},0,10000,`).join("\n") + "\nlow_tag,0,500,\nrare_tag,0,10,\nartist_tag,1,10000,\n");
-  await writeFile(path.join(dictionaryRoot, "zh.csv"), "standing,站立\n");
+}
+
+async function saveReferenceMaterial(fixture, id, background = "#123456") {
+  const sharp = (await import("sharp")).default;
+  const { saveMaterial } = await import("../server/project-materials.mjs");
+  const bytes = await sharp({ create: { width: 64, height: 96, channels: 3, background } }).png().toBuffer();
+  const file = `reference-${id}.png`;
+  await saveMaterial(fixture.projectDirectory, fixture.projectId, { file, title: "参考", encoding: "base64", content: bytes.toString("base64") });
+  return { id: `ref-${id}`, file, title: "参考", bytes };
+}
+
+test("单张参考图使用“参考图：”约定，冻结输入贯通；源材料变化不改变排队输入", async context => {
+  const fixture = await createFixture(context);
+  await prepareWriteAuditFixture(fixture);
+  const { uploadFrozenReferenceImage } = await import("../server/reference-image.mjs");
+  const { validateFrozenRenderTask } = await import("../server/render-task-contract.mjs");
+  const { saveMaterial } = await import("../server/project-materials.mjs");
+  const sharp = (await import("sharp")).default;
+  const narrativeFile = path.join(fixture.projectDirectory, "pages/page-001.content.json");
+  const narrative = await readJson(narrativeFile); narrative.characters = [];
+  await writeJson(narrativeFile, narrative);
+  const reference = await saveReferenceMaterial(fixture, "11111111-1111-4111-8111-111111111111");
+  const draft = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
+  draft.document.reference_images = [{ id: reference.id, file: reference.file, title: "参考", purpose: "画风参考" }];
+  await saveStoryPromptDraft(fixture.repositoryRoot, draft);
+  const { task, task_directory } = await compileAndPersistPageRenderTask(fixture.repositoryRoot, fixture.projectId, "page-001", { count: 3, repositoryRoot: fixture.repositoryRoot });
+  validateFrozenRenderTask(task);
+  assert.equal(task.items.length, 3);
+  assert.equal(task.snapshot.execution_units.length, 3);
+  assert.match(task.items[0].positive_prompt, /^根据以下设定和画面描述创作一幅新画面/);
+  assert.match(task.items[0].positive_prompt, /参考图：画风参考。/);
+  assert.doesNotMatch(task.items[0].positive_prompt, /<image1>/);
+  assert.match(task.items[0].positive_prompt, /本页描述：\n艾莲站在站台边/);
+  assert.equal(task.items[0].negative_prompt, "");
+  assert.equal(task.items[0].render_route.input_source, "reference_image");
+  const workflow = task.snapshot.execution_units[0].workflow.api;
+  assert.equal(workflow["4"].inputs.prompt, task.items[0].positive_prompt);
+  assert.equal(workflow["4"].inputs.negative_prompt, "");
+  assert.deepEqual(workflow["7"].inputs.model, ["10", 0]);
+  assert.deepEqual(workflow["10"].inputs.model, ["1", 0]);
+  assert.equal(workflow["6"].inputs.width, 832);
+  const identity = task.items[0].reference_images[0];
+  const inspectSignature = async () => inspectionGenerationSignature(await compilePageRenderInspectionContext({
+    repositoryRoot: fixture.repositoryRoot, projectDirectory: fixture.projectDirectory, pageKey: task.items[0].page_key,
+  }));
+  assert.equal(await inspectSignature(), taskGenerationSignature(task, task.items[0]));
+  const frozen = await readFile(path.join(task_directory, "inputs", `${identity.sha256}.png`));
+  await saveMaterial(fixture.projectDirectory, fixture.projectId, { file: reference.file, title: "替换", encoding: "base64", content: (await sharp(reference.bytes).negate().png().toBuffer()).toString("base64") });
+  assert.notEqual(await inspectSignature(), taskGenerationSignature(task, task.items[0]), "同名参考图内容变化使旧候选不再匹配");
+  let received;
+  const server = createServer(async (request, response) => {
+    const buffers = []; for await (const buffer of request) buffers.push(buffer);
+    received = Buffer.concat(buffers);
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify({ subfolder: "StoryCanvas/references", name: `${identity.sha256}.png` }));
+  });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  context.after(() => new Promise(resolve => server.close(resolve)));
+  const url = `http://127.0.0.1:${server.address().port}`;
+  assert.equal(await uploadFrozenReferenceImage(url, task_directory, identity), workflow["20"].inputs.image);
+  assert.ok(received.includes(frozen), "上传任务冻结图片，而非后来替换的材料");
+  const tampered = structuredClone(task); tampered.items[0].reference_images[0].sha256 = "f".repeat(64);
+  assert.throws(() => validateFrozenRenderTask(tampered), /指纹|变化|不一致/);
+  await writeFile(path.join(task_directory, "inputs", `${identity.sha256}.png`), "broken");
+  await assert.rejects(uploadFrozenReferenceImage(url, task_directory, identity), /校验失败/);
+});
+
+test("多参考图按角色、场景、本页顺序编号组装，附图无用途仍占位置", async context => {
+  const fixture = await createFixture(context);
+  await prepareWriteAuditFixture(fixture);
+  const { defaultSceneFacts } = await import("../server/scene-files.mjs");
+  const refs = [];
+  for (let index = 0; index < 4; index += 1) {
+    refs.push(await saveReferenceMaterial(fixture, `11111111-1111-4111-8111-${String(index).padStart(12, "0")}`));
+  }
+  const character = await readJson(path.join(fixture.projectDirectory, "characters/ellen.prompt.json"));
+  character.variants.uniform.reference_images = refs.slice(0, 2).map(({ id, file, title }) => ({ id, file, title }));
+  await writeJson(path.join(fixture.projectDirectory, "characters/ellen.prompt.json"), character);
+  const scene = defaultSceneFacts("station", "车站");
+  scene.prompt.variants.default.text = "傍晚的城市车站。";
+  scene.prompt.variants.default.reference_images = [{ id: refs[2].id, file: refs[2].file, title: refs[2].title }];
+  for (const kind of ["profile", "visual", "prompt"]) await writeJson(path.join(fixture.projectDirectory, `scenes/station.${kind}.json`), scene[kind]);
+  await writeJson(path.join(fixture.projectDirectory, "scenes/index.json"), { $schema: SCENE_INDEX_SCHEMA_ID, scenes: ["station"] });
+  const draft = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
+  Object.assign(draft.document, {
+    scene_id: "station", scene_variant_id: "default",
+    reference_images: [{ id: refs[3].id, file: refs[3].file, title: refs[3].title }],
+    reference_overrides: { "character:ellen:uniform": refs.slice(0, 2).map((entry) => entry.id) },
+  });
+  await saveStoryPromptDraft(fixture.repositoryRoot, draft);
+  const resolved = await resolvePageForRender({ repositoryRoot: fixture.repositoryRoot, projectDirectory: fixture.projectDirectory, pageId: "page-001" });
+  const positive = resolved.compiled_page.positive_prompt;
+  assert.match(positive, /艾莲：\n<image1>、<image2>：艾莲的身份与服装参考。\n艾莲，银发少女，穿深色学校制服。/);
+  assert.match(positive, /车站：\n<image3>：车站的环境外观参考。\n傍晚的城市车站。/);
+  assert.doesNotMatch(positive, /<image4>/, "未填用途的附图不生成说明");
+  assert.deepEqual(resolved.compiled_page.images.map((image) => [image.index, image.source]), [
+    [1, "character:ellen:uniform"], [2, "character:ellen:uniform"], [3, "scene:station:default"], [4, "page"],
+  ]);
+  const purpose = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
+  purpose.document.reference_images[0].purpose = "构图参考";
+  await saveStoryPromptDraft(fixture.repositoryRoot, purpose);
+  const withPurpose = await resolvePageForRender({ repositoryRoot: fixture.repositoryRoot, projectDirectory: fixture.projectDirectory, pageId: "page-001" });
+  assert.match(withPurpose.compiled_page.positive_prompt, /<image4>：构图参考。/);
+});
+
+test("整段覆盖不随上游更新，恢复继承后跟随上游最新值", async context => {
+  const fixture = await createFixture(context);
+  await prepareWriteAuditFixture(fixture);
+  const options = { repositoryRoot: fixture.repositoryRoot, projectDirectory: fixture.projectDirectory, pageId: "page-001" };
+  const before = await resolvePageForRender(options);
+  assert.match(before.compiled_page.positive_prompt, /艾莲，银发少女，穿深色学校制服。/);
+  const draft = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
+  draft.document.text_overrides = { "character:ellen:uniform": "本页艾莲穿旅行斗篷。" };
+  await saveStoryPromptDraft(fixture.repositoryRoot, draft);
+  const overridden = await resolvePageForRender(options);
+  assert.match(overridden.compiled_page.positive_prompt, /本页艾莲穿旅行斗篷。/);
+  assert.doesNotMatch(overridden.compiled_page.positive_prompt, /穿深色学校制服/);
+  const character = await readJson(path.join(fixture.projectDirectory, "characters/ellen.prompt.json"));
+  character.variants.uniform.text = "艾莲换上红色冬季制服。";
+  await writeJson(path.join(fixture.projectDirectory, "characters/ellen.prompt.json"), character);
+  const upstreamChanged = await resolvePageForRender(options);
+  assert.match(upstreamChanged.compiled_page.positive_prompt, /本页艾莲穿旅行斗篷。/, "override 不随上游更新");
+  const restore = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
+  delete restore.document.text_overrides;
+  await saveStoryPromptDraft(fixture.repositoryRoot, restore);
+  const restored = await resolvePageForRender(options);
+  assert.match(restored.compiled_page.positive_prompt, /艾莲换上红色冬季制服。/, "恢复继承后跟随上游最新值");
+});
+
+test("显式空覆盖保留名称与图片说明但不输出文字", async context => {
+  const fixture = await createFixture(context);
+  await prepareWriteAuditFixture(fixture);
+  const draft = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
+  draft.document.text_overrides = { "character:ellen:uniform": "" };
+  await saveStoryPromptDraft(fixture.repositoryRoot, draft);
+  const resolved = await resolvePageForRender({ repositoryRoot: fixture.repositoryRoot, projectDirectory: fixture.projectDirectory, pageId: "page-001" });
+  assert.match(resolved.compiled_page.positive_prompt, /艾莲：\n/);
+  assert.doesNotMatch(resolved.compiled_page.positive_prompt, /银发少女/);
+  const section = resolved.compiled_page.sections.find((item) => item.kind === "character");
+  assert.equal(section.text, "");
+  assert.equal(section.prompt_name, "艾莲");
+});
+
+test("移除引用连带清理覆盖，场景切换删除旧场景覆盖，未出场覆盖拒绝保存", async context => {
+  const fixture = await createFixture(context);
+  await prepareWriteAuditFixture(fixture);
+  const { defaultSceneFacts } = await import("../server/scene-files.mjs");
+  const scene = defaultSceneFacts("station", "车站");
+  for (const kind of ["profile", "visual", "prompt"]) await writeJson(path.join(fixture.projectDirectory, `scenes/station.${kind}.json`), scene[kind]);
+  await writeJson(path.join(fixture.projectDirectory, "scenes/index.json"), { $schema: SCENE_INDEX_SCHEMA_ID, scenes: ["station"] });
+  const draft = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
+  draft.document.scene_id = "station"; draft.document.scene_variant_id = "default";
+  draft.document.text_overrides = { "character:ellen:uniform": "覆盖文字", "scene:station:default": "场景覆盖" };
+  await saveStoryPromptDraft(fixture.repositoryRoot, draft);
+  const narrative = await readStoryNarrativeDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
+  narrative.document.characters = [];
+  const savedNarrative = await mutateSave(fixture, narrative);
+  assert.equal(savedNarrative.page_prompt.text_overrides["character:ellen:uniform"], undefined, "移除引用清理角色覆盖");
+  assert.equal(savedNarrative.page_prompt.text_overrides["scene:station:default"], "场景覆盖", "场景覆盖不受影响");
+  const restored = await readStoryNarrativeDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
+  restored.document.characters = [{ character_id: "ellen", variant_id: "uniform" }];
+  await mutateSave(fixture, restored);
+  const stale = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
+  stale.document.text_overrides = { "character:ellen:default": "未出场子设定" };
+  await assert.rejects(saveStoryPromptDraft(fixture.repositoryRoot, stale), (error) => error.code === "invalid_story_edit_document" && error.details.some((detail) => detail.includes("未出场")));
+  const switchScene = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
+  delete switchScene.document.scene_id; delete switchScene.document.scene_variant_id;
+  await saveStoryPromptDraft(fixture.repositoryRoot, switchScene);
+  const after = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
+  assert.equal(Object.hasOwn(after.document.text_overrides ?? {}, "scene:station:default"), false, "取消场景引用删除旧场景覆盖");
+});
+
+async function mutateSave(fixture, draft) {
+  const { createProjectOperations } = await import("../server/project-operations.mjs");
+  const operations = createProjectOperations({ projectRoot: fixture.repositoryRoot });
+  try {
+    const { saveFactDraft } = await import("../server/fact-drafts.mjs");
+    return (await operations.mutateTargetFacts(fixture.projectId, () => saveFactDraft(fixture.repositoryRoot, {
+      domain: "story", kind: "narrative", projectId: fixture.projectId, targetId: draft.target_id,
+      document: draft.document, expectedSha256: draft.expected_sha256, expectedContextSha256: draft.expected_context_sha256,
+      conflictCode: "fact_target_conflict", contextConflictCode: "fact_upstream_conflict",
+    }))).value;
+  } finally {
+    operations.close();
+  }
 }
 
 test("剧情批量刷新只删除确认过的不符候选，Prompt 变化时拒绝执行", async (context) => {
@@ -276,14 +351,14 @@ test("剧情批量刷新只删除确认过的不符候选，Prompt 变化时拒�
   assert.deepEqual(matching.candidate_ids, []);
   const promptPath = path.join(fixture.projectDirectory, "pages/page-001.prompt.json");
   const changed = await readJson(promptPath);
-  changed.camera = [{ description: "close up" }];
+  changed.text = "艾莲跑向列车。";
   await writeJson(promptPath, changed);
   const [preview] = await inspectStoryCandidates({ ...options, pageKeys: [key] });
   assert.equal(preview.status, "ready");
   assert.equal(preview.matched, 0);
   assert.deepEqual(new Set(preview.candidate_ids), new Set(task.items.slice(0, 2).map((item) => item.candidate_id)));
   const request = { action: "clean", scope: "mismatch", page_key: key, expected_signature: preview.signature, candidate_ids: preview.candidate_ids };
-  await writeJson(promptPath, { ...changed, camera: [{ description: "wide shot" }] });
+  await writeJson(promptPath, { ...changed, text: "艾莲离开车站。" });
   await assert.rejects(executeStoryCandidateRefresh(options, request), { code: "candidate_generation_signature_stale" });
   assert.equal((await readGenerationCandidateRecords(fixture.projectDirectory)).length, 2);
   await writeJson(promptPath, changed);
@@ -369,8 +444,7 @@ test("百页剧情分批检查保持顺序，坏 Prompt 只跳过对应页且角
 test("narrative CLI 写后报告画面内容超长警告，空白或超长文本仍保存并正常编译", async (context) => {
   const fixture = await createFixture(context);
   await prepareWriteAuditFixture(fixture);
-  const dictionaryEntries = (await loadPromptDictionaryForRender({}, fixture.repositoryRoot)).entries;
-  const request = { repositoryRoot: fixture.repositoryRoot, projectDirectory: fixture.projectDirectory, pageKey: { page_id: "page-001" }, dictionaryEntries };
+  const request = { repositoryRoot: fixture.repositoryRoot, projectDirectory: fixture.projectDirectory, pageKey: { page_id: "page-001" } };
   const baseline = await compilePageRenderTarget(request);
   const scripts = path.join(fixture.repositoryRoot, "app", "scripts");
   await mkdir(scripts, { recursive: true });
@@ -405,131 +479,85 @@ test("narrative CLI 写后报告画面内容超长警告，空白或超长文本
   }
 });
 
-test("两个页面 save 返回与渲染相同的完整审计，错误不撤销保存", async (context) => {
+test("两个页面 save 返回与渲染相同的审计，失效引用不撤销保存", async (context) => {
   const fixture = await createFixture(context);
   await prepareWriteAuditFixture(fixture);
-  const entries = (await loadPromptDictionaryForRender({}, fixture.repositoryRoot)).entries;
-  for (const [pageId, ownerKind, edit, write] of [
-    ["page-001", "story", readStoryPromptDraft, saveStoryPromptDraft],
-    ["page-101", "character", readCharacterPagePromptDraft, saveCharacterPagePromptDraft],
+  for (const [pageId, edit, write] of [
+    ["page-001", readStoryPromptDraft, saveStoryPromptDraft],
+    ["page-101", readCharacterPagePromptDraft, saveCharacterPagePromptDraft],
   ]) {
     const session = await edit(fixture.repositoryRoot, fixture.projectId, pageId);
-    const draft = structuredClone(session.document);
-    draft.person = [{ tag: "bad_action" }, { tag: "another_bad_action" }, { tag: "disabled_bad", enabled: false }, { tag: "low_tag" }, { tag: "rare_tag" }];
-    draft.avoid.push({ description: ownerKind === "story" ? "school uniform" : "ellen identity" });
-    session.document = structuredClone(draft);
+    session.document.text_overrides = undefined;
+    delete session.document.text_overrides;
     const result = await write(fixture.repositoryRoot, session);
     assert.equal(result.audit.status, "complete");
-    assert.equal(result.audit.valid, false);
-    const badTags = result.audit.errors.filter((item) => item.code === "prompt.danbooru.not_found");
-    assert.deepEqual(badTags.map((item) => item.prompt_text), ["bad_action", "another_bad_action"]);
-    assert.ok(badTags.every((item) => /^token-[a-f0-9]{12}$/.test(item.token_id)));
-    assert.deepEqual(result.audit.warnings, [], "低频和极低频词不应产生警告");
-    const conflict = result.audit.errors.find((item) => item.code === "prompt.fragment.positive_avoid_conflict");
-    assert.match(conflict.related[0].path, ownerKind === "story" ? /\.variants\.uniform\.prompt\.person\[0\]$/ : /\.variants\.default\.prompt\.subject\[0\]$/);
-    assert.equal((await readJson(result.target_file)).person[0].tag, "bad_action");
+    assert.equal(result.audit.valid, true);
+    assert.deepEqual(result.audit.warnings, []);
     const pageKey = { page_id: pageId };
-    const inspection = await inspectPageRender({ repositoryRoot: fixture.repositoryRoot, projectDirectory: fixture.projectDirectory, pageKey, dictionaryEntries: entries });
+    const inspection = await inspectPageRender({ repositoryRoot: fixture.repositoryRoot, projectDirectory: fixture.projectDirectory, pageKey });
     assert.deepEqual(inspection.audit, result.audit);
-    assert.equal(inspection.blockers.filter((item) => item.code === "prompt.danbooru.not_found").length, 2);
-    assert.deepEqual(inspection.blockers.find((item) => item.code === conflict.code), conflict);
-    assert.deepEqual(inspection.warnings, []);
-    await assert.rejects(compilePageRenderTarget({ repositoryRoot: fixture.repositoryRoot, projectDirectory: fixture.projectDirectory, pageKey, dictionaryEntries: entries }), { code: "page_not_renderable" });
   }
+  const narrativeFile = path.join(fixture.projectDirectory, "pages/page-101.content.json");
+  const narrative = await readJson(narrativeFile);
+  narrative.characters = [{ character_id: "ellen", variant_id: "missing" }];
+  await writeJson(narrativeFile, narrative);
+  const session = await readCharacterPagePromptDraft(fixture.repositoryRoot, fixture.projectId, "page-101");
+  const result = await saveCharacterPagePromptDraft(fixture.repositoryRoot, session);
+  assert.equal(result.audit.status, "complete");
+  assert.equal(result.audit.valid, false, "失效引用进入审计错误但不撤销保存");
+  await assert.rejects(compilePageRenderTarget({ repositoryRoot: fixture.repositoryRoot, projectDirectory: fixture.projectDirectory, pageKey: { page_id: "page-101" } }), { code: "page_not_renderable" });
 });
 
 test("后置审计消费捕获快照，不读后续写入；通过结果也与 render 一致", async (context) => {
   const fixture = await createFixture(context);
   await prepareWriteAuditFixture(fixture);
   const session = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
-  const draft = structuredClone(session.document);
-  draft.person = [{ tag: "low_tag" }, { tag: "rare_tag" }];
-  session.document = structuredClone(draft);
   const result = await saveStoryPromptDraft(fixture.repositoryRoot, session);
   const prepared = await preparePromptWriteAudit(fixture.repositoryRoot);
   const snapshot = await capturePagePromptSnapshot(fixture.projectDirectory, "page-001");
-  const render = await compilePageRenderTarget({ repositoryRoot: fixture.repositoryRoot, projectDirectory: fixture.projectDirectory, pageKey: snapshot.page_key, dictionaryEntries: prepared.value.entries });
+  const render = await compilePageRenderTarget({ repositoryRoot: fixture.repositoryRoot, projectDirectory: fixture.projectDirectory, pageKey: snapshot.page_key });
   assert.deepEqual(result.audit, { status: "complete", ...render.compiled_page.audit, diagnostics: [] });
   assert.equal(result.audit.valid, true);
   assert.deepEqual(result.audit.warnings, []);
   const later = await readJson(result.target_file);
-  later.camera.push({ tag: "bad_later_camera" });
+  later.text = "后续写入的描述。";
   await writeJson(result.target_file, later);
   const capturedResult = await auditSavedPagePrompt(fixture.repositoryRoot, fixture.projectDirectory, prepared, { value: snapshot });
   assert.deepEqual(capturedResult, result.audit);
 });
 
-test("词库和有效配置不可用时 write 仍保存，网页不伪造词条错误或审计通过", async (context) => {
+test("有效配置不可用时 write 仍保存，网页不伪造审计通过", async (context) => {
   const fixture = await createFixture(context);
   await prepareWriteAuditFixture(fixture);
-  const dictionaryEntries = (await loadPromptDictionaryForRender({}, fixture.repositoryRoot)).entries;
-  await writeJson(path.join(fixture.repositoryRoot, "Config", "local.json"), { prompt_dictionary: { tags_file: "missing.csv" } });
+  await writeJson(path.join(fixture.projectDirectory, "project.json"), { format: "story-free-text-v1", title: "测试", canvas: "2:3", default_render_profile: "missing-profile" });
   const session = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
   const result = await saveStoryPromptDraft(fixture.repositoryRoot, session);
   assert.equal(result.audit.status, "unavailable");
-  assert.equal(result.audit.valid, undefined);
-  assert.match(result.audit.diagnostics[0].message, /词库缺失/);
   await access(result.target_file);
-  const unavailable = await inspectPageRender({ repositoryRoot: fixture.repositoryRoot, projectDirectory: fixture.projectDirectory, pageKey: { page_id: "page-001" }, config: { prompt_dictionary: { tags_file: "missing.csv" } } });
-  assert.equal(unavailable.audit.status, "unavailable");
-  assert.ok(unavailable.blockers.some((item) => item.code === "prompt_audit_unavailable"));
-  assert.ok(!unavailable.blockers.some((item) => item.code === "prompt.danbooru.not_found"));
-  await writeJson(path.join(fixture.repositoryRoot, "Config", "local.json"), {});
-  await writeJson(path.join(fixture.projectDirectory, "project.json"), { title: "测试", canvas: "2:3", default_render_profile: "missing-profile" });
-  const secondSession = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
-  const second = await saveStoryPromptDraft(fixture.repositoryRoot, secondSession);
-  assert.equal(second.audit.status, "unavailable");
-  const inspection = await compilePageRenderInspectionContext({ repositoryRoot: fixture.repositoryRoot, projectDirectory: fixture.projectDirectory, pageKey: { page_id: "page-001" }, dictionaryEntries });
+  const inspection = await compilePageRenderInspectionContext({ repositoryRoot: fixture.repositoryRoot, projectDirectory: fixture.projectDirectory, pageKey: { page_id: "page-001" } });
   assert.equal(inspection.audit.status, "unavailable");
+  assert.ok(inspection.blockers.some((item) => item.code === "prompt_audit_unavailable"));
 });
 
-test("角色 write 独立审计各子设定，保留 ID 并使用统一角色预算", async (context) => {
+test("角色 write 审计各子设定并保留原文", async (context) => {
   const fixture = await createFixture(context);
   await prepareWriteAuditFixture(fixture);
   const session = await readCharacterPromptDraft(fixture.repositoryRoot, fixture.projectId, "ellen");
-  const draft = structuredClone(session.document);
-  draft.variants.default.prompt.person = Array.from({ length: 14 }, (_, index) => ({ description: `feature ${index}` }));
-  draft.variants.default.prompt.person.push({ tag: "low_tag" }, { tag: "rare_tag" });
-  draft.variants.uniform.prompt.person = [{ tag: "bad_variant_tag" }];
-  session.document = structuredClone(draft);
+  session.document.variants.uniform.text = "艾莲的制服自由文本，不做结构化限制。";
   const result = await saveCharacterPromptDraft(fixture.repositoryRoot, session);
   assert.equal(result.audit.status, "complete");
-  assert.equal(result.audit.variants.default.valid, true, "未超过统一的18条警告预算");
-  assert.equal(result.audit.variants.default.warnings.length, 0);
-  assert.equal(result.audit.variants.uniform.valid, false);
-  const bad = result.audit.variants.uniform.errors.find((item) => item.prompt_text === "bad_variant_tag");
-  assert.equal(bad.path, "characters/ellen.prompt.json.variants.uniform.prompt.person[0]");
-  assert.match(bad.token_id, /^token-[a-f0-9]{12}$/);
-  assert.ok(!result.audit.variants.default.errors.some((item) => item.prompt_text === "bad_variant_tag"));
-  assert.deepEqual((await readJson(result.target_file)).variants.uniform.loras, draft.variants.uniform.loras);
-});
-
-test("网页实际路由使用严格审计词库，不受搜索 overlay 损坏影响", async (context) => {
-  const fixture = await createFixture(context);
-  await prepareWriteAuditFixture(fixture);
-  await writeFile(path.join(fixture.repositoryRoot, "library", "prompt-dictionaries", "overlay.json"), "{broken");
-  const pagePromptFile = path.join(fixture.projectDirectory, "pages", "page-001.prompt.json");
-  const pagePrompt = await readJson(pagePromptFile);
-  pagePrompt.person = [{ tag: "low_tag" }, { tag: "rare_tag" }];
-  await writeJson(pagePromptFile, pagePrompt);
-  const request = Readable.from([Buffer.from(JSON.stringify({ page_key: { page_id: "page-001" } }))]);
-  request.method = "POST";
-  let inspection;
-  assert.equal(await handleWorkbenchRequest({
-    request, decodedPath: "/api/projects/demo/workbench/page-render-inspection", projectRoot: fixture.repositoryRoot, config: {},
-    readFacts: async (_projectId, operation) => ({ value: await operation({ projectDirectory: fixture.projectDirectory }) }),
-    sendOperation: (_status, _result, body) => { inspection = body.inspection; },
-  }), true);
-  assert.equal(inspection.audit.status, "complete");
-  assert.equal(inspection.audit.valid, true);
-  assert.deepEqual(inspection.audit.warnings, [], "网页审计与写后审计、渲染共用不按词频警告的规则");
+  assert.deepEqual(Object.keys(result.audit.variants), ["default", "uniform"]);
+  assert.equal(result.audit.variants.uniform.valid, true);
+  const persisted = await readJson(result.target_file);
+  assert.equal(persisted.variants.uniform.text, "艾莲的制服自由文本，不做结构化限制。");
+  assert.equal(persisted.prompt_name, "艾莲");
 });
 
 test("override 冲突的基础配置预览不得冒充有效配置审计通过", async (context) => {
   const fixture = await createFixture(context);
   await prepareWriteAuditFixture(fixture);
   await writeJson(path.join(fixture.projectDirectory, "render-profile.override.json"), {
-    version: 1, profiles: { "anima-base-v1": { changes: [{
+    version: 1, profiles: { "qwen-image-2-1": { changes: [{
       target: "operations.candidates.routes.empty_latent.recipe.steps",
       original: { exists: true, value: 1 }, project: { exists: true, value: 30 },
     }] } },
@@ -544,7 +572,7 @@ test("override 冲突的基础配置预览不得冒充有效配置审计通过",
   assert.ok(inspection.blockers.some((item) => item.code === "prompt_audit_unavailable"));
 });
 
-test("三个真实 CLI 在审计有错误时输出可解析 JSON、退出0并清理会话", async (context) => {
+test("三个真实 CLI 输出可解析 JSON、退出0并清理会话", async (context) => {
   const fixture = await createFixture(context);
   await prepareWriteAuditFixture(fixture);
   await mkdir(path.join(fixture.repositoryRoot, "app", "scripts"), { recursive: true });
@@ -558,287 +586,158 @@ test("三个真实 CLI 在审计有错误时输出可解析 JSON、退出0并清
   ]) {
     const session = await edit(fixture.repositoryRoot, fixture.projectId, id);
     const draft = structuredClone(session.document);
-    (draft.variants?.default?.prompt ?? draft).person = [{ tag: "bad_cli_tag" }];
-    if (draft.variants) draft.identity.prompt.person = [{ description: "amber eyes" }];
+    if (draft.variants) draft.variants.uniform.text = "斗篷与短裙。";
+    else draft.text = "艾莲转身的瞬间。";
     session.document = structuredClone(draft);
     const draftFile = path.join(fixture.repositoryRoot, "prompt-draft.json");
     await writeJson(draftFile, session);
-    const run = () => promisify(execFile)(process.execPath, [path.join(fixture.repositoryRoot, 'app', 'scripts', script), kind, 'save', draftFile]);
-    let cliResult;
-    try { cliResult = await run(); }
-    catch (error) {
-      const response = JSON.parse(error.stderr);
-      assert.equal(response.error, 'inheritance_confirmation_required');
-      session.confirmation_sha256 = response.details[0].confirmation_sha256;
-      await writeJson(draftFile, session);
-      cliResult = await run();
-    }
-    const { stdout, stderr } = cliResult;
-    const output = JSON.parse(stdout);
+    const { stdout, stderr } = await promisify(execFile)(process.execPath, [path.join(fixture.repositoryRoot, 'app', 'scripts', script), kind, 'save', draftFile]);
     assert.equal(stderr, "");
+    const output = JSON.parse(stdout);
     assert.equal(output.audit.status, "complete");
-    assert.equal((output.audit.variants?.default ?? output.audit).valid, false);
-    if (draft.variants) assert.deepEqual(output.identity_impact, { per_variant: { default: { lost_inheritance: [], new_inheritance: ["amber eyes"] }, uniform: { lost_inheritance: [], new_inheritance: ["amber eyes"] } } });
     await access(output.target_file);
   }
 });
 
-test("story resolver 按6类组合variant完整配置、LoRA、disabled与negative avoid", async (context) => {
+test("story resolver 组装全局文字、角色段、场景段与本页描述", async (context) => {
   const fixture = await createFixture(context);
-  const promptDictionary = await dictionary();
+  await prepareWriteAuditFixture(fixture);
   const resolved = await resolvePageForRender({
-    repositoryRoot: sourceRepositoryRoot,
+    repositoryRoot: fixture.repositoryRoot,
     projectDirectory: fixture.projectDirectory,
     pageId: "page-001",
-    dictionaryEntries: promptDictionary.entries,
   });
   assert.equal(resolved.kind, "story");
-  assert.equal(resolved.compiled_page.positive_prompt, "masterpiece, best quality, score_7,\n1girl,\nellen_uniform, ellen identity, school uniform,\nwarm sunset light");
-  assert.doesNotMatch(resolved.compiled_page.positive_prompt, /disabled subject/);
-  assert.match(resolved.compiled_page.negative_prompt, /incorrect identity,\ncrowded background$/);
+  assert.equal(resolved.compiled_page.positive_prompt, [
+    "根据以下设定和画面描述创作一幅新画面，动作、表情、视角与构图以画面描述为准。",
+    "艾莲：\n艾莲，银发少女，穿深色学校制服。",
+    "本页描述：\n艾莲站在站台边，望向远处的列车。",
+  ].join("\n\n"));
+  assert.equal(resolved.compiled_page.negative_prompt, "");
   assert.deepEqual(resolved.character_references, [{ character_id: "ellen", variant_id: "uniform" }]);
-  assert.doesNotMatch(resolved.compiled_page.positive_prompt, /guest/, "画外speaker不注入角色Prompt");
-  assert.deepEqual(resolved.compiled_page.loras.map(({ kind, owner, filename, weight }) => ({ kind, owner, filename, weight })), [
-    { kind: "character", owner: "ellen", filename: "characters/ellen-uniform.safetensors", weight: 0.8 },
-  ]);
-  assert.equal(Object.hasOwn(resolved.compiled_page, "resolved_prompt_references"), false);
-  for (const part of [...resolved.compiled_page.prompt_parts.positive, ...resolved.compiled_page.prompt_parts.negative]) {
-    assert.equal(Object.hasOwn(part, "source"), false);
-    assert.equal(Object.hasOwn(part, "source_id"), false);
-  }
-  assert.ok(resolved.compiled_page.prompt_parts.positive.some((part) => part.path.startsWith("pages/page-001.prompt.json.")));
+  assert.doesNotMatch(resolved.compiled_page.positive_prompt, /路人/, "画外speaker不注入角色Prompt");
+  assert.deepEqual(resolved.compiled_page.loras, []);
+  assert.deepEqual(resolved.compiled_page.sections.map((section) => section.kind), ["global", "character", "page"]);
 });
 
-test("character page resolver 仅要求当前 variant 配置完整，并使用规范PageKey", async (context) => {
+test("全局文字可由项目 override 整段替换或清空", async (context) => {
   const fixture = await createFixture(context);
+  await prepareWriteAuditFixture(fixture);
+  const options = { repositoryRoot: fixture.repositoryRoot, projectDirectory: fixture.projectDirectory, pageId: "page-001" };
+  const base = await import("../server/render-profile-compiler.mjs");
+  const resolved = await base.readResolvedRenderProfile(fixture.repositoryRoot, "qwen-image-2-1");
+  const originalText = resolved.resolved_profile.prompt.text;
+  await writeJson(path.join(fixture.projectDirectory, "render-profile.override.json"), {
+    version: 1, profiles: { "qwen-image-2-1": { changes: [{
+      target: "prompt.text", original: { exists: true, value: originalText }, project: { exists: true, value: "水彩画风。" },
+    }] } },
+  });
+  const overridden = await resolvePageForRender(options);
+  assert.match(overridden.compiled_page.positive_prompt, /^水彩画风。\n\n艾莲：/);
+  await writeJson(path.join(fixture.projectDirectory, "render-profile.override.json"), {
+    version: 1, profiles: { "qwen-image-2-1": { changes: [{
+      target: "prompt.text", original: { exists: true, value: originalText }, project: { exists: true, value: "" },
+    }] } },
+  });
+  const cleared = await resolvePageForRender(options);
+  assert.match(cleared.compiled_page.positive_prompt, /^艾莲：/, "清空全局文字时直接省略");
+  assert.deepEqual(cleared.compiled_page.sections.map((section) => section.kind), ["character", "page"]);
+});
+
+test("character page resolver 使用规范PageKey与当前 variant 设定", async (context) => {
+  const fixture = await createFixture(context);
+  await prepareWriteAuditFixture(fixture);
   const promptTarget = path.join(fixture.projectDirectory, "characters", "ellen.prompt.json");
   const document = await readJson(promptTarget);
   delete document.variants.uniform;
   await writeJson(promptTarget, document);
-  const promptDictionary = await dictionary();
   const resolved = await resolvePageForRender({
-    repositoryRoot: sourceRepositoryRoot,
+    repositoryRoot: fixture.repositoryRoot,
     projectDirectory: fixture.projectDirectory,
     pageId: "page-101",
-    dictionaryEntries: promptDictionary.entries,
   });
   assert.equal(resolved.canonical_page_key, "v3/page-101");
-  assert.match(resolved.compiled_page.positive_prompt, /1girl.*ellen identity.*full_body/s);
-  assert.ok(
-    resolved.compiled_page.prompt_parts.positive.some((part) => part.path.startsWith("characters/ellen.prompt.json.variants.default.prompt.")),
-    "variant_id 直接选择对应配置",
-  );
-  assert.deepEqual(resolved.compiled_page.loras, []);
+  assert.match(resolved.compiled_page.positive_prompt, /艾莲，银发少女，琥珀色眼睛。/);
   await assert.rejects(resolvePageForRender({
-    repositoryRoot: sourceRepositoryRoot,
+    repositoryRoot: fixture.repositoryRoot,
     projectDirectory: fixture.projectDirectory,
     pageId: "page-001",
-    dictionaryEntries: promptDictionary.entries,
   }), (error) => error.code === "page_not_renderable" && error.details.some((detail) => detail.includes("uniform")));
 });
 
-test("identity 按分类继承并支持权重调整，同文字来源冲突阻止生成", async (context) => {
+test("流程预览临时编译草稿，并把本机依赖缺失作为阻断返回", async (context) => {
   const fixture = await createFixture(context);
-  const promptTarget = path.join(fixture.projectDirectory, "characters", "ellen.prompt.json");
-  const document = await readJson(promptTarget);
-  document.identity.prompt.person = [{ description: "shark tail" }, { description: "amber eyes" }];
-  document.identity.prompt.person.push({ description: "upright posture" });
-  document.identity.prompt.setting = [{ description: "calm presence" }];
-  document.variants.uniform.prompt.person = [
-    { description: "school uniform" },
-    { description: "shark tail" },
-  ];
-  document.variants.uniform.identity_disabled = ["amber eyes", "calm presence"];
-  document.variants.default.prompt.person = [
-    { description: "amber eyes", enabled: false },
-    { description: "disabled draft", enabled: false },
-  ];
-  await writeJson(promptTarget, document);
-  const promptDictionary = await dictionary();
-
-  await assert.rejects(() => resolvePageForRender({ repositoryRoot: sourceRepositoryRoot, projectDirectory: fixture.projectDirectory, pageId: 'page-001', dictionaryEntries: promptDictionary.entries }), error => error.details.some(message => message.includes('重复词')));
-  document.variants.uniform.prompt.person.pop();
-  document.variants.uniform.identity_overrides = { 'shark tail': { weight: 1.2 } };
-  await writeJson(promptTarget, document);
-  const resolved = await resolvePageForRender({ repositoryRoot: sourceRepositoryRoot, projectDirectory: fixture.projectDirectory, pageId: 'page-001', dictionaryEntries: promptDictionary.entries });
-  assert.match(resolved.compiled_page.positive_prompt, /\(shark tail:1.2\).*school uniform/);
-  assert.match(resolved.compiled_page.positive_prompt, /upright posture/, "身份 action 分类参与编译");
-  assert.doesNotMatch(resolved.compiled_page.positive_prompt, /amber eyes/, "identity_disabled 排除身份同名片段");
-  assert.doesNotMatch(resolved.compiled_page.positive_prompt, /calm presence/, "非外观分类也可按词关闭继承");
-  const positiveParts = resolved.compiled_page.prompt_parts.positive;
-  assert.deepEqual(
-    positiveParts.filter((part) => part.prompt_text === "shark tail").map((part) => part.path),
-    ["characters/ellen.prompt.json.identity.prompt.person[0]"],
-    "权重调整仍保留基础词的来源路径",
-  );
-  assert.ok(positiveParts.some((part) => part.prompt_text === "school uniform" && part.path === "characters/ellen.prompt.json.variants.uniform.prompt.person[0]"));
-
-  const baseResolved = await resolvePageForRender({
-    repositoryRoot: sourceRepositoryRoot,
-    projectDirectory: fixture.projectDirectory,
-    pageId: "page-101",
-    dictionaryEntries: promptDictionary.entries,
-  });
-  assert.match(baseResolved.compiled_page.positive_prompt, /shark tail/);
-  assert.match(baseResolved.compiled_page.positive_prompt, /amber eyes/, "关闭的同名本地词不冲突，仍使用身份词");
-  assert.doesNotMatch(baseResolved.compiled_page.positive_prompt, /disabled draft/, "enabled:false 的自有片段不参与编译");
-  const baseParts = baseResolved.compiled_page.prompt_parts.positive;
-  assert.ok(baseParts.some((part) => part.prompt_text === "shark tail" && part.path === "characters/ellen.prompt.json.identity.prompt.person[0]"));
-  assert.ok(baseParts.some((part) => part.prompt_text === "amber eyes" && part.path === "characters/ellen.prompt.json.identity.prompt.person[1]"));
-  assert.ok(baseParts.some((part) => part.prompt_text === "upright posture" && part.path === "characters/ellen.prompt.json.identity.prompt.person[2]"));
-  document.variants.default.prompt.person[0].enabled = true;
-  await writeJson(promptTarget, document);
-  await assert.rejects(resolvePageForRender({ repositoryRoot: sourceRepositoryRoot, projectDirectory: fixture.projectDirectory, pageId: 'page-101', dictionaryEntries: promptDictionary.entries }), error => {
-    assert.equal(error.details.filter(message => message.includes('重复词')).length, 1, '生效重复只检查一次');
-    return true;
-  });
-});
-
-test("identity.lora 与配置 loras 叠加解析并分别注入 trigger，同 filename 冲突阻止渲染", async (context) => {
-  const fixture = await createFixture(context);
-  const promptTarget = path.join(fixture.projectDirectory, "characters", "ellen.prompt.json");
-  const document = await readJson(promptTarget);
-  document.identity.lora = { filename: "characters/ellen.safetensors", sha256: "c".repeat(64), weight: 0.6, trigger: "ellen_joe" };
-  await writeJson(promptTarget, document);
-  const promptDictionary = await dictionary();
-
-  const resolved = await resolvePageForRender({
-    repositoryRoot: sourceRepositoryRoot,
-    projectDirectory: fixture.projectDirectory,
-    pageId: "page-001",
-    dictionaryEntries: promptDictionary.entries,
-  });
-  assert.deepEqual(resolved.compiled_page.loras.map(({ kind, owner, filename, weight }) => ({ kind, owner, filename, weight })), [
-    { kind: "character", owner: "ellen", filename: "characters/ellen.safetensors", weight: 0.6 },
-    { kind: "character", owner: "ellen", filename: "characters/ellen-uniform.safetensors", weight: 0.8 },
-  ]);
-  assert.match(resolved.compiled_page.positive_prompt, /ellen_joe.*ellen_uniform/, "identity.lora 与配置 loras 的 trigger 都注入 positive");
-
-  const baseResolved = await resolvePageForRender({
-    repositoryRoot: sourceRepositoryRoot,
-    projectDirectory: fixture.projectDirectory,
-    pageId: "page-101",
-    dictionaryEntries: promptDictionary.entries,
-  });
-  assert.deepEqual(baseResolved.compiled_page.loras.map(({ filename, weight }) => ({ filename, weight })), [
-    { filename: "characters/ellen.safetensors", weight: 0.6 },
-  ]);
-  assert.match(baseResolved.compiled_page.positive_prompt, /ellen_joe/);
-  assert.doesNotMatch(baseResolved.compiled_page.positive_prompt, /ellen_uniform/);
-
-  const conflicted = await readJson(promptTarget);
-  conflicted.identity.lora = { filename: "characters/ellen-uniform.safetensors", sha256: "d".repeat(64), weight: 0.5 };
-  await writeJson(promptTarget, conflicted);
-  await assert.rejects(
-    resolvePageForRender({
-      repositoryRoot: sourceRepositoryRoot,
-      projectDirectory: fixture.projectDirectory,
-      pageId: "page-001",
-      dictionaryEntries: promptDictionary.entries,
-    }),
-    (error) => error?.code === "page_not_renderable"
-      && error.details?.some((detail) => /ellen-uniform\.safetensors.*配置冲突/.test(detail)),
-  );
-});
-
-test("流程预览临时编译无ID Prompt草稿，并把本机依赖缺失作为阻断返回", async (context) => {
-  const fixture = await createFixture(context);
+  await prepareWriteAuditFixture(fixture);
   const before = await readFile(path.join(fixture.projectDirectory, "pages", "page-001.prompt.json"), "utf8");
-  const promptDictionary = await dictionary();
-  const draft = prompt(undefined);
-  delete draft.$schema;
-  draft.subject = [{ tag: "1girl" }];
-  draft.person = [{ tag: "standing" }];
-  draft.setting = [{ description: "warm sunset light" }];
-  draft.camera = [{ tag: "full_body" }];
+  const draft = { text: "艾莲奔跑。" };
   const inspection = await inspectPageRender({
-    repositoryRoot: sourceRepositoryRoot,
+    repositoryRoot: fixture.repositoryRoot,
     projectDirectory: fixture.projectDirectory,
     pageKey: { page_id: "page-001" },
     pagePromptDraft: draft,
-    dictionaryEntries: promptDictionary.entries,
     config: {},
   });
-
-  assert.match(inspection.prompt.positive, /1girl.*ellen_uniform.*ellen identity.*school uniform.*standing/s);
-  assert.match(inspection.prompt.positive, /standing,\nwarm sunset light,\nfull_body$/);
-  assert.deepEqual(inspection.prompt.parts.by_category.person.map(part => part.prompt_text), ["school uniform", "standing"]);
+  assert.match(inspection.prompt.positive, /本页描述：\n艾莲奔跑。/);
   assert.deepEqual(inspection.characters.map(({ character_id, variant_id }) => ({ character_id, variant_id })), [
     { character_id: "ellen", variant_id: "uniform" },
   ]);
-  assert.deepEqual(inspection.characters[0].loras.map(({ filename, weight }) => ({ filename, weight })), [
-    { filename: "characters/ellen-uniform.safetensors", weight: 0.8 },
-  ]);
-  assert.ok(inspection.characters[0].loras.every((lora) => Object.hasOwn(lora, "diagnosis")), "每个 LoRA 都携带 diagnosis 字段");
   assert.equal(inspection.render.route.operation, "candidates");
   assert.equal(inspection.render.route.input_source, "empty_latent");
   assert.equal(inspection.render.recipe.source_id, inspection.render.route.recipe_source_id);
   assert.equal(inspection.render.workflow.id, inspection.render.route.workflow_id);
   assert.equal(inspection.canvas, "2:3");
   assert.equal(inspection.generation.profile_name, inspection.render.profile.name);
-  assert.equal(inspection.generation.canvas, "2:3");
-  assert.deepEqual(inspection.generation.parameters.dimensions, { width: 832, height: 1216 });
   assert.deepEqual(inspection.generation.models.map(({ role, filename }) => ({ role, filename })), [
-    { role: "dit", filename: "anima-base-v1.0.safetensors" },
-    { role: "text_encoder", filename: "qwen_3_06b_base.safetensors" },
-    { role: "vae", filename: "qwen_image_vae.safetensors" },
+    { role: "dit", filename: "qwen_image_2.1_int8_convrot.safetensors" },
+    { role: "text_encoder", filename: "qwen3vl_8b_int8_convrot.safetensors" },
+    { role: "vae", filename: "qwen_image_2.1_vae_bf16.safetensors" },
   ]);
-  assert.equal(inspection.generation.parameters.clip_skip, undefined, "统一生成详情不公开未实际生效的 CLIP skip");
   assert.equal(inspection.generation.prompt.positive, inspection.prompt.positive);
   assert.equal(inspection.ready, false, "本机未配置 models_root 时仍应返回可读 inspection");
   assert.ok(inspection.blockers.some((item) => item.code === "model_unavailable"));
   const remoteInspection = await inspectPageRender({
-    repositoryRoot: sourceRepositoryRoot,
+    repositoryRoot: fixture.repositoryRoot,
     projectDirectory: fixture.projectDirectory,
     pageKey: { page_id: "page-001" },
     pagePromptDraft: draft,
-    dictionaryEntries: promptDictionary.entries,
     config: { comfyui_urls: ["http://windows-gpu:8188"] },
   });
-  assert.equal(remoteInspection.ready, true, "远程模式应把模型和 LoRA 留给 Windows ComfyUI 在提交时验证");
+  assert.equal(remoteInspection.ready, true, "远程模式应把模型留给远程 ComfyUI 在提交时验证");
   assert.equal(remoteInspection.blockers.some((item) => item.code === "model_unavailable" || item.code === "page_lora_unavailable"), false);
   assert.ok(Object.values(remoteInspection.render.profile_inspection.models).every((model) => model.reason === "remote_unverified"));
-  assert.ok(remoteInspection.loras.every((lora) => lora.reason === "remote_unverified"));
-  const malformedDraft = structuredClone(draft);
-  malformedDraft.person = "standing";
   const malformed = await inspectPageRender({
-    repositoryRoot: sourceRepositoryRoot,
+    repositoryRoot: fixture.repositoryRoot,
     projectDirectory: fixture.projectDirectory,
     pageKey: { page_id: "page-001" },
-    pagePromptDraft: malformedDraft,
-    dictionaryEntries: promptDictionary.entries,
+    pagePromptDraft: { text: 42 },
     config: {},
   });
   assert.ok(malformed.blockers.some((item) => item.code === "page_prompt_draft_invalid"));
-  assert.match(malformed.prompt.positive, /1girl.*ellen identity/s, "无效分类应被临时正规化而不是让预览整体失败");
+  assert.match(malformed.prompt.positive, /艾莲：/, "无效草稿被临时正规化而不是让预览整体失败");
   assert.equal(await readFile(path.join(fixture.projectDirectory, "pages", "page-001.prompt.json"), "utf8"), before);
 });
 
 test("重命名子设定后页面渲染解析使用新 id 编译", async (context) => {
   const fixture = await createFixture(context);
+  await prepareWriteAuditFixture(fixture);
   await renameCharacterVariant(fixture.repositoryRoot, fixture.projectId, "ellen", "uniform", "casual");
-  const promptDictionary = await dictionary();
   const resolved = await resolvePageForRender({
-    repositoryRoot: sourceRepositoryRoot,
+    repositoryRoot: fixture.repositoryRoot,
     projectDirectory: fixture.projectDirectory,
     pageId: "page-001",
-    dictionaryEntries: promptDictionary.entries,
   });
   assert.deepEqual(resolved.character_references, [{ character_id: "ellen", variant_id: "casual" }]);
-  assert.match(resolved.compiled_page.positive_prompt, /1girl.*ellen_uniform.*ellen identity.*school uniform/s);
-  assert.ok(
-    resolved.compiled_page.prompt_parts.positive.some((part) => part.path.startsWith("characters/ellen.prompt.json.variants.casual.prompt.")),
-    "编译路径指向重命名后的配置键",
-  );
+  assert.match(resolved.compiled_page.positive_prompt, /艾莲，银发少女，穿深色学校制服。/);
 });
 
 test("稳定页面ID拒绝重复，归属变化不改变生成引用；失效画面引用阻止生成", async context => {
   const fixture = await createFixture(context);
+  await prepareWriteAuditFixture(fixture);
   const indexPath = path.join(fixture.projectDirectory,'pages/index.json');
   const index = await readJson(indexPath);
   index.pages.push({...index.pages[0]});
   await writeJson(indexPath,index);
-  const options={repositoryRoot:sourceRepositoryRoot,projectDirectory:fixture.projectDirectory,pageId:'page-001',dictionaryEntries:(await dictionary()).entries};
+  const options={repositoryRoot:fixture.repositoryRoot,projectDirectory:fixture.projectDirectory,pageId:'page-001'};
   await assert.rejects(resolvePageForRender(options), /重复/);
   index.pages.pop();
   index.pages[0]={page_id:'page-001',owner_kind:'character',character_id:'missing-owner',variant_id:'default'};
@@ -857,12 +756,13 @@ test("稳定页面ID拒绝重复，归属变化不改变生成引用；失效画
   delete content.characters[0].variant_id;
   await writeJson(contentPath,content);
   await assert.rejects(resolvePageForRender(options),{code:'project_fact_contract_invalid'});
-  await assert.rejects(compileAndPersistPageRenderTask(fixture.repositoryRoot,fixture.projectId,'page-101',{count:4,repositoryRoot:sourceRepositoryRoot}),{code:'candidate_count_out_of_range'});
+  await assert.rejects(compileAndPersistPageRenderTask(fixture.repositoryRoot,fixture.projectId,'page-101',{count:4,repositoryRoot:fixture.repositoryRoot}),{code:'candidate_count_out_of_range'});
 });
 
 test("重启后冻结契约预检失败会归档失败任务并放行后续队列", async (context) => {
   const fixture = await createFixture(context);
-  const compiled = await compileAndPersistPageRenderTask(fixture.repositoryRoot, fixture.projectId, "page-001", { repositoryRoot: sourceRepositoryRoot });
+  await prepareWriteAuditFixture(fixture);
+  const compiled = await compileAndPersistPageRenderTask(fixture.repositoryRoot, fixture.projectId, "page-001", { repositoryRoot: fixture.repositoryRoot });
   const stored = await readRenderTask(fixture.projectDirectory, compiled.task.id);
   const manifestPath = path.join(stored.task_directory, "manifest.json");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
@@ -889,11 +789,12 @@ test("重启后冻结契约预检失败会归档失败任务并放行后续队�
 
 test("render task和返回值都提供完整绝对候选路径", async (context) => {
   const fixture = await createFixture(context);
+  await prepareWriteAuditFixture(fixture);
   const result = await renderPage(
     fixture.repositoryRoot,
     fixture.projectId,
     "page-101",
-    { count: 2, repositoryRoot: sourceRepositoryRoot },
+    { count: 2, repositoryRoot: fixture.repositoryRoot },
     { runTask: async ({ projectRoot, taskId }) => {
       const task = (await readRenderTask(projectRoot, taskId)).task;
       for (const item of task.items) {
@@ -915,11 +816,12 @@ test("render task和返回值都提供完整绝对候选路径", async (context)
 
 test("浏览器候选请求使用完整PageKey并按手动seed连续生成", async (context) => {
   const fixture = await createFixture(context);
+  await prepareWriteAuditFixture(fixture);
   const compiled = await compileAndPersistWorkbenchRenderTask(
     fixture.repositoryRoot,
     fixture.projectId,
     { page_key: { page_id: "page-101" }, operation: "candidates", count: 3, seed: 41 },
-    { repositoryRoot: sourceRepositoryRoot },
+    { repositoryRoot: fixture.repositoryRoot },
   );
   assert.deepEqual(compiled.task.items.map((item) => item.seed), [41, 42, 43]);
   assert.equal(Object.hasOwn(compiled.task.snapshot, "execution_input_bytes"), false);
@@ -942,7 +844,7 @@ test("浏览器候选请求使用完整PageKey并按手动seed连续生成", asy
       fixture.repositoryRoot,
       fixture.projectId,
       { page_key: { page_id: "page-999" }, operation: "candidates", count: 1 },
-      { repositoryRoot: sourceRepositoryRoot },
+      { repositoryRoot: fixture.repositoryRoot },
     ),
     (error) => error?.code === "page_not_found" && error.status === 404,
   );
@@ -951,7 +853,7 @@ test("浏览器候选请求使用完整PageKey并按手动seed连续生成", asy
       fixture.repositoryRoot,
       fixture.projectId,
       { page_key: { page_id: "page-101" }, operation: "upscale" },
-      { repositoryRoot: sourceRepositoryRoot },
+      { repositoryRoot: fixture.repositoryRoot },
     ),
     (error) => error?.code === "invalid_workbench_render_request" && error.status === 400,
   );
@@ -959,11 +861,12 @@ test("浏览器候选请求使用完整PageKey并按手动seed连续生成", asy
 
 test("候选删除共享锁且忽略旧选择缓存，同步discarded metadata", async (context) => {
   const fixture = await createFixture(context);
+  await prepareWriteAuditFixture(fixture);
   const rendered = await renderPage(
     fixture.repositoryRoot,
     fixture.projectId,
     "page-101",
-    { count: 1, repositoryRoot: sourceRepositoryRoot },
+    { count: 1, repositoryRoot: fixture.repositoryRoot },
     { runTask: async ({ projectRoot, taskId }) => {
       const task = (await readRenderTask(projectRoot, taskId)).task;
       await publishCandidateResult(projectRoot, task, task.items[0], Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aJXkAAAAASUVORK5CYII=", "base64"));
@@ -1010,110 +913,90 @@ test("候选删除共享锁且忽略旧选择缓存，同步discarded metadata",
   assert.equal(availableAfterDelete, undefined, "已删除候选不会再次出现");
 });
 
-
-test("编辑上下文展开各层覆盖和关闭项，使用项目有效配置，草稿可保存且拒绝过期依赖", async t => {
+test("编辑上下文返回引用、整段覆盖与最终文本", async t => {
   const fixture = await createFixture(t);
+  await prepareWriteAuditFixture(fixture);
   const { readPromptEditContext } = await import("../server/prompt-edit-context.mjs");
-  const { readResolvedRenderProfile } = await import("../server/render-profile-compiler.mjs");
   const { readFactDraft, saveFactDraft } = await import("../server/fact-drafts.mjs");
-  const characterFile = path.join(fixture.projectDirectory, "characters/ellen.prompt.json");
-  const character = await readJson(characterFile);
-  character.identity.prompt.person = [{ description: "silver hair", weight: 1.2 }, { description: "blue eyes" }];
-  character.variants.uniform.identity_overrides = { "silver hair": { enabled: false, weight: 0.7 }, "blue eyes": { enabled: false } };
-  await writeJson(characterFile, character);
-  await writeJson(path.join(fixture.projectDirectory, "scenes/index.json"), {$schema:SCENE_INDEX_SCHEMA_ID,scenes:['station']});
-  await writeJson(path.join(fixture.projectDirectory, "scenes/station.profile.json"), {$schema:SCENE_PROFILE_SCHEMA_ID,name:'车站',description:''});
-  await writeJson(path.join(fixture.projectDirectory, "scenes/station.visual.json"), {$schema:SCENE_VISUAL_SCHEMA_ID,variants:[{id:'default',name:'默认'}]});
-  const scenePrompt=prompt(); delete scenePrompt.$schema;
-  await writeJson(path.join(fixture.projectDirectory, "scenes/station.prompt.json"), {$schema:SCENE_PROMPT_SCHEMA_ID,identity:{prompt:scenePrompt,lora:null},variants:{default:{prompt:{...scenePrompt,setting:[{description:'quiet station',weight:1.1}]},identity_disabled:[],loras:[]}}});
-  const pageFile = path.join(fixture.projectDirectory, "pages/page-001.prompt.json");
-  const page = await readJson(pageFile);
-  page.scene_id = "station"; page.scene_variant_id = "default";
-  page.inheritance = { "character:ellen:uniform": { "silver hair": { enabled: true, weight: 0.9 } }, "scene:station:default": { "quiet station": { enabled: false } } };
-  await writeJson(pageFile, page);
-  const base = await readResolvedRenderProfile(sourceRepositoryRoot, "anima-base-v1");
-  const fragmentId = Object.keys(base.resolved_profile.prompt.fragments)[0];
-  const original = base.resolved_profile.prompt.fragments[fragmentId];
-  await writeJson(path.join(fixture.projectDirectory, "render-profile.override.json"), { version: 1, profiles: { "anima-base-v1": { changes: [{
-    target: `prompt.fragments.${fragmentId}`, original: { exists: true, value: original }, project: { exists: true, value: { ...original, prompt_text: "soft watercolor" } },
-  }] } } });
-  const options = { projectRoot: fixture.repositoryRoot, repositoryRoot: sourceRepositoryRoot, projectDirectory: fixture.projectDirectory, projectId: fixture.projectId, pageKey: "v3/page-001" };
+  const draft = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
+  draft.document.text_overrides = { "character:ellen:uniform": "本页覆盖的完整描述" };
+  await saveStoryPromptDraft(fixture.repositoryRoot, draft);
+  const options = { projectRoot: fixture.repositoryRoot, repositoryRoot: fixture.repositoryRoot, projectDirectory: fixture.projectDirectory, projectId: fixture.projectId, pageKey: "v3/page-001" };
   const result = await readPromptEditContext(options);
   assert.equal(result.context.status, "complete", "无需本机模型或 ComfyUI 即可完整读取");
-  const identity = result.context.inherited.find(group => group.path.endsWith("identity.prompt"));
-  assert.deepEqual(identity.fragments[0].fragment, { description: "silver hair", weight: 1.2 });
-  assert.deepEqual(identity.fragments[0].after_identity, { weight: 0.7, enabled: false });
-  assert.deepEqual(identity.fragments[0].effective, { weight: 0.9, enabled: true });
-  assert.deepEqual(identity.fragments[1].effective, { weight: 1, enabled: false });
-  const scene = result.context.inherited.find(group => group.source === "scene:station:default" && group.path.includes("variants.default"));
-  assert.deepEqual(scene.fragments[0].effective, { weight: 1.1, enabled: false });
-  assert.match(result.context.final.positive, /\(silver hair:0\.9\)/);
-  assert.doesNotMatch(result.context.final.positive, /blue eyes|quiet station/);
-  assert.match(result.context.final.positive, /soft watercolor/);
-  assert.equal(result.context.profile.overrides[0].target, `prompt.fragments.${fragmentId}`);
+  assert.deepEqual(result.save, { domain: "page", kind: "prompt" });
+  assert.equal(result.context.global_text.source, "profile");
+  assert.match(result.context.global_text.text, /^根据以下设定和画面描述/);
+  assert.deepEqual(result.context.references.map((reference) => [reference.source, reference.kind]), [["character:ellen:uniform", "character"]]);
+  const reference = result.context.references[0];
+  assert.equal(reference.prompt_name, "艾莲");
+  assert.equal(reference.current_text, "艾莲，银发少女，穿深色学校制服。");
+  assert.equal(reference.override, "本页覆盖的完整描述");
+  assert.equal(reference.effective_text, "本页覆盖的完整描述");
+  assert.deepEqual(reference.selected_image_ids, []);
+  assert.equal(result.context.page.text, "艾莲站在站台边，望向远处的列车。");
+  assert.match(result.context.final.positive, /本页覆盖的完整描述/);
+  assert.equal(result.context.final.negative, "");
+  assert.deepEqual(result.context.final.images, []);
+  assert.deepEqual(result.context.final.sections.map((section) => section.kind), ["global", "character", "page"]);
   assert.deepEqual(result.draft, await readFactDraft(fixture.repositoryRoot, { domain: "story", kind: "prompt", projectId: fixture.projectId, targetId: "page-001" }));
-  const compiled = await compilePageRenderInspectionContext({ repositoryRoot: sourceRepositoryRoot, projectDirectory: fixture.projectDirectory, pageKey: options.pageKey, dictionaryEntries: (await dictionary()).entries });
+  const compiled = await compilePageRenderInspectionContext({ repositoryRoot: fixture.repositoryRoot, projectDirectory: fixture.projectDirectory, pageKey: options.pageKey });
   assert.equal(result.context.final.positive, compiled.compiled_page.positive_prompt);
   const save = draft => saveFactDraft(fixture.repositoryRoot, { domain: "story", kind: "prompt", projectId: fixture.projectId, targetId: "page-001", document: draft.document, expectedSha256: draft.expected_sha256, expectedContextSha256: draft.expected_context_sha256, conflictCode: "fact_target_conflict", contextConflictCode: "fact_upstream_conflict" });
   await save(result.draft);
   const fresh = await readPromptEditContext(options);
-  character.identity.prompt.person[0].weight = 1.4;
+  const characterFile = path.join(fixture.projectDirectory, "characters/ellen.prompt.json");
+  const character = await readJson(characterFile);
+  character.variants.uniform.text = "上游变化后的描述。";
   await writeJson(characterFile, character);
   await assert.rejects(save(fresh.draft), error => error.code === "fact_upstream_conflict");
 });
 
 test("编辑上下文覆盖角色页实际来源，配置缺失明确返回不完整", async t => {
   const fixture = await createFixture(t);
+  await prepareWriteAuditFixture(fixture);
   const { readPromptEditContext } = await import("../server/prompt-edit-context.mjs");
-  const options = { projectRoot: fixture.repositoryRoot, repositoryRoot: sourceRepositoryRoot, projectDirectory: fixture.projectDirectory, projectId: fixture.projectId, pageKey: "v3/page-101" };
+  const options = { projectRoot: fixture.repositoryRoot, repositoryRoot: fixture.repositoryRoot, projectDirectory: fixture.projectDirectory, projectId: fixture.projectId, pageKey: "v3/page-101" };
   const initial = await readPromptEditContext(options);
   assert.deepEqual(initial.save, { domain: "page", kind: "prompt" });
   assert.equal(initial.draft.target_id, "page-101");
-  assert.equal(initial.context.inherited_usage, "generation");
+  assert.equal(initial.context.references[0].source, "character:ellen:default");
   const { readResolvedRenderProfile } = await import("../server/render-profile-compiler.mjs");
-  const base = await readResolvedRenderProfile(sourceRepositoryRoot, "anima-base-v1");
-  const fragmentId = Object.keys(base.resolved_profile.prompt.fragments)[0];
-  await writeJson(path.join(fixture.projectDirectory, "render-profile.override.json"), { version: 1, profiles: { "anima-base-v1": { changes: [{
-    target: `prompt.fragments.${fragmentId}`, original: { exists: false }, project: { exists: true, value: { ...base.resolved_profile.prompt.fragments[fragmentId], prompt_text: "changed style" } },
+  const base = await readResolvedRenderProfile(fixture.repositoryRoot, "qwen-image-2-1");
+  await writeJson(path.join(fixture.projectDirectory, "render-profile.override.json"), { version: 1, profiles: { "qwen-image-2-1": { changes: [{
+    target: "prompt.text", original: { exists: false }, project: { exists: true, value: "changed style" },
   }] } } });
   const conflict = await readPromptEditContext(options);
   assert.equal(conflict.context.status, "incomplete");
   assert.equal(conflict.context.final, null, "配置冲突时不能把基础预览冒充实际输出");
-  assert.equal(conflict.context.profile.conflicts[0].target, `prompt.fragments.${fragmentId}`);
-  await writeJson(path.join(fixture.projectDirectory, "project.json"), { title: "测试", canvas: "2:3", default_render_profile: "missing-profile" });
+  assert.equal(conflict.context.diagnostics.filter((item) => item.code === "render_profile_override_conflict").length > 0, true);
+  await writeJson(path.join(fixture.projectDirectory, "project.json"), { format: "story-free-text-v1", title: "测试", canvas: "2:3", default_render_profile: "missing-profile" });
   const incomplete = await readPromptEditContext(options);
   assert.equal(incomplete.context.status, "incomplete");
   assert.equal(incomplete.context.final, null);
   assert.ok(incomplete.context.diagnostics.some(item => item.code === "prompt_audit_unavailable"));
+  void base;
 });
 
-test('Qwen 十张参考图按角色、场景、本页顺序冻结并连接，十一张拒绝', async t => {
+test('十张参考图按角色、场景、本页顺序冻结并连接，十一张拒绝', async t => {
   const fixture = await createFixture(t);
-  const sharp = (await import('sharp')).default;
-  const { saveMaterial } = await import('../server/project-materials.mjs');
+  await prepareWriteAuditFixture(fixture);
   const { defaultSceneFacts } = await import('../server/scene-files.mjs');
   const refs = [];
   for (let i = 0; i < 10; i++) {
-    const id = `11111111-1111-4111-8111-${String(i).padStart(12, '0')}`;
-    const file = `reference-${id}.png`;
-    const bytes = await sharp({ create: { width: 16, height: 24, channels: 3, background: { r: i * 20, g: 100, b: 50 } } }).png().toBuffer();
-    await saveMaterial(fixture.projectDirectory, fixture.projectId, { file, title: '参考', encoding: 'base64', content: bytes.toString('base64') });
-    refs.push({ id: 'ref-' + id, file, title: '参考' });
+    refs.push(await saveReferenceMaterial(fixture, `11111111-1111-4111-8111-${String(i).padStart(12, '0')}`, { r: i * 20, g: 100, b: 50 }));
   }
-  await writeJson(path.join(fixture.projectDirectory, 'project.json'), { title: 'Qwen', canvas: '2:3', default_render_profile: 'qwen-image-2-1' });
   const character = await readJson(path.join(fixture.projectDirectory, 'characters/ellen.prompt.json'));
-  character.identity.lora = null;
-  character.variants.uniform.loras = [];
-  character.variants.uniform.reference_images = refs.slice(0, 5);
+  character.variants.uniform.reference_images = refs.slice(0, 5).map(({ id, file, title }) => ({ id, file, title }));
   await writeJson(path.join(fixture.projectDirectory, 'characters/ellen.prompt.json'), character);
   const scene = defaultSceneFacts('room', '房间');
-  scene.prompt.variants.default.reference_images = refs.slice(5, 9);
+  scene.prompt.variants.default.reference_images = refs.slice(5, 9).map(({ id, file, title }) => ({ id, file, title }));
   for (const kind of ['profile', 'visual', 'prompt']) await writeJson(path.join(fixture.projectDirectory, `scenes/room.${kind}.json`), scene[kind]);
-  await writeJson(path.join(fixture.projectDirectory, 'scenes/index.json'), { $schema: 'https://storyvisualizer.local/schemas/scene-index.schema.json', scenes: ['room'] });
+  await writeJson(path.join(fixture.projectDirectory, 'scenes/index.json'), { $schema: SCENE_INDEX_SCHEMA_ID, scenes: ['room'] });
   const draft = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, 'page-001');
-  Object.assign(draft.document, { scene_id: 'room', scene_variant_id: 'default', reference_images: refs.slice(9), reference_overrides: { 'character:ellen:uniform': refs.slice(0,5).map(r=>r.id), 'scene:room:default': refs.slice(5,9).map(r=>r.id) } });
+  Object.assign(draft.document, { scene_id: 'room', scene_variant_id: 'default', reference_images: refs.slice(9).map(({ id, file, title }) => ({ id, file, title })), reference_overrides: { 'character:ellen:uniform': refs.slice(0,5).map(r=>r.id), 'scene:room:default': refs.slice(5,9).map(r=>r.id) } });
   await saveStoryPromptDraft(fixture.repositoryRoot, draft);
-  const { task, task_directory } = await compileAndPersistPageRenderTask(fixture.repositoryRoot, fixture.projectId, 'page-001', { count: 1, repositoryRoot: sourceRepositoryRoot });
+  const { task, task_directory } = await compileAndPersistPageRenderTask(fixture.repositoryRoot, fixture.projectId, 'page-001', { count: 1, repositoryRoot: fixture.repositoryRoot });
   assert.deepEqual(task.items[0].reference_images.map(r=>r.material_file), refs.map(r=>r.file));
   const workflow = task.snapshot.execution_units[0].workflow.api;
   for (let i = 0; i < 10; i++) {
@@ -1122,8 +1005,9 @@ test('Qwen 十张参考图按角色、场景、本页顺序冻结并连接，十
     await access(path.join(task_directory, 'inputs', task.items[0].reference_images[i].sha256 + '.png'));
   }
   const { validateFrozenRenderTask } = await import('../server/render-task-contract.mjs');
-  const dict = await dictionary(); validateFrozenRenderTask(task, { dictionaryEntries: dict.entries, dictionaryIdentity: dict.identity });
+  validateFrozenRenderTask(task);
   const next = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, 'page-001');
-  next.document.reference_images.push(refs[0]); await saveStoryPromptDraft(fixture.repositoryRoot, next);
-  await assert.rejects(compileAndPersistPageRenderTask(fixture.repositoryRoot, fixture.projectId, 'page-001', { repositoryRoot: sourceRepositoryRoot }), /最多支持 10/);
+  next.document.reference_images.push({ id: refs[0].id, file: refs[0].file, title: refs[0].title });
+  await saveStoryPromptDraft(fixture.repositoryRoot, next);
+  await assert.rejects(compileAndPersistPageRenderTask(fixture.repositoryRoot, fixture.projectId, 'page-001', { repositoryRoot: fixture.repositoryRoot }), (error) => error.code === "page_not_renderable" && error.details.some((detail) => /最多支持 10/.test(detail)));
 });

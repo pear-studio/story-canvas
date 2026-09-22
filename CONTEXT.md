@@ -6,7 +6,7 @@
 ## 浏览器工作台
 
 - **显式事实保存（explicit fact save）**：页面内容、页面 Prompt、嵌字、角色 profile、角色 visual
-  和角色 Prompt/LoRA 分别维护草稿，只有用户点击对应保存按钮时才写入。保存请求携带目标文件内容
+  和角色 Prompt 分别维护草稿，只有用户点击对应保存按钮时才写入。保存请求携带目标文件内容
   指纹；冲突时保留草稿并要求重新读取，不自动保存或覆盖。
 - **项目请求保护（project request guard）**：`app/src/project-request-guard.ts` 为项目切换和载入
   请求保存 generation，拒绝旧项目的迟到响应。工作台状态组合位于 `app/src/App.tsx`，事实 HTTP
@@ -34,14 +34,15 @@
 
 ## 生成配置领域
 
-> 状态：最终格式的 `render_profile`、Prompt policy、独立 recipe、显式 operation route、
+> 状态：最终格式的 `render_profile`、独立 recipe、显式 operation route、
 > workflow manifest、项目稀疏调整、请求级完整 Effective Render Plan、冻结渲染任务契约和 task-only
-> 执行器已经实现。当前生成路径只保留候选、整图派生和精修。
+> 执行器已经实现。当前生成路径只保留候选。
 
 - **生成配置（`render_profile`）**：一套可复用的生成选择入口。它直接保存精确模型身份，
-  并组合 Prompt 策略、生成配方、工作流和 LoRA；它不保存项目页面事实。
-- **Prompt 策略（prompt policy）**：Prompt 家族的确定性编译规则和带稳定 ID 的家族基础片段。
-  进入最终 Prompt 的文字必须显式存在于策略或生成配置中，不能藏在代码前缀里。
+  并组合全局 Prompt、生成配方、工作流和 LoRA；它不保存项目页面事实。
+- **全局 Prompt（`prompt.text`）**：生成配置保存的一段全局文字，编译时放在各设定文字之前。
+  项目调整通过 `prompt.text` 语义目标整段替换；进入最终 Prompt 的文字必须显式存在于配置或
+  项目事实中，不能藏在代码前缀里。
 - **生成配方（render recipe）**：可复用的采样与尺寸参数，包括 steps、CFG、sampler、scheduler、
   CLIP skip、画面比例尺寸和需要时的二次采样参数；它不选择模型或工作流。
 - **有效配方实例（effective recipe instance）**：某条 route 应用项目稀疏调整后的实际配方参数。
@@ -49,19 +50,17 @@
   按实例身份冻结，不能按来源 ID 折叠。
 - **工作流清单（workflow manifest）**：与 ComfyUI API JSON 配套的语义说明，声明结构家族、
   operation、输入来源、LoRA modifier、固定字段绑定和动态接入点。节点绑定只属于工作流清单。
-- **operation**：用户明确发起的生成动作，固定为生成候选和精修。整图派生使用 candidates
-  operation 的 `scene_reference` 输入来源，不是独立 operation。
-- **输入来源（input source）**：operation 读取 latent 或图片的方式，包括空白画布、当前底稿、
-  场景参考。整图派生属于这个输入来源，不是隐式切换工作流的特殊模式。
-- **画面修饰（modifier）**：当前只指在基础工作流上按清单声明接入的 LoRA。画面修饰不能自行
-  改选工作流；工作流 manifest 只声明允许接入的 LoRA modifier。
+- **operation**：用户明确发起的生成动作，当前固定为生成候选（candidates）。
+- **输入来源（input source）**：operation 读取 latent 或图片的方式：`empty_latent`（空白画布）
+  与 `reference_image`（页面有序参考图）。route 不存在即该能力不存在。
+- **画面修饰（modifier）**：在基础工作流上按清单声明接入的确定性变换。画面修饰不能自行
+  改选工作流；当前 Qwen 候选工作流不声明 modifier。
 - **项目生成配置调整（project render-profile override）**：项目针对所选基础生成配置保存的
   稀疏修改。每项同时记录稳定语义目标、原值和项目值，不保存基础配置全量副本。
-- **有效生成配置（effective render profile）**：解析生成配置所引用的策略、配方和工作流后，
+- **有效生成配置（effective render profile）**：解析生成配置所引用的配方和工作流后，
   再应用项目稀疏调整得到的完整配置。它是派生结果，不另存为项目事实。
 - **渲染计划（render plan）**：一次生成请求的完整、已校验、可冻结执行说明。它包含有效生成配置、
-  operation、输入来源、Prompt、seed、精确模型、工作流、LoRA 和输入文件及其身份。整图派生仍是
-  candidates operation 的 `scene_reference` 输入来源。
+  operation、输入来源、Prompt、seed、精确模型、工作流、LoRA 和输入文件及其身份。
 - **冻结渲染任务契约（frozen render task contract）**：对 version 2 完整渲染任务执行一次性的契约
   校验与执行投影。它集中检查 effective profile 来源身份、Prompt 可重审计证据、route 与 registry、
   execution unit 及其输入输出映射；执行器只消费通过该契约的冻结任务，不重新选择生成路径。

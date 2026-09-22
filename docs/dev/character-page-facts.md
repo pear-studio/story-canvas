@@ -10,9 +10,9 @@
 移动归属只改索引；复制生成新 ID，复制内容、Prompt、出处和布局，不复制生成媒体。
 
 完整页面经 `PUT /api/projects/<project-id>/workbench/page-save` 保存，携带内容、Prompt、上游和可选布局／出处指纹。
-内容、引用、继承调整、布局和出处先统一校验，再通过同一次提交写入；失败回滚。
-新增对白临时 ID 同时映射到正式对白、布局和出处。继承切换造成实际输出变化时返回确认清单。
-失效引用可保留并保存以便修复；原有角色绑定片段不会因移除角色而静默删除。
+内容、引用、override、布局和出处先统一校验，再通过同一次提交写入；失败回滚。
+新增对白临时 ID 同时映射到正式对白、布局和出处。
+失效引用可保留并保存以便修复；切换子设定或移除引用时删除对应 override key。
 
 Agent 窄入口使用 `POST /api/agent/facts/page/content|prompt|text-sources/read|save`。
 现有 character:fact 的 page-goal/page-prompt 命令调用同一领域实现，page-goal 的正文现在是完整 content，
@@ -26,8 +26,8 @@ Agent 窄入口使用 `POST /api/agent/facts/page/content|prompt|text-sources/re
 - 角色：`{ owner_kind: "character", character_id, variant_id }`；
 - 场景：`{ owner_kind: "scene", scene_id, variant_id }`。
 
-模板一次性复制标题、画面说明与 Prompt，不保留 live template link。模板人物通过 character_id、variant_id 明确提供；
-subject 片段绑定该人物。无模板创建最小内容和五类空 Prompt。文字页仅允许归入剧情单元。
+模板一次性复制标题、画面说明与 Prompt（`{ "text": "..." }`），不保留 live template link。
+无模板创建最小内容和空 Prompt。文字页仅允许归入剧情单元。
 
 页面删除归档 `pages/<page-id>.{content,prompt,text-sources}.json` 和 `Outputs/pages/<page-id>/`，
 同时从索引与对白布局移除。归档位于 `Saved/state/deleted-pages/<project-id>/<deletion-id>/`，记录原归属及相邻页面，

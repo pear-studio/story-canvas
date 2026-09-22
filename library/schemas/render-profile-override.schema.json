@@ -6,52 +6,97 @@
       "oneOf": [
         {
           "type": "object",
-          "required": ["exists"],
-          "properties": { "exists": { "const": false } },
+          "required": [
+            "exists"
+          ],
+          "properties": {
+            "exists": {
+              "const": false
+            }
+          },
           "additionalProperties": false
         },
         {
           "type": "object",
-          "required": ["exists", "value"],
-          "properties": { "exists": { "const": true }, "value": true },
+          "required": [
+            "exists",
+            "value"
+          ],
+          "properties": {
+            "exists": {
+              "const": true
+            },
+            "value": true
+          },
           "additionalProperties": false
         }
       ]
     },
     "change": {
       "type": "object",
-      "required": ["target", "original", "project"],
+      "required": [
+        "target",
+        "original",
+        "project"
+      ],
       "properties": {
         "target": {
           "type": "string",
           "anyOf": [
-            { "pattern": "^models\\.[a-z0-9][a-z0-9_-]*$" },
-            { "const": "prompt.policy" },
-            { "pattern": "^prompt\\.fragments\\.[a-z0-9][a-z0-9-]*$" },
-            { "pattern": "^operations\\.candidates\\.routes\\.(empty_latent|reference_image)\\.(workflow|recipe\\.(steps|cfg|sampler|scheduler|clip_skip|scale|denoise|second_pass_steps|second_pass_cfg|second_pass_sampler|second_pass_scheduler|resolutions\\.(2:3|3:4|9:16|4:3)))$" },
-            { "pattern": "^style_loras\\.[a-z0-9][a-z0-9-]*$" },
-            { "pattern": "^style_loras\\.[a-z0-9][a-z0-9-]*\\.weight$" }
+            {
+              "pattern": "^models\\.[a-z0-9][a-z0-9_-]*$"
+            },
+            {
+              "const": "prompt.text"
+            },
+            {
+              "pattern": "^operations\\.candidates\\.routes\\.(empty_latent|reference_image)\\.(workflow|recipe\\.(steps|cfg|sampler|scheduler|clip_skip|scale|denoise|second_pass_steps|second_pass_cfg|second_pass_sampler|second_pass_scheduler|resolutions\\.(2:3|3:4|9:16|4:3)))$"
+            },
+            {
+              "pattern": "^style_loras\\.[a-z0-9][a-z0-9-]*$"
+            },
+            {
+              "pattern": "^style_loras\\.[a-z0-9][a-z0-9-]*\\.weight$"
+            }
           ]
         },
-        "original": { "$ref": "#/$defs/state" },
-        "project": { "$ref": "#/$defs/state" }
+        "original": {
+          "$ref": "#/$defs/state"
+        },
+        "project": {
+          "$ref": "#/$defs/state"
+        }
       },
       "additionalProperties": false
     }
   },
   "type": "object",
-  "required": ["version", "profiles"],
+  "required": [
+    "version",
+    "profiles"
+  ],
   "properties": {
-    "$schema": { "type": "string" },
-    "version": { "const": 1 },
+    "$schema": {
+      "type": "string"
+    },
+    "version": {
+      "const": 1
+    },
     "profiles": {
       "type": "object",
       "patternProperties": {
         "^[a-z0-9][a-z0-9-]*$": {
           "type": "object",
-          "required": ["changes"],
+          "required": [
+            "changes"
+          ],
           "properties": {
-            "changes": { "type": "array", "items": { "$ref": "#/$defs/change" } }
+            "changes": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/change"
+              }
+            }
           },
           "additionalProperties": false
         }

@@ -76,8 +76,8 @@ stderr、退出码为 1、stdout 为空；管道中消费 stdout 前先检查退
 目标文件或必要上游变化时返回冲突，不自动重试或覆盖。其他页面、未引用角色及角色视觉文案变化
 不会使 narrative 草稿失效，但同一项目内无依赖关系的写入也需要排队。统一边界见[项目操作协调器](project-operations.md)。
 
-Prompt 写入在原子保存后捕获本次页面与必要上游快照，基于快照完成只读编译与审计。词库提前
-加载，加载失败不会拒绝合法保存；审计异常只进入返回值 `audit`，不回滚事实。CLI 输出
+Prompt 写入在原子保存后捕获本次页面与必要上游快照，基于快照完成只读编译与审计。
+审计异常只进入返回值 `audit`，不回滚事实。CLI 输出
 `{ target_file, audit }`，具体状态与错误语义见[Prompt 写入流程](../reference/prompt.md)。
 
 outline 是可独立写入的上游；写入造成 pages index 悬空时会返回 `downstream_diagnostics`，但不会阻止写入。

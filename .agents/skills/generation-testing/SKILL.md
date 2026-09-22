@@ -9,7 +9,7 @@ description: 为 StoryCanvas 按明确委托受控比较 Prompt 或生成条件�
 
 先提出可观察问题、控制变量、样本数量和停止条件，在用户同意的范围内执行；已有明确实验授权直接沿用。一次只改变必要变量，使用最小载体。新角色子设定的用户验收不能由本测试替代。
 
-对比实验默认通过 page_import 原样导入页面，不修改 Prompt，输入轴由服务端生成。只有明确比较文本改动时才编辑导入后的实验 inputs，不为实验改写来源页面。普通页面制作中的 Prompt 仍走正常 read/save；固定种子命令为 visual:produce -- render page <project-id> <page-id> --count 1 --seed <n> --wait，npm --prefix 使用仓库 app 的绝对路径。切换配置前确认旧任务已冻结，参数以现有接口为准。
+对比实验默认通过 page_import 原样导入页面，不修改 Prompt，输入轴由服务端生成；带参考图页面的导入仍不支持。只有明确比较文本改动时才编辑导入后的实验 inputs，不为实验改写来源页面。普通页面制作中的 Prompt 仍走正常 read/save；固定种子命令为 visual:produce -- render page <project-id> <page-id> --count 1 --seed <n> --wait，npm --prefix 使用仓库 app 的绝对路径。切换配置前确认旧任务已冻结，参数以现有接口为准。
 
 矩阵实验与结果查看优先使用同一工作台后端，见 docs/dev/comparison-experiment.md。通过 workbench:api 创建、查询和显式补跑；review 读取条件及图片路径，sheet 导出拼图与来源索引，diff 检查两格冻结输入差异。不重复编写读取内部结果文件、拼图或重建缺项实验的临时脚本。
 

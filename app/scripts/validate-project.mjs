@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import { readInheritanceSources, checkPageInheritance } from '../server/prompt-inheritance-facts.mjs';
 import { validatePagesIndexDocument } from '../server/pages-store.mjs';
 import { validateSceneIndexDocument, validateSceneProfileDocument, validateSceneVisualDocument, validateScenePromptDocument } from '../server/scene-files.mjs';
 import { readFile, readdir } from "node:fs/promises";
@@ -20,6 +19,7 @@ import { validateProjectManifest } from "../server/project-manifest.mjs";
 import { compileEffectiveRenderProfile, validateProjectRenderProfileOverride } from "../server/render-profile-compiler.mjs";
 import { readRenderProfileOverrideDocument } from "../server/render-profile-override.mjs";
 import {
+  checkPagePromptOverrideReferences,
   validateStoryOutlineDocument,
   validateStoryPageNarrativeDocument,
   validateStoryPagePromptDocument,
@@ -131,9 +131,8 @@ export async function validateProject(projectRoot) {
     for (const reference of content?.characters ?? []) if (!knownCharacters.has(reference.character_id) || !visualByCharacter[reference.character_id]?.variants.some(v => v.id === reference.variant_id)) warnings.push(`页面角色引用待修复：${entry.page_id}/${reference.character_id}/${reference.variant_id}`);
     try {
       const prompt = await readJson(projectRoot, `pages/${entry.page_id}.prompt.json`);
-      const sources = await readInheritanceSources(projectRoot, content?.characters ?? [], prompt.scene_id, prompt.scene_variant_id);
-      errors.push(...checkPageInheritance(prompt, sources).map(error => `pages/${entry.page_id}.prompt.json：${error}`));
-    } catch (error) { warnings.push(`页面继承待修复：${entry.page_id}：${error.message}`); }
+      errors.push(...checkPagePromptOverrideReferences(prompt, content?.characters ?? []).map(error => `pages/${entry.page_id}.prompt.json：${error}`));
+    } catch (error) { warnings.push(`页面 Prompt 待修复：${entry.page_id}：${error.message}`); }
   }
 
   let overrideDocument = null;

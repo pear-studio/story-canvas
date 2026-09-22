@@ -41,7 +41,7 @@ export async function handleAgentRequest({ request, response, decodedPath, proje
       throw new ApiError(400, "invalid_fact_draft");
     }
     sendOperation(200, await mutateTargetFacts(body.project_id, () => saveFactDraft(projectRoot, {
-      ...target, confirmationSha256: body.confirmation_sha256, document: body.document, expectedSha256: body.expected_sha256, expectedContextSha256: body.expected_context_sha256,
+      ...target, document: body.document, expectedSha256: body.expected_sha256, expectedContextSha256: body.expected_context_sha256,
       conflictCode: "fact_target_conflict", contextConflictCode: "fact_upstream_conflict",
     })));
     return true;

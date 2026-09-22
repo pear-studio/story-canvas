@@ -2,8 +2,7 @@ import path from 'node:path';
 import { resolveProjectLocation } from './project-operations.mjs';
 import { readPageIndex, readPageContent, readPagePrompt, validatePagesIndexDocument } from './pages-store.mjs';
 import { createPage, duplicatePage, deletePage, assertPageOwner } from './page-facts.mjs';
-import { readStoryFactDraft, commitStoryFact, readStoryPromptUpstream, FactError } from './story-facts.mjs';
-import { commitFactChanges } from './prompt-inheritance-facts.mjs';
+import { readStoryFactDraft, commitStoryFact, readStoryPromptUpstream, FactError, commitFactChanges } from './story-facts.mjs';
 import { hashCanonicalJson } from './workflow-definition.mjs';
 import { CHARACTER_PAGES_INDEX_SCHEMA_ID, validateCharacterPagesIndexDocument } from './character-files.mjs';
 import { materializeVisualPageTemplate } from './visual-page-templates.mjs';
@@ -35,4 +34,4 @@ export function commitCharacterPageFact(root,context,readDocument,kind,options){
 export function createCharacterPage(root,projectId,characterId,variantId,options){return createPage(root,projectId,{owner_kind:'character',character_id:characterId,variant_id:variantId},options);}
 export function duplicateCharacterPage(root,projectId,pageId){return duplicatePage(root,projectId,pageId);}
 export function deleteCharacterPage(root,projectId,pageId){return deletePage(root,projectId,pageId);}
-export function convertVisualPageTemplate(template,characterId){const value=materializeVisualPageTemplate(template,characterId);return {content:{$schema:STORY_PAGE_NARRATIVE_SCHEMA_ID,title:value.title,scene_description:'',characters:[],dialogue:[]},prompt:{$schema:STORY_PAGE_PROMPT_SCHEMA_ID,...value.prompt}};}
+export function convertVisualPageTemplate(template){const value=materializeVisualPageTemplate(template);return {content:{$schema:STORY_PAGE_NARRATIVE_SCHEMA_ID,title:value.title,scene_description:'',characters:[],dialogue:[]},prompt:{$schema:STORY_PAGE_PROMPT_SCHEMA_ID,...value.prompt}};}

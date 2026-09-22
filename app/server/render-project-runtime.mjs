@@ -14,7 +14,6 @@ import { configuredComfyUiUrls, createComfyEndpointSelector, primaryComfyUiUrl }
 import { queryComfySystemStats } from "./comfy-runtime.mjs";
 import { loadLocalConfig } from "./http-support.mjs";
 import { encodePageKey } from "./page-key.mjs";
-import { loadPromptDictionaryForRender } from "./prompt-dictionary-loader.mjs";
 import { renderTaskIdPattern } from "./render-task-id.mjs";
 import { waitForGenerationQueueDrain, waitForGenerationUnitTurn } from "./generation-queue.mjs";
 import { validateFrozenRenderTask } from "./render-task-contract.mjs";
@@ -193,10 +192,21 @@ function connectComfyProgress({ apiUrl, clientId, getPromptId, onProgress }) {
   };
 }
 
-async function waitForHistory(apiUrl, promptId, timeoutMs = 15 * 60_000) {
+export async function waitForHistory(apiUrl, promptId, timeoutMs = 15 * 60_000) {
   const started = Date.now();
+  let stalledPolls = 0;
   while (Date.now() - started < timeoutMs) {
-    const history = await fetchJson(`${apiUrl}/history/${encodeURIComponent(promptId)}`);
+    let history;
+    try {
+      history = await fetchJson(`${apiUrl}/history/${encodeURIComponent(promptId)}`);
+      stalledPolls = 0;
+    } catch (error) {
+      // 执行重负载阶段 ComfyUI 可能长时间不响应单个轮询请求；在总等待预算内继续轮询。
+      stalledPolls += 1;
+      if (stalledPolls >= 10) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      continue;
+    }
     const item = history[promptId];
     if (item?.outputs && Object.keys(item.outputs).length) return item;
     if (item?.status?.status_str === "error") {
@@ -240,8 +250,7 @@ export async function loadPersistedRenderTask(projectRoot, taskId, {
   if (task.purpose !== "candidate") throw new Error("当前只支持候选生成任务，请重新创建任务");
   if (task.id !== taskId) throw new Error("任务文件名与冻结任务 ID 不一致");
   const config = localConfig ?? await loadLocalConfig(path.join(repository, "app"));
-  const promptDictionary = await loadPromptDictionaryForRender(config, repository);
-  const validated = validateFrozenRenderTask(task, { dictionaryEntries: promptDictionary.entries, dictionaryIdentity: promptDictionary.identity });
+  const validated = validateFrozenRenderTask(task);
   return { task: validated.task, execution: validated.execution, localConfig: config, taskDirectory: persisted.task_directory };
 }
 

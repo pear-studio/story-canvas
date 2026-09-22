@@ -3,7 +3,7 @@
 日常命令需要本地工作台服务在线，无需打开网页。统一入口、返回结果和并发语义见[Agent 直接操作工作台](../reference/agent-interfaces.md)。
 
 
-所有视觉页渲染只从 `content.characters` 解析角色视觉配置、Prompt 和 LoRA。`dialogue[].speaker` 会在
+所有视觉页渲染只从 `content.characters` 解析角色视觉配置与 Prompt。`dialogue[].speaker` 会在
 启动前针对项目角色索引校验，但仅有画外对白的角色不会进入编译结果。
 
 单页命令直接读取当前项目事实，启动渲染时不要求项目 revision，不接受临时 Prompt 或 negative Prompt；seed 可用 `--seed` 固定，与网页一致。
@@ -18,7 +18,7 @@ npm --prefix <仓库根>/app run visual:produce -- render page <project-id> <pag
 
 命令经服务从最新持久化事实解析页面，冻结任务并交给同一调度器。默认立即返回 queued；需要直接读图时加 `--wait`。结果中的 `task_directory` 和 `candidate_paths` 都是完整绝对路径；任务目录中的 `manifest.json` 冻结执行输入，`state.json` 保存生命周期与候选摘要。Agent 应直接使用返回路径读图，不得通过短 ID 猜文件名。指定 `--seed` 时多张候选从该种子连续分配（n, n+1, …），不指定则随机；seed 只存在于任务和候选元数据中，不写回页面事实。
 
-只编译不渲染，输出当前页面编译结果的 JSON（positive/negative、来源片段、LoRA、route、recipe、审计与 blockers），不创建任务：
+只编译不渲染，输出当前页面编译结果的 JSON（positive/negative、sections 来源、编号参考图、route、recipe、审计与 blockers），不创建任务：
 
 ```powershell
 npm --prefix <仓库根>/app run visual:produce -- preview page <project-id> <page-id>
@@ -39,9 +39,9 @@ npm --prefix <仓库根>/app run visual:produce -- candidate delete <project-id>
 Resolver 通过 `pages/index.json` 与项目内唯一 page_id 定位页面。PageKey 为 `{ page_id }`，编码为 `v3/<page-id>`。
 归属不决定生成输入；归属失效的页面仍可编辑、修复和生成，实际参与生成的角色／场景子设定引用失效时阻止生成。
 
-三种归属统一读取 content、页面 Prompt、明确引用的角色和场景子设定。基础与子设定的 Prompt、LoRA 统一合并，
-页面之间不继承。五个 Prompt 分类按编译器顺序组合；关闭片段不进入编译，avoid 进入负向。
-角色移出画面后原有绑定片段保留供修复，生成时报告无效绑定；画外对白不会自动引入人物。
+三种归属统一读取 content、页面 Prompt、明确引用的角色和场景子设定，页面之间不继承。
+最终文本按全局文字、逐角色段、场景段、附图用途和本页描述确定性组合，负向恒空。
+移除引用需同时删除对应 override key，残留 key 保存被拒绝；画外对白不会自动引入人物。
 移动页面归属不改写引用、Prompt、候选或成品。已有任务始终消费冻结快照。
 
 生成提交与事实保存共用[项目操作协调器](project-operations.md)的项目操作锁。提交操作实际执行时
@@ -55,18 +55,17 @@ Resolver 通过 `pages/index.json` 与项目内唯一 page_id 定位页面。Pag
 ## 工作台流程预览
 
 `POST /api/projects/:id/workbench/page-render-inspection` 使用完整 PageKey 读取当前页面和角色事实，复用当前
-Prompt compiler、有效生成配置和 route 解析，返回 Positive、Negative、按页面分类组织的来源片段、出场角色
-及 variant、页面 LoRA、画布、候选 route、recipe、workflow、Prompt 审计和结构化阻断。它是只读预览，
+Prompt compiler、有效生成配置和 route 解析，返回 Positive、Negative（恒空）、按 sections 来源分段、
+编号参考图、出场角色及 variant、画布、候选 route、recipe、workflow、Prompt 审计和结构化阻断。它是只读预览，
 不建立渲染任务，也不要求项目 expected revision。
 
-请求可以额外携带工作台内尚未保存的 `prompt`。该草稿只在内存中校验和临时正规化；允许新片段省略 `id`，
-服务端不会为预览生成持久 ID，也不会写回项目。Prompt 不完整、override 冲突、模型或 LoRA 缺失时仍返回
+请求可以额外携带工作台内尚未保存的 `prompt`。该草稿只在内存中校验和临时正规化，不会写回项目。
+Prompt 不完整、override 冲突、模型缺失时仍返回
 HTTP 200 的 inspection，并在 `blockers` 中说明原因，因而页面可以继续展示已经能够编译的流程信息；PageKey
 错误、页面不存在或既有项目事实损坏仍按普通项目读取错误返回。
 
-页面编译与写后审计共享 `capturePagePromptSnapshot`、`compilePagePromptSnapshot`，严格词库读取位于
-`prompt-dictionary-loader.mjs`；工作台的审计不依赖搜索翻译 overlay。Agent 侧通过
+页面编译与写后审计共享 `capturePagePromptSnapshot`、`compilePagePromptSnapshot`。Agent 侧通过
 `visual:produce preview page` 复用同一投影，输出相同的编译结果 JSON。审计结果显式包含
-`status: complete | unavailable`，词库缺失或有效配置冲突时不以空词库或基础配置回退结果冒充通过。
-`blockers`、`warnings` 保留原审计 issue 的词条、精确路径、片段 ID、关联位置和计数信息；不同位置
-的同类问题不会合并。流程预览展示完整来源，生成禁用提示使用同一短说明；数量类提示只描述统计范围。
+`status: complete | unavailable`，有效配置冲突时不以基础配置回退结果冒充通过。
+`blockers`、`warnings` 保留原审计 issue 的精确位置信息；不同位置
+的同类问题不会合并。流程预览展示完整来源，生成禁用提示使用同一短说明。

@@ -1,14 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { compilePageRenderTarget } from "./page-render-resolver.mjs";
-import { loadPromptDictionaryForRender } from "./prompt-dictionary-loader.mjs";
 import { readResolvedRenderProfile } from "./render-profile-compiler.mjs";
 import { hashCanonicalJson } from "./workflow-definition.mjs";
 import { ApiError } from "./http-support.mjs";
 
 // 来源只用于追溯。导入后的生成内容和配置均由实验独立持有。
 export async function importComparisonPage({ repositoryRoot, projectDirectory, projectId, pageKey, localConfig }) {
-  const dictionary = await loadPromptDictionaryForRender(localConfig, repositoryRoot);
-  const target = await compilePageRenderTarget({ repositoryRoot, projectDirectory, pageKey, dictionaryEntries: dictionary.entries });
+  const target = await compilePageRenderTarget({ repositoryRoot, projectDirectory, pageKey });
   if (target.reference_images?.length) throw new ApiError(422, "reference_image_comparison_unsupported", ["带参考图页面请使用普通候选生成；对比实验尚不支持导入参考图"]);
   const bundle = target.compiled_profile;
   return {
@@ -49,5 +47,5 @@ export function assertComparisonInput(value) {
 export function comparisonRenderIdentity(input) {
   const { profile, canvas } = input.render;
   return { profile_id: profile.id, profile_sha256: hashCanonicalJson(profile), canvas,
-    architecture_family: profile.architecture_family, prompt_family: profile.prompt.family, models: profile.models };
+    architecture_family: profile.architecture_family, prompt_family: profile.architecture_family, models: profile.models };
 }

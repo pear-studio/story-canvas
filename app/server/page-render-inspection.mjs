@@ -2,9 +2,7 @@ import { diagnoseRenderProfile, diagnoseResolvedLoras } from "./render-profile-d
 import { inspectRenderProfile } from "./render-profile-inspection.mjs";
 import { compilePageRenderInspectionContext } from "./page-render-resolver.mjs";
 import { inspectionGenerationSignature } from "./generation-signature.mjs";
-import { storyPromptCategories } from "./story-files.mjs";
 import { hashCanonicalJson } from "./workflow-definition.mjs";
-import { loadPromptDictionaryForRender } from "./prompt-dictionary-loader.mjs";
 import { generationDetailsProjection } from "./generation-details.mjs";
 
 function issue(code, message, source = null, details = []) {
@@ -73,22 +71,13 @@ function loraBlockers(loras) {
 }
 
 function characterProjection(context, loras) {
-  const diagnosedByOwnerFilename = new Map(
-    loras.filter((lora) => lora.kind === "character").map((lora) => [`${lora.owner}\0${lora.filename}`, lora]),
-  );
-  const characterById = new Map((context.snapshot.characters ?? []).map((character) => [character.id, character]));
   return context.snapshot.character_references.map((reference) => {
     const facts = context.snapshot.character_facts[reference.character_id];
-    const character = characterById.get(reference.character_id);
     return {
       character_id: reference.character_id,
       name: facts?.profile?.name ?? reference.character_id,
       variant_id: reference.variant_id,
       configuration_id: reference.variant_id,
-      loras: (character?.loras ?? []).map((lora) => ({
-        ...structuredClone(lora),
-        diagnosis: structuredClone(diagnosedByOwnerFilename.get(`${reference.character_id}\0${lora.filename}`) ?? null),
-      })),
     };
   });
 }
@@ -98,21 +87,13 @@ export async function inspectPageRender({
   projectDirectory,
   pageKey,
   pagePromptDraft = undefined,
-  dictionaryEntries = null,
-  dictionaryError = null,
   config = {},
 }) {
-  if (dictionaryEntries === null && !dictionaryError) {
-    try { dictionaryEntries = (await loadPromptDictionaryForRender(config, repositoryRoot)).entries; }
-    catch (error) { dictionaryError = error.message; }
-  }
   const context = await compilePageRenderInspectionContext({
     repositoryRoot,
     projectDirectory,
     pageKey,
     pagePromptDraft,
-    dictionaryEntries,
-    dictionaryError,
   });
   let profile;
   try {
@@ -146,16 +127,10 @@ export async function inspectPageRender({
   ]);
   const warnings = uniqueIssues([...profile.warnings, ...auditWarnings]);
   const compiled = context.compiled_page;
-  const finalParts = [...(compiled?.prompt_parts?.positive ?? []), ...(compiled?.prompt_parts?.negative ?? [])];
-  const categoryParts = Object.fromEntries(storyPromptCategories.map((category) => [
-    category,
-    structuredClone(finalParts.filter((part) => part.category === category)),
-  ]));
   const profileIdentity = context.active_profile ? {
     id: context.active_profile.id,
     name: context.active_profile.name,
     architecture_family: context.active_profile.architecture_family,
-    prompt_family: context.active_profile.prompt.family,
     base_sha256: context.compiled_profile?.base_bundle?.resolved_profile_sha256
       ?? context.compiled_profile?.resolved_profile_sha256
       ?? null,
@@ -179,12 +154,8 @@ export async function inspectPageRender({
     prompt: {
       positive: compiled?.positive_prompt ?? "",
       negative: compiled?.negative_prompt ?? "",
-      separator: compiled?.prompt_parts?.separator ?? ", ",
-      parts: {
-        positive: structuredClone(compiled?.prompt_parts?.positive ?? []),
-        negative: structuredClone(compiled?.prompt_parts?.negative ?? []),
-        by_category: categoryParts,
-      },
+      sections: structuredClone(compiled?.sections ?? []),
+      images: structuredClone(compiled?.images ?? []),
     },
     characters: characterProjection(context, diagnosedLoras),
     loras: diagnosedLoras,
@@ -207,7 +178,7 @@ export async function inspectPageRender({
         positive: compiled?.positive_prompt ?? "",
         negative: compiled?.negative_prompt ?? "",
       },
-      promptParts: compiled?.prompt_parts,
+      sections: compiled?.sections,
       canvas: context.project.canvas ?? null,
       loras: diagnosedLoras,
     }),

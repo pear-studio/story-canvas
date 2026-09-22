@@ -36,32 +36,7 @@
           ]
         },
         "visual": {
-          "subject": [
-            {
-              "prompt_type": "danbooru",
-              "prompt_text": "solo"
-            }
-          ],
-          "person": [
-            {
-              "prompt_type": "danbooru",
-              "prompt_text": "standing",
-              "role_slot": "subject"
-            }
-          ],
-          "setting": [],
-          "camera": [
-            {
-              "prompt_type": "custom_description",
-              "prompt_text": "full body"
-            },
-            {
-              "prompt_type": "custom_description",
-              "prompt_text": "facing viewer",
-              "role_slot": "subject"
-            }
-          ],
-          "avoid": []
+          "text": "画面只有一个角色，自然放松地站立，从头到脚全身完整入镜，面向画面。发型、面部、服装和主要配饰清晰可辨。"
         }
       }
     },
@@ -93,32 +68,7 @@
           ]
         },
         "visual": {
-          "subject": [
-            {
-              "prompt_type": "danbooru",
-              "prompt_text": "solo"
-            }
-          ],
-          "person": [
-            {
-              "prompt_type": "danbooru",
-              "prompt_text": "t-pose",
-              "role_slot": "subject"
-            }
-          ],
-          "setting": [],
-          "camera": [
-            {
-              "prompt_type": "custom_description",
-              "prompt_text": "full body"
-            },
-            {
-              "prompt_type": "custom_description",
-              "prompt_text": "facing viewer",
-              "role_slot": "subject"
-            }
-          ],
-          "avoid": []
+          "text": "画面只有一个角色，面向画面站立，双臂在肩高水平向两侧伸展呈标准 T-pose，从头到脚全身完整入镜。服装层次、鞋子、主要配饰和装备清晰可见、不被姿态遮挡。"
         }
       }
     },
@@ -153,25 +103,7 @@
           ]
         },
         "visual": {
-          "subject": [],
-          "person": [],
-          "setting": [
-            {
-              "prompt_type": "custom_description",
-              "prompt_text": "reference sheet"
-            }
-          ],
-          "camera": [
-            {
-              "prompt_type": "custom_description",
-              "prompt_text": "front side back full-body views and front face close-up"
-            },
-            {
-              "prompt_type": "custom_description",
-              "prompt_text": "multiple views"
-            }
-          ],
-          "avoid": []
+          "text": "角色设定参考板，画面清晰分成四个视图区：正面全身、侧面全身、背面全身和正面脸部近景。四个区域是同一角色、同一套服装和同一组主要配饰。画面中没有其他人物、无关物体或说明文字。"
         }
       }
     },
@@ -203,26 +135,7 @@
           ]
         },
         "visual": {
-          "subject": [
-            {
-              "prompt_type": "danbooru",
-              "prompt_text": "solo"
-            }
-          ],
-          "person": [],
-          "setting": [],
-          "camera": [
-            {
-              "prompt_type": "custom_description",
-              "prompt_text": "upper body"
-            },
-            {
-              "prompt_type": "custom_description",
-              "prompt_text": "facing viewer",
-              "role_slot": "subject"
-            }
-          ],
-          "avoid": []
+          "text": "画面只有一个角色的上半身肖像，面向画面，完整呈现头发、面部、肩膀和上半身躯干。面部清晰、身份可辨，发型和主要服装细节可见。"
         }
       }
     }

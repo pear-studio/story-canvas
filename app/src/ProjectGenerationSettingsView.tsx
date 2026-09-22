@@ -19,7 +19,6 @@ import {
   type ResourcePreviewImage,
 } from "./ResourceCatalog";
 import { mutateFacts, readFacts } from "./project-write-client";
-import { alignPromptOverridePieces, splitPromptOverrideText } from "./prompt-override-alignment.mjs";
 import RenderProfileInspection, { RenderProfileOverrideInspection, type RenderProfileInspectionProjection } from "./RenderProfileInspection";
 
 type AssetStatus = { id?: string; filename: string; relative_path?: string; size_bytes?: number; sha256?: string; status: string; weight?: number | null };
@@ -30,6 +29,7 @@ type RenderProfile = {
   tags?: string[];
   preview?: { images: ResourcePreviewImage[] } | null;
   architecture_family?: string;
+  prompt_family?: string | null;
   available: boolean | null;
   diagnosis_loaded?: boolean;
   models: Record<string, AssetStatus>;
@@ -46,17 +46,6 @@ type LoraResourceList = {
   raw: RawLoraResource[];
   errors: unknown[];
 };
-
-function promptFragmentValue(fragment: RenderProfileInspectionProjection["prompt"]["fragments"][number]) {
-  const { id: _id, source: _source, ...value } = fragment;
-  return value;
-}
-
-function promptOverrideText(state?: { exists: boolean; value?: unknown }) {
-  if (!state?.exists || !state.value || typeof state.value !== "object") return null;
-  const text = (state.value as { prompt_text?: unknown }).prompt_text;
-  return typeof text === "string" ? text : null;
-}
 
 function loraDefinition(resource: LoraResourceDefinition): LoraDefinition {
   const recommended = resource.recommended_generation.weight.default;
@@ -123,8 +112,8 @@ export default function ProjectGenerationSettingsView({ projectId, project, busy
   const [loraPicker, setLoraPicker] = useState(false);
   const [replaceLora, setReplaceLora] = useState<RenderProfileInspectionProjection["style_loras"][string] | null>(null);
   const [loraNotice, setLoraNotice] = useState("");
-  const [promptDrafts, setPromptDrafts] = useState<Record<"positive" | "negative", string>>({ positive: "", negative: "" });
-  const [promptSaved, setPromptSaved] = useState<Record<"positive" | "negative", string>>({ positive: "", negative: "" });
+  const [promptDraft, setPromptDraft] = useState("");
+  const [promptSaved, setPromptSaved] = useState("");
   const loadGeneration = useRef(0);
   useProjectSnapshotReader(projectId, async (read) => {
     const [next, document] = await Promise.all([
@@ -155,26 +144,22 @@ export default function ProjectGenerationSettingsView({ projectId, project, busy
   const inspected = inspectionOverride?.id === inspectionId ? inspectionOverride : profiles.find((profile) => profile.id === inspectionId) ?? null;
   const styleLoras = Object.values(current?.inspection?.style_loras ?? {});
   const activeLoraBySha = new Map(styleLoras.map((lora) => [lora.sha256, lora]));
-  const registeredResources = (loraResources?.resources ?? []).filter(({ resource }) => resource.architecture.family === current?.architecture_family && resource.architecture.prompt_family === current?.inspection?.prompt.family);
-  const rawResources = (loraResources?.raw ?? []).map((raw) => ({ raw, resource: { id: raw.id, name: raw.name, file: { relative_path: raw.relative_path, sha256: raw.sha256, size_bytes: raw.size_bytes }, architecture: { family: current?.architecture_family ?? "other", prompt_family: current?.inspection?.prompt.family ?? "universal" }, base_models: [], activation: { trigger_words: [], tags: [] }, recommended_generation: { weight: { default: 1, minimum: null, maximum: null, status: "untested" }, clip_skip: null, sampler: null, scheduler: null, steps: null, cfg: null, status: "untested" }, description: "未登记的本机 LoRA", usage_notes: "", source: { type: "local_file" }, previews: [], examples: [] } satisfies LoraResourceDefinition }));
+  const registeredResources = (loraResources?.resources ?? []).filter(({ resource }) => resource.architecture.family === current?.architecture_family && resource.architecture.prompt_family === (current?.prompt_family ?? undefined));
+  const rawResources = (loraResources?.raw ?? []).map((raw) => ({ raw, resource: { id: raw.id, name: raw.name, file: { relative_path: raw.relative_path, sha256: raw.sha256, size_bytes: raw.size_bytes }, architecture: { family: current?.architecture_family ?? "other", prompt_family: current?.prompt_family ?? "universal" }, base_models: [], activation: { trigger_words: [], tags: [] }, recommended_generation: { weight: { default: 1, minimum: null, maximum: null, status: "untested" }, clip_skip: null, sampler: null, scheduler: null, steps: null, cfg: null, status: "untested" }, description: "未登记的本机 LoRA", usage_notes: "", source: { type: "local_file" }, previews: [], examples: [] } satisfies LoraResourceDefinition }));
   const selectableResources = [
     ...registeredResources.map((entry) => ({ resource: entry.resource, catalogItem: loraResourceCatalogItem(entry) })),
     ...rawResources.map(({ raw, resource }) => ({ resource, catalogItem: rawLoraCatalogItem(raw) })),
   ].filter(({ resource }) => !activeLoraBySha.has(resource.file.sha256));
   const selectableResourceById = new Map(selectableResources.map((entry) => [entry.catalogItem.id, entry.resource]));
   const basePickerItems = ordered.filter((profile) => profile.id !== project.default_render_profile).map(profileCatalogItem);
-  const promptFragments = current?.inspection?.prompt.fragments ?? [];
+  const globalPromptBaseText = current?.inspection?.prompt.text ?? "";
   const promptChanges = [...(current?.inspection?.project_override.changes ?? []), ...(current?.inspection?.project_override.conflicts ?? [])];
-  const promptChangeByTarget = new Map(promptChanges.filter((change) => change.target.startsWith("prompt.fragments.")).map((change) => [change.target, change]));
-  const promptSeparator = current?.inspection?.prompt.separator || ", ";
-  const promptEntries = promptFragments.map((fragment) => { const change = promptChangeByTarget.get(`prompt.fragments.${fragment.id}`); return { fragment, text: promptOverrideText(change?.project) ?? fragment.prompt_text, baseText: promptOverrideText(change?.current) ?? fragment.prompt_text }; });
-  const promptGroups = (["positive", "negative"] as const).map((polarity) => {
-    const entries = promptEntries.filter((entry) => entry.fragment.polarity === polarity);
-    return { polarity, entries, text: entries.map((entry) => entry.text).join(promptSeparator), hasChanges: entries.some((entry) => promptChangeByTarget.has(`prompt.fragments.${entry.fragment.id}`)) };
-  });
+  const globalPromptChange = promptChanges.find((change) => change.target === "prompt.text") ?? null;
+  const globalPromptText = globalPromptChange?.project.exists && typeof globalPromptChange.project.value === "string"
+    ? globalPromptChange.project.value
+    : globalPromptBaseText;
   useEffect(() => {
-    const next = Object.fromEntries(promptGroups.map((group) => [group.polarity, group.text])) as Record<"positive" | "negative", string>;
-    setPromptDrafts(next); setPromptSaved(next);
+    setPromptDraft(globalPromptText); setPromptSaved(globalPromptText);
   }, [current?.inspection?.project_override.effective_sha256, projectId]);
 
   async function saveChoice(patch: Partial<Pick<ProjectSettings, "canvas" | "default_render_profile">>) {
@@ -277,8 +262,8 @@ export default function ProjectGenerationSettingsView({ projectId, project, busy
     finally { setOverrideBusy(false); }
   }
 
-  const promptDirty = promptGroups.some(({ polarity }) => promptDrafts[polarity] !== promptSaved[polarity]);
-  const promptHasChanges = promptChanges.some((change) => change.target.startsWith("prompt.fragments."));
+  const promptDirty = promptDraft !== promptSaved;
+  const promptHasChanges = promptChanges.some((change) => change.target === "prompt.text");
 
   async function confirmDiscardPromptDrafts() {
     if (!promptDirty) return true;
@@ -296,38 +281,25 @@ export default function ProjectGenerationSettingsView({ projectId, project, busy
     try {
       const document = await readOverrideDocument();
       const group = document.profiles[current.id] ?? { changes: [] };
-      const byTarget = new Map(group.changes.map((change) => [change.target, change]));
-      for (const { polarity, entries } of promptGroups) {
-        if (promptDrafts[polarity] === promptSaved[polarity]) continue;
-        const pieces = splitPromptOverrideText(promptDrafts[polarity], promptSeparator);
-        const normalized = pieces.length > entries.length && entries.length ? [...pieces.slice(0, entries.length - 1), pieces.slice(entries.length - 1).join(promptSeparator).trim()] : pieces;
-        const values = alignPromptOverridePieces(entries, normalized);
-        entries.forEach(({ fragment, baseText }, index) => {
-          const target = `prompt.fragments.${fragment.id}`;
-          const existing = byTarget.get(target);
-          const original = existing?.original ?? { exists: true as const, value: promptFragmentValue(fragment) };
-          const value = values[index];
-          if (value == null) byTarget.set(target, { target, original, project: { exists: false } });
-          else if (value === baseText) byTarget.delete(target);
-          else {
-            const baseValue = original.exists && original.value && typeof original.value === "object" ? original.value as Record<string, unknown> : promptFragmentValue(fragment);
-            byTarget.set(target, { target, original, project: { exists: true, value: { ...baseValue, prompt_text: value } } });
-          }
-        });
+      const changes = group.changes.filter((change) => change.target !== "prompt.text");
+      if (promptDraft !== globalPromptBaseText) {
+        const existing = group.changes.find((change) => change.target === "prompt.text");
+        const original = existing?.original ?? { exists: true as const, value: globalPromptBaseText };
+        changes.push({ target: "prompt.text", original, project: { exists: true, value: promptDraft } });
       }
-      await putOverrideDocument({ ...document, profiles: { ...document.profiles, [current.id]: { ...group, changes: [...byTarget.values()] } } });
+      await putOverrideDocument({ ...document, profiles: { ...document.profiles, [current.id]: { ...group, changes } } });
       notify({ kind: "success", message: "Prompt 调整已保存" });
     } catch (error) { notify({ kind: "error", message: `Prompt 调整保存失败：${error instanceof Error ? error.message : String(error)}` }); }
     finally { setOverrideBusy(false); }
   }
 
   async function resetPromptOverrides() {
-    if (!current || overrideBusy || !promptHasChanges || !await confirmDiscardPromptDrafts() || !await confirm({ kind: "warning", title: "恢复 Prompt 基础值", message: "恢复当前模型配置的全部 Prompt 基础值？其他项目调整不会改变。" })) return;
+    if (!current || overrideBusy || !promptHasChanges || !await confirmDiscardPromptDrafts() || !await confirm({ kind: "warning", title: "恢复 Prompt 基础值", message: "恢复当前模型配置的全局 Prompt 基础值？其他项目调整不会改变。" })) return;
     setOverrideBusy(true);
     try {
       const document = await readOverrideDocument();
       const group = document.profiles[current.id] ?? { changes: [] };
-      await putOverrideDocument({ ...document, profiles: { ...document.profiles, [current.id]: { ...group, changes: group.changes.filter((change) => !change.target.startsWith("prompt.fragments.")) } } });
+      await putOverrideDocument({ ...document, profiles: { ...document.profiles, [current.id]: { ...group, changes: group.changes.filter((change) => change.target !== "prompt.text") } } });
     } catch (error) { notify({ kind: "error", message: `Prompt 重置失败：${error instanceof Error ? error.message : String(error)}` }); }
     finally { setOverrideBusy(false); }
   }
@@ -367,7 +339,7 @@ export default function ProjectGenerationSettingsView({ projectId, project, busy
     <section className="settings-card project-adjustments" data-project-fact-dirty={promptDirty ? "true" : undefined}><header className="project-adjustments__header"><div><span className="settings-eyebrow">项目级调整</span><h3>项目调整</h3><p>调整只写入当前项目，不会复制整套模型配置。</p></div>{selectedAdjustment?.inspection && <span className={`project-adjustments__status project-adjustments__status--${selectedOverrideStatus}`}>{selectedOverrideStatus === "conflict" ? "需要处理" : selectedOverrideStatus === "applied" ? "已设置" : "未设置"}</span>}</header>
       <div className="project-adjustments__selector"><label><span>调整对象</span><select value={selectedAdjustment?.id ?? ""} onChange={(event) => setSelectedAdjustmentId(event.target.value)}>{ordered.map((profile) => <option value={profile.id} key={profile.id}>{profile.name}{profile.id === current?.id ? "（当前）" : ""}</option>)}</select></label><p>{selectedAdjustmentCurrent ? "下面的调整会用于当前项目后续生成。" : "这里只读查看其他模型配置；切换为当前配置后才能修改。"}</p></div>
       {selectedAdjustment?.inspection ? <RenderProfileOverrideInspection inspection={selectedAdjustment.inspection} isCurrent={selectedAdjustmentCurrent} embedded onResetChange={selectedAdjustmentCurrent ? (target) => void resetChange(target) : undefined} resettingTarget={resettingTarget || null} /> : <div className="empty-card">{selectedAdjustment?.errors.join("；") || "当前模型配置没有可读取的项目调整。"}</div>}
-      {current?.inspection && selectedAdjustmentCurrent && <section className="project-prompt-override"><header><div><h4>Prompt 调整</h4><p>基于当前模型配置已有 Prompt，直接调整完整的正向和负向文本。</p></div></header><div className="project-prompt-override__groups">{promptGroups.map(({ polarity, entries, hasChanges }) => <label className="project-prompt-override__field project-prompt-override__field--combined" key={polarity}><span><b>{polarity === "positive" ? "正向 Prompt" : "负向 Prompt"}</b>{hasChanges ? <i>已有调整</i> : <em>基础值</em>}</span><textarea value={promptDrafts[polarity]} onChange={(event) => { const text = event.currentTarget.value; setPromptDrafts((value) => ({ ...value, [polarity]: text })); }} disabled={overrideBusy || !entries.length} rows={5} placeholder={entries.length ? "输入 Prompt 文本" : "没有可调整的片段"} /></label>)}</div><div className="project-prompt-override__footer">{promptHasChanges && <button className="button button--quiet" type="button" disabled={overrideBusy} onClick={() => void resetPromptOverrides()}>重置 Prompt</button>}<button className="button button--primary" type="button" disabled={overrideBusy || !promptDirty || !promptEntries.length} onClick={() => void savePromptOverrides()}>{overrideBusy ? "保存中…" : "保存 Prompt 调整"}</button>{promptDirty && <span>有未保存修改</span>}</div></section>}
+      {current?.inspection && selectedAdjustmentCurrent && <section className="project-prompt-override"><header><div><h4>Prompt 调整</h4><p>全局 Prompt 放在各设定之前，整段替换；清空后生成时省略这段文字。</p></div></header><div className="project-prompt-override__groups"><label className="project-prompt-override__field project-prompt-override__field--combined"><span><b>全局 Prompt</b>{promptHasChanges ? <i>已有调整</i> : <em>基础值</em>}</span><textarea value={promptDraft} onChange={(event) => setPromptDraft(event.currentTarget.value)} disabled={overrideBusy} rows={4} placeholder="输入全局 Prompt 文本，留空则省略" /></label></div><div className="project-prompt-override__footer">{promptHasChanges && <button className="button button--quiet" type="button" disabled={overrideBusy} onClick={() => void resetPromptOverrides()}>重置 Prompt</button>}<button className="button button--primary" type="button" disabled={overrideBusy || !promptDirty} onClick={() => void savePromptOverrides()}>{overrideBusy ? "保存中…" : "保存 Prompt 调整"}</button>{promptDirty && <span>有未保存修改</span>}</div></section>}
     </section>
     {profilePicker && <Modal size="workspace" title="选择基模" subtitle="当前项目" onClose={() => setProfilePicker(false)} busy={busy} ariaLabel="选择基模"><div className="profile-picker-body"><ResourcePicker items={basePickerItems} busy={busy} empty="没有其他可选择的基模。" onInspect={(item) => { const profile = profiles.find((entry) => entry.id === item.id); if (!profile) return; setProfilePicker(false); void inspectProfile(profile); }} onSelect={(item) => { const profile = profiles.find((entry) => entry.id === item.id); if (!profile) return; void (async () => { if (await saveChoice({ default_render_profile: profile.id })) setProfilePicker(false); })(); }} /></div></Modal>}
     {inspectionId && <Modal size="workspace" title={inspected?.name ?? "模型配置"} subtitle="模型配置" onClose={() => { setInspectionId(""); setInspectionOverride(null); }} ariaLabel={`查看模型配置：${inspected?.name ?? inspectionId}`}><div className="profile-inspection-body">{inspectionLoading ? <section className="panel"><p>正在读取完整配置…</p></section> : inspected?.inspection ? <RenderProfileInspection inspection={inspected.inspection} isCurrent={inspected.id === project.default_render_profile} /> : <section className="panel"><h3>配置详情不可用</h3><p>{inspected?.errors.join("；") || "资源目录没有返回可检查内容。"}</p></section>}</div></Modal>}

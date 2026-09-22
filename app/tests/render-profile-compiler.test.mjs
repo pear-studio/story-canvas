@@ -29,7 +29,6 @@ async function fixture(profileId, mutate) {
   const library = path.join(root, "library");
   await mkdir(path.join(library, "render-profiles"), { recursive: true });
   await Promise.all([
-    cp(path.join(repositoryRoot, "library", "prompt-policies"), path.join(library, "prompt-policies"), { recursive: true }),
     cp(path.join(repositoryRoot, "library", "render-recipes"), path.join(library, "render-recipes"), { recursive: true }),
     cp(path.join(repositoryRoot, "library", "workflows"), path.join(library, "workflows"), { recursive: true }),
     cp(path.join(repositoryRoot, "library", "render-profiles", `${profileId}.json`), path.join(library, "render-profiles", `${profileId}.json`)),
@@ -38,121 +37,93 @@ async function fixture(profileId, mutate) {
   return root;
 }
 
-test("Anima profile 解析稳定模型角色、候选 recipe 和 workflow 双哈希", async () => {
-  const compiled = await readResolvedRenderProfile(repositoryRoot, "anima-base-v1");
+test("Qwen profile 解析稳定模型角色、全局文字、候选 recipe 和 workflow 双哈希", async () => {
+  const compiled = await readResolvedRenderProfile(repositoryRoot, "qwen-image-2-1");
   const resolved = compiled.resolved_profile;
 
   assert.deepEqual(Object.keys(resolved.models), ["dit", "text_encoder", "vae"]);
-  assert.equal(resolved.prompt.policy, "anima-v1");
-  assert.equal(resolved.prompt.fragments["quality-best"].prompt_text, "best quality");
-  assert.equal(resolved.prompt.fragments["quality-score-7"].prompt_text, "score_7");
-  assert.equal(resolved.operations.candidates.routes.empty_latent.recipe.steps, 32);
-  assert.equal(resolved.operations.candidates.routes.empty_latent.recipe.sampler, "er_sde");
-  assert.equal(resolved.operations.candidates.routes.empty_latent.recipe.scheduler, "beta");
+  assert.equal(resolved.architecture_family, "qwen-image-2-1");
+  assert.equal(resolved.prompt.text, "根据以下设定和画面描述创作一幅新画面，动作、表情、视角与构图以画面描述为准。");
+  assert.equal(Object.hasOwn(resolved.prompt, "policy"), false);
+  assert.equal(Object.hasOwn(resolved.prompt, "fragments"), false);
+  assert.equal(resolved.operations.candidates.routes.empty_latent.recipe.steps, 25);
+  assert.equal(resolved.operations.candidates.routes.empty_latent.recipe.sampler, "euler");
+  assert.equal(resolved.operations.candidates.routes.empty_latent.recipe.scheduler, "simple");
   assert.deepEqual(resolved.operations.candidates.routes.empty_latent, {
-    workflow: "anima-candidate-page",
-    recipe_source_id: "anima-base-v1-candidate",
+    workflow: "qwen-image-2-1-text",
+    recipe_source_id: "qwen-image-2-1-candidate",
     recipe: resolved.operations.candidates.routes.empty_latent.recipe,
+  });
+  assert.deepEqual(resolved.operations.candidates.routes.reference_image, {
+    workflow: "qwen-image-2-1-reference",
+    recipe_source_id: "qwen-image-2-1-candidate",
+    recipe: resolved.operations.candidates.routes.reference_image.recipe,
   });
   assert.deepEqual(Object.keys(resolved.operations), ["candidates"]);
   assert.equal(Object.hasOwn(resolved, "workflows"), false);
   assert.equal(Object.hasOwn(resolved, "provenance"), false);
   assert.equal(Object.hasOwn(resolved, "canonical_sha256"), false);
-  assert.deepEqual(Object.keys(compiled.workflow_definitions), ["anima-candidate-page"]);
-  assert.match(compiled.workflow_definitions["anima-candidate-page"].template_sha256, /^[0-9a-f]{64}$/);
-  assert.match(compiled.workflow_definitions["anima-candidate-page"].manifest_sha256, /^[0-9a-f]{64}$/);
-  assert.equal(compiled.source_identity.workflows["anima-candidate-page"].template.sha256, compiled.workflow_definitions["anima-candidate-page"].template_sha256);
+  assert.deepEqual(Object.keys(compiled.workflow_definitions).sort(), ["qwen-image-2-1-reference", "qwen-image-2-1-text"]);
+  for (const id of ["qwen-image-2-1-text", "qwen-image-2-1-reference"]) {
+    assert.match(compiled.workflow_definitions[id].template_sha256, /^[0-9a-f]{64}$/);
+    assert.match(compiled.workflow_definitions[id].manifest_sha256, /^[0-9a-f]{64}$/);
+    assert.equal(compiled.source_identity.workflows[id].template.sha256, compiled.workflow_definitions[id].template_sha256);
+  }
   assert.match(compiled.source_identity.profile.sha256, /^[0-9a-f]{64}$/);
-  assert.match(compiled.source_identity.prompt_policy.sha256, /^[0-9a-f]{64}$/);
-  assert.deepEqual(Object.keys(compiled.source_identity.recipes).sort(), ["anima-base-v1-candidate"]);
+  assert.equal(Object.hasOwn(compiled.source_identity, "prompt_policy"), false);
+  assert.equal(Object.hasOwn(compiled.source_identity, "prompt_fragments"), false);
+  assert.deepEqual(Object.keys(compiled.source_identity.recipes).sort(), ["qwen-image-2-1-candidate"]);
   assert.equal(compiled.resolved_profile_sha256, hashCanonicalJson(resolved));
 });
 
-test("Anima Aesthetic 解析合并 policy/profile 片段并物化候选 route", async () => {
-  const compiled = await readResolvedRenderProfile(repositoryRoot, "anima-aesthetic-v1-1");
-  const resolved = compiled.resolved_profile;
-
-  assert.equal(resolved.prompt.fragments["quality-masterpiece"].prompt_text, "masterpiece");
-  assert.equal(Object.hasOwn(resolved.prompt.fragments, "quality-score-7"), false);
-  assert.deepEqual(compiled.source_identity.prompt_fragments["quality-masterpiece"], { source_kind: "render_profile", source_id: "anima-aesthetic-v1-1" });
-  assert.deepEqual(compiled.source_identity.prompt_fragments["avoid-text"], { source_kind: "render_profile", source_id: "anima-aesthetic-v1-1" });
-
-  const routes = Object.entries(resolved.operations).flatMap(([operation, value]) => Object.entries(value.routes).map(([input, route]) => [operation, input, route.workflow, route.recipe_source_id]));
-  assert.deepEqual(routes, [
-    ["candidates", "empty_latent", "anima-candidate-page", "anima-aesthetic-v1-1-candidate"],
-  ]);
-  assert.deepEqual(Object.keys(compiled.source_identity.recipes).sort(), ["anima-aesthetic-v1-1-candidate"]);
-  assert.equal(compiled.resolved_profile_sha256, hashCanonicalJson(resolved));
-});
-
-test("Prompt 同 order 由稳定 ID 排序而不误报冲突", async () => {
-  const root = await fixture("anima-aesthetic-v1-1", async (fixtureRoot) => {
-    const file = path.join(fixtureRoot, "library", "render-profiles", "anima-aesthetic-v1-1.json");
-    const profile = await json(file);
-    profile.prompt.fragments["quality-test-a"] = { polarity: "positive", placement: "prefix", order: 100, prompt_type: "custom_description", prompt_text: "test a" };
-    profile.prompt.fragments["quality-test-b"] = { polarity: "positive", placement: "prefix", order: 100, prompt_type: "custom_description", prompt_text: "test b" };
-    await writeJson(file, profile);
-  });
-  const compiled = await readResolvedRenderProfile(root, "anima-aesthetic-v1-1");
-  assert.deepEqual(Object.keys(compiled.resolved_profile.prompt.fragments).slice(0, 3), [
-    "quality-masterpiece",
-    "quality-test-a",
-    "quality-test-b",
-  ]);
-});
-
-test("缺失引用、Prompt ID 冲突、workflow 不兼容和残缺二遍参数都在解析时拒绝", async () => {
-  const missingReference = await fixture("anima-base-v1", async (root) => {
-    const file = path.join(root, "library", "render-profiles", "anima-base-v1.json");
+test("缺失引用、workflow 不兼容和多余拓扑参数都在解析时拒绝", async () => {
+  const missingReference = await fixture("qwen-image-2-1", async (root) => {
+    const file = path.join(root, "library", "render-profiles", "qwen-image-2-1.json");
     const profile = await json(file);
     profile.operations.candidates.routes.empty_latent.recipe = "missing-recipe";
     await writeJson(file, profile);
   });
-  await assert.rejects(() => readResolvedRenderProfile(missingReference, "anima-base-v1"), /render recipe 引用不存在：missing-recipe/);
+  await assert.rejects(() => readResolvedRenderProfile(missingReference, "qwen-image-2-1"), /render recipe 引用不存在：missing-recipe/);
 
-  const fragmentConflict = await fixture("anima-base-v1", async (root) => {
-    const file = path.join(root, "library", "render-profiles", "anima-base-v1.json");
-    const profile = await json(file);
-    profile.prompt.fragments["quality-masterpiece"] = { polarity: "positive", placement: "prefix", order: 190, prompt_type: "custom_description", prompt_text: "project masterpiece" };
-    await writeJson(file, profile);
-    const policyFile = path.join(root, "library", "prompt-policies", "anima-v1.json");
-    const policy = await json(policyFile);
-    policy.fragments["quality-masterpiece"] = { polarity: "positive", placement: "prefix", order: 100, prompt_type: "custom_description", prompt_text: "policy masterpiece" };
-    await writeJson(policyFile, policy);
-  });
-  await assert.rejects(() => readResolvedRenderProfile(fragmentConflict, "anima-base-v1"), /Prompt 片段 ID 冲突：quality-masterpiece/);
-
-  const incompatibleWorkflow = await fixture("anima-base-v1", async (root) => {
-    const file = path.join(root, "library", "render-profiles", "anima-base-v1.json");
+  const incompatibleWorkflow = await fixture("qwen-image-2-1", async (root) => {
+    const file = path.join(root, "library", "render-profiles", "qwen-image-2-1.json");
     const profile = await json(file);
     profile.operations.candidates.routes.empty_latent.workflow = "missing-workflow";
     await writeJson(file, profile);
   });
-  await assert.rejects(() => readResolvedRenderProfile(incompatibleWorkflow, "anima-base-v1"), /workflow missing-workflow 无法读取或校验/);
+  await assert.rejects(() => readResolvedRenderProfile(incompatibleWorkflow, "qwen-image-2-1"), /workflow missing-workflow 无法读取或校验/);
 
-  const unusedTopologyParameter = await fixture("anima-base-v1", async (root) => {
-    const file = path.join(root, "library", "render-recipes", "anima-base-v1-candidate.json");
+  const unusedTopologyParameter = await fixture("qwen-image-2-1", async (root) => {
+    const file = path.join(root, "library", "render-recipes", "qwen-image-2-1-candidate.json");
     const recipe = await json(file);
     recipe.scale = 2;
     await writeJson(file, recipe);
   });
-  await assert.rejects(() => readResolvedRenderProfile(unusedTopologyParameter, "anima-base-v1"), /anima-candidate-page 不消费的参数：scale/);
+  await assert.rejects(() => readResolvedRenderProfile(unusedTopologyParameter, "qwen-image-2-1"), /不消费的参数：scale/);
 
-  const invalidSchemaField = await fixture("anima-base-v1", async (root) => {
-    const file = path.join(root, "library", "render-profiles", "anima-base-v1.json");
+  const invalidSchemaField = await fixture("qwen-image-2-1", async (root) => {
+    const file = path.join(root, "library", "render-profiles", "qwen-image-2-1.json");
     const profile = await json(file);
     profile.$schema = 42;
     await writeJson(file, profile);
   });
-  await assert.rejects(() => readResolvedRenderProfile(invalidSchemaField, "anima-base-v1"), /\$schema 必须是字符串/);
-});
+  await assert.rejects(() => readResolvedRenderProfile(invalidSchemaField, "qwen-image-2-1"), /\$schema 必须是字符串/);
 
-test("生成配置只接受 Anima 三模型角色并拒绝 SDXL 遗留形状", async () => {
-  const root = await fixture("anima-base-v1", async (fixtureRoot) => {
-    const file = path.join(fixtureRoot, "library", "render-profiles", "anima-base-v1.json");
+  const legacyPrompt = await fixture("qwen-image-2-1", async (root) => {
+    const file = path.join(root, "library", "render-profiles", "qwen-image-2-1.json");
     const profile = await json(file);
-    profile.architecture_family = "sdxl";
+    profile.prompt = { policy: "qwen-image-2-1", fragments: {} };
     await writeJson(file, profile);
   });
-  await assert.rejects(() => readResolvedRenderProfile(root, "anima-base-v1"), /architecture_family 无效/);
+  await assert.rejects(() => readResolvedRenderProfile(legacyPrompt, "qwen-image-2-1"), /未知字段|prompt\.text 必须是字符串/);
+});
+
+test("生成配置只接受 Qwen 结构家族并拒绝旧家族", async () => {
+  const root = await fixture("qwen-image-2-1", async (fixtureRoot) => {
+    const file = path.join(fixtureRoot, "library", "render-profiles", "qwen-image-2-1.json");
+    const profile = await json(file);
+    profile.architecture_family = "anima";
+    await writeJson(file, profile);
+  });
+  await assert.rejects(() => readResolvedRenderProfile(root, "qwen-image-2-1"), /architecture_family 无效/);
 });

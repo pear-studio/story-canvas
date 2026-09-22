@@ -3,7 +3,6 @@ import { deletePageCandidates } from "./candidate-delete.mjs";
 import { readPageMedia } from "./page-media.mjs";
 import { encodePageKey, validatePageKey } from "./page-key.mjs";
 import { compilePageRenderInspectionContext, resolveExactPageIdentity, PageRenderError } from "./page-render-resolver.mjs";
-import { loadPromptDictionaryForRender } from "./prompt-dictionary-loader.mjs";
 import { isActiveRenderTaskState, listProjectRenderTaskStates } from "./render-task-storage.mjs";
 
 function requireStoryKey(key) {
@@ -24,8 +23,6 @@ export async function inspectStoryCandidates({ projectRoot, projectDirectory, pr
   }
   const active = new Set((await listProjectRenderTaskStates(projectDirectory, { scope: "active", strict: true }))
     .filter(isActiveRenderTaskState).flatMap((task) => task.items.map((item) => encodePageKey(item.page_key))));
-  let dictionary;
-  try { dictionary = await loadPromptDictionaryForRender(config, projectRoot); } catch { /* 逐页报告无法编译。 */ }
   const results = new Array(pageKeys.length);
   let cursor = 0;
   await Promise.all(Array.from({ length: Math.min(3, pageKeys.length) }, async () => {
@@ -37,8 +34,7 @@ export async function inspectStoryCandidates({ projectRoot, projectDirectory, pr
       if (active.has(encodePageKey(pageKey))) { result.status = "active"; continue; }
       const { media } = await readPageMedia(projectRoot, projectId, { page_key: pageKey });
       result.all_candidate_ids = media.candidates.map((item) => item.candidate_id);
-      const context = await compilePageRenderInspectionContext({ repositoryRoot: projectRoot, projectDirectory,
-        pageKey, dictionaryEntries: dictionary?.entries }).catch(() => null);
+      const context = await compilePageRenderInspectionContext({ repositoryRoot: projectRoot, projectDirectory, pageKey }).catch(() => null);
       if (!context?.compiled_page || context.blockers.length) continue;
       result.signature = inspectionGenerationSignature(context);
       if (!result.signature) continue;

@@ -4,11 +4,9 @@ import { useTooltips } from "./use-tooltips";
 import { NavigationSearch } from "./NavigationSearch";
 import { ProjectMenu, type ProjectAction } from "./ProjectMenu";
 import { navigationIdentity, navigationSection, rememberNavigation, type NavigationSection, type NavigationHistory } from "./navigation-history";
-import { InheritedPromptEditor } from './InheritedPromptEditor';
 import { PageMoveDialog } from './PageMoveDialog';
 import { SettingView } from './SettingView';
-import { InheritanceConfirmationRequired } from './api-response';
-import type { InheritedAdjustments, Scene } from './project-workbench-client';
+import type { Scene } from './project-workbench-client';
 import { PromptOverview } from "./PromptOverview";
 import type { ImageOverlayTarget } from "./ImageLightbox";
 import { FinishedPagesView } from "./FinishedPagesView";
@@ -33,8 +31,6 @@ import { characterRevealBranchKeys, sceneRevealBranchKeys, chooseInitialProjectI
 import { navigationDropBeforeId } from "./navigation-drop";
 import ProjectGenerationSettingsView from "./ProjectGenerationSettingsView";
 import StoryOverview, { type StoryOverviewTarget } from "./StoryOverview";
-import { PromptFragmentEditor, ReadonlyLoraTrigger, type PromptFragment as DisplayPromptFragment } from "./PromptFragmentEditor";
-import { createPromptDraftFragment, displayPromptDraft, persistPromptDraft } from "./prompt-fragment-draft";
 import { createProjectRequestGuard } from "./project-request-guard";
 import { createWorkbenchSnapshotSync } from "./workbench-snapshot-sync";
 import { createPageMediaRequestGuard } from "./page-media-request";
@@ -68,20 +64,15 @@ import {
   loadCandidateDetail,
   loadPageMedia,
   loadProjectRevision,
-  promptCategories,
   runNavigationAction,
   saveWholePage,
   savePageLettering,
   saveCharacterProfile,
-  saveCharacterPrompt,
   saveCharacterVisual,
   saveLetteringSettings,
   renameCharacterVariant,
   savePagePrompt,
   startPageRender,
-  type CharacterLora,
-  type CharacterPromptDocument,
-  type CharacterPromptSetting,
   type CharacterProfileDraft,
   type CharacterVisualDraft,
   type CandidateDetail,
@@ -109,8 +100,6 @@ type PageLocation = {
   key: string;
   breadcrumb: string[];
 };
-
-const promptLabels: Record<(typeof promptCategories)[number], string> = { subject: "人数", person: "人物",  setting: "场景", camera: "镜头", avoid: "避免" };
 
 function pageKey(page: WorkbenchPage) {
   return pageKeyId(page.page_key);
@@ -577,14 +566,6 @@ export function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSet
   const latestPage = useRef(page);
   const incomingPage = useRef(page);
   if (incomingPage.current !== page) { incomingPage.current = page; latestPage.current = page; }
-  async function confirmPropagation<T>(operation: (token?: string) => Promise<T>): Promise<T> {
-    try { return await operation(); }
-    catch (error) {
-      if (!(error instanceof InheritanceConfirmationRequired)) throw error;
-      if (!await confirm({ kind: 'warning', title: '确认连带修改', message: error.changes.join('\n'), confirmLabel: '确认并保存' })) throw new Error('已取消保存，草稿保留');
-      return operation(error.confirmation);
-    }
-  }
   const [pageDirty, setPageDirty] = useState(false);
   const [promptDraft, setPromptDraft] = useState<PagePrompt>(() => structuredClone(page.prompt));
   const [renderInspection, setRenderInspection] = useState<PageRenderInspection | null>(null);
@@ -650,7 +631,9 @@ export function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSet
   const factReady = !busy && !pageDirty;
   const sceneFactsSignature = JSON.stringify(scenes);
   const inspectionDepsKey = JSON.stringify([location.key, page.content_sha256, characterFactsSignature, sceneFactsSignature, defaultRenderProfile, promptDraft]);
-  const currentBaseKey = JSON.stringify([location.key, page.content_sha256, characterFactsSignature, sceneFactsSignature, defaultRenderProfile, promptDraft.scene_id, promptDraft.scene_variant_id, promptDraft.inheritance, promptCategories.map(category => promptDraft[category])]);
+  // 待保存附图不参与编译检查；其余草稿字段都影响编译结果，任意变化都应让旧预览失效。
+  const { reference_images: _draftAttachments, ...promptCompileBase } = promptDraft;
+  const currentBaseKey = JSON.stringify([location.key, page.content_sha256, characterFactsSignature, sceneFactsSignature, defaultRenderProfile, promptCompileBase]);
 
   useEffect(() => {
     onTrackedTasksChange(projectId, trackedTaskIds);
@@ -740,7 +723,7 @@ export function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSet
   async function saveWhole(draft: WorkbenchPageContentDraft, prompt: PagePrompt, items: LetteringItem[], baseline: WorkbenchPage) {
     const content = { title: draft.title, scene_description: draft.scene_description, characters: draft.characters ?? [], dialogue: draft.dialogue ?? [],
       ...(draft.page_kind === 'text' ? { page_kind: 'text' as const, body: draft.body ?? '', display_title: draft.display_title ?? '', text_layout: draft.text_layout } : {}) };
-    const result = await confirmPropagation(token => saveWholePage(projectId, baseline, content, prompt, items, token));
+    const result = await saveWholePage(projectId, baseline, content, prompt, items);
     latestPage.current = { ...latestPage.current, ...result.content, content_sha256: result.content_sha256, prompt: result.prompt, prompt_sha256: result.prompt_sha256,
       prompt_context_sha256: result.prompt_context_sha256, lettering: result.lettering, layout_sha256: result.layout_sha256 };
     if (isCurrentWorkspace()) onPageChanged(page, latestPage.current);
@@ -1207,13 +1190,7 @@ export default function StoryWorkbench({ initialImagesHidden, imagePrivacyStorag
     if (!projectRequestGuard.current.isProjectCurrent(projectScope)) return null;
     setUtilityBusy(true);
     try {
-      let result;
-      try { result = await runNavigationAction(projectId, action, value); }
-      catch (error) {
-        if (!(error instanceof InheritanceConfirmationRequired)) throw error;
-        if (!await confirm({ kind: 'warning', title: '确认连带修改', message: error.changes.join('\n'), confirmLabel: '确认并保存' })) return null;
-        result = await runNavigationAction(projectId, action, { ...value, confirmation_sha256: error.confirmation });
-      }
+      const result = await runNavigationAction(projectId, action, value);
       if (!projectRequestGuard.current.isProjectCurrent(projectScope)) return null;
       const applied = await snapshotSync.load(projectId, { onApplied: (next) => {
         const createdPageId = typeof result.page_id === "string" ? result.page_id : null;

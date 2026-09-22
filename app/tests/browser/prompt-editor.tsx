@@ -1,24 +1,36 @@
-import "../../src/WorkbenchPageEditor.css";
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
-import { PromptFragmentEditor, type PromptFragment } from "../../src/PromptFragmentEditor";
+import { PromptTextArea } from "../../src/SourcePromptEditor";
+import { SettingView } from "../../src/SettingView";
+import { FeedbackProvider } from "../../src/feedback";
+import type { WorkbenchCharacter } from "../../src/project-workbench-client";
 import "../../src/styles.css";
-import { CAMERA_DEFAULTS } from "../../shared/camera-prompt.mjs";
-import { persistFragmentList } from "../../src/prompt-fragment-draft";
 
-function Harness() {
-  const roleMode = new URLSearchParams(location.search).has("roles");
-  const cameraMode = new URLSearchParams(location.search).has("camera");
-  const [fragments, setFragments] = useState<Record<string, PromptFragment[]>>({
-    setting: [{ id: "probe", prompt_type: "custom_description", prompt_text: "quiet hallway under dim lights with a window and soft evening shadows" }],
-    ...(cameraMode ? { camera: [{ id: "token-123456789abc", prompt_type: "custom_description" as const, prompt_text: "from side", camera_settings: { ...CAMERA_DEFAULTS, direction: "side" as const } }] } : {}),
-    ...(roleMode ? { person: [{ id: "person-probe", prompt_type: "danbooru" as const, prompt_text: "long_hair", weight: 1.2 }],  } : {}),
-  });
-  return <div id="host" style={{ width: 1000, marginTop: 320 }}>
-    <PromptFragmentEditor categories={[...(roleMode ? [{ id: "person", label: "人物" }] : []), { id: "setting", label: "场景" }, ...(cameraMode ? [{ id: "camera", label: "镜头" }] : [])]} roles={roleMode ? [{ id: "alice", label: "甲", color: "#549870" }, { id: "bob", label: "乙", color: "#548098" }] : undefined} scope="page" fragments={fragments} onChange={setFragments}
-      createFragment={() => ({ id: "new", prompt_type: "custom_description", prompt_text: "" })} />
-    <output>{JSON.stringify(fragments)}</output>
-    {cameraMode && <pre id="persisted-camera">{JSON.stringify(persistFragmentList(fragments.camera))}</pre>}
+function TextHarness() {
+  const [value, setValue] = useState("quiet hallway under dim lights");
+  return <div id="host" style={{ width: 1000, marginTop: 40, padding: 24 }}>
+    <PromptTextArea ariaLabel="自由文本 Prompt" value={value} onChange={setValue} placeholder="输入整段描述" />
+    <output>{JSON.stringify({ value })}</output>
   </div>;
 }
-createRoot(document.getElementById("root")!).render(<Harness />);
+
+const character: WorkbenchCharacter = {
+  id: "alice", name: "艾莲", description: "档案描述", profile_sha256: "profile", visual_sha256: "visual", prompt_sha256: "prompt", style: null, pages: [],
+  visual: { variants: [{ id: "day", name: "白天" }, { id: "night", name: "夜晚" }] },
+  prompt: {
+    prompt_name: "艾莲",
+    variants: {
+      day: { text: "艾莲白天的完整描述", reference_images: [{ id: "ref-11111111-1111-4111-8111-111111111111", file: "reference-11111111.png", title: "正面" }] },
+      night: { text: "艾莲夜晚的完整描述" },
+    },
+  },
+};
+
+function SettingHarness() {
+  const [current, setCurrent] = useState(character);
+  const settingId = new URLSearchParams(location.search).get("variant") ?? "profile";
+  return <SettingView kind="character" projectId="test" character={current} initialSettingId={settingId} busy={false}
+    onSaved={(replacement) => setCurrent((value) => ({ ...value, ...replacement }))} />;
+}
+
+createRoot(document.getElementById("root")!).render(<FeedbackProvider>{location.search.includes("setting") ? <SettingHarness /> : <TextHarness />}</FeedbackProvider>);

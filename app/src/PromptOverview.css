@@ -12,13 +12,4 @@
 .prompt-overview-column-header > div { display: flex; align-items: center; justify-content: space-between; font-size: var(--text-meta); }
 .prompt-overview-column-header p { margin: 0; color: var(--red); font-size: var(--text-meta); }
 .prompt-overview-column-header p button { display: block; }
-.prompt-overview-population, .prompt-overview-editor { margin: 0; padding: 0; border: 0; min-width: 0; }
-.prompt-overview-population { padding: 5px; background: white; }
-.prompt-overview-editor { display: grid; grid-template-rows: subgrid; grid-row: 3 / -1; }
-.prompt-overview-editor > .prompt-fragment-editor { display: grid; grid-template-rows: subgrid; grid-row: 1 / -1; border: 0; border-radius: 0; gap: 0; container-type: normal; }
-.prompt-overview-editor .category-content { container-type: inline-size; container-name: prompt-fragments; }
-
-.prompt-overview-editor .category-list { display: contents; }
-.prompt-overview-editor .category-card { grid-template-columns: 30px minmax(0, 1fr); align-content: start; }
-.prompt-overview-editor .category-label { min-height: 30px; }
-.prompt-overview-editor .category-label b { line-height: 20px; }
+.prompt-overview-editor { margin: 0; padding: 8px; border: 0; min-width: 0; display: grid; align-content: start; }

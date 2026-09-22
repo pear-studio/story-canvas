@@ -6,10 +6,9 @@ import { readFile, mkdir, rename, lstat } from 'node:fs/promises';
 import { resolveProjectLocation } from './project-operations.mjs';
 import { decodePageKey } from './page-key.mjs';
 import { readPageIndex, readPageEntry, readPageContent, readPagePrompt, pageRelativePath, validatePagesIndexDocument } from './pages-store.mjs';
-import { FactError, factStorage as storage, readStoryPromptUpstream, narrativeDownstreamDiagnostics } from './story-facts.mjs';
-import { STORY_PAGE_NARRATIVE_SCHEMA_ID, STORY_PAGE_PROMPT_SCHEMA_ID, storyPromptCategories, validateStoryPageNarrativeDocument, validateStoryPagePromptDocument, validateStoryPageTextSourcesDocument, prepareStoryPageNarrativeForPersistence, preparePromptForPersistence } from './story-files.mjs';
+import { FactError, factStorage as storage, commitFactChanges, readStoryPromptUpstream, narrativeDownstreamDiagnostics } from './story-facts.mjs';
+import { STORY_PAGE_NARRATIVE_SCHEMA_ID, STORY_PAGE_PROMPT_SCHEMA_ID, checkPagePromptOverrideReferences, validateStoryPageNarrativeDocument, validateStoryPagePromptDocument, validateStoryPageTextSourcesDocument, prepareStoryPageNarrativeForPersistence } from './story-files.mjs';
 import { hashCanonicalJson } from './workflow-definition.mjs';
-import { commitFactChanges, applySceneSwitch, sourceSwitchImpacts, requireImpactConfirmation, readInheritanceSources, checkPageInheritance } from './prompt-inheritance-facts.mjs';
 import { listFinishedJobs, finishedBusyStatuses } from './finished-jobs.mjs';
 import { assertNoActivePageRender } from './render-task-storage.mjs';
 import { materializeVisualPageTemplate, readVisualPageTemplates } from './visual-page-templates.mjs';
@@ -60,7 +59,7 @@ export async function createPage(root,projectId,owner,{templateId=null,afterPage
   if(pageKind==='text'&&owner.owner_kind!=='story')fail('text_page_story_only');
   const index=await readPageIndex(directory), next=clone(index),id=await newPageId(directory,index);
   let content={$schema:STORY_PAGE_NARRATIVE_SCHEMA_ID,title:owner.owner_kind==='story'?'未命名页面':'验证图',scene_description:owner.owner_kind==='story'?'待补充画面内容。':'',characters:[],dialogue:[]};
-  let prompt={$schema:STORY_PAGE_PROMPT_SCHEMA_ID,...Object.fromEntries(storyPromptCategories.map(category=>[category,[]]))};
+  let prompt={$schema:STORY_PAGE_PROMPT_SCHEMA_ID,text:''};
   const reference=owner.owner_kind==='character'?{character_id:owner.character_id,variant_id:owner.variant_id}:characterId?{character_id:characterId,variant_id:variantId}:null;
   if(reference)content.characters.push(reference);
   if(owner.owner_kind==='scene'){prompt.scene_id=owner.scene_id;prompt.scene_variant_id=owner.variant_id;}
@@ -68,10 +67,9 @@ export async function createPage(root,projectId,owner,{templateId=null,afterPage
   if(templateId!==null){
     const catalog=await readVisualPageTemplates(root);if(catalog.errors.length)fail('page_template_invalid',catalog.errors);
     const template=catalog.templates.find(item=>item.id===templateId&&item.applies_to.includes(owner.owner_kind));if(!template)fail('page_template_not_found',[templateId]);
-    const materialized=materializeVisualPageTemplate(template,reference?.character_id);
+    const materialized=materializeVisualPageTemplate(template);
     content.title=materialized.title;content.scene_description=materialized.visual_goal;prompt={...prompt,...materialized.prompt};
   }
-  prompt=preparePromptForPersistence(prompt,{createFragmentId:()=>`token-${randomBytes(6).toString('hex')}`});
   assertValid(validateStoryPageNarrativeDocument(content));assertValid(validateStoryPagePromptDocument(prompt));
   insertEntry(next,{page_id:id,...owner},{afterPageId});
   if(beforeCommit)await beforeCommit({page_id:id,content_file:path.join(directory,pageRelativePath(id,'content')),prompt_file:path.join(directory,pageRelativePath(id,'prompt')),index_file:path.join(directory,'pages/index.json')});
@@ -124,7 +122,7 @@ export async function deletePage(root,projectId,pageId,{beforeCommit}={}) {
 function checkHash(document,expected,code) {if(!/^[a-f0-9]{64}$/.test(expected??'')||hashCanonicalJson(document)!==expected)fail(code);}
 // 所有验证和引用切换确认先完成，再通过同一事实提交一次落盘；失败回滚由 commitFactChanges 负责。
 export async function savePage(root,projectId,value) {
-  const allowed=new Set(['page_key','content','prompt','reference_inputs','expected_content_sha256','expected_prompt_sha256','expected_context_sha256','lettering','expected_layout_sha256','text_sources','expected_text_sources_sha256','confirmation_sha256']);
+  const allowed=new Set(['page_key','content','prompt','reference_inputs','expected_content_sha256','expected_prompt_sha256','expected_context_sha256','lettering','expected_layout_sha256','text_sources','expected_text_sources_sha256']);
   if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(key=>!allowed.has(key))||!value.content||typeof value.content!=='object'||Array.isArray(value.content)||!value.prompt||typeof value.prompt!=='object'||Array.isArray(value.prompt))fail('invalid_page_document',['整页保存需要 content 和 prompt 对象']);
   const pageKey=decodePageKey(value.page_key),pageId=pageKey.page_id;
   const {projectDirectory:directory}=await projectAt(root,projectId);await requirePage(directory,pageId);
@@ -138,16 +136,12 @@ export async function savePage(root,projectId,value) {
   for(const item of contentInput.dialogue??[])if(typeof item.id==='string'&&item.id.startsWith('draft-dialogue-'))delete item.id;
   const content=prepareStoryPageNarrativeForPersistence({$schema:STORY_PAGE_NARRATIVE_SCHEMA_ID,...contentInput},{baselineNarrative:beforeContent,createDialogueId:()=>`dialogue-${randomBytes(6).toString('hex')}`});
   if(content.page_kind!==beforeContent.page_kind)fail('page_kind_immutable');
-  const prompt=preparePromptForPersistence({$schema:STORY_PAGE_PROMPT_SCHEMA_ID,...clone(value.prompt)},{baselinePrompt:beforePrompt,createFragmentId:()=>`token-${randomBytes(6).toString('hex')}`});
+  const prompt={$schema:STORY_PAGE_PROMPT_SCHEMA_ID,...clone(value.prompt)};
   assertValid(validateStoryPageNarrativeDocument(content));assertValid(validateStoryPagePromptDocument(prompt));
   const keep=new Set(content.characters.map(ref=>`character:${ref.character_id}:${ref.variant_id}`));
-  const old=new Set(beforeContent.characters.map(ref=>`character:${ref.character_id}:${ref.variant_id}`));
-  const removed=[...old].filter(source=>!keep.has(source));for(const source of removed)if(prompt.inheritance)delete prompt.inheritance[source];
-  for (const source of Object.keys(prompt.reference_overrides ?? {})) if (source.startsWith('character:') && !keep.has(source)) delete prompt.reference_overrides[source];
-  const impacts=await sourceSwitchImpacts(directory,beforePrompt,prompt,beforeContent.characters,content.characters,removed);
-  const scenePlan=await applySceneSwitch(directory,beforePrompt,prompt,content.characters);impacts.push(...scenePlan.impacts);
-  const sources=await readInheritanceSources(directory,content.characters,prompt.scene_id,prompt.scene_variant_id,{allowMissing:true});
-  assertValid(checkPageInheritance(prompt,sources));requireImpactConfirmation({impacts,writes:[]},value.confirmation_sha256,{content:contentInput,prompt});
+  if(prompt.scene_id)keep.add(`scene:${prompt.scene_id}:${prompt.scene_variant_id}`);
+  for(const field of ['text_overrides','reference_overrides'])for(const source of Object.keys(prompt[field]??{}))if(!keep.has(source))delete prompt[field][source];
+  assertValid(checkPagePromptOverrideReferences(prompt,content.characters));
   const writes=[{relative:pageRelativePath(pageId,'content'),before:beforeContent,after:content},{relative:pageRelativePath(pageId,'prompt'),before:beforePrompt,after:prompt}];
   const dialogueIds=new Set(content.dialogue.map(item=>item.id));
   const dialogueIdMap=new Map(draftIds.map((id,index)=>[id,content.dialogue[index]?.id]));

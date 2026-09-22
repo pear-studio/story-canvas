@@ -6,40 +6,76 @@ import { chromium } from 'playwright';
 async function openHarness(t, query = '') {
  const server = await createServer({ cacheDir: '.temp/vite-inheritance-tests', root: fileURLToPath(new URL('../../', import.meta.url)), server: { host: '127.0.0.1', port: 0 }, logLevel: 'error' });
  await server.listen(); t.after(() => server.close());
- const browser = await chromium.launch({ headless: true, channel: process.platform === 'win32' ? 'msedge' : undefined }); t.after(() => browser.close());
+ const browser = await chromium.launch({ headless: true, channel: process.env.BROWSER_CHANNEL || (process.platform === 'win32' ? 'msedge' : undefined) }); t.after(() => browser.close());
  const page = await browser.newPage({ viewport: { width: 1200, height: 850 } });
  const errors = []; page.on('pageerror', e => errors.push(e.message));
- await page.route('**/api/prompt-dictionary**', route => route.fulfill({ json: { available: true, matches: [], suggestions: [] } }));
  await page.goto('http://127.0.0.1:' + server.httpServer.address().port + '/tests/browser/inheritance.html' + query);
  return { page, errors };
 }
-test('基础词默认展开且与本地对齐，继承行可开关和改权重，恢复上游不复制词条', async t => {
- const {page, errors} = await openHarness(t);
- const base = page.locator('details.inherited-prompt').first();
- await base.locator('.prompt-fragment-row').waitFor();
- assert.equal(await base.evaluate(e => e.open), true);
- assert.equal(await page.locator('details.inherited-prompt').nth(1).evaluate(e => e.open), false);
- const inheritedBox = await base.locator('.prompt-fragment-row').boundingBox();
- const localBox = await page.locator('#local .prompt-fragment-row').boundingBox();
- assert.ok(Math.abs(inheritedBox.x - localBox.x) < 1);
- assert.ok(Math.abs(inheritedBox.width - localBox.width) < 1);
- assert.equal(await base.locator('.prompt-fragment-reset').isVisible(), true);
- assert.match(await base.locator('summary').innerText(), /调整 1 项/);
- await base.locator('.prompt-fragment-enabled').click();
- assert.deepEqual(JSON.parse(await page.locator('output').textContent()), {});
- await base.locator('.prompt-fragment-weight-button').click();
- await base.getByRole('spinbutton').fill('0.8');
- await base.getByRole('button', {name: '确定', exact: true}).click();
- assert.deepEqual(JSON.parse(await page.locator('output').textContent()), { 'long blue hair': {weight: 0.8} });
- await base.locator('.prompt-fragment-enabled').click();
- assert.deepEqual(JSON.parse(await page.locator('output').textContent()), { 'long blue hair': {weight: 0.8, enabled: false} });
- assert.match(await base.locator('summary').innerText(), /调整 1 项/);
- await page.screenshot({path: process.env.TEMP + '/story-canvas-inheritance-adjusted.png', fullPage: true});
- await base.locator('.prompt-fragment-reset').click();
- assert.deepEqual(JSON.parse(await page.locator('output').textContent()), {});
- assert.equal(await base.locator('.prompt-fragment-reset').count(), 0);
- assert.equal(await base.locator('summary').innerText(), '基础 Prompt');
- await page.screenshot({ path: process.env.TEMP + '/story-canvas-inheritance-ui.png', fullPage: true });
+async function openOverride(t) {
+ const { page, errors } = await openHarness(t, '?override');
+ await page.getByTitle('展开角色引用').click();
+ const card = page.locator('[data-reference-source="character:alice:day"]');
+ const field = card.getByLabel('艾莲 · 白天 引用文字');
+ await field.waitFor();
+ const savedPrompt = () => page.evaluate(() => JSON.parse(localStorage.getItem('saved-page') ?? 'null')?.prompt);
+ return { page, errors, card, field, savedPrompt };
+}
+async function save(page) {
+ await page.getByRole('button', { name: '保存', exact: true }).click();
+ await page.waitForFunction(() => localStorage.getItem('saved-page'));
+}
+
+test('编辑继承框即成为本页 override，含显式空串；恢复继承删除 key 并跟随上游', async t => {
+ const { page, errors, card, field, savedPrompt } = await openOverride(t);
+ assert.equal(await field.inputValue(), '艾莲白天的上游描述');
+ assert.equal(await card.getByText('已覆盖', { exact: true }).count(), 0);
+ await page.getByRole('button', { name: '模拟上游文字更新' }).click();
+ assert.equal(await field.inputValue(), '艾莲白天的新上游描述', '未覆盖时继承随上游更新');
+ await field.fill('本页覆盖的完整描述');
+ await card.getByText('已覆盖', { exact: true }).waitFor();
+ await save(page);
+ assert.equal((await savedPrompt()).text_overrides['character:alice:day'], '本页覆盖的完整描述');
+ await page.getByRole('button', { name: '模拟上游文字更新' }).click();
+ assert.equal(await field.inputValue(), '本页覆盖的完整描述', 'override 不随上游更新');
+ await field.fill('');
+ assert.equal(await field.inputValue(), '');
+ await save(page);
+ assert.equal((await savedPrompt()).text_overrides['character:alice:day'], '', '显式空串也是有效 override');
+ await card.getByRole('button', { name: '恢复继承', exact: true }).click();
+ assert.equal(await card.getByText('已覆盖', { exact: true }).count(), 0);
+ assert.equal(await field.inputValue(), '艾莲白天的新上游描述', '恢复继承后回到当前子设定文字');
+ await save(page);
+ assert.equal((await savedPrompt()).text_overrides['character:alice:day'], undefined);
+ assert.deepEqual(errors, []);
+});
+
+test('切换子设定清理对应文字与图片 override，切回不复活隐藏覆盖', async t => {
+ const { page, errors, field, savedPrompt } = await openOverride(t);
+ await field.fill('白天造型的本页覆盖');
+ await save(page);
+ assert.equal((await savedPrompt()).text_overrides['character:alice:day'], '白天造型的本页覆盖');
+ await page.getByLabel('艾莲角色设定').selectOption('night');
+ await page.locator('[data-reference-source="character:alice:night"]').getByLabel('艾莲 · 夜晚 引用文字').waitFor();
+ await save(page);
+ assert.deepEqual((await savedPrompt()).text_overrides, {}, '切换子设定后旧 key 不残留');
+ await page.getByLabel('艾莲角色设定').selectOption('day');
+ assert.equal(await field.inputValue(), '艾莲白天的上游描述', '切回不复活已清理的覆盖');
+ assert.equal(await page.locator('[data-reference-source="character:alice:day"]').getByText('已覆盖', { exact: true }).count(), 0);
+ assert.deepEqual(errors, []);
+});
+
+test('移除引用清理 override，本页 Prompt 随草稿保存', async t => {
+ const { page, errors, field, savedPrompt } = await openOverride(t);
+ await field.fill('本页覆盖的完整描述');
+ await page.getByLabel('本页 Prompt').fill('艾莲坐在窗边。');
+ await save(page);
+ assert.equal((await savedPrompt()).text, '艾莲坐在窗边。');
+ await page.getByRole('button', { name: '移除艾莲', exact: true }).click();
+ await save(page);
+ const prompt = await savedPrompt();
+ assert.deepEqual(prompt.text_overrides, {}, '移除引用后旧 key 不残留');
+ assert.equal(prompt.text, '艾莲坐在窗边。');
  assert.deepEqual(errors, []);
 });
 
@@ -79,13 +115,13 @@ test('场景标签可切换、移除并从选择菜单重新添加', async t => 
  assert.equal(await scene.getByLabel('页面场景设定').inputValue(), 'steel:default'); assert.deepEqual(errors, []);
 });
 
-test('生成预览区分无候选与不符候选，二级详情展示实际词句变化', async t => {
+test('生成预览区分无候选与不符候选，二级详情展示实际文字变化', async t => {
  const {page, errors} = await openHarness(t, '?candidates');
- const parts = text => [{text}];
- const current = {ready:true,blockers:[],prompt:{positive:'stone wall',negative:'blur',signature:'new',parts:{positive:parts('stone wall'),negative:parts('blur')}}};
+ const sections = [{ kind: 'page', text: 'stone wall' }];
+ const current = {ready:true,blockers:[],prompt:{positive:'stone wall',negative:'blur',sections,images:[]},generation_signature:'new'};
  await page.route('**/workbench/story-candidate-refresh', route => route.fulfill({json:{pages:['empty','changed'].map(id=>({page_key:{page_id:id},status:'ready',signature:'new',matched:0,candidate_ids:id==='empty'?[]:['old'],all_candidate_ids:id==='empty'?[]:['old']}))}}));
  await page.route('**/workbench/page-render-inspection', route => route.fulfill({json:{inspection:current}}));
- await page.route('**/workbench/candidate-detail', route => route.fulfill({json:{detail:{seed:42,generation:{prompt:{positive:'steel wall',negative:'blur',parts:{positive:parts('steel wall'),negative:parts('blur')}}}}}}));
+ await page.route('**/workbench/candidate-detail', route => route.fulfill({json:{detail:{seed:42,generation:{prompt:{positive:'steel wall',negative:'blur',sections:[{ kind: 'page', text: 'steel wall' }]}}}}}));
  await page.getByRole('button', {name:'生成候选',exact:true}).click();
  const preview=page.getByRole('dialog', {name:'生成候选',exact:true});
  await preview.getByRole('button', {name:'生成 2 张',exact:true}).waitFor();

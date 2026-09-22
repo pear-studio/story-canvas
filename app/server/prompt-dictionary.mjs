@@ -1,10 +1,34 @@
-import {
-  CHARACTER_PROMPT_CATEGORIES,
-  DANBOORU_ALLOWED_CATEGORIES,
-  DANBOORU_CATEGORY_BY_PROVIDER_TYPE,
-  normalizePromptText,
-  PAGE_PROMPT_CATEGORIES,
-} from "./prompt-contract.mjs";
+// 独立查询词库自有的分类常量；渲染路径已不再消费词库。
+export const PAGE_PROMPT_CATEGORIES = Object.freeze(["subject", "person", "setting", "camera", "avoid"]);
+
+export const CHARACTER_PROMPT_CATEGORIES = Object.freeze([
+  "identity",
+  "hair",
+  "face",
+  "body",
+  "clothing",
+  "accessories",
+  "equipment",
+]);
+
+export const DANBOORU_CATEGORY_BY_PROVIDER_TYPE = Object.freeze({
+  "0": "general",
+  "1": "artist",
+  "3": "copyright",
+  "4": "character",
+  "5": "meta",
+});
+
+export const DANBOORU_ALLOWED_CATEGORIES = Object.freeze({
+  page: Object.freeze(["general"]),
+  character: Object.freeze(["general", "character", "copyright"]),
+  render_profile: Object.freeze(["general", "meta"]),
+  lora: Object.freeze(["general", "character"]),
+});
+
+export function normalizePromptText(value) {
+  return String(value ?? "").trim().toLowerCase().replaceAll("_", " ").replace(/\s+/g, " ");
+}
 
 const SEARCH_EVIDENCE = Symbol("promptDictionarySearchEvidence");
 const PROVIDER_CATEGORY = Symbol("promptDictionaryProviderCategory");

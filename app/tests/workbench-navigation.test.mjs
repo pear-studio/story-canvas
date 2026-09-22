@@ -102,8 +102,7 @@ test("工作台导航语义复用当前事实契约完成创建、移动、删�
   const templatedPrompt = await readJson(templatedPage.prompt_file);
   assert.equal(templatedNarrative.title, "上半身肖像");
   assert.deepEqual(templatedNarrative.characters, [{ character_id: "ellen", variant_id: "default" }]);
-  assert.match(templatedPrompt.camera[0].id, /^token-[a-f0-9]{12}$/);
-  assert.equal(templatedPrompt.camera[0].description, "upper body");
+  assert.match(templatedPrompt.text, /上半身|头发|面部/);
   await deleteWorkbenchStoryPage(fixture.root, fixture.projectId, templatedPage.page_id);
 
   const variant = await createWorkbenchCharacterVariant(fixture.root, fixture.projectId, "ellen", "casual", "便服");
@@ -132,7 +131,7 @@ test("工作台导航语义复用当前事实契约完成创建、移动、删�
   await deleteWorkbenchCharacterPage(fixture.root, fixture.projectId, secondCharacterPage.page_id);
   await deleteWorkbenchCharacterVariant(fixture.root, fixture.projectId, "ellen", variant.variant_id);
   assert.deepEqual((await readJson(path.join(fixture.projectDirectory, "characters", "ellen.visual.json"))).variants.map((variant) => variant.id), ["default"]);
-  assert.deepEqual(Object.keys((await readJson(promptTarget)).variants), ["default"], "删除子设定会在同一动作中清理对应 Prompt/LoRA");
+  assert.deepEqual(Object.keys((await readJson(promptTarget)).variants), ["default"], "删除子设定会在同一动作中清理对应 Prompt 设定");
 });
 
 const readOutline = (fixture) => readJson(path.join(fixture.projectDirectory, "story", "outline.json"));
@@ -273,7 +272,7 @@ test("duplicateStoryPage 复制 narrative/prompt、紧随源页插入 index 并�
   };
   await writeFile(source.content_file, `${JSON.stringify(narrative, null, 2)}\n`, "utf8");
   const prompt = await readJson(source.prompt_file);
-  prompt.setting.push({ id: "token-aaaa00000001", description: "rain on eaves",  enabled: true });
+  prompt.text = "屋檐下的雨。";
   await writeFile(source.prompt_file, `${JSON.stringify(prompt, null, 2)}\n`, "utf8");
   const letteringTarget = path.join(fixture.projectDirectory, "lettering", "dialogue-layouts.json");
   const lettering = await readJson(letteringTarget);
@@ -314,7 +313,7 @@ test("duplicateCharacterPage 复制 goal/prompt 并紧随源条目插入 index",
   goal.scene_description = "红眼短发的标准立绘。";
   await writeFile(source.content_file, `${JSON.stringify(goal, null, 2)}\n`, "utf8");
   const prompt = await readJson(source.prompt_file);
-  prompt.person.push({ id: "token-bbbb00000001", description: "short red hair",  enabled: true });
+  prompt.text = "红色短发立绘。";
   await writeFile(source.prompt_file, `${JSON.stringify(prompt, null, 2)}\n`, "utf8");
 
   const duplicated = await duplicateWorkbenchCharacterPage(fixture.root, fixture.projectId, source.page_id);

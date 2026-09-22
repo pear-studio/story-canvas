@@ -56,8 +56,9 @@ test('参考图默认选首张，多选和停用保存在同一设定卡片；�
  assert.equal(await page.getByRole('button',{name:'自定义',exact:true}).count(),0);
 });
 
-test('场景子设定切换后失败保留全部草稿，重试提交新引用并清除旧继承调整',async t=>{
+test('场景子设定切换后失败保留全部草稿，重试提交新引用并清除旧文字覆盖',async t=>{
  const page=await open(t,'kind=scene&fail-once');
+ await page.getByLabel('艾莲 · 白天 引用文字').fill('本页覆盖的角色描述');
  await page.getByLabel('页面场景设定').selectOption('room:night');
  await page.getByLabel('艾莲角色设定').selectOption('night');
  await page.getByLabel('画面内容').fill('夜间窗边休息');
@@ -71,7 +72,7 @@ test('场景子设定切换后失败保留全部草稿，重试提交新引用�
  await page.waitForFunction(()=>localStorage.getItem('saved-page'));
  const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('saved-page')));
  assert.equal(saved.prompt.scene_variant_id,'night');assert.equal(saved.content.characters[0].variant_id,'night');
- assert.equal(saved.content.scene_description,'夜间窗边休息');assert.deepEqual(saved.prompt.inheritance,{});
+ assert.equal(saved.content.scene_description,'夜间窗边休息');assert.deepEqual(saved.prompt.text_overrides,{});assert.deepEqual(saved.prompt.reference_overrides,{});
 });
 
 test('同页外部刷新保留人物、场景和内容草稿，保存提交编辑时指纹并报告冲突',async t=>{
@@ -163,15 +164,18 @@ test('展开角色行后用拖拽改变引用顺序',async t=>{
  assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem('saved-page')).content.characters.map(r=>r.character_id)),['bob','alice']);
 });
 
-test('继承词默认展开，缩略图切换颜色，底部只读汇总随草稿变化并包含附图',async t=>{
+test('引用文字默认生效，缩略图切换颜色，底部只读汇总随草稿变化并包含附图',async t=>{
  const page=await open(t,'kind=story&extra');
  const card=page.locator('[data-reference-source="character:alice:day"]');
  const images=page.getByLabel('最终启用的参考图');
  assert.equal(await images.locator('img').count(),3);
  assert.equal(await images.locator('.inherited-reference-image').count(),2);
  assert.equal(await images.getByRole('button',{name:'添加参考图',exact:true}).count(),1);
- assert.equal(await card.locator('.inherited-prompt summary').count(),0);
- assert.equal(await card.locator('.inherited-prompt .character-identity-preview-body').isVisible(),true);
+ const textField=card.getByLabel('艾莲 · 白天 引用文字');
+ assert.equal(await textField.inputValue(),'艾莲白天的完整描述');
+ assert.equal(await card.getByText('已覆盖',{exact:true}).count(),0);
+ await textField.fill('本页覆盖的角色描述');
+ await card.getByText('已覆盖',{exact:true}).waitFor();
  assert.equal(await card.locator('.reference-selection input').count(),0);
  assert.equal(await card.locator('.reference-selection').innerText(),'');
  const second=card.locator('.reference-toggle').nth(1);
@@ -187,6 +191,8 @@ test('继承词默认展开，缩略图切换颜色，底部只读汇总随草�
  assert.equal(await root.locator(':scope > :last-child').getAttribute('aria-label'),'最终启用的参考图');
  await page.getByRole('button',{name:'保存',exact:true}).click();
  await page.waitForFunction(()=>localStorage.getItem('saved-page'));
+ const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('saved-page')));
+ assert.equal(saved.prompt.text_overrides['character:alice:day'],'本页覆盖的角色描述');
  assert.equal(await images.locator('img').count(),3);
 });
 

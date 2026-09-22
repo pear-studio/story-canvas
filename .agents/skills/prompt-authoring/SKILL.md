@@ -1,32 +1,28 @@
 ---
 name: prompt-authoring
-description: 为 StoryCanvas 编写简洁的角色与页面 Prompt 原型，使用机位控制，生成三张并按严重问题规则最多修正一次；不挑选候选，LoRA 改动需用户同意。
+description: 为 StoryCanvas 编写简洁的角色与页面 Prompt 原型，生成三张并按严重问题规则最多修正一次；不挑选候选，LoRA 改动需用户同意。
 ---
 
 # Prompt 原型与出图
 
-先读 docs/creative/guide.md；字段、编译与机位操作查 docs/reference/prompt.md，生成入口查 docs/reference/visual-pages.md。读取当前确认稿、相关角色配置和有效 render profile，按指南补必要单元上下文。用户只要文本、审计或局部修改时按该范围交付，不自动出图。
+先读 docs/creative/guide.md；字段与编译查 docs/reference/prompt.md，生成入口查 docs/reference/visual-pages.md。读取当前确认稿、相关角色配置和有效 render profile，按指南补必要单元上下文。用户只要文本、审计或局部修改时按该范围交付，不自动出图。
 
 ## 写法
 
-- 编辑页面前必须调用 `visual:produce -- context page <project-id> <完整PageKey>`，读取继承原词、各层 override、关闭项、有效 profile 和当前模式最终文本；不能仅凭页面文件或局部 prompt read 判断完整内容。只改返回的 draft.document，不把只读 context 展开写回页面。同轮未变内容不重复读。
-- 先看最终编译结果，判断 profile、角色身份、子设定和页面各自已经提供什么。角色和环境复用稳定内容，页面只补当前状态、动作、必要关系与机位。
+- 编辑页面前必须调用 `visual:produce -- context page <project-id> <完整PageKey>`，读取全局文字、各引用当前文本与 override、图片选择、有效 profile 和最终编译文本；不能仅凭页面文件或局部 prompt read 判断完整内容。只改返回的 draft.document，不把只读 context 展开写回页面。同轮未变内容不重复读。
+- 先看最终编译结果，判断全局文字、各角色／场景子设定和页面各自已经提供什么。角色和环境复用稳定内容，页面只补当前状态、动作、必要关系与镜头。
 - 只表达目标方向，不增加细节或拆解动作的身体实现过程；动作名足够时只写动作名，关系用短自然语言。页面动作／关系描述每条最多 15 个英文单词，不拆条绕过，不以确认稿、必要性或细微姿态问题为扩写例外。
-- 按一起编辑的内容分组，头发或基础场景可合成一条，不套用动作／关系的长度限制，但同样不擅加细节。标签优先自动识别，句中需要明确标记时用 `{}`；不为标签拆条。
-- 不为每个分类填词，不设片段数量配额；动作／关系遵守上述 15 词上限。重复文本可能承担不同作用，不仅因语义相近而删除；也不主动启动消融实验。
+- 外观或基础场景可合并成段，不套用动作／关系的长度限制，但同样不擅加细节。
+- 不堆同义词，不为完整性凑字；动作／关系遵守上述 15 词上限，也不主动启动消融实验。
 - 角色验证页在配置外只补展示所需内容，不重复完整身份、服装和精密部位描述。新增子设定须先获用户同意并由用户验收后使用。
-- 权重只服务具体表达，既可加强也可减弱；avoid 不写预防性长清单。一次严重问题修正仍保持简洁，不通过不断堆词掩盖配置或故事冲突。
-- 多角色词按实际归属绑定，整体关系留在页面整体表达；不能绑定未入镜角色。生成表达和基础文案分开，基础文案不主动改写。
-
-## 机位
-
-控制器支持的镜头必须调用 camera:prompt，使用其 fragment 通过页面 read/save 保存；保留已有片段 ID 与 独立的 camera_settings 参数。直接手填相同英文词不算使用机位控制。未覆盖的必要表达才补普通词条，避免与机位片段冲突。具体选项、恢复和清空规则见 Prompt 参考的机位控制章节。
+- 没有权重或负向清单可堆；一次严重问题修正仍保持简洁，不通过不断堆词掩盖配置或故事冲突。
+- 多角色页面在本页描述中写清动作主体，整体关系留在页面整体表达；画外对白 speaker 不入镜。生成表达和基础文案分开，基础文案不主动改写。
 
 ## 写入与编译
 
-完整读取命令的 draft 可交给现有对应 save。只通过现有 read/save 修改项目 Prompt，不直接写 JSON。新增 fragment 不指定 ID，已有项保留 ID；恢复已删除项按新增处理。tag/description 二选一，enabled:false 不参与编译。
+完整读取命令的 draft 可交给现有对应 save。只通过现有 read/save 修改项目 Prompt，不直接写 JSON。页面 text_overrides 的 key 必须匹配当前引用：编辑引用文字即成为本页整段 override，恢复继承即删除 key；override 不随上游更新，切换子设定或移除引用时删除对应 key。
 
-角色 identity 与 variant 使用当前完整契约，分类统一为 subject/person/setting/camera/avoid，不补回旧 appearance/action。继承、去重、局部调整以当前实现和参考契约为准，不发明覆盖字段或隐藏继承链。任何 LoRA 新增、删除或替换先取得用户明确同意，通过独立 LoRA 入口；普通 Prompt save 不改 LoRA。共享 render profile 不属于普通页面制作。
+角色与场景 prompt 为 `{ prompt_name, variants }`，每个子设定一段自由文本和有序参考图；prompt_name 创建时复制显示名、之后独立，页面动作按实际 prompt_name 编写。没有 identity 层、逐词继承或隐藏继承链，以当前实现和参考契约为准，不发明覆盖字段。剧情事实不再包含 LoRA；生成配置风格 LoRA 与训练的任何变更先取得用户明确同意。共享 render profile 不属于普通页面制作。
 
 读取保存后的 audit；退出码成功不代表审计无误。生成前用 preview page 检查最终 Prompt、来源与冲突。busy 有界退避，目标或依赖指纹冲突重新读取判断，不覆盖他人改动。
 

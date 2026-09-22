@@ -118,9 +118,6 @@
 .rpi-change-list__project.is-different { border: 1px solid #a9c9b5; color: var(--rpi-green); background: var(--rpi-green-soft); }
 .rpi-change-group--conflict .rpi-change-list__project.is-different { border-color: #dda9a4; color: var(--rpi-red); background: var(--rpi-red-soft); }
 
-.rpi-prompt-counts { margin-bottom: 8px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
-.rpi-prompt-counts span { padding: 9px; display: flex; align-items: baseline; gap: 5px; border-radius: 8px; color: var(--rpi-muted); background: #f4f7f4; font-size: 9px; }
-.rpi-prompt-counts b { color: var(--rpi-green); font-size: 16px; }
 
 .rpi-route-list { min-width: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 11px; }
 .rpi-route { min-width: 0; padding: 12px; display: grid; gap: 10px; border: 1px solid var(--rpi-line); border-radius: 11px; background: #fbfcfb; }
@@ -189,19 +186,6 @@
 .rpi-route-technical > dl dd { min-width: 0; margin: 0; }
 .rpi-route-technical > dl code { display: block; overflow-wrap: anywhere; color: #405149; font-size: 8px; line-height: 1.45; }
 
-.rpi-prompt-preview { display: grid; gap: 9px; }
-.rpi-prompt-preview-card { min-width: 0; overflow: hidden; border: 1px solid var(--rpi-line); border-radius: 9px; background: white; }
-.rpi-prompt-preview-card > header { min-height: 34px; padding: 7px 10px; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--rpi-line); background: #f4f7f4; }
-.rpi-prompt-preview-card > header b { font-size: 11px; }
-.rpi-prompt-preview-card > header span { color: var(--rpi-muted); font-size: 9px; }
-.rpi-prompt-fragments { min-width: 0; padding: 10px; display: block; color: #30443b; font: 12px/1.8 var(--mono, ui-monospace); }
-.rpi-prompt-fragment { display: inline; }
-.rpi-prompt-fragment mark { padding: 1px 3px; border-radius: 3px; }
-.rpi-prompt-mark--positive { color: #2f6d50; background: #e7f4eb; }
-.rpi-prompt-mark--negative { color: #8a5146; background: #f8ebe8; }
-.rpi-prompt-fragment small { margin-left: 3px; color: var(--rpi-muted); font-size: 9px; }
-.rpi-prompt-fragment i { margin: 0 3px; color: #9aa79f; font-style: normal; }
-.rpi-prompt-empty { color: var(--rpi-muted); }
 .render-profile-inspection .rpi-hero > div > span,
 .render-profile-inspection .rpi-panel > header > div > span,
 .render-profile-inspection .rpi-routes > header > div > span,
@@ -220,8 +204,6 @@
 .render-profile-inspection .rpi-routes h3 { font-size: 17px; }
 .render-profile-inspection .rpi-route-capabilities h4 { font-size: 13px; font-weight: 700; }
 .render-profile-inspection .rpi-primary-name { font-size: 16px; }
-.render-profile-inspection .rpi-prompt-counts span { font-size: 11px; }
-.render-profile-inspection .rpi-prompt-counts b { font-size: 19px; }
 .render-profile-inspection .rpi-change-group h4,
 .render-profile-inspection .rpi-change-list strong { font-size: 14px; }
 .render-profile-inspection .rpi-change-list code { font-size: 11px; }
@@ -296,3 +278,5 @@
 @media (forced-colors: active) {
   .rpi-status, .rpi-blocker, .rpi-flow > article, .rpi-panel, .rpi-routes, .rpi-route { border-color: CanvasText; }
 }
+
+.rpi-prompt-text { margin: 0 0 10px; padding: 10px; white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid var(--rpi-line); border-radius: 9px; background: white; color: #30443b; font: 12px/1.8 var(--mono, ui-monospace); }

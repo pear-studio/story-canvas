@@ -144,6 +144,37 @@
       "relative_path": "vae/qwen_image_2.1_vae_bf16.safetensors",
       "sha256": "bb21f7473051e1ac368515dd3f2e15cd44d7a11748ee8823e1ddca3e4876b7c9",
       "source": "https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/vae/qwen_image_2.1_vae_bf16.safetensors"
+    },
+    {
+      "id": "qwen-image-2-1-bf16-dit",
+      "name": "Qwen-Image-2.1 BF16 生成主模型",
+      "kind": "dit",
+      "architecture_family": "qwen-image-2-1",
+      "prompt_family": "qwen-image-2-1",
+      "filename": "qwen_image_2.1_bf16.safetensors",
+      "relative_path": "diffusion_models/qwen_image_2.1_bf16.safetensors",
+      "sha256": "89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc",
+      "source": "https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/ace0edeb3791a594ddfa36ed5f41a178a394e921/diffusion_models/qwen_image_2.1_bf16.safetensors",
+      "preview": {
+        "images": [
+          {
+            "src": "/resource-previews/qwen-image-2-1-bf16-dit.jpg",
+            "alt": "Qwen-Image-2.1 全 BF16 本机二次元插画验证",
+            "source": "https://huggingface.co/Comfy-Org/Qwen-Image-2.1"
+          }
+        ]
+      }
+    },
+    {
+      "id": "qwen-image-2-1-bf16-text-encoder",
+      "name": "Qwen-Image-2.1 BF16 文本／视觉编码器",
+      "kind": "text_encoder",
+      "architecture_family": "qwen-image-2-1",
+      "prompt_family": "qwen-image-2-1",
+      "filename": "qwen3vl_8b_bf16.safetensors",
+      "relative_path": "text_encoders/qwen3vl_8b_bf16.safetensors",
+      "sha256": "68bdc82bc1b66851162ae656225e7e2068166b603db19bd5d5a3b90eb12669a9",
+      "source": "https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/ace0edeb3791a594ddfa36ed5f41a178a394e921/text_encoders/qwen3vl_8b_bf16.safetensors"
     }
   ]
 }

@@ -20,7 +20,6 @@ idna==3.18
 imagesize==1.4.1
 importlib-metadata==9.0.0
 jinja2==3.1.6
--e app/data.local/lora-training/sd-scripts
 lion-pytorch==0.2.3
 markdown==3.10.3
 markdown-it-py==4.2.0

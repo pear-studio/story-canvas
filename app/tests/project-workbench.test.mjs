@@ -1,7 +1,6 @@
 import { registerFixtureProjects } from "./project-registry-fixture.mjs";
 import {PAGES_INDEX_SCHEMA_ID} from '../server/pages-store.mjs';
 import { defaultTextPageLayout } from "../shared/text-page-layout.mjs";
-import { confirmedSave } from './fact-fixture.mjs';
 import { createStoryPage, deleteStoryPage } from "../server/story-facts.mjs";
 import { deleteCharacter } from "../server/character-facts.mjs";
 import { deleteCharacterPage } from "../server/character-page-facts.mjs";
@@ -49,11 +48,10 @@ import {
   STORY_PAGES_INDEX_SCHEMA_ID,
   STORY_PAGE_NARRATIVE_SCHEMA_ID,
   STORY_PAGE_PROMPT_SCHEMA_ID,
-  storyPromptCategories,
 } from "../server/story-files.mjs";
 import { factStorage as storage } from "../server/story-facts.mjs";
 
-const saveCharacterPrompt = (root, projectId, value) => confirmedSave(token => saveCharacterPromptDirect(root, projectId, { ...value, ...(token ? { confirmation_sha256: token } : {}) }));
+const saveCharacterPrompt = saveCharacterPromptDirect;
 const sourceRepositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 async function writeJson(target, value) {
@@ -66,7 +64,7 @@ async function readJson(target) {
 }
 
 function emptyPrompt(schema = STORY_PAGE_PROMPT_SCHEMA_ID) {
-  return { $schema: schema, ...Object.fromEntries(storyPromptCategories.map((category) => [category, []])) };
+  return { $schema: schema, text: "" };
 }
 
 async function fixture(context) {
@@ -74,9 +72,9 @@ async function fixture(context) {
   context.after(() => rm(root, { recursive: true, force: true }));
   const projectId = "demo";
   const directory = path.join(root, "workspace", projectId);
-  const storyPrompt = { ...emptyPrompt(), setting: [{ id: "token-111111111111", description: "soft morning light" }], avoid: [] };
+  const storyPrompt = { ...emptyPrompt(), text: "艾莲走入柔和晨光。" };
   await writeJson(path.join(directory, "project.json"), {
-    title: "短篇", canvas: "2:3", default_render_profile: "anima-base-v1",
+    format: "story-free-text-v1", title: "短篇", canvas: "2:3", default_render_profile: "qwen-image-2-1",
   });
   await writeJson(path.join(directory, "story", "outline.json"), {
     $schema: STORY_OUTLINE_SCHEMA_ID, synopsis: "一次短暂相遇。",
@@ -90,13 +88,12 @@ async function fixture(context) {
   await writeJson(path.join(directory, "characters", "index.json"), { $schema: CHARACTER_INDEX_SCHEMA_ID, characters: ["ellen"] });
   await writeJson(path.join(directory, "characters", "ellen.profile.json"), { $schema: CHARACTER_PROFILE_SCHEMA_ID, name: "艾莲", description: "短篇主角。" });
   await writeJson(path.join(directory, "characters", "ellen.visual.json"), { $schema: CHARACTER_VISUAL_SCHEMA_ID, description: "银发少女。", variants: [{ id: "default", name: "默认", description: "基础形象。" }, { id: "casual", name: "便服", description: "日常便服。" }] });
-  const characterPrompt = emptyPrompt(); delete characterPrompt.$schema;
   await writeJson(path.join(directory, "characters", "ellen.prompt.json"), {
     $schema: CHARACTER_PROMPT_SCHEMA_ID,
-    identity: { prompt: structuredClone(characterPrompt), lora: null },
+    prompt_name: "艾莲",
     variants: {
-      default: { prompt: characterPrompt, loras: [], identity_disabled: [] },
-      casual: { prompt: structuredClone(characterPrompt), loras: [], identity_disabled: [] },
+      default: { text: "艾莲，银发少女。", reference_images: [] },
+      casual: { text: "穿便服的艾莲。", reference_images: [] },
     },
   });
   await writeJson(path.join(directory, "pages", "page-101.content.json"), { $schema: STORY_PAGE_NARRATIVE_SCHEMA_ID, title: "基础形象", scene_description: "展示艾莲基础形象。", characters:[{character_id:"ellen",variant_id:"default"}], dialogue:[] });
@@ -109,20 +106,20 @@ async function fixture(context) {
   const renderTask = {
     version: 2, id: "render-20260826T010203Z", project: projectId, purpose: "candidate", status: "queued",
     created_at: "2026-08-26T01:02:03.000Z",
-    render_profile: "anima-base-v1",
+    render_profile: "qwen-image-2-1",
     snapshot: {
       canvas: "2:3",
       effective_profile_sha256: "e".repeat(64),
       profile: {
-        id: "anima-base-v1", name: "Anima Base", prompt: { family: "anima" },
-        models: { dit: { filename: "anima.safetensors", kind: "dit", sha256: "a".repeat(64) } },
+        id: "qwen-image-2-1", name: "Qwen-Image-2.1", prompt: { text: "全局文字。" },
+        models: { dit: { filename: "qwen.safetensors", kind: "dit", sha256: "a".repeat(64) } },
       },
-      source_identity: { recipes: { "anima-default": { sha256: "b".repeat(64) } } },
+      source_identity: { recipes: { "qwen-image-2-1-candidate": { sha256: "b".repeat(64) } } },
       execution_units: [{
         id: "unit-0001", item_ids: ["item-001"], batch: false, canonical_sha256: "c".repeat(64),
-        render_route: { operation: "candidates", input_source: "empty_latent", recipe_source_id: "anima-default", recipe_instance_id: `anima-default@${"d".repeat(64)}`, workflow_id: "anima-candidate-page" },
-        recipe: { source_id: "anima-default", instance_id: `anima-default@${"d".repeat(64)}`, source_canonical_sha256: "f".repeat(64), resolved_parameters: { dimensions: { width: 960, height: 1440 }, steps: 30, cfg: 5, sampler: "euler", scheduler: "simple", clip_skip: 2 }, resolved_canonical_sha256: "1".repeat(64) },
-        workflow: { source_id: "anima-candidate-page", template_sha256: "2".repeat(64), manifest_sha256: "3".repeat(64), canonical_sha256: "4".repeat(64), api: { "1": { class_type: "KSampler" } } },
+        render_route: { operation: "candidates", input_source: "empty_latent", recipe_source_id: "qwen-image-2-1-candidate", recipe_instance_id: `qwen-image-2-1-candidate@${"d".repeat(64)}`, workflow_id: "qwen-image-2-1-text" },
+        recipe: { source_id: "qwen-image-2-1-candidate", instance_id: `qwen-image-2-1-candidate@${"d".repeat(64)}`, source_canonical_sha256: "f".repeat(64), resolved_parameters: { dimensions: { width: 960, height: 1440 }, steps: 30, cfg: 5, sampler: "euler", scheduler: "simple", clip_skip: 2 }, resolved_canonical_sha256: "1".repeat(64) },
+        workflow: { source_id: "qwen-image-2-1-text", template_sha256: "2".repeat(64), manifest_sha256: "3".repeat(64), canonical_sha256: "4".repeat(64), api: { "1": { class_type: "KSampler" } } },
         outputs: [{ node_id: "9", image_index: 0, item_id: "item-001", file: candidateFile, promotion: { kind: "none" } }],
         extra_data: { extra_pnginfo: { storyvisualizer: { outputs: [{ item_id: "item-001", image_index: 0, declared_seed: 17, effective_seed: 17 }] } } },
       }],
@@ -130,9 +127,9 @@ async function fixture(context) {
     items: [{
       id: "item-001", candidate_id: candidateId, page_key: createStoryPageKey("page-001"), file: candidateFile,
       absolute_file: "D:/stale/location.png", status: "queued", seed: 17,
-      positive_prompt: "ellen, warm light", negative_prompt: "low quality",
-      prompt_parts: { positive: ["ellen", "warm light"] },
-      loras: [{ owner: "ellen", filename: "ellen.safetensors", weight: 0.8, sha256: "6".repeat(64) }],
+      positive_prompt: "ellen, warm light", negative_prompt: "",
+      prompt_parts: { sections: [{ kind: "page", text: "warm light" }] },
+      loras: [{ kind: "character", owner: "ellen", filename: "ellen.safetensors", weight: 0.8, sha256: "6".repeat(64) }],
     }],
   };
   await createRenderTask(directory, renderTask, {
@@ -178,21 +175,19 @@ test("workbench只组织页面事实，候选媒体按完整PageKey独立读取"
   }
 });
 
-test("页面 Prompt 完整保存保留旧 ID、为新片段补 ID 并阻止陈旧覆盖", async (context) => {
+test("页面 Prompt 整段保存本页文字并阻止陈旧覆盖", async (context) => {
   const current = await fixture(context);
   const page = (await readProjectWorkbenchView(current.root, current.projectId)).outline.chapters[0].sequences[0].pages[0];
   const prompt = structuredClone(page.prompt);
-  prompt.setting[0].description = "warm window light";
-  prompt.setting[0].enabled = false;
-  prompt.person.push({ description: "walking through the doorway" });
+  prompt.text = "艾莲停在门口，半身镜头。";
+  prompt.text_overrides = { "character:ellen:default": "本页覆盖的角色描述" };
   const result = await savePagePrompt(current.root, current.projectId, {
     kind: "story", page_id: "page-001", prompt, expected_sha256: page.prompt_sha256, expected_context_sha256: page.prompt_context_sha256,
   });
   const persisted = await readJson(path.join(current.directory, "pages", "page-001.prompt.json"));
-  assert.equal(persisted.setting[0].id, "token-111111111111");
-  assert.deepEqual(persisted.setting[0], { id: "token-111111111111", description: "warm window light", enabled: false });
-  assert.match(persisted.person[0].id, /^token-[a-f0-9]{12}$/);
-  assert.equal(result.prompt.person[0].id, persisted.person[0].id);
+  assert.equal(persisted.text, "艾莲停在门口，半身镜头。");
+  assert.deepEqual(persisted.text_overrides, { "character:ellen:default": "本页覆盖的角色描述" });
+  assert.equal(result.prompt.text, persisted.text);
   await assert.rejects(
     savePagePrompt(current.root, current.projectId, { kind: "story", page_id: "page-001", prompt, expected_sha256: page.prompt_sha256, expected_context_sha256: page.prompt_context_sha256 }),
     (error) => error?.code === "prompt_target_conflict" && error.status === 409,
@@ -200,13 +195,13 @@ test("页面 Prompt 完整保存保留旧 ID、为新片段补 ID 并阻止陈�
   assert.match(result.prompt_sha256, /^[a-f0-9]{64}$/);
 });
 
-test("角色 Prompt 一次保存 identity、base、variant 与角色 LoRA", async (context) => {
+test("角色 Prompt 一次保存 prompt_name 与各造型自由文本", async (context) => {
   const current = await fixture(context);
   const character = (await readProjectWorkbenchView(current.root, current.projectId)).characters[0];
   const prompt = structuredClone(character.prompt);
-  prompt.variants.default.prompt.person.push({ description: "silver hair" });
-  prompt.identity.lora = { filename: "characters/ellen.safetensors", sha256: "a".repeat(64), weight: 0.85, trigger: "ellen_character" };
-  prompt.variants.casual.prompt.person.push({ description: "casual cardigan" });
+  prompt.prompt_name = "艾莲·乔";
+  prompt.variants.default.text = "艾莲，银发少女，琥珀色眼睛。";
+  prompt.variants.casual.text = "穿针织开衫的艾莲。";
   const result = await saveCharacterPrompt(current.root, current.projectId, {
     character_id: character.id,
     prompt,
@@ -214,49 +209,12 @@ test("角色 Prompt 一次保存 identity、base、variant 与角色 LoRA", asyn
     expected_visual_sha256: character.visual_sha256,
   });
   const persisted = await readJson(path.join(current.directory, "characters", "ellen.prompt.json"));
-  assert.deepEqual(persisted.identity.lora, prompt.identity.lora);
-  assert.deepEqual(persisted.variants.default.loras, []);
-  assert.match(persisted.variants.default.prompt.person[0].id, /^token-[a-f0-9]{12}$/);
-  assert.match(persisted.variants.casual.prompt.person[0].id, /^token-[a-f0-9]{12}$/);
-  assert.deepEqual(result.prompt.identity.lora, prompt.identity.lora);
-  assert.equal(result.identity_impact, null, "identity.prompt 无 diff 时无影响报告");
+  assert.equal(persisted.prompt_name, "艾莲·乔");
+  assert.equal(persisted.variants.default.text, "艾莲，银发少女，琥珀色眼睛。");
+  assert.equal(persisted.variants.casual.text, "穿针织开衫的艾莲。");
+  assert.equal(result.prompt.prompt_name, "艾莲·乔");
   assert.equal(Object.hasOwn(result.prompt, "$schema"), false);
   assert.match(result.prompt_sha256, /^[a-f0-9]{64}$/);
-});
-
-test("角色 Prompt 保存按保存前 baseline 报告 identity 影响", async (context) => {
-  const current = await fixture(context);
-  const character = (await readProjectWorkbenchView(current.root, current.projectId)).characters[0];
-  const prompt = structuredClone(character.prompt);
-  prompt.identity.prompt.person = [{ description: "upright posture" }];
-  prompt.variants.casual.prompt.person.push({ description: "amber eyes" });
-  const first = await saveCharacterPrompt(current.root, current.projectId, {
-    character_id: character.id,
-    prompt,
-    expected_sha256: character.prompt_sha256,
-    expected_visual_sha256: character.visual_sha256,
-  });
-  assert.deepEqual(first.identity_impact, {
-    per_variant: {
-      default: { lost_inheritance: [], new_inheritance: ["upright posture"] },
-      casual: { lost_inheritance: [], new_inheritance: ["upright posture"] },
-    },
-  });
-
-  const removed = structuredClone(first.prompt);
-  removed.identity.prompt.person = [];
-  const second = await saveCharacterPrompt(current.root, current.projectId, {
-    character_id: character.id,
-    prompt: removed,
-    expected_sha256: first.prompt_sha256,
-    expected_visual_sha256: character.visual_sha256,
-  });
-  assert.deepEqual(second.identity_impact, {
-    per_variant: {
-      default: { lost_inheritance: ["upright posture"], new_inheritance: [] },
-      casual: { lost_inheritance: ["upright posture"], new_inheritance: [] },
-    },
-  }, "enabled 同名片段不再算覆盖，两个造型都报告 lost_inheritance");
 });
 
 test("角色 profile 与 visual 分文件保存并以各自目标SHA阻止陈旧覆盖", async (context) => {
@@ -653,19 +611,19 @@ test("候选详情可读且清理与当前 Prompt 不符的候选，不再存在
   const detail = await readPageCandidateDetail(current.root, current.projectId, { page_key: page.page_key, candidate_id: current.candidateId });
   assert.deepEqual(Object.keys(detail).sort(), ["candidate_id", "completed_at", "created_at", "generation", "seed"]);
   assert.deepEqual({ candidate_id: detail.candidate_id, seed: detail.seed }, { candidate_id: current.candidateId, seed: 17 });
-  assert.equal(detail.generation.profile_name, "Anima Base");
+  assert.equal(detail.generation.profile_name, "Qwen-Image-2.1");
   assert.equal(detail.generation.canvas, "2:3");
   assert.deepEqual(detail.generation.parameters, {
     dimensions: { width: 960, height: 1440 }, steps: 30, cfg: 5, sampler: "euler", scheduler: "simple",
   });
-  assert.deepEqual(detail.generation.models, [{ role: "dit", filename: "anima.safetensors" }]);
+  assert.deepEqual(detail.generation.models, [{ role: "dit", filename: "qwen.safetensors" }]);
   assert.deepEqual(detail.generation.loras, [{ kind: "character", owner: "ellen", filename: "ellen.safetensors", weight: 0.8, trigger: null }]);
-  assert.equal(detail.generation.prompt.parts.positive[1].text, "warm light");
+  assert.equal(detail.generation.prompt.sections[0].text, "warm light");
   for (const hidden of ["task_id", "sha256", "execution_unit", "submission", "workflow", "render_route", "prompt_variation"]) {
     assert.equal(JSON.stringify(detail).includes(`\"${hidden}\"`), false, `候选详情投影不应公开 ${hidden}`);
   }
 
-  for (const directory of ["render-profiles", "prompt-policies", "render-recipes", "workflows"]) {
+  for (const directory of ["render-profiles", "render-recipes", "workflows"]) {
     await cp(path.join(sourceRepositoryRoot, "library", directory), path.join(current.root, "library", directory), { recursive: true });
   }
   const renderContext = await compilePageRenderInspectionContext({
@@ -677,7 +635,7 @@ test("候选详情可读且清理与当前 Prompt 不符的候选，不再存在
   const matchingFile = candidateFileRelativePath(page.page_key, matchingId);
   await createRenderTask(current.directory, {
     version: 2, id: "render-20260830T010203Z", project: current.projectId, purpose: "candidate", status: "queued",
-    created_at: "2026-08-30T01:02:03.000Z", render_profile: "anima-base-v1", snapshot: {
+    created_at: "2026-08-30T01:02:03.000Z", render_profile: "qwen-image-2-1", snapshot: {
       profile: renderContext.active_profile, canvas: renderContext.project.canvas,
       recipes: { [renderContext.candidate_route.recipe_instance_id]: { parameters: renderContext.candidate_recipe } },
       workflows: { [renderContext.candidate_route.workflow_id]: renderContext.candidate_workflow },
@@ -709,12 +667,12 @@ test("候选详情可读且清理与当前 Prompt 不符的候选，不再存在
   const model = renderContext.active_profile.models.dit;
   const change = { target: "models.dit", original: { exists: true, value: model },
     project: { exists: true, value: { ...model, sha256: "f".repeat(64) } } };
-  await writeFile(overridePath, JSON.stringify({ version: 1, profiles: { "anima-base-v1": { changes: [change] } } }));
+  await writeFile(overridePath, JSON.stringify({ version: 1, profiles: { "qwen-image-2-1": { changes: [change] } } }));
   await assert.rejects(deletePageCandidates(current.root, current.projectId, {
     page_key: page.page_key, generation_mismatch: true, expected_signature: inspectionGenerationSignature(renderContext),
   }), { code: "candidate_generation_signature_stale" }, "模型变化而 Prompt 不变也不能沿用旧清理确认");
   change.original.value = { ...model, sha256: "e".repeat(64) };
-  await writeFile(overridePath, JSON.stringify({ version: 1, profiles: { "anima-base-v1": { changes: [change] } } }));
+  await writeFile(overridePath, JSON.stringify({ version: 1, profiles: { "qwen-image-2-1": { changes: [change] } } }));
   await assert.rejects(deletePageCandidates(current.root, current.projectId, {
     page_key: page.page_key, generation_mismatch: true, expected_signature: inspectionGenerationSignature(renderContext),
   }), { code: "current_prompt_unavailable" }, "配置冲突时不能用基础预览清理候选");
