@@ -16,6 +16,7 @@
     "story:page": "node scripts/story-page.mjs",
     "corpus:search": "node scripts/corpus-search.mjs",
     "character:fact": "node scripts/character-fact.mjs",
+    "fact:edit": "node scripts/agent-fact.mjs",
     "visual:produce": "node scripts/visual-production.mjs",
     "workbench:api": "node scripts/workbench-api.mjs",
     "smoke:lora": "node scripts/lora-api-smoke.mjs",

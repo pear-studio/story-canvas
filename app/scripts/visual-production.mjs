@@ -2,16 +2,16 @@
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { decodePageKey } from "../server/page-key.mjs";
-import { projectRoute, requestWorkbench, runCommand } from "./workbench-client.mjs";
+import { projectRoute, readPromptContext, requestWorkbench, runCommand } from "./workbench-client.mjs";
 
-runCommand(async () => {
-  const [domain, action, projectId, input, ...args] = process.argv.slice(2);
+runCommand(async argv => {
+  const [domain, action, projectId, input, ...args] = argv;
   if (!projectId || !input || !(domain === "render" && action === "page" || domain === "preview" && action === "page" || domain === "context" && action === "page" || domain === "candidate" && action === "delete")) {
-    throw new Error("用法：visual:produce -- render page <project-id> <page-id|PageKey> [--count 1..3] [--seed N] [--wait]；context page <project-id> <PageKey>；preview page <project-id> <page-id|PageKey>；candidate delete <project-id> <page-id|PageKey> <absolute-candidate-path|candidate-id>");
+    throw new Error("用法：visual:produce -- render page <project-id> <page-id|PageKey> [--count 1..3] [--seed N] [--wait]；context page <project-id> <PageKey> [--out 文件]；preview page <project-id> <page-id|PageKey>；candidate delete <project-id> <page-id|PageKey> <absolute-candidate-path|candidate-id>");
   }
   if (domain === "context") {
     if (args.length) throw new Error("context page 不接受额外选项");
-    return (await requestWorkbench("/api/agent/prompt-context", { method: "POST", body: { project_id: projectId, page_key: decodePageKey(input) } })).value;
+    return readPromptContext(projectId, decodePageKey(input));
   }
   const key = decodePageKey(input);
   const base = `${projectRoute(projectId)}/workbench`;

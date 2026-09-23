@@ -52,9 +52,10 @@
 
 ## 开发、验证与 Agent 配置
 
-- Node.js 版本以 `.node-version` 和 `app/package.json` 为准，依赖使用 `npm --prefix /home/ubuntu/story-canvas/app ci`。初始化与常用命令见 `docs/start-here.md`。
-- 涉及本仓库 npm 命令时 `--prefix` 必须使用绝对路径（如 `npm --prefix /home/ubuntu/story-canvas/app test`），不得依赖调用时的工作目录。
-- 迭代时运行类型检查和最小相关测试，功能收尾或提交前通常运行一次完整 `npm --prefix /home/ubuntu/story-canvas/app test`；高风险跨模块修改和失败修正按风险追加回归。
+- Node.js 版本以 `.node-version` 和 `app/package.json` 为准，依赖使用 `npm --prefix C:/Workspace/story-canvas/app ci`。初始化与常用命令见 `docs/start-here.md`。
+- 调用仓库脚本一律使用绝对路径：直接 `node C:/Workspace/story-canvas/app/scripts/…`，或 `npm --prefix C:/Workspace/story-canvas/app …` 等价（如 `npm --prefix C:/Workspace/story-canvas/app test`），不得依赖调用时的工作目录。
+- Agent CLI 的草稿与回执通过 `--out` 落盘到 `Saved/Agent/<任务名>/`，输入输出使用不同文件；不用 shell 管道或重定向搬运 JSON。契约细节见 `docs/reference/agent-interfaces.md`。
+- 迭代时运行类型检查和最小相关测试，功能收尾或提交前通常运行一次完整 `npm --prefix C:/Workspace/story-canvas/app test`；高风险跨模块修改和失败修正按风险追加回归。
 - 仓库内说明性文档使用中文；命令、路径、代码标识和专有名词可以保留英文。当前能力与目标能力必须明确区分。
 - `AGENTS.md` 是项目规则唯一事实来源，`CLAUDE.md` 由同步器生成；`.agents/skills/` 是项目技能源，Claude 技能目录只是本地投影。
 - 只有用户在当前请求中明确要求使用 `agent-sync` 时才启用它；完成后运行 `node docs/agent/sync.mjs doctor`。技能保持简短，详细事实引用文档或代码。

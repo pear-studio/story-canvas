@@ -75,7 +75,8 @@ npm --prefix <仓库根>/app run project:create -- create <完整草稿JSON文�
 ```
 
 创建文件只描述项目 metadata、粗 outline 和最小角色 profile/visual。服务端生成完整项目目录、
-空页面索引和空 Prompt 配置；不会复制旧项目页面、候选或临时判断。
+空页面索引和空 Prompt 配置；不会复制旧项目页面、候选或临时判断。模板骨架不含 sequence，
+建页前先创建情节单元：`npm --prefix <仓库根>/app run story:page -- sequence create <project-id> <chapter-id> <标题>`。
 
 ## 常用创作命令
 
@@ -95,6 +96,7 @@ npm --prefix <仓库根>/app run story:page -- narrative read <project-id> <page
 npm --prefix <仓库根>/app run character:fact -- visual read <project-id> <character-id>
 npm --prefix <仓库根>/app run character:fact -- page create <project-id> <character-id> <variant-id>
 npm --prefix <仓库根>/app run character:fact -- page-goal read <project-id> <page-id>
+npm --prefix <仓库根>/app run fact:edit -- read scene profile <project-id> <scene-id>
 npm --prefix <仓库根>/app run visual:produce -- candidate delete <project-id> <page-id> <absolute-candidate-path>
 
 # Prompt Agent：编辑前先完整读取，返回 draft 用于后续 save
@@ -108,6 +110,8 @@ npm --prefix <仓库根>/app run visual:produce -- candidate delete <project-id>
 
 所有事实 read 命令返回正文与目标/依赖指纹；只修改 document，再将完整 JSON 交给同一 kind 的
 `save <完整草稿JSON文件|->`。服务不托管草稿。busy 可有界退避；内容指纹冲突必须重新读取和判断。
+草稿跨轮次保存时在各命令末尾加 `--out <绝对路径文件>` 落盘到 `Saved/Agent/<任务名>/`，
+不用 shell 管道或重定向搬运 JSON；完整契约见 `docs/reference/agent-interfaces.md`。
 outline 支持 synopsis/chapter/sequence 局部读写，具体范围见[Agent 接口](reference/agent-interfaces.md)。
 
 开发入口见[开发文档导航](dev/README.md)。

@@ -766,7 +766,7 @@ test("真实 CLI 经服务创建与管理项目，支持 stdin 事实提交，�
   const source = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../scripts");
   const scripts = path.join(projectRoot, "app/scripts");
   await mkdir(scripts, { recursive: true });
-  for (const file of ["workbench-client.mjs", "workbench-api.mjs", "create-project.mjs", "story-page.mjs", "character-fact.mjs", "manage-project.mjs", "visual-production.mjs"]) await cp(path.join(source, file), path.join(scripts, file));
+  for (const file of ["workbench-client.mjs", "workbench-api.mjs", "create-project.mjs", "story-page.mjs", "character-fact.mjs", "manage-project.mjs", "visual-production.mjs", "agent-fact.mjs"]) await cp(path.join(source, file), path.join(scripts, file));
   await mkdir(path.join(projectRoot, "app/server"), { recursive: true });
   await cp(path.resolve(source, "../server/page-key.mjs"), path.join(projectRoot, "app/server/page-key.mjs"));
   await mkdir(path.join(projectRoot, "Config"), { recursive: true });
@@ -791,6 +791,13 @@ test("真实 CLI 经服务创建与管理项目，支持 stdin 事实提交，�
   const outlineContext = JSON.parse(await cli("story-page.mjs", "context", "read", "cli-story", "intro"));
   assert.equal(outlineContext.chapter.sequences[0].summary, "门口相遇。");
   const page = JSON.parse(await cli("story-page.mjs", "page", "create", "cli-story", "intro"));
+  // 语义命令：新建 sequence（新项目模板骨架不含 sequence，建页前先建单元）
+  const chapterId = JSON.parse(await cli("story-page.mjs", "outline", "read", "cli-story")).document.chapters[0].id;
+  const newSequence = JSON.parse(await cli("story-page.mjs", "sequence", "create", "cli-story", chapterId, "雨夜书店"));
+  assert.equal(newSequence.chapter_id, chapterId);
+  assert.ok(newSequence.sequence_id);
+  const secondPage = JSON.parse(await cli("story-page.mjs", "page", "create", "cli-story", newSequence.sequence_id));
+  assert.ok(secondPage.page_id);
   const smallDraft = JSON.parse(await cli("story-page.mjs", "narrative", "read", "cli-story", page.page_id));
   smallDraft.document.title = "管道中的中文标题";
   const saved = JSON.parse(await cliInput("story-page.mjs", ["narrative", "save", "-"], JSON.stringify(smallDraft)));
@@ -803,6 +810,33 @@ test("真实 CLI 经服务创建与管理项目，支持 stdin 事实提交，�
   await assert.rejects(cliInput("story-page.mjs", ["narrative", "save", "-"], JSON.stringify(smallDraft)), error => {
     assert.equal(JSON.parse(error.stderr).error, "fact_target_conflict");
     assert.equal(error.stdout, "");
+    return true;
+  });
+  // 通用事实 CLI 真实往返：read --out 落盘 → 修改 → save；完整 Prompt 上下文落盘 → save-context 提交
+  const scratch = path.join(projectRoot, "Saved", "Agent", "cli-test");
+  const outlineFile = path.join(scratch, "outline.json");
+  const outlineConfirm = JSON.parse(await cli("agent-fact.mjs", "read", "story", "outline", "cli-story", "--out", outlineFile));
+  assert.equal(outlineConfirm.output_file, outlineFile);
+  const outlineDraft = JSON.parse(await readFile(outlineFile, "utf8"));
+  outlineDraft.document.synopsis = "通用事实简介。";
+  await writeFile(outlineFile, JSON.stringify(outlineDraft), "utf8");
+  await cli("agent-fact.mjs", "save", "story", "outline", outlineFile);
+  assert.equal(JSON.parse(await cli("agent-fact.mjs", "read", "story", "outline", "cli-story")).document.synopsis, "通用事实简介。");
+  const unsupported = JSON.parse(await cli("agent-fact.mjs", "read", "scene", "index", "cli-story", "room").catch(error => error.stderr));
+  assert.equal(unsupported.error, "fact_draft_not_supported");
+  const contextFile = path.join(scratch, "prompt-context.json");
+  await cli("agent-fact.mjs", "prompt-context", "cli-story", "v3/" + page.page_id, "--out", contextFile);
+  const contextPack = JSON.parse(await readFile(contextFile, "utf8"));
+  assert.deepEqual(contextPack.save, { domain: "page", kind: "prompt" });
+  contextPack.draft.document.text = "上下文文件提交的提示词。";
+  await writeFile(contextFile, JSON.stringify(contextPack), "utf8");
+  const contextSaved = JSON.parse(await cli("agent-fact.mjs", "save-context", contextFile, "--out", path.join(scratch, "save-result.json")));
+  assert.equal(contextSaved.bytes > 0, true);
+  assert.equal(JSON.parse(await readFile(path.join(scratch, "save-result.json"), "utf8")).value.text, "上下文文件提交的提示词。");
+  const mismatched = { ...contextPack, draft: { ...contextPack.draft, target_id: "other-page" } };
+  await writeFile(contextFile, JSON.stringify(mismatched), "utf8");
+  await assert.rejects(cli("agent-fact.mjs", "save-context", contextFile), error => {
+    assert.equal(JSON.parse(error.stderr).error, "invalid_prompt_context_file");
     return true;
   });
   const queued = JSON.parse(await cli("visual-production.mjs", "render", "page", "cli-story", "v3/" + page.page_id, "--count", "2", "--seed", "42"));
