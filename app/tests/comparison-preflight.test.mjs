@@ -111,6 +111,30 @@ function loraRegistry() {
   };
 }
 
+test("正式 LoRA 兼容性只按模型架构判断，不使用旧 Prompt 家族标签", async () => {
+  const input = await createBlankComparisonInput(sourceRepositoryRoot, "qwen-image-2-1");
+  input.prompt.positive = "anime portrait";
+  // 隔离模型兼容性检查；当前默认 Qwen 工作流的比较 LoRA 能力另有测试覆盖。
+  const route = input.render.profile.operations.candidates.routes.empty_latent;
+  input.render.workflows[route.workflow].manifest.modifiers.push("lora.model_only");
+  const resource = {
+    id: "formal-test", kind: "resource", resource_id: `lora-${"a".repeat(16)}`, name: "测试画风",
+    architecture: { family: "qwen-image-2-1", prompt_family: "qwen" },
+    base_models: [{ kind: "dit", name: "Qwen-Image-2.1", identity_status: "declared", relative_path: null, sha256: null, size_bytes: null, source: null }],
+    activation: { trigger_words: [], tags: [] }, relative_path: "loras/test.safetensors", sha256: "a".repeat(64), size_bytes: 1, metadata: {},
+  };
+  const manifestFor = (family) => createComparisonExperiment({ id: "formal-compatibility", registries: {
+    loras: [{ ...resource, architecture: { ...resource.architecture, family } }],
+    lora_configs: [{ id: "test", label: "测试 LoRA", lora_ref: resource.id }],
+  }, axes: [
+    { type: "input", values: [{ value_id: input.id, label: "测试", value: input.id }] },
+    { type: "lora_config", values: [{ value_id: "formal", label: "正式 LoRA", value: "test" }] },
+    { type: "lora_weight", values: [{ value_id: "weight", label: "0.7", value: 0.7 }] },
+  ] });
+  assert.equal(preflightComparisonExperiment({ manifest: manifestFor("qwen-image-2-1"), inputs: [input] }).cells.length, 1);
+  assert.throws(() => preflightComparisonExperiment({ manifest: manifestFor("anima"), inputs: [input] }), /模型家族不一致/);
+});
+
 test("Qwen 对比预检和共用构建器拒绝裸 LoRA", async () => {
   const { buildWorkflow, resolveRenderRecipe } = await import("../server/render-task-contract.mjs");
   const input = await createBlankComparisonInput(sourceRepositoryRoot, "qwen-image-2-1");

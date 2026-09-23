@@ -24,7 +24,7 @@ export function preflightComparisonExperiment({ manifest, inputs } = {}) {
     const workflow = input.render.workflows[input.render.profile.operations.candidates.routes.empty_latent.workflow];
     if ((lora || input.loras.length) && !workflow.manifest.modifiers.includes("lora.model_only")) fail(`${workflow.id} 不支持 LoRA`);
     if (lora?.kind === "resource") {
-      if (lora.architecture.family !== renderIdentity.architecture_family || lora.architecture.prompt_family !== renderIdentity.prompt_family) fail("比较 LoRA 与测试输入的模型家族不一致");
+      if (lora.architecture.family !== renderIdentity.architecture_family) fail("比较 LoRA 与测试输入的模型家族不一致");
       const modelShas = new Set(Object.values(renderIdentity.models).map(model => model.sha256));
       if (lora.base_models.some(model => model.sha256 && !modelShas.has(model.sha256))) fail("比较 LoRA 的底座模型不一致");
     }

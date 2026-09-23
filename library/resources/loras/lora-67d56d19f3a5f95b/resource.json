@@ -5,9 +5,9 @@
   "kind": "lora",
   "name": "ZZZ Game Style · Anima v1.0",
   "created_at": "2026-09-18T09:44:11.770Z",
-  "updated_at": "2026-09-19T15:45:16.739Z",
+  "updated_at": "2026-09-23T14:40:09.757Z",
   "file": {
-    "relative_path": "loras/training/lora-6ceeecdb4def/run-1975397f1648/lora-step00000600.safetensors",
+    "relative_path": "loras/zzz-game-style/anima/zzz-game-style-step-600.safetensors",
     "sha256": "67d56d19f3a5f95b7bf13ca08ec2cd4db8feda8e6f81124a1e0510c0eda24b82",
     "size_bytes": 91885784
   },

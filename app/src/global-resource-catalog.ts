@@ -55,8 +55,6 @@ export function loraResourceItem(model: GlobalModelResource): ResourceCatalogIte
   return { ...loraResourceCatalogItem({ resource, status: model.status, size_bytes: model.size_bytes, repository_record: model.repository_record }), previewImages: model.preview?.images ?? [] };
 }
 
-export function loraMatchesProfile(model: GlobalModelResource, profile: { architecture_family?: string; prompt?: { family: string } }) {
-  return !model.registered || ((!profile.architecture_family || model.architecture_family === profile.architecture_family)
-    && (!profile.prompt?.family || model.prompt_family === profile.prompt.family));
+export function loraMatchesProfile(model: GlobalModelResource, profile: { architecture_family?: string }) {
+  return !model.registered || !profile.architecture_family || model.architecture_family === profile.architecture_family;
 }
-
