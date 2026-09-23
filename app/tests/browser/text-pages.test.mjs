@@ -60,7 +60,7 @@ test("文字页独立排版保存恢复，预览与输出一致，长文溢出�
   assert.equal(await placement.getByRole("button", { name: "下三分之一", exact: true }).getAttribute("aria-pressed"), "true");
   const view = await (await page.request.get(`${origin}/api/projects/demo/workbench`)).json();
   const dimensions = view.render_capabilities.text_page.dimensions;
-  assert.deepEqual(dimensions, { width: 1664, height: 2432 });
+  assert.deepEqual(dimensions, { width: 1664, height: 2496 });
   const previewRatio = await artwork.evaluate(element => element.clientWidth / element.clientHeight);
   assert.ok(Math.abs(previewRatio - dimensions.width / dimensions.height) < .002, "预览采用实际 recipe 的成品比例");
   const output = await browser.newPage({ viewport: dimensions });
@@ -89,8 +89,8 @@ test("文字页独立排版保存恢复，预览与输出一致，长文溢出�
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, "窄屏控件不撑破页面");
   await page.screenshot({ path: path.join(screenshots, "text-page-mobile.png"), fullPage: true });
   await page.setViewportSize({ width: 1440, height: 1000 });
-  // 27 行在项目 2:3 画布上能放下，在真实 recipe 比例下会溢出；两端必须一致。
-  const edgeBody = Array(27).fill("正文").join("\n");
+  // 使用超出当前 Qwen 成品画布容量的正文，验证预览与输出都报告溢出。
+  const edgeBody = Array(40).fill("正文").join("\n");
   await page.getByLabel("显示标题", { exact: true }).fill("");
   await page.getByLabel("正文字号", { exact: true }).fill("28");
   await page.getByLabel("正文", { exact: true }).fill(edgeBody);
