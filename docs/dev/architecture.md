@@ -307,8 +307,7 @@ PageKey 统一为 `{ page_id }`，编码为 `v3/<page-id>`。`app/server/page-ke
 记录的原值和项目值，不复制完整 profile。每个 profile 以稳定角色映射声明模型，保存一段全局
 `prompt.text`，并引用独立的 recipe 和 workflow；operation 与输入来源的固定 route 就是能力边界，
 不再保存重复的 `capabilities`。模型 SHA-256 必填、来源可缺失。当前唯一生成结构家族是
-`qwen-image-2-1`；全局 `prompt.text` 默认是“根据以下设定和画面描述创作一幅新画面，动作、表情、
-视角与构图以画面描述为准。”，项目 override 的语义 target 也是 `prompt.text`，用户清空时编译直接
+`qwen-image-2-1`；全局 `prompt.text` 默认为空，项目 override 的语义 target 也是 `prompt.text`，为空时编译直接
 省略。不再保留独立 Prompt policy 文件、prefix/suffix、分类、权重、负向或 AVOID 转换。
 `library/resources/catalog.json` 额外维护供浏览和人工登记的资源
 元数据，包括模型结构家族和模型预览图；生成配置按模型路径与 SHA 复用图片，不另存副本。

@@ -63,7 +63,7 @@ test("Qwen inspection 展示已解析候选资产、全局文字与真实 route"
   assert.equal(inspected.base_profile.sha256, bundle.resolved_profile_sha256);
   assert.equal(inspected.project_override.status, "none");
   assert.equal(inspected.project_override.effective_sha256, bundle.resolved_profile_sha256);
-  assert.equal(inspected.prompt.text, "根据以下设定和画面描述创作一幅新画面，动作、表情、视角与构图以画面描述为准。");
+  assert.equal(inspected.prompt.text, "");
   assert.deepEqual(inspected.routes.map((route) => [route.operation, route.input_source, route.recipe.source_id, route.workflow.id]), [
     ["candidates", "empty_latent", "qwen-image-2-1-candidate", "qwen-image-2-1-text"],
     ["candidates", "reference_image", "qwen-image-2-1-candidate", "qwen-image-2-1-reference"],

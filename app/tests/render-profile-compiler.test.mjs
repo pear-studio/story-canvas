@@ -43,7 +43,7 @@ test("Qwen profile 解析稳定模型角色、全局文字、候选 recipe 和 w
 
   assert.deepEqual(Object.keys(resolved.models), ["dit", "text_encoder", "vae"]);
   assert.equal(resolved.architecture_family, "qwen-image-2-1");
-  assert.equal(resolved.prompt.text, "根据以下设定和画面描述创作一幅新画面，动作、表情、视角与构图以画面描述为准。");
+  assert.equal(resolved.prompt.text, "");
   assert.equal(Object.hasOwn(resolved.prompt, "policy"), false);
   assert.equal(Object.hasOwn(resolved.prompt, "fragments"), false);
   assert.equal(resolved.operations.candidates.routes.empty_latent.recipe.steps, 25);

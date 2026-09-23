@@ -128,7 +128,7 @@ workflow。
     "vae": { "filename": "...", "relative_path": "...", "sha256": "..." }
   },
   "prompt": {
-    "text": "根据以下设定和画面描述创作一幅新画面，动作、表情、视角与构图以画面描述为准。"
+    "text": ""
   },
   "operations": {
     "candidates": {

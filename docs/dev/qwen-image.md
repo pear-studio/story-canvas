@@ -36,8 +36,7 @@ prompt-policies）已删除。默认约 1MP、25 步、Euler / simple、CFG 1；
 “参考图：……”。负向恒为空字符串，不做 AVOID 或否定句转换，用户写的否定句当普通文字保留。
 完整规则见 [Prompt 编写与审计](../reference/prompt.md)。
 
-全局文字来自 render profile 的 `prompt.text`，默认“根据以下设定和画面描述创作一幅新画面，动作、
-表情、视角与构图以画面描述为准。”；项目 override 的语义 target 也是 `prompt.text`，参与预览、
+全局文字来自 render profile 的 `prompt.text`，默认为空；项目 override 的语义 target 也是 `prompt.text`，参与预览、
 冻结与候选匹配，清空时编译直接省略。不再有独立 Prompt policy 文件、prefix/suffix、分类或负向。
 
 当前 Qwen 家族不使用 LoRA（profile `style_loras` 为空）；把带参考图页面导入对比实验仍明确

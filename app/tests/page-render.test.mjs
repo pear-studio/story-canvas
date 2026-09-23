@@ -179,8 +179,7 @@ test("单张参考图使用“参考图：”约定，冻结输入贯通；源�
   validateFrozenRenderTask(task);
   assert.equal(task.items.length, 3);
   assert.equal(task.snapshot.execution_units.length, 3);
-  assert.match(task.items[0].positive_prompt, /^根据以下设定和画面描述创作一幅新画面/);
-  assert.match(task.items[0].positive_prompt, /参考图：画风参考。/);
+  assert.match(task.items[0].positive_prompt, /^参考图：画风参考。/);
   assert.doesNotMatch(task.items[0].positive_prompt, /<image1>/);
   assert.match(task.items[0].positive_prompt, /本页描述：\n艾莲站在站台边/);
   assert.equal(task.items[0].negative_prompt, "");
@@ -599,7 +598,7 @@ test("三个真实 CLI 输出可解析 JSON、退出0并清理会话", async (co
   }
 });
 
-test("story resolver 组装全局文字、角色段、场景段与本页描述", async (context) => {
+test("story resolver 默认省略全局文字并组装角色段与本页描述", async (context) => {
   const fixture = await createFixture(context);
   await prepareWriteAuditFixture(fixture);
   const resolved = await resolvePageForRender({
@@ -609,7 +608,6 @@ test("story resolver 组装全局文字、角色段、场景段与本页描述",
   });
   assert.equal(resolved.kind, "story");
   assert.equal(resolved.compiled_page.positive_prompt, [
-    "根据以下设定和画面描述创作一幅新画面，动作、表情、视角与构图以画面描述为准。",
     "艾莲：\n艾莲，银发少女，穿深色学校制服。",
     "本页描述：\n艾莲站在站台边，望向远处的列车。",
   ].join("\n\n"));
@@ -617,7 +615,7 @@ test("story resolver 组装全局文字、角色段、场景段与本页描述",
   assert.deepEqual(resolved.character_references, [{ character_id: "ellen", variant_id: "uniform" }]);
   assert.doesNotMatch(resolved.compiled_page.positive_prompt, /路人/, "画外speaker不注入角色Prompt");
   assert.deepEqual(resolved.compiled_page.loras, []);
-  assert.deepEqual(resolved.compiled_page.sections.map((section) => section.kind), ["global", "character", "page"]);
+  assert.deepEqual(resolved.compiled_page.sections.map((section) => section.kind), ["character", "page"]);
 });
 
 test("全局文字可由项目 override 整段替换或清空", async (context) => {
@@ -926,7 +924,7 @@ test("编辑上下文返回引用、整段覆盖与最终文本", async t => {
   assert.equal(result.context.status, "complete", "无需本机模型或 ComfyUI 即可完整读取");
   assert.deepEqual(result.save, { domain: "page", kind: "prompt" });
   assert.equal(result.context.global_text.source, "profile");
-  assert.match(result.context.global_text.text, /^根据以下设定和画面描述/);
+  assert.equal(result.context.global_text.text, "");
   assert.deepEqual(result.context.references.map((reference) => [reference.source, reference.kind]), [["character:ellen:uniform", "character"]]);
   const reference = result.context.references[0];
   assert.equal(reference.prompt_name, "艾莲");
@@ -938,7 +936,7 @@ test("编辑上下文返回引用、整段覆盖与最终文本", async t => {
   assert.match(result.context.final.positive, /本页覆盖的完整描述/);
   assert.equal(result.context.final.negative, "");
   assert.deepEqual(result.context.final.images, []);
-  assert.deepEqual(result.context.final.sections.map((section) => section.kind), ["global", "character", "page"]);
+  assert.deepEqual(result.context.final.sections.map((section) => section.kind), ["character", "page"]);
   assert.deepEqual(result.draft, await readFactDraft(fixture.repositoryRoot, { domain: "story", kind: "prompt", projectId: fixture.projectId, targetId: "page-001" }));
   const compiled = await compilePageRenderInspectionContext({ repositoryRoot: fixture.repositoryRoot, projectDirectory: fixture.projectDirectory, pageKey: options.pageKey });
   assert.equal(result.context.final.positive, compiled.compiled_page.positive_prompt);

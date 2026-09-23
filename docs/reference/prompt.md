@@ -67,8 +67,7 @@ Agent 日常操作需要本地工作台服务在线；命令与 API 统一说明
 - 页面级 `reference_images` 是本页独立附图，`purpose` 可选；未填用途仍传图，只是不生成说明行。
 - 文字 override 与图片选择相互独立：改文字不改变图片选择。
 
-全局基础 Prompt 是 render profile 的 `prompt.text`，默认“根据以下设定和画面描述创作一幅新画面，
-动作、表情、视角与构图以画面描述为准。”。项目生成设置可通过 override 的 `prompt.text` target
+全局基础 Prompt 是 render profile 的 `prompt.text`，默认为空。项目生成设置可通过 override 的 `prompt.text` target
 整段替换；用户可修改、补充画风或清空，清空时编译直接省略。不再有独立 Prompt policy 文件、
 prefix/suffix、分类、权重、负向或策略选择。
 
@@ -98,8 +97,6 @@ prefix/suffix、分类、权重、负向或策略选择。
 编译示例（多参考图）：
 
 ```text
-根据以下设定和画面描述创作一幅新画面，动作、表情、视角与构图以画面描述为准。
-
 希格莉德：
 <image1>、<image2>：希格莉德的身份与服装参考。
 角色子设定文字，或本页整段覆盖。
