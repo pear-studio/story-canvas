@@ -23,6 +23,7 @@ import { generationReference, readGenerationQueue } from "./generation-queue.mjs
 import { submitGenerationTask, controlGenerationTask } from "./generation-lifecycle.mjs";
 import { freezeComparisonLoraSources } from "./comparison-lora-identity.mjs";
 import { preflightComparisonExperiment } from "./comparison-preflight.mjs";
+import { stageComparisonImports, materializeComparisonReferences } from "./comparison-reference-images.mjs";
 import {
   ApiError,
   configuredPath,
@@ -60,8 +61,8 @@ export async function handleComparisonRequest({
   if (!decodedPath.startsWith("/api/comparison-experiments")) return false;
   const importPages = async body => {
     if (typeof body?.project_id !== "string" || !Array.isArray(body.page_keys) || !body.page_keys.length) throw new ApiError(422, "comparison_pages_required");
-    const result = await readFacts(body.project_id, async ({ projectDirectory }) => Promise.all(body.page_keys.map(pageKey => importComparisonPage({ repositoryRoot: projectRoot, projectDirectory, projectId: body.project_id, pageKey, localConfig: config }))));
-    return result.value;
+    const result = await readFacts(body.project_id, async ({ projectDirectory }) => Promise.all(body.page_keys.map(pageKey => importComparisonPage({ repositoryRoot: projectRoot, projectDirectory, projectId: body.project_id, pageKey, localConfig: config, includeReferenceBytes: true }))));
+    return stageComparisonImports(projectRoot, result.value);
   };
   if (request.method === "GET" && decodedPath === "/api/comparison-experiments/input-options") {
     const files = await readdir(path.join(projectRoot, "library", "render-profiles"));
@@ -151,8 +152,9 @@ export async function handleComparisonRequest({
     if (value.page_import !== undefined && value.inputs !== undefined) throw new ApiError(422, "comparison_input_source_conflict", ["page_import 与 inputs 只能选择一种"]);
     const result = await withComparisonOperation(projectRoot, async () => {
       const projectDirectory = projectRoot;
-      const inputs = value.page_import === undefined ? value.inputs : await importPages(value.page_import);
-      if (!Array.isArray(inputs) || !inputs.length) throw new ApiError(422, "comparison_inputs_required");
+      const imported = value.page_import === undefined ? value.inputs : await importPages(value.page_import);
+      if (!Array.isArray(imported) || !imported.length) throw new ApiError(422, "comparison_inputs_required");
+      const { inputs, images } = await materializeComparisonReferences(projectRoot, imported);
       const axes = value.axes ?? [];
       const resolvedAxes = axes.some(axis => axis?.type === "input") ? axes : [
         { type: "input", values: inputs.map(input => ({ value_id: input.id, label: input.label, value: input.id })) },
@@ -184,6 +186,7 @@ export async function handleComparisonRequest({
         projectRoot: projectDirectory,
         manifest,
         preflight,
+        referenceImages: images,
       });
     });
     sendJson(response, 201, { experiment: publicComparisonRecord(result) });

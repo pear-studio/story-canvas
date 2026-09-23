@@ -88,3 +88,15 @@ test("素材只容纳一层纯文件名，嵌套路径被拒绝且不进入清�
     "嵌套文件不得出现在素材清单",
   );
 });
+
+test("大幅参考图的 base64 内容可保存，错误填充仍被拒绝", async t => {
+  const project = await mkdtemp(path.join(tmpdir(), "project-materials-"));
+  t.after(() => rm(project, { recursive: true, force: true }));
+  const bytes = Buffer.alloc(512 * 1024, 0x5a);
+  await saveMaterial(project, "demo", { file: "large.bin", title: "大图字节", encoding: "base64", content: bytes.toString("base64") });
+  assert.deepEqual(await readFile(path.join(project, "materials", "large.bin")), bytes);
+  await assert.rejects(
+    () => saveMaterial(project, "demo", { file: "invalid.bin", title: "错误编码", encoding: "base64", content: "AAAA=A==" }),
+    error => error?.code === "invalid_material_content",
+  );
+});

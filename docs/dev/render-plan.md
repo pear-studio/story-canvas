@@ -83,7 +83,7 @@ prefix/suffix、分类片段、权重或负向。
   "architecture_families": ["qwen-image-2-1"],
   "operations": ["candidates"],
   "input_sources": ["empty_latent"],
-  "modifiers": [],
+  "modifiers": ["lora.model_only"],
   "bindings": {
     "dit": "1.inputs.unet_name",
     "text_encoder": "2.inputs.clip_name",

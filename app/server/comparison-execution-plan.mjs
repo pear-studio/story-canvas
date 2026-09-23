@@ -19,6 +19,10 @@ import {
 } from "./comparison-execution-contract.mjs";
 import { buildWorkflow, resolveRenderRecipe } from "./render-task-contract.mjs";
 import { hashCanonicalJson } from "./workflow-definition.mjs";
+import { referenceImageFilename } from "./reference-image.mjs";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { createHash } from "node:crypto";
 
 export class ComparisonExecutionPreparationError extends Error {
   constructor(code, message, details = []) {
@@ -100,7 +104,7 @@ async function recheckLoraRegistry({ repositoryRoot, localConfig, manifest }) {
 
 function buildCell({ experimentId, manifest, input, sourceCell }) {
   const { profile, canvas, workflows } = input.render;
-  const route = profile.operations.candidates.routes.empty_latent;
+  const route = profile.operations.candidates.routes[input.reference_images?.length ? "reference_image" : "empty_latent"];
   const selection = resolveComparisonCellSelection(manifest, sourceCell);
   const cfg = selection.cfg ?? route.recipe.cfg;
   const definition = workflows[route.workflow];
@@ -129,6 +133,7 @@ function buildCell({ experimentId, manifest, input, sourceCell }) {
     negative_prompt: input.prompt.negative,
     prompt_parts: prompt.prompt_parts,
     loras: clone(loras),
+    reference_images: clone(input.reference_images ?? []),
   };
   const workflow = buildWorkflow(definition, profile, recipe, item);
   const output = {
@@ -166,6 +171,7 @@ function buildCell({ experimentId, manifest, input, sourceCell }) {
       parts: clone(prompt.prompt_parts),
     },
     loras,
+    reference_images: clone(input.reference_images ?? []),
     workflow: {
       source_id: definition.id,
       api: workflow,
@@ -187,6 +193,13 @@ export async function prepareComparisonExperimentExecution({ repositoryRoot, pro
     if (stored.execution !== null) fail("comparison_execution_exists", "比较实验已经存在 execution plan");
     const manifest = assertComparisonExperimentManifest(stored.manifest);
     const storedPreflight = assertComparisonPreflightPlan(stored.preflight);
+    for (const input of storedPreflight.inputs) for (const reference of input.reference_images ?? []) {
+      referenceImageFilename(reference);
+      let bytes;
+      try { bytes = await readFile(path.join(stored.directory, "inputs", `${reference.sha256}.png`)); }
+      catch (error) { if (error.code === "ENOENT") fail("comparison_reference_missing", "冻结参考图已丢失，请重新创建实验"); throw error; }
+      if (createHash("sha256").update(bytes).digest("hex") !== reference.sha256) fail("comparison_reference_changed", "冻结参考图内容已变化，请重新创建实验");
+    }
     await recheckLoraRegistry({ repositoryRoot, localConfig, manifest });
     const cells = storedPreflight.cells.map((cell, index) => {
       const input = storedPreflight.inputs.find(input => input.id === cell.input_id);

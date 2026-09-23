@@ -21,7 +21,8 @@ export function preflightComparisonExperiment({ manifest, inputs } = {}) {
     const input = byId.get(selection.input_id);
     const renderIdentity = comparisonRenderIdentity(input);
     const lora = selection.test_lora;
-    const workflow = input.render.workflows[input.render.profile.operations.candidates.routes.empty_latent.workflow];
+    const route = input.render.profile.operations.candidates.routes[input.reference_images?.length ? "reference_image" : "empty_latent"];
+    const workflow = input.render.workflows[route.workflow];
     if ((lora || input.loras.length) && !workflow.manifest.modifiers.includes("lora.model_only")) fail(`${workflow.id} 不支持 LoRA`);
     if (lora?.kind === "resource") {
       if (lora.architecture.family !== renderIdentity.architecture_family) fail("比较 LoRA 与测试输入的模型家族不一致");
@@ -30,7 +31,7 @@ export function preflightComparisonExperiment({ manifest, inputs } = {}) {
     }
     if (selection.character_lora_weight !== null && input.loras.filter(lora => lora.kind === "character").length !== 1) fail("角色权重轴要求测试输入恰好包含一个角色 LoRA");
     if (selection.application?.mode === "replace_character" && !input.loras.some(lora => lora.kind === "character" && lora.owner === selection.application.target_character_id)) fail("测试输入不包含要替换的角色 LoRA");
-    return { id: cell.id, ordinal: cell.ordinal, input_id: input.id, cfg: selection.cfg ?? input.render.profile.operations.candidates.routes.empty_latent.recipe.cfg };
+    return { id: cell.id, ordinal: cell.ordinal, input_id: input.id, cfg: selection.cfg ?? route.recipe.cfg };
   });
   const plan = { version: COMPARISON_PREFLIGHT_VERSION, kind: "comparison_preflight", manifest_id: verified.id,
     manifest_sha256: verified.canonical_sha256, manifest: verified, inputs: frozen, cells };

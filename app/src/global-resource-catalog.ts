@@ -56,5 +56,5 @@ export function loraResourceItem(model: GlobalModelResource): ResourceCatalogIte
 }
 
 export function loraMatchesProfile(model: GlobalModelResource, profile: { architecture_family?: string }) {
-  return !model.registered || !profile.architecture_family || model.architecture_family === profile.architecture_family;
+  return model.registered && Boolean(profile.architecture_family) && model.architecture_family === profile.architecture_family;
 }

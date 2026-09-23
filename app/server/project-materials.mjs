@@ -138,7 +138,7 @@ function validateMaterialTitle(value) {
 
 function materialContent(value) {
   if (value.encoding === "base64" && typeof value.content === "string") {
-    if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value.content)) throw new ProjectContractError(422, "invalid_material_content");
+    if (value.content.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(value.content)) throw new ProjectContractError(422, "invalid_material_content");
     return Buffer.from(value.content, "base64");
   }
   if ((value.encoding === undefined || value.encoding === "utf8") && typeof value.content === "string") return Buffer.from(value.content, "utf8");

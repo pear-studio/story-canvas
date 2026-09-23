@@ -18,6 +18,7 @@ import { waitForGenerationQueueDrain, waitForGenerationUnitTurn } from "./genera
 import { isCompletePng } from "./render-media.mjs";
 import { resolveComfyLoraNames } from "./render-project-runtime.mjs";
 import { diagnoseModelFile } from "./render-profile-diagnostics.mjs";
+import { referenceImageFilename, uploadFrozenReferenceImage } from "./reference-image.mjs";
 
 function clone(value) { return structuredClone(value); }
 
@@ -57,6 +58,9 @@ export function createComparisonComfyAdapter({ apiUrl = "http://127.0.0.1:8188",
     return text ? JSON.parse(text) : {};
   };
   return {
+    async uploadReference(taskDirectory, identity) {
+      return uploadFrozenReferenceImage(baseUrl, taskDirectory, identity);
+    },
     async resolveWorkflow(workflow) {
       const classes = [...new Set(Object.values(workflow)
         .map((node) => node?.class_type)
@@ -111,9 +115,20 @@ function outputImage(history, output) {
   return history?.outputs?.[output.node_id]?.images?.[output.image_index] ?? null;
 }
 
+export async function resolveComparisonReferenceWorkflow(workflow, references, adapter, taskDirectory) {
+  for (const reference of references ?? []) {
+    if (!adapter.uploadReference) throw new Error("ComfyUI 适配器不支持参考图上传");
+    const uploaded = await adapter.uploadReference(taskDirectory, reference);
+    for (const node of Object.values(workflow)) if (node.class_type === "LoadImage" && node.inputs.image === referenceImageFilename(reference)) node.inputs.image = uploaded;
+  }
+  return workflow;
+}
+
 async function runCell({ execution, cell, projectRoot, modelsRoot, adapter, apiUrl, onCell, onSubmitted, onComfyTerminal }) {
   await assertLorasExist(cell, modelsRoot);
-  const workflow = adapter.resolveWorkflow ? await adapter.resolveWorkflow(cell.workflow.api) : clone(cell.workflow.api);
+  const workflow = await resolveComparisonReferenceWorkflow(
+    adapter.resolveWorkflow ? await adapter.resolveWorkflow(cell.workflow.api) : clone(cell.workflow.api),
+    cell.reference_images, adapter, path.join(projectRoot, "Saved", "comparison-results", execution.experiment_id));
   const clientId = randomUUID();
   const submission = { availability: "recorded", api_url: apiUrl, submitted_at: new Date().toISOString(), request: { client_id: clientId, prompt: workflow, extra_data: clone(cell.extra_data) }, prompt_id: null };
   const recorder = createTaskStageRecorder(submission, value => recordComparisonSubmission(projectRoot, execution.experiment_id, cell.id, value));

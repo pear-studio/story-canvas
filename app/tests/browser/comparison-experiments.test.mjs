@@ -31,10 +31,14 @@ async function setup(t, mobile = false) {
   // 故意按旧到新返回，检查 UI 按创建时间排序，而不是依赖名称或服务端顺序。
   const records = [record('zzz-old-fixed', '16', { fixed: true }), record('middle-cfg', '17', { cfg: true }), record('confirm-cup-strict-v2', '18')];
   await page.route('**/api/**', route => {
-    if (route.request().method() !== 'GET') writes.push(route.request().method());
     const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/blank-input')) {
+      const profileId = route.request().postDataJSON().profile_id;
+      return route.fulfill({ json: { input: { id: 'input-blank', label: '测试输入', prompt: { positive: 'portrait', negative: '' }, loras: [], render: { profile: { id: profileId, architecture_family: profileId === 'qwen-image-2-1' ? 'qwen-image-2-1' : 'anima' }, workflows: {}, canvas: '2:3' }, source: null } } });
+    }
+    if (route.request().method() !== 'GET') writes.push(route.request().method());
     if (path === '/api/projects') return route.fulfill({ json: { projects: [] } });
-    if (path.endsWith('/input-options')) return route.fulfill({ json: { profiles: [] } });
+    if (path.endsWith('/input-options')) return route.fulfill({ json: { profiles: ['anima-base-v1', 'qwen-image-2-1'] } });
     if (path.endsWith('/comparison-experiments')) return route.fulfill({ json: { experiments: records } });
     if (path.endsWith('.png')) return route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="320"><rect width="480" height="320" fill="#dce6de"/><circle cx="240" cy="135" r="70" fill="#adc4b4"/><text x="240" y="260" text-anchor="middle" fill="#476056" font-size="20">Comparison preview</text></svg>' });
     return route.fulfill({ json: { experiment: records.find(record => path.endsWith(`/${record.id}`)) } });
@@ -63,45 +67,46 @@ test('最新实验优先，搜索和状态筛选，新建表单按需展开', as
   assert.equal(await page.locator('.comparison-experiment-list article b').first().textContent(), 'confirm-cup-strict-v2');
 });
 
-test('LoRA 共用选择器保留跨分类选择，取消不提交，原始标签可搜索', async t => {
+test('Qwen 测试输入只显示已登记且架构匹配的 LoRA', async t => {
   const { page } = await setup(t);
   await page.getByRole('button', { name: '新建实验', exact: true }).click();
+  assert.equal(await page.getByRole('button', { name: '选择 LoRA', exact: true }).isDisabled(), true);
+  await page.getByLabel('新输入生成配置').selectOption('qwen-image-2-1');
+  await page.getByRole('button', { name: '新增空白输入' }).click();
   await page.getByRole('button', { name: '选择 LoRA', exact: true }).click();
   const picker = page.getByRole('dialog', { name: '选择 LoRA', exact: true });
-  assert.equal(await picker.locator('.resource-catalog-card').count(), 2);
-  await picker.getByLabel('搜索 LoRA').fill('upstream-style');
   assert.equal(await picker.locator('.resource-catalog-card').count(), 1);
-  await picker.getByRole('checkbox', { name: '选择 平涂动漫画风' }).check();
+  await picker.getByLabel('搜索 LoRA').fill('Anima');
+  assert.equal(await picker.locator('.resource-catalog-card').count(), 0);
   await picker.getByLabel('搜索 LoRA').fill('');
-  await picker.getByLabel('用途分类').selectOption('外观调节');
-  await picker.getByRole('checkbox', { name: '选择 肌肉感调节' }).check();
-  assert.equal(await picker.getByLabel('已选 LoRA').getByRole('button').count(), 2);
-  await picker.getByRole('button', { name: '确认选择（2）' }).click();
-  assert.equal(await page.locator('.comparison-selected-loras article').count(), 2);
+  await picker.getByRole('checkbox', { name: '选择 维洛莉亚' }).check();
+  await picker.getByRole('button', { name: '确认选择（1）' }).click();
+  assert.equal(await page.locator('.comparison-selected-loras article').count(), 1);
   await page.getByRole('button', { name: '选择 LoRA', exact: true }).click();
   await picker.getByRole('button', { name: '清空选择', exact: true }).click();
   await picker.getByRole('button', { name: '取消', exact: true }).click();
-  assert.equal(await page.locator('.comparison-selected-loras article').count(), 2);
-  await page.getByRole('button', { name: '选择 LoRA', exact: true }).click();
-  await picker.getByLabel('资源范围').selectOption('raw');
-  assert.equal(await picker.locator('.resource-catalog-card').count(), 1);
-  await picker.getByRole('button', { name: '选择筛选结果（1）' }).click();
-  await picker.getByRole('button', { name: '确认选择（3）' }).click();
-  assert.equal(await page.locator('.comparison-selected-loras article').count(), 3);
+  assert.equal(await page.locator('.comparison-selected-loras article').count(), 1);
+  await page.getByRole('button', { name: '移除输入' }).click();
+  await page.locator('.comparison-selected-loras article').waitFor({ state: 'detached' });
+  assert.equal(await page.locator('.comparison-selected-loras article').count(), 0);
+  assert.equal(await page.getByRole('button', { name: '选择 LoRA', exact: true }).isDisabled(), true);
 });
 
-test('窄屏 LoRA 选择器可筛选和查看原始资料，没有横向溢出', async t => {
+test('窄屏 Qwen LoRA 选择器可筛选和查看资料，没有横向溢出', async t => {
   const { page } = await setup(t, true);
   await page.getByRole('button', { name: '新建实验', exact: true }).click();
+  await page.getByLabel('新输入生成配置').selectOption('qwen-image-2-1');
+  await page.getByRole('button', { name: '新增空白输入' }).click();
   await page.getByRole('button', { name: '选择 LoRA', exact: true }).click();
   const picker = page.getByRole('dialog', { name: '选择 LoRA', exact: true });
-  await picker.getByLabel('搜索 LoRA').fill('平涂');
+  await picker.getByLabel('搜索 LoRA').fill('维洛莉亚');
+  assert.equal(await picker.locator('.resource-catalog-card').count(), 1);
   await picker.getByRole('button', { name: '查看详情' }).click();
-  const detail = page.getByRole('dialog', { name: '查看资源：平涂动漫画风' });
-  await detail.getByText('upstream-style', { exact: true }).waitFor();
+  const detail = page.getByRole('dialog', { name: '查看资源：维洛莉亚' });
+  await detail.getByText('Qwen 角色 LoRA', { exact: true }).waitFor();
   await detail.getByRole('button', { name: '关闭', exact: true }).click();
   assert.equal(await picker.evaluate(element => element.scrollWidth <= element.clientWidth + 1), true);
-  await picker.getByRole('checkbox', { name: '选择 平涂动漫画风' }).check();
+  await picker.getByRole('checkbox', { name: '选择 维洛莉亚' }).check();
   await picker.getByRole('button', { name: '确认选择（1）' }).click();
   assert.equal(await page.locator('.comparison-selected-loras article').count(), 1);
 });

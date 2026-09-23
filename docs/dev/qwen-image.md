@@ -39,8 +39,8 @@ prompt-policies）已删除。默认约 1MP、25 步、Euler / simple、CFG 1；
 全局文字来自 render profile 的 `prompt.text`，默认为空；项目 override 的语义 target 也是 `prompt.text`，参与预览、
 冻结与候选匹配，清空时编译直接省略。不再有独立 Prompt policy 文件、prefix/suffix、分类或负向。
 
-当前 Qwen 家族不使用 LoRA（profile `style_loras` 为空）；把带参考图页面导入对比实验仍明确
-报错不支持。自由文本输入和无参考图页面导入使用编译后的单段正向文本。
+当前 Qwen profile 默认不附加 LoRA（`style_loras` 为空）；对比实验可在文生图和参考图输入上额外比较
+已登记且模型架构匹配的 ModelOnly LoRA。页面导入保留编译后的单段正向文本与冻结参考图。
 
 ## 冻结与目录
 

@@ -49,7 +49,7 @@ function characterPrompt() {
   };
 }
 
-async function createFixture(context) {
+async function createFixture(context, { references = false } = {}) {
   const root = await mkdtemp(path.join(tmpdir(), "story-canvas-comparison-preflight-"));
   context.after(() => rm(root, { recursive: true, force: true }));
   const projectRoot = path.join(root, "workspace", "fixture");
@@ -74,7 +74,10 @@ async function createFixture(context) {
   }
   profile.operations.candidates.routes.empty_latent.recipe = "comparison-candidate";
   profile.operations.candidates.routes.empty_latent.workflow = "qwen-image-2-1-text";
-  delete profile.operations.candidates.routes.reference_image;
+  if (references) {
+    profile.operations.candidates.routes.reference_image.recipe = "comparison-candidate";
+    profile.operations.candidates.routes.reference_image.workflow = "qwen-image-2-1-reference";
+  } else delete profile.operations.candidates.routes.reference_image;
   const recipe = JSON.parse(await readFile(path.join(sourceRepositoryRoot, "library", "render-recipes", "qwen-image-2-1-candidate.json"), "utf8"));
   recipe.id = "comparison-candidate";
   await Promise.all([
@@ -100,6 +103,10 @@ async function createFixture(context) {
     writeFile(path.join(root, "models", "vae", "base.safetensors"), model),
     cp(path.join(sourceRepositoryRoot, "library", "workflows", "qwen-image-2-1-text.api.json"), path.join(root, "library", "workflows", "qwen-image-2-1-text.api.json")),
     cp(path.join(sourceRepositoryRoot, "library", "workflows", "qwen-image-2-1-text.manifest.json"), path.join(root, "library", "workflows", "qwen-image-2-1-text.manifest.json")),
+    ...(references ? [
+      cp(path.join(sourceRepositoryRoot, "library", "workflows", "qwen-image-2-1-reference.api.json"), path.join(root, "library", "workflows", "qwen-image-2-1-reference.api.json")),
+      cp(path.join(sourceRepositoryRoot, "library", "workflows", "qwen-image-2-1-reference.manifest.json"), path.join(root, "library", "workflows", "qwen-image-2-1-reference.manifest.json")),
+    ] : []),
   ]);
   registerFixtureProjects(root); return { root, projectRoot, profile, modelSha256 };
 }
@@ -111,12 +118,29 @@ function loraRegistry() {
   };
 }
 
+test("页面参考图随对比输入导入并选择参考图工作流", async context => {
+  const fixture = await createFixture(context, { references: true });
+  const sharp = (await import("sharp")).default;
+  const { saveMaterial } = await import("../server/project-materials.mjs");
+  const file = "reference-11111111-1111-4111-8111-111111111111.png";
+  const bytes = await sharp({ create: { width: 20, height: 30, channels: 3, background: "#aabbcc" } }).png().toBuffer();
+  await saveMaterial(fixture.projectRoot, "fixture", { file, title: "参考", encoding: "base64", content: bytes.toString("base64") });
+  const promptFile = path.join(fixture.projectRoot, "pages", "page-001.prompt.json");
+  const document = JSON.parse(await readFile(promptFile, "utf8"));
+  document.reference_images = [{ id: "ref-11111111-1111-4111-8111-111111111111", file, title: "参考", purpose: "画风参考" }];
+  await writeFile(promptFile, JSON.stringify(document));
+  const input = await importComparisonPage({ repositoryRoot: fixture.root, projectDirectory: fixture.projectRoot, projectId: "fixture", pageKey: storyPageKey, localConfig: {}, includeReferenceBytes: true });
+  assert.equal(input.reference_images.length, 1);
+  assert.deepEqual(input.reference_image_bytes[0].identity, input.reference_images[0]);
+  assert.equal(input.reference_image_bytes[0].bytes.length > 0, true);
+  const { reference_image_bytes: _bytes, ...clean } = input;
+  const manifest = createComparisonExperiment({ id: "page-with-reference", axes: [{ type: "input", values: [{ value_id: "ref", label: "参考", value: clean.id }] }] });
+  assert.equal(preflightComparisonExperiment({ manifest, inputs: [clean] }).cells.length, 1);
+});
+
 test("正式 LoRA 兼容性只按模型架构判断，不使用旧 Prompt 家族标签", async () => {
   const input = await createBlankComparisonInput(sourceRepositoryRoot, "qwen-image-2-1");
   input.prompt.positive = "anime portrait";
-  // 隔离模型兼容性检查；当前默认 Qwen 工作流的比较 LoRA 能力另有测试覆盖。
-  const route = input.render.profile.operations.candidates.routes.empty_latent;
-  input.render.workflows[route.workflow].manifest.modifiers.push("lora.model_only");
   const resource = {
     id: "formal-test", kind: "resource", resource_id: `lora-${"a".repeat(16)}`, name: "测试画风",
     architecture: { family: "qwen-image-2-1", prompt_family: "qwen" },
@@ -135,7 +159,7 @@ test("正式 LoRA 兼容性只按模型架构判断，不使用旧 Prompt 家族
   assert.throws(() => preflightComparisonExperiment({ manifest: manifestFor("anima"), inputs: [input] }), /模型家族不一致/);
 });
 
-test("Qwen 对比预检和共用构建器拒绝裸 LoRA", async () => {
+test("Qwen 文生图与参考图工作流均能接入 ModelOnly LoRA", async () => {
   const { buildWorkflow, resolveRenderRecipe } = await import("../server/render-task-contract.mjs");
   const input = await createBlankComparisonInput(sourceRepositoryRoot, "qwen-image-2-1");
   input.prompt.positive = "anime portrait";
@@ -148,11 +172,14 @@ test("Qwen 对比预检和共用构建器拒绝裸 LoRA", async () => {
   const definition = input.render.workflows[route.workflow];
   const item = { positive_prompt: input.prompt.positive, negative_prompt: "", seed: 1, output_prefix: "test",
     loras: [{ filename: "test.safetensors", sha256: "a".repeat(64), weight: 0.7 }] };
-  assert.throws(() => preflightComparisonExperiment({ manifest, inputs: [input] }), /不支持 LoRA/);
-  assert.throws(() => buildWorkflow(definition, input.render.profile, resolveRenderRecipe(route.recipe, input.render.canvas), item), /不支持 LoRA/);
+  assert.equal(preflightComparisonExperiment({ manifest, inputs: [input] }).cells.length, 2);
+  const workflow = buildWorkflow(definition, input.render.profile, resolveRenderRecipe(route.recipe, input.render.canvas), item);
+  assert.ok(Object.values(workflow).some(node => node.class_type === "LoraLoaderModelOnly" && node.inputs.lora_name === "test.safetensors"));
   input.loras = item.loras;
   const baseline = createComparisonExperiment({ id: "input-lora", axes: [{ type: "input", values: [{ value_id: input.id, label: "测试", value: input.id }] }] });
-  assert.throws(() => preflightComparisonExperiment({ manifest: baseline, inputs: [input] }), /不支持 LoRA/);
+  assert.equal(preflightComparisonExperiment({ manifest: baseline, inputs: [input] }).cells.length, 1);
+  const referenceRoute = input.render.profile.operations.candidates.routes.reference_image;
+  assert.ok(input.render.workflows[referenceRoute.workflow].manifest.modifiers.includes("lora.model_only"));
 });
 
 test("剧情和角色页一次性导入为可编辑文本，之后预检不读项目", async context => {

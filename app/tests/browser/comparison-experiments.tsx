@@ -10,6 +10,7 @@ const models: GlobalModelResource[] = [
   { id: "flat", name: "Anime Flat Style", kind: "lora", architecture_family: "anima", prompt_family: "anima", filename: "flat.safetensors", relative_path: "loras/flat.safetensors", status: "available", registered: true, repository_record: true, lora_metadata: { name_zh: "平涂动漫画风", summary_zh: "引入平涂动漫插画风格。", purpose: "画风", activation: { tags: ["upstream-style"], trigger_words: [] } } },
   { id: "muscle", name: "Muscle Slider", kind: "lora", architecture_family: "anima", prompt_family: "anima", filename: "muscle.safetensors", relative_path: "loras/muscle.safetensors", status: "available", registered: true, repository_record: true, lora_metadata: { name_zh: "肌肉感调节", summary_zh: "调节人物肌肉的发达程度。", purpose: "外观调节" } },
   { id: "raw", name: "checkpoint-400", kind: "lora", architecture_family: "other", filename: "raw.safetensors", relative_path: "loras/training/raw.safetensors", status: "available", registered: false },
+  { id: "veloria", name: "Veloria · Qwen-Image-2.1", kind: "lora", architecture_family: "qwen-image-2-1", filename: "veloria.safetensors", relative_path: "loras/veloria.safetensors", status: "available", registered: true, repository_record: true, lora_metadata: { name_zh: "维洛莉亚", summary_zh: "Qwen 角色 LoRA", purpose: "角色" } },
 ];
 
 function Harness() {

@@ -190,10 +190,15 @@ export default function ComparisonExperimentsView({ resources, runtimeTasks = { 
   const loraOptions = useMemo(() => (resources?.models ?? []).filter((model) => model.kind === "lora" && model.relative_path), [resources]);
 
   const loraItems = useMemo(() => loraOptions.map(loraResourceItem), [loraOptions]);
-  const compatibleLoraItems = useMemo(() => loraItems.filter(item => {
-    const model = loraOptions.find(model => model.id === item.id)!;
-    return inputs.every(input => loraMatchesProfile(model, input.render.profile));
-  }), [loraItems, loraOptions, inputs]);
+  const compatibleLoraOptions = useMemo(() => inputs.length
+    ? loraOptions.filter(model => inputs.every(input => loraMatchesProfile(model, input.render.profile)))
+    : [], [loraOptions, inputs]);
+  const compatibleLoraItems = useMemo(() => compatibleLoraOptions.map(loraResourceItem), [compatibleLoraOptions]);
+  useEffect(() => {
+    const compatibleIds = new Set(compatibleLoraOptions.map(model => model.id));
+    setSelectedLoraIds(current => current.filter(id => compatibleIds.has(id)));
+    setLoraPickerIds(current => current === null ? null : current.filter(id => compatibleIds.has(id)));
+  }, [compatibleLoraOptions]);
   const commonCharacters = useMemo(() => {
     if (!inputs.length) return [];
     return [...new Set(inputs[0].loras.filter(lora => lora.kind === "character").map(lora => lora.owner).filter((id): id is string => Boolean(id)))].filter(id => inputs.every(input => input.loras.some(lora => lora.kind === "character" && lora.owner === id))).map(id => ({ id, name: id }));
@@ -292,6 +297,9 @@ export default function ComparisonExperimentsView({ resources, runtimeTasks = { 
   async function createAndStart() {
     setFormError("");
     if (!inputs.length) { setFormError("请至少添加一个测试输入"); return; }
+    if (selectedLoraIds.some(id => !compatibleLoraOptions.some(model => model.id === id))) {
+      setFormError("所选 LoRA 与当前测试输入的生成配置不匹配，请重新选择"); return;
+    }
     if (selectedLoraIds.length && loraApplicationMode === "replace_character" && !commonCharacters.some((character) => character.id === loraTargetCharacterId)) {
       setFormError("替换角色模式要求测试输入共同包含一个角色");
       return;
@@ -457,9 +465,9 @@ export default function ComparisonExperimentsView({ resources, runtimeTasks = { 
         <header><div><h3>新建实验</h3><p>先选择比较轴，确认生成数量后开始。</p></div><button type="button" className="button" disabled={starting} onClick={resetDraft}>清空重置</button></header>
         <ComparisonInputEditor key={draftVersion} value={inputs} onChange={value => { if (draftEpoch.current === draftVersion) setInputs(value); }} disabled={starting} models={loraOptions} />
         <fieldset><legend>LoRA 配置（可选）</legend><div className="comparison-page-picker comparison-lora-picker">
-          <div className="comparison-page-picker__header"><div className="comparison-page-picker__count"><b>已选择 {selectedLoraSet.size} 个 LoRA</b><span>{selectedLoraSet.size ? "选中的 LoRA 会加入比较轴" : "不选择则只比较测试输入、Seed 或 CFG"}</span></div><div className="comparison-page-picker__actions"><button type="button" className="button button--quiet" disabled={!selectedLoraSet.size} onClick={() => setSelectedLoraIds([])}>清空</button><button type="button" className="button" onClick={() => setLoraPickerIds([...selectedLoraIds])}>选择 LoRA</button></div></div>
+          <div className="comparison-page-picker__header"><div className="comparison-page-picker__count"><b>已选择 {selectedLoraSet.size} 个 LoRA</b><span>{selectedLoraSet.size ? "选中的 LoRA 会加入比较轴" : "先添加测试输入，再选择匹配的 LoRA"}</span></div><div className="comparison-page-picker__actions"><button type="button" className="button button--quiet" disabled={!selectedLoraSet.size} onClick={() => setSelectedLoraIds([])}>清空</button><button type="button" className="button" disabled={!inputs.length} onClick={() => setLoraPickerIds([...selectedLoraIds])}>选择 LoRA</button></div></div>
           <div className="comparison-selected-loras">{loraItems.filter(item => selectedLoraSet.has(item.id)).map(item => <article key={item.id}><div><b>{item.name}</b><small>{item.purpose} · {item.summary || item.originalName || item.relativePath}</small></div><ResourceDetailsButton item={item} /><button type="button" className="button button--quiet" aria-label={"移除 " + item.name} onClick={() => setSelectedLoraIds(ids => ids.filter(id => id !== item.id))}>移除</button></article>)}</div>
-          {loraPickerIds !== null && <Modal size="workspace" title="选择 LoRA" subtitle="按测试输入的底座筛选；未登记资源的兼容性尚未确认。" onClose={() => setLoraPickerIds(null)} ariaLabel="选择 LoRA"
+          {loraPickerIds !== null && <Modal size="workspace" title="选择 LoRA" subtitle="仅显示与全部测试输入架构匹配的已登记 LoRA。" onClose={() => setLoraPickerIds(null)} ariaLabel="选择 LoRA"
             footer={<><button type="button" className="button" onClick={() => setLoraPickerIds(null)}>取消</button><button type="button" className="button button--primary" onClick={() => { setSelectedLoraIds(loraPickerIds); setLoraPickerIds(null); }}>确认选择（{loraPickerIds.length}）</button></>}>
             <div className="lora-picker-body"><ResourcePicker items={compatibleLoraItems} selection={{ ids: loraPickerIds, onChange: setLoraPickerIds }} /></div>
           </Modal>}

@@ -11,7 +11,7 @@
   "input_sources": [
     "reference_image"
   ],
-  "modifiers": [],
+  "modifiers": ["lora.model_only"],
   "bindings": {
     "dit": "1.inputs.unet_name",
     "text_encoder": "2.inputs.clip_name",

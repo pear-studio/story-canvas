@@ -3,11 +3,11 @@ import { compilePageRenderTarget } from "./page-render-resolver.mjs";
 import { readResolvedRenderProfile } from "./render-profile-compiler.mjs";
 import { hashCanonicalJson } from "./workflow-definition.mjs";
 import { ApiError } from "./http-support.mjs";
+import { referenceImageFilename } from "./reference-image.mjs";
 
 // 来源只用于追溯。导入后的生成内容和配置均由实验独立持有。
-export async function importComparisonPage({ repositoryRoot, projectDirectory, projectId, pageKey, localConfig }) {
+export async function importComparisonPage({ repositoryRoot, projectDirectory, projectId, pageKey, localConfig, includeReferenceBytes = false }) {
   const target = await compilePageRenderTarget({ repositoryRoot, projectDirectory, pageKey });
-  if (target.reference_images?.length) throw new ApiError(422, "reference_image_comparison_unsupported", ["带参考图页面请使用普通候选生成；对比实验尚不支持导入参考图"]);
   const bundle = target.compiled_profile;
   return {
     id: `input-${randomUUID()}`, label: target.title ?? target.page_id,
@@ -18,6 +18,8 @@ export async function importComparisonPage({ repositoryRoot, projectDirectory, p
         .filter(style => style.filename === lora.filename).map(style => style.trigger?.trim()).filter(Boolean) : []),
     ])] })),
     render: { profile: bundle.effective_profile, workflows: bundle.workflow_definitions, canvas: target.project.canvas },
+    ...(target.reference_images?.length ? { reference_images: target.reference_images } : {}),
+    ...(includeReferenceBytes ? { reference_image_bytes: target.reference_image_bytes ?? [] } : {}),
     source: { project_id: projectId, page_key: pageKey, imported_at: new Date().toISOString(), target_sha256: target.target_sha256 },
   };
 }
@@ -34,7 +36,14 @@ export function assertComparisonInput(value) {
   if (typeof value.prompt?.positive !== "string" || !value.prompt.positive.trim() || typeof value.prompt?.negative !== "string") fail("测试输入需要完整正向与负向文本");
   const render = value.render;
   if (!render?.profile || !render.workflows || !["2:3", "3:4", "9:16", "4:3"].includes(render.canvas)) fail("测试输入缺少生成配置或画幅");
-  const route = render.profile.operations?.candidates?.routes?.empty_latent;
+  if (value.reference_images !== undefined) {
+    if (!Array.isArray(value.reference_images) || value.reference_images.length > 10) fail("参考图数量无效（最多 10 张）");
+    for (const reference of value.reference_images) {
+      try { referenceImageFilename(reference); } catch { fail("参考图冻结身份无效"); }
+      if (!Number.isInteger(reference.width) || reference.width < 1 || !Number.isInteger(reference.height) || reference.height < 1) fail("参考图尺寸无效");
+    }
+  }
+  const route = render.profile.operations?.candidates?.routes?.[value.reference_images?.length ? "reference_image" : "empty_latent"];
   if (!route?.recipe || !render.workflows[route.workflow]) fail("生成配置缺少候选工作流");
   if (!Array.isArray(value.loras)) fail("LoRA 必须为数组");
   for (const lora of value.loras) {

@@ -10,7 +10,7 @@ const planFields = new Set([
 ]);
 const cellFields = new Set([
   "id", "ordinal", "axis_values", "input_id", "seed", "cfg",
-  "prompt", "loras", "workflow", "extra_data", "outputs",
+  "prompt", "loras", "reference_images", "workflow", "extra_data", "outputs",
 ]);
 const hashPattern = /^[a-f0-9]{64}$/;
 
@@ -55,7 +55,7 @@ function assertOutput(output, cellId, label) {
   }
 }
 
-function assertCell(cell, source, index) {
+function assertCell(cell, source, input, index) {
   const label = `cells[${index}]`;
   keys(cell, cellFields, label);
   if (cell.id !== source.id || cell.ordinal !== source.ordinal) {
@@ -65,6 +65,9 @@ function assertCell(cell, source, index) {
     fail("invalid_comparison_execution_plan", `${label} 缺少 outputs`);
   }
   assertWorkflow(cell.workflow, `${label}.workflow`);
+  if (hashCanonicalJson(cell.reference_images ?? []) !== hashCanonicalJson(input.reference_images ?? [])) {
+    fail("comparison_execution_reference_changed", `${label} 参考图与冻结输入不一致`);
+  }
   assertOutput(cell.outputs[0], cell.id, `${label}.outputs[0]`);
   if (!isRecord(cell.extra_data)) fail("invalid_comparison_execution_plan", `${label}.extra_data 必须是对象`);
 }
@@ -94,7 +97,7 @@ function validateInternal(plan, { manifest, preflight } = {}) {
   if (plan.cells.length !== verifiedManifest.cells.length || plan.cells.length !== verifiedPreflight.cells.length) {
     fail("comparison_execution_cells_changed", "执行计划 cell 数量不一致");
   }
-  plan.cells.forEach((cell, index) => assertCell(cell, verifiedManifest.cells[index], index));
+  plan.cells.forEach((cell, index) => assertCell(cell, verifiedManifest.cells[index], verifiedPreflight.inputs.find(input => input.id === cell.input_id), index));
   if (plan.canonical_sha256 !== hashCanonicalJson(planIdentity(plan))) {
     fail("comparison_execution_plan_tampered", "执行计划 canonical_sha256 无效");
   }

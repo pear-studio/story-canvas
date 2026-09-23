@@ -8,6 +8,7 @@ import { assertComparisonExecutionPlan } from "./comparison-execution-contract.m
 import { hashCanonicalJson } from "./workflow-definition.mjs";
 import { replaceFileWithRetry } from "./file-replace.mjs";
 import { isCompletePng } from "./render-media.mjs";
+import { persistReferenceImage } from "./reference-image.mjs";
 
 const STORAGE_DIRECTORY = "comparisons";
 const ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,79}$/;
@@ -218,7 +219,7 @@ async function readRecord(projectRoot, id, { readExecution = true } = {}) {
   return { id, directory, manifest: clone(manifest), preflight: clone(preflight), status: clone(status), execution: execution ? clone(execution) : null };
 }
 
-export async function createComparisonExperimentStorage({ projectRoot, manifest, preflight, now = new Date().toISOString() } = {}) {
+export async function createComparisonExperimentStorage({ projectRoot, manifest, preflight, referenceImages = [], now = new Date().toISOString() } = {}) {
   const verifiedManifest = clone(assertComparisonExperimentManifest(manifest));
   const verifiedPreflight = clone(assertComparisonPreflightPlan(preflight));
   assertStoredIdentity(verifiedManifest, verifiedPreflight, verifiedManifest.id);
@@ -234,6 +235,7 @@ export async function createComparisonExperimentStorage({ projectRoot, manifest,
     await writeFile(path.join(temporary, "manifest.json"), jsonText(verifiedManifest), "utf8");
     await writeFile(path.join(temporary, "preflight.json"), jsonText(verifiedPreflight), "utf8");
     await writeFile(path.join(temporary, "result.json"), jsonText(status), "utf8");
+    await persistReferenceImage(temporary, verifiedPreflight.inputs, referenceImages);
     await mkdir(path.join(temporary, "results"));
     await rename(temporary, directory);
   } catch (error) {

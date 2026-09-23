@@ -11,6 +11,8 @@ import { loraResourceItem, loraMatchesProfile, type GlobalModelResource } from "
 export type ComparisonInput = {
   id: string; label: string; prompt: { positive: string; negative: string };
   loras: Array<{ filename: string; sha256: string; weight: number; kind?: string; owner?: string }>;
+  reference_images?: Array<{ material_file: string; sha256: string; source_sha256: string; width: number; height: number }>;
+  reference_import_id?: string;
   render: { canvas: string; profile: { id: string; architecture_family?: string; prompt?: { family: string } }; workflows: Record<string, unknown> };
   source: { project_id: string; imported_at: string } | null;
 };
@@ -59,9 +61,10 @@ export function ComparisonInputEditor({ value, onChange, disabled, models }: { v
     })}>导入所选页面（{selected.length}）</button>}
     <p>导入后独立保存，来源页面的后续修改不会影响实验。</p>
     {value.map(input => <details className="settings-card comparison-input-card" key={input.id} open={value.length === 1 || undefined}>
-      <summary>{input.label} · {input.render.profile.id} · {input.render.canvas}</summary>
+      <summary>{input.label} · {input.render.profile.id} · {input.render.canvas}{input.reference_images?.length ? ` · ${input.reference_images.length} 张参考图` : ""}</summary>
       <label>名称<input value={input.label} onChange={event => update(input.id, { label: event.target.value })} /></label>
       {input.source && <small>导入来源：{input.source.project_id} · {new Date(input.source.imported_at).toLocaleString()}</small>}
+      {Boolean(input.reference_images?.length) && <small>参考图：{input.reference_images?.map(image => image.material_file).join("、")}</small>}
       <PromptTextField label="正向 Prompt" ariaLabel={`${input.label} 正向 Prompt`} value={input.prompt.positive} disabled={locked} onChange={positive => update(input.id, { prompt: { ...input.prompt, positive } })} />
       <PromptTextField label="负向 Prompt" ariaLabel={`${input.label} 负向 Prompt`} rows={4} value={input.prompt.negative} disabled={locked} onChange={negative => update(input.id, { prompt: { ...input.prompt, negative } })} />
       <label>画幅<select value={input.render.canvas} onChange={event => update(input.id, { render: { ...input.render, canvas: event.target.value } })}>{["2:3", "3:4", "9:16", "4:3"].map(canvas => <option key={canvas}>{canvas}</option>)}</select></label>
