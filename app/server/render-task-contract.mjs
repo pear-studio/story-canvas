@@ -1,4 +1,5 @@
 import { referenceImageFilename } from "./reference-image.mjs";
+import { profileModelAdapter } from './model-adapters.mjs';
 import { createHash } from "node:crypto";
 import path from "node:path";
 
@@ -86,7 +87,9 @@ function assertExactIdentityIds(value, expectedIds, label) {
 export function assertEffectiveSourceIdentity({ profile, sourceIdentity, workflowRegistry }) {
   requireSourceRecord(profile, "profile");
   requireSourceId(profile.id, "profile.id");
-  requireExactSourceFields(sourceIdentity, sourceIdentityFields, "source_identity");
+  const adapter=profileModelAdapter(profile);
+  requireExactSourceFields(sourceIdentity, new Set([...sourceIdentityFields,...adapter.sourceIdentityFields]), "source_identity");
+  adapter.validateSourceIdentity(profile,sourceIdentity);
   assertSourceProvenance(sourceIdentity.profile, {
     id: profile.id,
     file: `library/render-profiles/${profile.id}.json`,

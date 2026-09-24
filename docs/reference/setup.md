@@ -289,9 +289,11 @@ uv pip check --python $materialPython
 所在系统猜测远程 ComfyUI 的路径格式，也不把反斜杠写回项目事实。
 
 配置还声明 `architecture_family`，支持能力由 `operations` 下存在的 input route 明确表达，不再
-保存重复的 `capabilities`。当前生成侧唯一结构家族是 Qwen-Image-2.1，分别加载 `diffusion_models`、
+保存重复的 `capabilities`。当前生成侧支持 Anima Basic 和 Qwen-Image-2.1，分别加载 `diffusion_models`、
 `text_encoders` 与 `vae` 中的精确模型。当前 `qwen-image-2-1` 配置声明
 文生图（`empty_latent`）与参考图（`reference_image`）两条候选 route；未声明的操作或输入会收到明确错误。
+`anima-base-v1` 只声明文生图候选 route，使用 Anima 主模型、qwen_3_06b_base 文本编码器及 Qwen VAE。
+页面按自己的 render.profile_id/canvas 诊断与生成；项目默认只影响新页。
 
 工作台的“资源 → 基模”和“资源 → LoRA”会合并 `library/resources/catalog.json` 中的人工登记项、
 `library/resources/loras/` 中公开 LoRA 的完整记录、`app/data.local/lora-resources/` 中本机正式

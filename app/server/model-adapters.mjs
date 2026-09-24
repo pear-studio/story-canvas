@@ -19,6 +19,8 @@ const adapters = Object.freeze({
     validateProfilePrompt: animaProfile.validateProfilePrompt,
     resolveProfilePrompt: animaProfile.resolveProfilePrompt,
     resolveEffectivePrompt: animaProfile.resolveEffectivePrompt,
+    sourceIdentityFields: ['prompt_policy','prompt_fragments'],
+    validateSourceIdentity: animaProfile.validateSourceIdentity,
   }),
   qwen: Object.freeze({
     id: 'qwen', architecture: 'qwen-image-2-1', label: 'Qwen-Image-2.1', defaultProfile: 'qwen-image-2-1',
@@ -37,6 +39,8 @@ const adapters = Object.freeze({
     },
     async resolveProfilePrompt(_root, profile) { return { prompt: structuredClone(profile.prompt), identity: {} }; },
     async resolveEffectivePrompt(_root, bundle) { return structuredClone(bundle.source_identity); },
+    sourceIdentityFields: [],
+    validateSourceIdentity() {},
   }),
 });
 

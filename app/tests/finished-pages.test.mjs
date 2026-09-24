@@ -135,6 +135,11 @@ test("文字页成品不需要候选图：黑底直出、记录无候选字段�
   const textPage = listed.pages.find(page => page.page_id === textKey.page_id);
   assert.equal(textPage.status, "ready");
   assert.equal(textPage.record.candidate_id, null);
+  const renderFile=path.join(f.directory,`pages/${textKey.page_id}.render.json`);
+  await json(renderFile,{version:1,model_id:'anima',profile_id:'anima-base-v1',canvas:'2:3'});
+  assert.equal((await readFinishedPages(f.root,'demo',f.directory)).pages.find(page=>page.page_id===textKey.page_id).status,'stale','相同画幅换模型改变输出尺寸，也必须重新制作');
+  await json(renderFile,{version:1,model_id:'qwen',profile_id:'qwen-image-2-1',canvas:'2:3'});
+  assert.equal((await readFinishedPages(f.root,'demo',f.directory)).pages.find(page=>page.page_id===textKey.page_id).status,'ready');
   const cleanPixels = await sharp(path.join(f.directory, record.outputs.clean)).stats();
   assert.deepEqual(cleanPixels.channels.map(channel => channel.mean), [0, 0, 0]);
   let view = await readProjectWorkbenchView(f.root, "demo");

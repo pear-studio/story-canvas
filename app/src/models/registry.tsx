@@ -14,7 +14,7 @@ export function ModelSettingEditor(props:ModelSettingEditorProps) {
   const [selection,setSelection]=useState<{id:string;model:'anima'|'qwen'}|null>(null);
   const modelId=selection?.id===props.character.id?selection.model:props.character.model_id??'qwen';
   const [dirty,setDirty]=useState(false),[saving,setSaving]=useState(false),[error,setError]=useState('');
-  const input=props.character.model_prompts?.models?.[modelId]??(props.character.model_id===modelId?props.character.prompt:undefined);
+  const input=props.character.model_prompts?.models?.[modelId]??((props.character.model_id??'qwen')===modelId?props.character.prompt:undefined);
   const Editor=models[modelId].SettingEditor;
   const character={...props.character,model_id:modelId,prompt:input} as WorkbenchCharacter;
   async function enable() {

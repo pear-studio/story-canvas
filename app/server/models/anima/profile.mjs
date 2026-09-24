@@ -192,3 +192,19 @@ export async function resolveProfilePrompt(repositoryRoot,profile) {
   const {id,family,separator,avoidance_strategy,category_order}=policySource.value;
   return {prompt:{policy:id,family,separator,avoidance_strategy,category_order,fragments:merged.fragments},identity:{prompt_policy:policySource.provenance,prompt_fragments:merged.sources}};
 }
+
+export function validateSourceIdentity(profile, identity) {
+  const policy=identity.prompt_policy;
+  assertRecord(policy,'source_identity.prompt_policy');
+  assertExactFields(policy,new Set(['id','file','sha256']),'source_identity.prompt_policy');
+  if(policy.id!==profile.prompt.policy || policy.file!==`library/prompt-policies/${policy.id}.json` || !/^[a-f0-9]{64}$/.test(policy.sha256))fail('Anima Prompt policy 来源身份无效');
+  const fragments=identity.prompt_fragments,ids=Object.keys(profile.prompt.fragments);
+  assertRecord(fragments,'source_identity.prompt_fragments');
+  if(Object.keys(fragments).length!==ids.length || ids.some(id=>!Object.hasOwn(fragments,id)))fail('Anima Prompt 片段来源不完整');
+  for(const id of ids) {
+    const source=fragments[id];
+    assertRecord(source,`source_identity.prompt_fragments.${id}`);
+    assertExactFields(source,new Set(['source_kind','source_id']),`source_identity.prompt_fragments.${id}`);
+    if(!['prompt_policy','render_profile','project_override'].includes(source.source_kind) || source.source_id!==(source.source_kind==='prompt_policy'?policy.id:profile.id))fail('Anima Prompt 片段来源身份无效');
+  }
+}

@@ -54,7 +54,9 @@ export async function readFinishedPages(repositoryRoot, projectId, directory, { 
     const candidate = candidates?.length === 1 ? candidates[0].candidate_id : null;
     const files = record ? await Promise.all(["lettered", "clean"].map(kind => resolveExistingProjectMedia(directory, record.outputs[kind]))) : [];
     const available = files.length === 2 && files.every(Boolean);
-    const stale = record ? (candidate !== null && candidate !== record.candidate_id) || hashCanonicalJson(letteringSnapshot(view, page, page.page_kind === "text" ? undefined : record.lettering.canvas)) !== hashCanonicalJson(record.lettering) : false;
+    const dimensions = page.page_kind === 'text' ? (page.render_capabilities ?? view.render_capabilities).text_page?.dimensions : null;
+    const dimensionsChanged = dimensions && record && (record.width !== dimensions.width || record.height !== dimensions.height);
+    const stale = record ? Boolean(dimensionsChanged) || (candidate !== null && candidate !== record.candidate_id) || hashCanonicalJson(letteringSnapshot(view, page, page.page_kind === "text" ? undefined : record.lettering.canvas)) !== hashCanonicalJson(record.lettering) : false;
     const url = kind => `/api/projects/${encodeURIComponent(projectId)}/media/${record.outputs[kind]}`;
     pages.push({ ...chapter, page_id: page.page_id, page_key: page.page_key, title: page.title,
       candidate_id: candidate, candidate_count: candidates?.length ?? null,

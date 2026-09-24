@@ -7,7 +7,7 @@
 同一契约有两种传输方式，编辑纪律完全相同（读取上下文、保留指纹、只改正文、冲突后重读判断）：
 
 - **CLI**：`node <仓库根>/app/scripts/<脚本>.mjs …`，草稿通过 `--out <文件>` 与文件输入做 UTF-8 传输；
-- **DSH 原生工具**：会话选择本仓库 `.dsh/presets/story-canvas/` preset 后可用 `story_canvas_facts` 与
+- **DSH 原生工具**：安装本仓库 [DSH 预设 bundle](../../.dsh/presets/README.md)，会话选择 StoryCanvas 创作或极简预设后可用 `story_canvas_facts` 与
   `story_canvas_api`，直接收发结构化对象，不要求先落盘。
 
 ## 查询关联项目的 Git
@@ -47,13 +47,19 @@ node <仓库根>/app/scripts/workbench-api.mjs GET /api/project-library/<project
 | character:fact | page-index | 不传 | 角色视觉页顺序与归属 |
 | character:fact | page-goal、page-prompt | page-id | 对应角色视觉页事实 |
 | fact:edit | scene 的 profile、visual、prompt | scene-id | 对应场景事实 |
-| fact:edit | page 的 content、prompt、text-sources | page-id | 统一页面事实 |
+| fact:edit | page 的 content、prompt、render、text-sources | page-id | 统一页面事实 |
 
 `fact:edit`（`node <仓库根>/app/scripts/agent-fact.mjs`）是通用事实 CLI，覆盖服务端支持的全部
 domain/kind：`read <domain> <kind> <project-id> [target-id]`、`save <domain> <kind> <JSON文件|->`。
 story:page、character:fact 的 read/save 是它的薄转发；领域与 kind 的合法性以服务端为准，
 不支持的组合返回 400 `fact_draft_not_supported`。场景当前没有 scene/index 事实，场景列表顺序由
 工作台接口维护。
+
+新格式 Prompt 草稿保存完整 `models` 容器，只修改目标模型，保留其他输入。
+页面 `render` 草稿包含 `version/model_id/profile_id/canvas`；更换模型或画幅使用同一 read/save 契约，
+不要直接写文件。首次 Anima→Qwen 会复制有效全文，已有输入不会被重新初始化。
+完整编辑上下文返回 `model_id`、`render`、`page.model_input`，Anima 还提供生效分类词和逐词调整；
+下列文本、override 与图片说明主要描述 Qwen。具体模型契约见[模型适配器](../dev/model-adapters.md)。
 
 修改指定章节或单元的文本时，提交对应逻辑目标；调整整份骨架时提交 outline。服务内部仍维护一个
 outline.json，并在锁内只更新局部目标，不要求 Agent 回传其他章节。sequence 的归属变化会使旧草稿失效。
@@ -235,7 +241,7 @@ API 本身沿用领域响应，不为与 CLI 外观一致而增加重复包装�
 
 ## DSH 原生工具
 
-DeepSeek Harness 会话选择本仓库 `.dsh/presets/story-canvas/` preset 后获得两个工具，与 CLI 共用
+DeepSeek Harness 安装本仓库 `.dsh/presets/` bundle 后，选择 `story-canvas` 或 `story-canvas-lite` 预设获得两个工具，与 CLI 共用
 同一份连接与事实编辑实现，编辑纪律不变（先读上下文、保留指纹、只改正文、冲突后重读判断）：
 
 - `story_canvas_facts`：`operation=read`（domain、kind、project_id、可选 target_id）返回裸草稿；

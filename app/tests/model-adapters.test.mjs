@@ -14,6 +14,10 @@ import { makeModelPromptDocument, validateModelPromptDocument } from '../server/
 import { hashCanonicalJson as hash } from '../server/workflow-definition.mjs';
 import {planModelMigration,commitModelMigration} from '../server/model-migration.mjs';
 import {compilePageRenderInspectionContext} from '../server/page-render-resolver.mjs';
+import {compileAndPersistWorkbenchRenderTask} from '../server/page-render.mjs';
+import {validateFrozenRenderTask} from '../server/render-task-contract.mjs';
+import {publishCandidateResult} from '../server/candidate-storage.mjs';
+import sharp from 'sharp';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const schema=name=>`https://storyvisualizer.local/schemas/${name}.schema.json`;
@@ -42,6 +46,23 @@ test('已注册 Anima Basic 资源完整可解析，编译保留分类、权重�
   assert.equal(adapter.id,'anima');assert.match(compiled.positive_prompt,/\(quiet garden:1.2\)/);
   assert.match(compiled.negative_prompt,/blur/);assert.equal(compiled.errors.length,0);
 });
+test('两模型均能冻结可执行任务，Anima policy 身份随任务保存并校验',async t=>{
+  for(const modelId of ['anima','qwen']){
+    const f=await fixture(t,modelId),{page_id:id}=await f.create();
+    const prompt=await f.get(`pages/${id}.prompt.json`);
+    if(modelId==='anima')prompt.models.anima.setting=[{description:'quiet garden'}];
+    else prompt.models.qwen.text='quiet garden';
+    await f.put(`pages/${id}.prompt.json`,prompt);
+    const {task}=await compileAndPersistWorkbenchRenderTask(f.root,'demo',{page_key:{page_id:id},count:1});
+    assert.equal(task.snapshot.canvas,'2:3');assert.equal(task.snapshot.execution_units.length,1);
+    validateFrozenRenderTask(task);
+    if(modelId==='anima'){
+      assert.equal(task.snapshot.source_identity.prompt_policy.id,'anima-v1');
+      task.snapshot.source_identity.prompt_policy.id='wrong';
+      assert.throws(()=>validateFrozenRenderTask(task),/来源身份|identity/);
+    }
+  }
+});
 test('Qwen 全文输入不重复追加全局与设定，原组合输入仍保留拼接',async()=>{
   const {resolved_profile:profile}=await readResolvedRenderProfile(root,'qwen-image-2-1');profile.prompt.text='GLOBAL';
   const input={pageId:'page-001',pageKey:{page_id:'page-001'},profile,characters:[],participantIds:['missing'],pagePrompt:{text:'complete imported prompt',composition:'standalone'}};
@@ -49,6 +70,20 @@ test('Qwen 全文输入不重复追加全局与设定，原组合输入仍保留
   const composed=modelAdapter('qwen').compilePrompt({...input,participantIds:[],pagePrompt:{text:'local',composition:'settings'}});
   assert.match(composed.positive_prompt,/GLOBAL/);assert.match(composed.positive_prompt,/本页描述：\nlocal/);
   assert.throws(()=>modelAdapter('__proto__'),/未知生成模型/);
+});
+test('其他页面候选保存为材料后，删除源候选不影响 Qwen 参考图编译',async t=>{
+  const f=await fixture(t,'qwen'),source=await f.create(),target=await f.create();
+  const doc=await f.get(`pages/${source.page_id}.prompt.json`);doc.models.qwen.text='garden';await f.put(`pages/${source.page_id}.prompt.json`,doc);
+  const {task}=await compileAndPersistWorkbenchRenderTask(f.root,'demo',{page_key:source.page_key,count:1});
+  const item=task.items[0],bytes=await sharp({create:{width:32,height:32,channels:3,background:'#345678'}}).png().toBuffer();
+  const result=await publishCandidateResult(f.directory,task,item,bytes,{warm:false});
+  const id=target.page_id,content=await f.get(`pages/${id}.content.json`),before=await f.get(`pages/${id}.prompt.json`);
+  const referenceId='ref-11111111-1111-4111-8111-111111111111',file='reference-11111111-1111-4111-8111-111111111111.png';
+  await savePage(f.root,'demo',{page_key:target.page_key,content,prompt:{...before.models.qwen,text:'garden',reference_images:[{id:referenceId,file,title:'候选参考'}]},expected_content_sha256:hash(content),expected_prompt_sha256:hash(before),expected_context_sha256:hash(await readStoryPromptUpstream(f.directory,id)),reference_inputs:[{id:referenceId,candidate_id:item.candidate_id,page_key:source.page_key}]});
+  await rm(path.dirname(path.join(f.directory,result.file)),{recursive:true});
+  const actual=await compilePageRenderInspectionContext({repositoryRoot:f.root,projectDirectory:f.directory,pageKey:target.page_key});
+  assert.deepEqual(actual.blockers,[]);assert.equal(actual.reference_images.length,1);
+  assert.ok((await readFile(path.join(f.directory,'materials',file))).length);
 });
 test('新页设置是创建时副本，读取实际页配置，新格式缺失不继承默认',async t=>{
   const testRoot=path.join(root,'Saved/Tests');await mkdir(testRoot,{recursive:true});
