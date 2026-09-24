@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const DEFAULT_TIMEOUT_MS = 900_000;
+const DEFAULT_TIMEOUT_MS = 180_000;
 const MAX_RESULT_CHARS = 2 * 1024 * 1024;
 
 export class PromptRewriteRunnerError extends Error {

@@ -25,9 +25,9 @@ test('rewrite status isolates pages and projects and prevents duplicate submissi
 test('failed rewrite retains readable failure and allows an explicit retry', async () => {
   const page = { page_id: 'page-003' };
   await assert.rejects(trackPageRewrite('root', 'project', page, async () => {
-    throw Object.assign(new Error('TIMEOUT'), { details: ['等待重写超过 15 分钟'] });
+    throw Object.assign(new Error('TIMEOUT'), { details: ['等待重写超过 3 分钟'] });
   }), /TIMEOUT/);
-  assert.equal(readPageRewriteProgress('root', 'project', page).error, '等待重写超过 15 分钟');
+  assert.equal(readPageRewriteProgress('root', 'project', page).error, '等待重写超过 3 分钟');
   await trackPageRewrite('root', 'project', page, async () => 'new result');
   const status = readPageRewriteProgress('root', 'project', page);
   assert.equal(status.phase, 'completed');

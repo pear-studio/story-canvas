@@ -150,10 +150,10 @@ for (const mobile of [false, true]) test(`重写刷新后继续显示进度并�
   progress = { ...progress, phase: 'completed', finished_at: Date.now() };
   await page.getByText('状态：当前', { exact: true }).waitFor();
   assert.equal(await page.getByLabel('使用重写结果').isEnabled(), true);
-  progress = { ...progress, phase: 'failed', error: '等待重写超过 15 分钟' };
+  progress = { ...progress, phase: 'failed', error: '等待重写超过 3 分钟' };
   await page.reload();
   await page.getByRole('tab', { name: '视觉描述 / Prompt', exact: true }).click();
-  await page.getByText('重写失败：等待重写超过 15 分钟', { exact: true }).waitFor();
+  await page.getByText('重写失败：等待重写超过 3 分钟', { exact: true }).waitFor();
   assert.equal(posts, 0);
 });
 
