@@ -1,4 +1,5 @@
 import { validateReferenceEntries } from "../shared/reference-images.mjs";
+import { isModelPromptDocument, validateModelPromptDocument, promptModelEntries } from './model-prompts.mjs';
 import {
   STORY_PAGE_PROMPT_SCHEMA_ID,
   storyNarrativeSpeakerIds,
@@ -78,6 +79,7 @@ export function validateCharacterVisualDocument(visual) {
 }
 
 export function validateCharacterPromptDocument(promptDocument) {
+  if (isModelPromptDocument(promptDocument)) return validateModelPromptDocument(promptDocument, 'setting');
   const errors = [];
   if (!isRecord(promptDocument)) return ["character prompt 必须是对象"];
   checkExactKeys(promptDocument, ["$schema", "prompt_name", "variants"], "character prompt", errors);
@@ -146,7 +148,7 @@ function visualVariantIds(visual) {
 }
 
 function promptVariantIds(prompt) {
-  return new Set(isRecord(prompt?.variants) ? Object.keys(prompt.variants) : []);
+  return new Set(promptModelEntries(prompt).flatMap(([,input]) => Object.keys(input?.variants ?? {})));
 }
 
 export function validateCharacterIndexSemantics(characterIndex) {

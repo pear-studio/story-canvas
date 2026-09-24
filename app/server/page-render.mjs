@@ -89,7 +89,7 @@ function compileTask({ resolved, projectDirectory, projectId, taskId, count, see
       reference_images: structuredClone(resolved.reference_images),
       positive_prompt: compiled.positive_prompt,
       negative_prompt: compiled.negative_prompt,
-      prompt_parts: { sections: structuredClone(compiled.sections) },
+      prompt_parts: structuredClone(compiled.prompt_parts ?? { sections: compiled.sections }),
       loras: structuredClone(pageLoras),
       status: "queued",
     };

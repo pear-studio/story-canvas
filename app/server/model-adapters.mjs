@@ -1,6 +1,9 @@
 import { compileCurrentPagePrompt as compileAnima } from './models/anima/current-page-prompt.mjs';
 import { compileCurrentPagePrompt as compileQwen } from './models/qwen/prompt-compiler.mjs';
 import * as animaProfile from './models/anima/profile.mjs';
+import * as animaPage from './models/anima/story-files.mjs';
+import * as animaSetting from './models/anima/character-files.mjs';
+import * as qwenPrompt from './models/qwen/prompt-contract.mjs';
 
 // 模型拥有 Prompt 和能力；候选/队列只消费编译结果。显式注册，不扫描或运行外部插件。
 const adapters = Object.freeze({
@@ -9,6 +12,10 @@ const adapters = Object.freeze({
     capabilities: Object.freeze({ references: false, rewrite: false }),
     emptyPrompt: () => ({ subject: [], person: [], setting: [], camera: [], avoid: [] }),
     compilePrompt: compileAnima,
+    validatePagePrompt: animaPage.validateStoryPagePromptDocument,
+    preparePagePrompt: animaPage.preparePromptForPersistence,
+    validateSettingPrompt: animaSetting.validateCharacterPromptDocument,
+    prepareSettingPrompt: animaSetting.prepareCharacterPromptForPersistence,
     validateProfilePrompt: animaProfile.validateProfilePrompt,
     resolveProfilePrompt: animaProfile.resolveProfilePrompt,
     resolveEffectivePrompt: animaProfile.resolveEffectivePrompt,
@@ -18,6 +25,10 @@ const adapters = Object.freeze({
     capabilities: Object.freeze({ references: true, rewrite: true }),
     emptyPrompt: () => ({ text: '', composition: 'settings' }),
     compilePrompt: compileQwen,
+    validatePagePrompt: qwenPrompt.validateStoryPagePromptDocument,
+    preparePagePrompt: prompt => structuredClone(prompt),
+    validateSettingPrompt: qwenPrompt.validateCharacterPromptDocument,
+    prepareSettingPrompt: prompt => structuredClone(prompt),
     validateProfilePrompt(value) {
       if (!value || typeof value !== 'object' || Array.isArray(value)
         || Object.keys(value).some(key => key !== 'text') || typeof value.text !== 'string') {

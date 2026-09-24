@@ -1,5 +1,6 @@
 import { readPageIndex, pageRelativePath } from './pages-store.mjs';
 import { readPageRenderSettings, pageProjectSettings } from './page-render-settings.mjs';
+import { modelPrompt, isModelPromptDocument, promptModelEntries, replaceModelPrompt } from './model-prompts.mjs';
 import { resolveRenderRecipe } from "./render-task-contract.mjs";
 import { defaultTextPageLayout } from "../shared/text-page-layout.mjs";
 import { readScenes } from './scene-facts.mjs';
@@ -70,7 +71,8 @@ function validated(value, validate, relativePath) {
 }
 
 function publicPrompt(prompt) {
-  return { text: prompt.text ?? "", ...(prompt.scene_id ? { scene_id: prompt.scene_id, scene_variant_id: prompt.scene_variant_id } : {}), ...(prompt.text_overrides ? { text_overrides: structuredClone(prompt.text_overrides) } : {}), ...(prompt.reference_overrides ? { reference_overrides: structuredClone(prompt.reference_overrides) } : {}), ...(prompt.reference_images ? { reference_images: structuredClone(prompt.reference_images) } : {}) };
+  const {$schema,...value} = prompt;
+  return structuredClone(value);
 }
 
 function publicCharacterPrompt(prompt) {
@@ -95,13 +97,15 @@ async function readCharacters(projectDirectory) {
     const profileValue = validated(profile, validateCharacterProfileDocument, `characters/${characterId}.profile.json`);
     const visualValue = validated(visual, validateCharacterVisualDocument, `characters/${characterId}.visual.json`);
     const promptValue = validated(prompt, validateCharacterPromptDocument, `characters/${characterId}.prompt.json`);
+    const modelId = promptModelEntries(promptValue)[0][0];
     characters.push({
       id: characterId,
       ...structuredClone(profileValue),
       profile_sha256: hashCanonicalJson(profileValue),
       visual: publicCharacterVisual(visualValue),
       visual_sha256: hashCanonicalJson(visualValue),
-      prompt: structuredClone(promptValue),
+      prompt: modelPrompt(promptValue,modelId),
+      model_id: modelId, model_prompts: structuredClone(promptValue),
       prompt_sha256: hashCanonicalJson(promptValue),
       pages: [],
     });
@@ -167,6 +171,11 @@ export async function readProjectWorkbenchView(projectRoot, projectId) {
   const lettering = letteringDocument === null
     ? emptyLetteringDocument()
     : validated(letteringDocument, validateLetteringDocument, "lettering/dialogue-layouts.json");
+  for (const scene of scenes.scenes) {
+    scene.model_id=promptModelEntries(scene.prompt)[0][0];
+    scene.model_prompts=structuredClone(scene.prompt);
+    scene.prompt=modelPrompt(scene.prompt,scene.model_id);
+  }
   const letteringSha256 = hashCanonicalJson(lettering);
   const letteringByPage = new Map(lettering.pages.map((page) => [page.page, page]));
   const diagnostics = [];
@@ -181,7 +190,10 @@ export async function readProjectWorkbenchView(projectRoot, projectId) {
       readJson(project.projectDirectory, pageRelativePath(pageId, 'prompt')),
     ]);
     const content = validated(narrative, validateStoryPageNarrativeDocument, pageRelativePath(pageId, 'content'));
-    const promptValue = validated(prompt, validateStoryPagePromptDocument, pageRelativePath(pageId, 'prompt'));
+    const promptDocument = validated(prompt, validateStoryPagePromptDocument, pageRelativePath(pageId, 'prompt'));
+    const render = await readPageRenderSettings(project.projectDirectory, pageId, projectDocument);
+    const promptValue = modelPrompt(promptDocument,render.model_id ?? 'qwen');
+    if (!promptValue) fail('page_model_input_missing',[pageId,render.model_id]);
     for (const reference of content.characters) {
       const character = characterMap.get(reference.character_id);
       if (!character) diagnostics.push({ code: "dangling_story_character_reference", page_id: pageId, character_id: reference.character_id });
@@ -193,8 +205,8 @@ export async function readProjectWorkbenchView(projectRoot, projectId) {
       if (!scene) diagnostics.push({code:"dangling_scene_reference",page_id:pageId,scene_id:promptValue.scene_id});
       else if (!scene.visual.variants.some(variant => variant.id === promptValue.scene_variant_id)) diagnostics.push({code:"dangling_scene_variant_reference",page_id:pageId,scene_id:promptValue.scene_id,variant_id:promptValue.scene_variant_id});
     }
-    const render = await readPageRenderSettings(project.projectDirectory, pageId, projectDocument);
     const page = {
+      model_id: render.model_id ?? 'qwen', model_prompts: structuredClone(promptDocument),
       render, render_sha256: hashCanonicalJson(render),
       render_capabilities: await readRenderCapabilities(path.resolve(projectRoot), project.projectDirectory, pageProjectSettings(projectDocument, render)),
       ...membership, kind: membership.owner_kind, owner: structuredClone(membership),
@@ -205,7 +217,7 @@ export async function readProjectWorkbenchView(projectRoot, projectId) {
       characters: structuredClone(content.characters), dialogue: structuredClone(content.dialogue),
       content_sha256: hashCanonicalJson(content),
       lettering: structuredClone(letteringByPage.get(pageId) ?? {page:pageId,items:[]}), layout_sha256:letteringSha256,
-      prompt:publicPrompt(promptValue),prompt_sha256:hashCanonicalJson(promptValue),
+      prompt:publicPrompt(promptValue),prompt_sha256:hashCanonicalJson(promptDocument),
       prompt_context_sha256:await pagePromptContextSha256(project.projectDirectory, membership.owner_kind,pageId).catch(()=>null),
     };
     pages.push(page);
@@ -385,15 +397,18 @@ export async function savePagePrompt(projectRoot, projectId, value) {
   requireExactObject(value, ["kind", "page_id", "prompt", "expected_sha256", "expected_context_sha256"], "invalid_page_prompt_update");
   const { kind, page_id: pageId, prompt, expected_sha256: expectedSha256 } = value;
   if (!promptKinds.has(kind) || typeof pageId !== "string" || !isRecord(prompt) || !/^[a-f0-9]{64}$/.test(expectedSha256 ?? "")) fail("invalid_page_prompt_update", [], 400);
-  if (Object.keys(prompt).some(key => !["text", "text_overrides", "reference_images", "reference_overrides", "scene_id", "scene_variant_id"].includes(key))) fail("invalid_page_prompt_update", [], 400);
   if (!/^[a-f0-9]{64}$/.test(value.expected_context_sha256 ?? "")) fail("invalid_page_prompt_update", [], 400);
+  const {projectDirectory} = await resolveProjectLocation(path.resolve(projectRoot), projectId);
+  const current = await readJson(projectDirectory, pageRelativePath(pageId,'prompt'));
+  const render = await readPageRenderSettings(projectDirectory,pageId);
+  const document = replaceModelPrompt(current,render.model_id ?? 'qwen',{$schema:STORY_PAGE_PROMPT_SCHEMA_ID,...structuredClone(prompt)});
   const saved = await saveFactDraft(projectRoot, {
     expectedContextSha256: value.expected_context_sha256,
     domain: "page", kind: "prompt",
-    projectId, targetId: pageId, document: { $schema: STORY_PAGE_PROMPT_SCHEMA_ID, ...structuredClone(prompt) },
+    projectId, targetId: pageId, document,
     expectedSha256, conflictCode: "prompt_target_conflict",
   });
-  return { kind, page_id: pageId, prompt: publicPrompt(saved.value), prompt_sha256: hashCanonicalJson(saved.value), audit: saved.audit };
+  return { kind, page_id: pageId, prompt: publicPrompt(modelPrompt(saved.value,render.model_id ?? 'qwen')), prompt_sha256: hashCanonicalJson(saved.value), audit: saved.audit };
 }
 
 function sameOrderedStrings(left, right) {

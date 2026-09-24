@@ -1,43 +1,85 @@
-import { ReferenceLibrary } from "./ReferenceLibrary";
-import { AnimaSettingView } from './models/anima/SettingView';
-import type { CharacterPromptDocument as AnimaPrompt } from './models/anima/types';
-import { useFactDraft } from './use-fact-draft';
+import { type ReferenceEntry } from "../../ReferenceLibrary";
+import { PromptPopulationEditor } from "../../PromptPopulationEditor";
+import { useFactDraft } from '../../use-fact-draft';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { PromptTextArea } from './SourcePromptEditor';
-import { InlineTitleEditor, SectionHeader, WorkspaceHeader } from './WorkspaceHeader';
-import { useFeedback } from './feedback';
-import { saveSettingProfile, saveSettingVisual, saveSettingPrompt, renameSettingVariant, type SettingKind, type CharacterPromptDocument, type CharacterProfileDraft, type CharacterVisualDraft, type WorkbenchCharacter } from './project-workbench-client';
+import { InheritedPromptEditor } from '../../InheritedPromptEditor';
+import { PromptFragmentEditor, type PromptFragment as DisplayPromptFragment } from '../../PromptFragmentEditor';
+import { createPromptDraftFragment, displayPromptDraft, persistPromptDraft } from '../../prompt-fragment-draft';
+import { InlineTitleEditor, SectionHeader, WorkspaceHeader } from '../../WorkspaceHeader';
+import { useFeedback } from '../../feedback';
+import {saveSettingProfile, saveSettingVisual, saveSettingPrompt, renameSettingVariant, type SettingKind, type CharacterProfileDraft, type CharacterVisualDraft, type WorkbenchCharacter as SharedCharacter} from '../../project-workbench-client';
+import {promptCategories, type CharacterLora, type CharacterPromptDocument, type CharacterPromptSetting, type InheritedAdjustments} from './types';
+type WorkbenchCharacter = SharedCharacter<CharacterPromptDocument>;
+const promptLabels = { subject: '人数', person: '人物', setting: '场景', camera: '镜头', avoid: '避免' };
 const characterVariantIdPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const sameJson = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
 
-type EditableVariantPrompt = { text: string };
-type EditableCharacterPrompt = { prompt_name: string; variants: Record<string, EditableVariantPrompt> };
+type EditableCharacterLora = { filename: string; sha256: string; weight: string; trigger: string };
+type EditableCharacterSetting = { reference_images?: ReferenceEntry[]; prompt: Record<string, DisplayPromptFragment[]>; loras: EditableCharacterLora[]; identityDisabled: string[]; identityOverrides: InheritedAdjustments };
+type EditableCharacterIdentity = { prompt: Record<string, DisplayPromptFragment[]>; lora: EditableCharacterLora | null };
+type EditableCharacterPrompt = { identity: EditableCharacterIdentity; variants: Record<string, EditableCharacterSetting> };
+
+function emptyDisplayPrompt() {
+  return Object.fromEntries(promptCategories.map((category) => [category, []])) as Record<string, DisplayPromptFragment[]>;
+}
+
+function editableLora(lora: CharacterLora): EditableCharacterLora {
+  return { filename: lora.filename, sha256: lora.sha256, weight: String(lora.weight), trigger: lora.trigger ?? "" };
+}
+
+function persistedLora(lora: EditableCharacterLora): CharacterLora {
+  return {
+    filename: lora.filename,
+    sha256: lora.sha256,
+    weight: Number(lora.weight),
+    ...(lora.trigger.trim() ? { trigger: lora.trigger } : {}),
+  };
+}
+
+function editableCharacterSetting(setting?: CharacterPromptSetting): EditableCharacterSetting {
+  return {
+    reference_images: setting?.reference_images,
+    prompt: setting ? displayPromptDraft(setting.prompt) : emptyDisplayPrompt(),
+    loras: (setting?.loras ?? []).map(editableLora),
+    identityDisabled: [...(setting?.identity_disabled ?? [])],
+    identityOverrides: structuredClone(setting?.identity_overrides ?? {}),
+  };
+}
 
 function editableCharacterPrompt(prompt: CharacterPromptDocument): EditableCharacterPrompt {
   return {
-    prompt_name: prompt.prompt_name,
-    variants: Object.fromEntries(Object.entries(prompt.variants).map(([id, setting]) => [id, { text: setting.text ?? "" }])),
+    identity: {
+      prompt: displayPromptDraft(prompt.identity.prompt),
+      lora: prompt.identity?.lora ? editableLora(prompt.identity.lora) : null,
+    },
+    variants: Object.fromEntries(Object.entries(prompt.variants).map(([id, setting]) => [id, editableCharacterSetting(setting)])),
   };
 }
 
-/** 参考图由 ReferenceLibrary 直接落盘；保存文字时带上当前事实中的图片条目，不新建平行状态。 */
-function persistedCharacterPrompt(prompt: EditableCharacterPrompt, source: CharacterPromptDocument): CharacterPromptDocument {
+function persistedCharacterSetting(setting: EditableCharacterSetting): CharacterPromptSetting {
   return {
-    prompt_name: prompt.prompt_name,
-    variants: Object.fromEntries(Object.entries(prompt.variants).map(([id, setting]) => [id, {
-      text: setting.text,
-      ...(source.variants[id]?.reference_images ? { reference_images: source.variants[id].reference_images } : {}),
-    }])),
+    ...(setting.reference_images ? { reference_images: setting.reference_images } : {}),
+    prompt: persistPromptDraft(setting.prompt),
+    loras: setting.loras.map(persistedLora),
+    identity_disabled: [...setting.identityDisabled],
+    ...(Object.keys(setting.identityOverrides).length ? { identity_overrides: setting.identityOverrides } : {}),
   };
 }
 
-type SettingViewProps = { kind?: SettingKind; projectId: string; character: WorkbenchCharacter; initialSettingId: string; busy: boolean; onSaved: (replacement: Partial<WorkbenchCharacter>) => void; onSettingChange?: (settingId: string) => void };
-export function SettingView(props: SettingViewProps) {
-  if (props.character.model_id === 'anima') return <AnimaSettingView {...props} character={props.character as unknown as WorkbenchCharacter<AnimaPrompt>} onSaved={value => props.onSaved(value as unknown as Partial<WorkbenchCharacter>)} />;
-  return <QwenSettingView {...props} />;
+function persistedCharacterPrompt(prompt: EditableCharacterPrompt): CharacterPromptDocument {
+  return {
+    identity: {
+      prompt: persistPromptDraft(prompt.identity.prompt),
+      lora: prompt.identity.lora ? persistedLora(prompt.identity.lora) : null,
+    },
+    variants: Object.fromEntries(Object.entries(prompt.variants).map(([id, setting]) => [id, persistedCharacterSetting(setting)])),
+  };
 }
-function QwenSettingView({ kind = 'character', projectId, character, initialSettingId, busy, onSaved, onSettingChange }: SettingViewProps) {
+
+export function AnimaSettingView({ kind = 'character', projectId, character, initialSettingId, busy, onSaved, onSettingChange }: { kind?: SettingKind; projectId: string; character: WorkbenchCharacter; initialSettingId: string; busy: boolean; onSaved: (replacement: Partial<WorkbenchCharacter>) => void; onSettingChange?: (settingId: string) => void }) {
   const { notify } = useFeedback();
   const label = kind === 'scene' ? '场景' : '角色';
+  const categories = kind === 'scene' ? promptCategories.filter(c => c === 'setting' || c === 'avoid') : promptCategories.filter(c => c !== 'subject');
   const characterViewRef = useRef<HTMLElement>(null);
   const [settingId, setSettingId] = useState(initialSettingId);
   const sourceProfile = useMemo<CharacterProfileDraft>(() => ({ name: character.name, description: character.description }), [character.id, character.profile_sha256]);
@@ -68,9 +110,12 @@ function QwenSettingView({ kind = 'character', projectId, character, initialSett
   const variantIdValid = characterVariantIdPattern.test(variantIdDraft);
   const variantIdConflict = Boolean(selectedVariant) && visualDraft.variants.some((variant) => variant.id !== selectedVariant?.id && variant.id === variantIdDraft);
   const hasSelectedSetting = isProfile || Object.hasOwn(promptDraft.variants, selectedSettingId);
-  const selectedSetting = promptDraft.variants[selectedSettingId] ?? { text: "" };
-  function updateSelectedSetting(update: (setting: EditableVariantPrompt) => EditableVariantPrompt) {
-    setPromptDraft((current) => ({ ...current, variants: { ...current.variants, [selectedSettingId]: update(current.variants[selectedSettingId] ?? { text: "" }) } }));
+  const selectedSetting = promptDraft.variants[selectedSettingId] ?? editableCharacterSetting();
+  function updateSelectedSetting(update: (setting: EditableCharacterSetting) => EditableCharacterSetting) {
+    setPromptDraft((current) => ({ ...current, variants: { ...current.variants, [selectedSettingId]: update(current.variants[selectedSettingId] ?? editableCharacterSetting()) } }));
+  }
+  function updateIdentity(update: (identity: EditableCharacterIdentity) => EditableCharacterIdentity) {
+    setPromptDraft((current) => ({ ...current, identity: update(current.identity) }));
   }
   function updateSelectedVariant(update: (variant: CharacterVisualDraft["variants"][number]) => CharacterVisualDraft["variants"][number]) {
     if (!selectedVariant) return;
@@ -94,7 +139,7 @@ function QwenSettingView({ kind = 'character', projectId, character, initialSett
     if (selectedVariant && variantIdDirty) {
       if (!variantIdValid || variantIdConflict) return;
       if (promptDirty) {
-        const message = "Prompt 有未保存修改，请先保存或复原后再修改子设定 ID";
+        const message = "角色 Prompt 有未保存修改，请先保存或复原后再修改子设定 ID";
 
         notify({ kind: "error", message });
         return;
@@ -130,9 +175,10 @@ function QwenSettingView({ kind = 'character', projectId, character, initialSett
     setSavingSection("prompt");
 
     try {
-      const document = persistedCharacterPrompt(promptDraft, character.prompt);
-      const result = await saveSettingPrompt(kind, projectId, { ...editTarget, visual_sha256: promptState.fingerprint.split(":")[1] }, document);
-      promptState.accept(editableCharacterPrompt(result.prompt), `${result.prompt_sha256}:${promptState.fingerprint.split(":")[1]}`);
+      const document = persistedCharacterPrompt(promptDraft);
+      const result = await saveSettingPrompt(kind, projectId, {...editTarget, visual_sha256: promptState.fingerprint.split(':')[1]}, document);
+      const normalized = editableCharacterPrompt(result.prompt);
+      promptState.accept(normalized, `${result.prompt_sha256}:${promptState.fingerprint.split(":")[1]}`);
       onSaved({ prompt: result.prompt, model_prompts: result.model_prompts, prompt_sha256: result.prompt_sha256 });
       notify({ kind: "success", message: `${label} Prompt 已保存` });
     } catch (error) {
@@ -141,7 +187,6 @@ function QwenSettingView({ kind = 'character', projectId, character, initialSett
       notify({ kind: "error", message });
     } finally { setSavingSection(null); }
   }
-  const promptSaveButton = <button type="button" aria-label="保存 Prompt" className="button button--quiet character-section-save" disabled={busy || savingSection !== null || !promptDirty || !promptDraft.prompt_name.trim()} onClick={() => void savePrompt()}>{savingSection === "prompt" ? "保存中…" : "保存"}</button>;
   return <section className="resource-editor current-workbench-character" data-project-fact-dirty={dirty ? "true" : undefined} ref={characterViewRef}>
     <WorkspaceHeader breadcrumb={[label, profileDraft.name]} className="character-workspace-header" title={<span className="character-title-editor">{isProfile ? <InlineTitleEditor label={`重命名${label}`} value={profileDraft.name} disabled={busy || savingSection !== null} onChange={(name) => setProfileDraft((current) => ({ ...current, name }))} /> : <><span>{profileDraft.name}</span><i>·</i>{selectedVariant && <InlineTitleEditor key={selectedVariant.id} label="重命名子设定" value={selectedVariant.name} disabled={busy || savingSection !== null} onChange={(name) => updateSelectedVariant((variant) => ({ ...variant, name }))} />}</>}</span>} />
     {(profileState.conflict || visualState.conflict || promptState.conflict) && <p role="alert">设定已被其他操作修改，当前草稿保留。<button type="button" className="button button--quiet" onClick={() => { profileState.reset(); visualState.reset(); promptState.reset(); setVariantIdDrafts({}); }}>放弃草稿并载入最新</button></p>}
@@ -152,16 +197,19 @@ function QwenSettingView({ kind = 'character', projectId, character, initialSett
             <section className="character-fact-section character-summary-card"><SectionHeader title={`${label}档案`} actions={<button type="button" className="button button--quiet character-section-save" disabled={busy || savingSection !== null || !profileDirty || !profileDraft.name.trim()} onClick={() => void saveProfile()}>{savingSection === "profile" ? "保存中…" : "保存"}</button>} /><div className="character-fact-fields character-fact-fields--stacked"><label><span>{label}设定</span><textarea rows={2} value={profileDraft.description} onChange={(event) => setProfileDraft((current) => ({ ...current, description: event.target.value }))} /></label></div></section>
           </div>
           <section className="resource-form--wide character-fact-section character-generation-section">
-            <SectionHeader title="Prompt 名称" description="生成时引用此设定的名称，所有子设定共用；创建时复制显示名称，之后独立修改" actions={promptSaveButton} />
-            <div className="character-fact-fields"><label className="resource-form--wide"><span>Prompt 名称</span><input value={promptDraft.prompt_name} disabled={busy || savingSection !== null} onChange={(event) => setPromptDraft((current) => ({ ...current, prompt_name: event.target.value }))} />{!promptDraft.prompt_name.trim() && <small className="character-color-hint">Prompt 名称不能为空。</small>}</label></div>
+            <SectionHeader title="基础设定" description="所有子设定共享的 Prompt" actions={<button type="button" aria-label="保存基础设定" className="button button--quiet character-section-save" disabled={busy || savingSection !== null || !promptDirty} onClick={() => void savePrompt()}>{savingSection === "prompt" ? "保存中…" : "保存"}</button>} />
+            {kind === "character" && <PromptPopulationEditor fragments={promptDraft.identity.prompt.subject} disabled={busy || savingSection !== null} onChange={subject => updateIdentity(identity => ({ ...identity, prompt: { ...identity.prompt, subject } }))} />}
+          <PromptFragmentEditor categories={categories.map((category) => ({ id: category, label: promptLabels[category] }))} scope="character" fragments={promptDraft.identity.prompt} createFragment={createPromptDraftFragment} onChange={(prompt) => updateIdentity((identity) => ({ ...identity, prompt }))} historyScopeKey={`${character.id}:identity:${character.prompt_sha256}`} />
+
           </section>
         </>}
         {!isProfile && <>
         {selectedVariant && <section className="resource-form--wide character-fact-section"><SectionHeader title="子设定" description="名称与稳定 ID" actions={<button type="button" aria-label="保存子设定" className="button button--quiet character-section-save" disabled={busy || savingSection !== null || (!visualDirty && !variantIdDirty) || !selectedVariant.name.trim() || (variantIdDirty && (!variantIdValid || variantIdConflict))} onClick={() => void saveVisual()}>{savingSection === "visual" ? "保存中…" : "保存"}</button>} /><div className="character-fact-fields"><label className="resource-form--wide"><span>子设定 ID</span><input className={variantIdDirty && (!variantIdValid || variantIdConflict) ? "is-missing mono-input" : "mono-input"} value={variantIdDraft} onChange={(event) => setVariantIdDraft(event.target.value)} />{variantIdDirty && (!variantIdValid || variantIdConflict) && <small className="character-color-hint">ID 由小写字母、数字与连字符组成，且不能与现有子设定重复。</small>}</label></div></section>}
-        {!hasSelectedSetting ? <section className="resource-form--wide character-fact-section character-generation-section"><SectionHeader title="生成配置" description="尚未建立" /><div className="character-generation-empty character-generation-empty--action"><button type="button" className="button button--quiet" onClick={() => updateSelectedSetting(() => ({ text: "" }))}>建立 Prompt</button></div></section> : <section className="resource-form--wide character-fact-section character-generation-section">
-          <SectionHeader title="生成配置" description="子设定完整 Prompt 与参考图" actions={promptSaveButton} />
-          <ReferenceLibrary sourceVersion={JSON.stringify(character.prompt.variants[settingId]?.reference_images ?? [])} key={`${projectId}:${character.id}:${settingId}`} projectId={projectId} target={{ kind, id: character.id, variant_id: settingId }} pages={character.pages.filter(p => p.variant_id === settingId)} disabled={busy || promptDirty || savingSection !== null} onChanged={() => onSaved({})} />
-          <label className="variant-prompt-field"><span>子设定 Prompt</span><PromptTextArea ariaLabel={`${selectedVariant?.name ?? selectedSettingId} 子设定 Prompt`} rows={4} value={selectedSetting.text} disabled={busy || savingSection !== null} placeholder="此子设定的完整文字描述" onChange={(text) => updateSelectedSetting((setting) => ({ ...setting, text }))} /></label>
+        {!hasSelectedSetting ? <section className="resource-form--wide character-fact-section character-generation-section"><SectionHeader title="生成配置" description="尚未建立" /><div className="character-generation-empty character-generation-empty--action"><button type="button" className="button button--quiet" onClick={() => updateSelectedSetting(() => editableCharacterSetting())}>建立 Prompt</button></div></section> : <section className="resource-form--wide character-fact-section character-generation-section">
+          <SectionHeader title="生成配置" description="子设定 Prompt" actions={<button type="button" aria-label="保存 Prompt" className="button button--quiet character-section-save" disabled={busy || savingSection !== null || !promptDirty} onClick={() => void savePrompt()}>{savingSection === "prompt" ? "保存中…" : "保存"}</button>} />
+          <InheritedPromptEditor title="基础 Prompt" source={character.id + ':' + settingId + ':' + character.prompt_sha256} prompt={persistPromptDraft(promptDraft.identity.prompt)} adjustments={selectedSetting.identityOverrides} disabled={selectedSetting.identityDisabled} defaultOpen onChange={value => updateSelectedSetting(setting => ({ ...setting, identityDisabled: [], identityOverrides: value }))} />
+          {kind === "character" && <PromptPopulationEditor fragments={selectedSetting.prompt.subject} disabled={busy || savingSection !== null} onChange={subject => updateSelectedSetting(setting => ({ ...setting, prompt: { ...setting.prompt, subject } }))} />}
+          <PromptFragmentEditor categories={categories.map((category) => ({ id: category, label: promptLabels[category] }))} scope="character" fragments={selectedSetting.prompt} createFragment={createPromptDraftFragment} onChange={(prompt) => updateSelectedSetting((setting) => ({ ...setting, prompt }))} historyScopeKey={`${character.id}:${settingId}:${character.prompt_sha256}`} />
 
         </section>}
         </>}
@@ -170,3 +218,4 @@ function QwenSettingView({ kind = 'character', projectId, character, initialSett
     </fieldset>
   </section>;
 }
+

@@ -142,3 +142,7 @@
 .workbench-page-editor .lettering-text-source-body .is-danger {
   justify-self: start;
 }
+.page-generation-settings { display:flex; align-items:center; gap:1rem; flex-wrap:wrap; padding:0.65rem 0; }
+.page-generation-settings label { display:flex; align-items:center; gap:0.5rem; font-size:0.85rem; }
+.page-generation-settings select { max-width:14rem; }
+.page-generation-settings p { flex-basis:100%; margin:0; color:var(--danger,#a84137); }

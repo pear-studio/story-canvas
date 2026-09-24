@@ -4,6 +4,7 @@ import sharp from 'sharp';
 import { ApiError } from './http-support.mjs';
 import { saveMaterial, openMaterialFile } from './project-materials.mjs';
 import { deleteMaterial } from './project-materials.mjs';
+import { promptModelEntries } from './model-prompts.mjs';
 export async function promptDocuments(directory) {
   const result = [];
   for (const folder of ['pages', 'characters', 'scenes']) {
@@ -23,7 +24,7 @@ export async function removeUnusedFile(directory, file) {
 
 
 export async function cleanRemovedReferences(directory, document) {
-  const entries = [...(document?.reference_images ?? []), ...Object.values(document?.variants ?? {}).flatMap(v => v.reference_images ?? [])];
+  const entries = promptModelEntries(document).flatMap(([,input]) => [...(input?.reference_images ?? []), ...Object.values(input?.variants ?? {}).flatMap(v => v.reference_images ?? [])]);
   for (const file of new Set(entries.map(e => e.file))) await removeUnusedFile(directory, file);
 }
 
@@ -32,16 +33,17 @@ export async function checkRemovedSettingReferences(directory, writes) {
   for (const write of writes) {
     const match = /^(characters|scenes)\/([a-z0-9-]+)\.prompt\.json$/.exec(write.relative);
     if (!match) continue;
-    for (const [variantId, variant] of Object.entries(write.before?.variants ?? {})) {
-      const nextIds = new Set((write.after?.variants?.[variantId]?.reference_images ?? []).map(entry => entry.id));
+    const afterModels = new Map(promptModelEntries(write.after));
+    for (const [modelId, input] of promptModelEntries(write.before)) for (const [variantId, variant] of Object.entries(input?.variants ?? {})) {
+      const nextIds = new Set((afterModels.get(modelId)?.variants?.[variantId]?.reference_images ?? []).map(entry => entry.id));
       const removed = (variant.reference_images ?? []).filter(entry => !nextIds.has(entry.id));
-      if (removed.length) removals.push({ source: `${match[1] === 'characters' ? 'character' : 'scene'}:${match[2]}:${variantId}`, ids: new Set(removed.map(entry => entry.id)) });
+      if (removed.length) removals.push({ modelId, source: `${match[1] === 'characters' ? 'character' : 'scene'}:${match[2]}:${variantId}`, ids: new Set(removed.map(entry => entry.id)) });
     }
   }
   if (!removals.length) return;
   const used = (await promptDocuments(directory)).filter(record => {
     const document = writes.find(write => write.relative === record.file)?.after ?? record.document;
-    return removals.some(({ source, ids }) => document.reference_overrides?.[source]?.some(id => ids.has(id)));
+    return promptModelEntries(document).some(([modelId,input]) => removals.some(removal => removal.modelId === modelId && input?.reference_overrides?.[removal.source]?.some(id => removal.ids.has(id))));
   }).map(record => record.file);
   if (used.length) throw new ApiError(409, 'reference_image_in_use', ['这些页面手动引用了该图，请先取消引用或恢复默认', ...used]);
 }

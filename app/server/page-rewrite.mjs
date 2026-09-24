@@ -5,6 +5,7 @@ import { decodePageKey, encodePageKey } from "./page-key.mjs";
 import { compilePageRenderInspectionContext, compilePageRenderTarget } from "./page-render-resolver.mjs";
 import { factStorage } from "./story-facts.mjs";
 import { hashCanonicalJson } from "./workflow-definition.mjs";
+import { profileModelAdapter } from './model-adapters.mjs';
 
 const REWRITE_ENGINE = "qwen-pe-t2i-int8";
 
@@ -98,6 +99,7 @@ export async function readPageRewriteState({ repositoryRoot, projectDirectory, p
 
 export async function rewriteSource({ repositoryRoot, projectDirectory, pageKey }) {
   const resolved = await compilePageRenderTarget({ repositoryRoot, projectDirectory, pageKey });
+  if (!profileModelAdapter(resolved.compiled_profile.effective_profile).capabilities.rewrite) throw new ApiError(422,'model_rewrite_unsupported');
   const inputSha = sourceSha({
     snapshot: resolved,
     compiled_page: resolved.compiled_page,
@@ -143,6 +145,7 @@ export async function savePageRewriteResult({ repositoryRoot, projectDirectory, 
 export async function selectedPagePrompt({ projectDirectory, resolved, promptSource = "original" }) {
   if (promptSource === "original") return resolved.compiled_page;
   if (promptSource !== "rewrite") throw new ApiError(400, "invalid_prompt_source");
+  if (resolved.model_id === 'anima') throw new ApiError(422,'model_rewrite_unsupported');
   const document = await readDocument(projectDirectory, resolved.page_id);
   const currentSha = sourceSha({
     snapshot: resolved,

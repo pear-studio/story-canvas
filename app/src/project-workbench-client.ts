@@ -19,7 +19,14 @@ export type Scene = WorkbenchCharacter;
 export type PageOwner = { page_id: string; owner_kind: 'story' | 'character' | 'scene'; sequence_id?: string; character_id?: string; scene_id?: string; variant_id?: string };
 export type PageReferenceEntry = ReferenceEntry & { purpose?: string };
 export type PagePrompt = {
-  text: string;
+  text?: string;
+  composition?: 'settings' | 'standalone';
+  subject?: import('./models/anima/types').PromptFragment[];
+  person?: import('./models/anima/types').PromptFragment[];
+  setting?: import('./models/anima/types').PromptFragment[];
+  camera?: import('./models/anima/types').PromptFragment[];
+  avoid?: import('./models/anima/types').PromptFragment[];
+  inheritance?: Record<string, import('./models/anima/types').InheritedAdjustments>;
   scene_id?: string;
   scene_variant_id?: string;
   text_overrides?: Record<string, string>;
@@ -59,6 +66,11 @@ export type TextSourceContext = {
   lines: Array<{ number: number; text: string; hit: boolean }>;
 };
 export type WorkbenchPage = {
+  model_id?: 'anima' | 'qwen';
+  render?: {version:1;model_id:'anima'|'qwen';profile_id:string;canvas:string};
+  render_sha256?: string;
+  model_prompts?: {models?:Record<string,PagePrompt>};
+  render_capabilities?: ProjectWorkbenchView['render_capabilities'];
   kind: "story" | "character" | "scene";
   owner?: PageOwner;
   character_id?: string;
@@ -85,14 +97,16 @@ export type WorkbenchPage = {
   layout_sha256?: string;
   variant_id?: string | null;
 };
-export type WorkbenchCharacter = {
+export type WorkbenchCharacter<TPrompt = CharacterPromptDocument> = {
+  model_id?: 'anima'|'qwen';
+  model_prompts?: {models?: {anima?:import('./models/anima/types').CharacterPromptDocument;qwen?:CharacterPromptDocument}};
   id: string;
   name: string;
   description: string;
   profile_sha256: string;
   visual: { description?: string; variants: Array<{ id: string; name: string; description?: string }> };
   visual_sha256: string;
-  prompt: CharacterPromptDocument;
+  prompt: TPrompt;
   prompt_sha256: string;
   style: { display_color: string } | null;
   pages: WorkbenchPage[];
@@ -165,23 +179,25 @@ export async function savePagePrompt(projectId: string, page: WorkbenchPage, pro
   }));
 }
 
-export async function saveCharacterPrompt(projectId: string, character: WorkbenchCharacter, prompt: CharacterPromptDocument, kind: SettingKind = "character") {
-  return workbenchResponseJson<{ character_id: string; prompt: CharacterPromptDocument; prompt_sha256: string; downstream_diagnostics?: Array<{ code: string }> }>(await mutateTargetFacts(`${base(projectId)}/${kind}-prompt`, {
+export async function saveCharacterPrompt<TPrompt extends object>(projectId: string, character: WorkbenchCharacter<TPrompt>, prompt: TPrompt, kind: SettingKind = "character") {
+  const document = character.model_prompts?.models ? {models:{...character.model_prompts.models,[character.model_id ?? 'qwen']:prompt}} : prompt;
+  const result = await workbenchResponseJson<{ character_id: string; prompt: TPrompt & {models?: Record<string,TPrompt>}; prompt_sha256: string; downstream_diagnostics?: Array<{ code: string }> }>(await mutateTargetFacts(`${base(projectId)}/${kind}-prompt`, {
     method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       [`${kind}_id`]: character.id,
-      prompt,
+      prompt: document,
       expected_sha256: character.prompt_sha256,
       expected_visual_sha256: character.visual_sha256,
     }),
   }));
+  return {...result, model_prompts: result.prompt.models ? result.prompt as WorkbenchCharacter['model_prompts'] : undefined, prompt: result.prompt.models?.[character.model_id ?? 'qwen'] ?? result.prompt};
 }
 
 export type CharacterProfileDraft = Pick<WorkbenchCharacter, "name" | "description">;
 export type CharacterVisualDraft = WorkbenchCharacter["visual"];
 
-export async function saveCharacterProfile(projectId: string, character: WorkbenchCharacter, profile: CharacterProfileDraft, kind: SettingKind = "character") {
+export async function saveCharacterProfile(projectId: string, character: WorkbenchCharacter<unknown>, profile: CharacterProfileDraft, kind: SettingKind = "character") {
   return workbenchResponseJson<{
     character_id: string;
     profile: CharacterProfileDraft;
@@ -193,7 +209,7 @@ export async function saveCharacterProfile(projectId: string, character: Workben
   }));
 }
 
-export async function saveCharacterVisual(projectId: string, character: WorkbenchCharacter, visual: CharacterVisualDraft, kind: SettingKind = "character") {
+export async function saveCharacterVisual(projectId: string, character: WorkbenchCharacter<unknown>, visual: CharacterVisualDraft, kind: SettingKind = "character") {
   return workbenchResponseJson<{
     character_id: string;
     visual: CharacterVisualDraft;
@@ -205,12 +221,12 @@ export async function saveCharacterVisual(projectId: string, character: Workbenc
   }));
 }
 
-export async function renameCharacterVariant(projectId: string, character: WorkbenchCharacter, oldId: string, newId: string, kind: SettingKind = "character") {
-  return workbenchResponseJson<{
+export async function renameCharacterVariant<TPrompt extends object>(projectId: string, character: WorkbenchCharacter<TPrompt>, oldId: string, newId: string, kind: SettingKind = "character") {
+  const result = await workbenchResponseJson<{
     character_id: string;
     visual: CharacterVisualDraft;
     visual_sha256: string;
-    prompt: CharacterPromptDocument;
+    prompt: TPrompt & {models?:Record<string,TPrompt>};
     prompt_sha256: string;
   }>(await mutateFacts(`${base(projectId)}/${kind}-variant-rename`, {
     method: "POST",
@@ -223,6 +239,7 @@ export async function renameCharacterVariant(projectId: string, character: Workb
       expected_prompt_sha256: character.prompt_sha256,
     }),
   }));
+  return {...result, model_prompts: result.prompt.models ? result.prompt as WorkbenchCharacter['model_prompts'] : undefined, prompt: result.prompt.models?.[character.model_id ?? 'qwen'] ?? result.prompt};
 }
 
 export type StoryPageContentDraft = {
@@ -542,10 +559,10 @@ export async function loadCandidateCounts(projectId: string, signal?: AbortSigna
   return result.unchanged ? null : result;
 }
 
-export const saveSettingProfile = (kind: SettingKind, projectId: string, setting: WorkbenchCharacter, draft: CharacterProfileDraft) => saveCharacterProfile(projectId, setting, draft, kind);
-export const saveSettingVisual = (kind: SettingKind, projectId: string, setting: WorkbenchCharacter, draft: CharacterVisualDraft) => saveCharacterVisual(projectId, setting, draft, kind);
-export const saveSettingPrompt = (kind: SettingKind, projectId: string, setting: WorkbenchCharacter, draft: CharacterPromptDocument) => saveCharacterPrompt(projectId, setting, draft, kind);
-export const renameSettingVariant = (kind: SettingKind, projectId: string, setting: WorkbenchCharacter, oldId: string, newId: string) => renameCharacterVariant(projectId, setting, oldId, newId, kind);
+export const saveSettingProfile = (kind: SettingKind, projectId: string, setting: WorkbenchCharacter<unknown>, draft: CharacterProfileDraft) => saveCharacterProfile(projectId, setting, draft, kind);
+export const saveSettingVisual = (kind: SettingKind, projectId: string, setting: WorkbenchCharacter<unknown>, draft: CharacterVisualDraft) => saveCharacterVisual(projectId, setting, draft, kind);
+export const saveSettingPrompt = <T extends object>(kind: SettingKind, projectId: string, setting: WorkbenchCharacter<T>, draft: T) => saveCharacterPrompt(projectId, setting, draft, kind);
+export const renameSettingVariant = <T extends object>(kind: SettingKind, projectId: string, setting: WorkbenchCharacter<T>, oldId: string, newId: string) => renameCharacterVariant(projectId, setting, oldId, newId, kind);
 
 export async function saveWholePage(projectId: string, page: WorkbenchPage, content: StoryPageContentDraft, prompt: PagePrompt, items: LetteringItem[]) {
   const reference_inputs = (prompt.reference_images ?? []).filter(entry => entry.draft).map(entry => ({ id: entry.id, ...entry.draft }));

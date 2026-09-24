@@ -96,3 +96,16 @@ export function styleLoraTriggers(profile) {
     .map((lora) => typeof lora?.trigger === "string" ? lora.trigger.trim() : "")
     .filter(Boolean))];
 }
+
+export function explicitPageLoras(prompt, pageId) {
+  if (!Array.isArray(prompt?.loras)) return null;
+  const errors=[],loras=[],seen=new Set();
+  for (const [index,item] of prompt.loras.entries()) {
+    const {enabled,...definition}=item;
+    errors.push(...validateLoraDefinition(definition,`${pageId}.loras[${index}]`));
+    if(seen.has(definition.filename))errors.push(`LoRA 重复：${definition.filename}`);
+    seen.add(definition.filename);
+    if(enabled!==false)loras.push({kind:'page',owner:pageId,filename:definition.filename,sha256:definition.sha256,weight:definition.weight,...(definition.trigger?{trigger:definition.trigger}:{})});
+  }
+  return {loras,errors};
+}

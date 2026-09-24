@@ -1,6 +1,8 @@
 import { readReferenceImage } from "./reference-image.mjs";
 import { readPageIndex } from './pages-store.mjs';
 import { readPageRenderSettings, pageProjectSettings } from './page-render-settings.mjs';
+import { modelPrompt, isModelPromptDocument } from './model-prompts.mjs';
+import { profileModelAdapter } from './model-adapters.mjs';
 import { resolveSceneConfiguration } from './scene-files.mjs';
 import { readScenes } from './scene-facts.mjs';
 import { createHash } from "node:crypto";
@@ -66,18 +68,24 @@ function inspectionBlocker(code, message, details = []) {
   return { code, message, details: Array.isArray(details) ? details : [details] };
 }
 
-function normalizeInspectionPromptDraft(value) {
+function normalizeInspectionPromptDraft(value, modelId = 'qwen') {
   const source = isRecord(value) ? value : {};
+  if (modelId === 'anima') {
+    const prompt={$schema:STORY_PAGE_PROMPT_SCHEMA_ID,...structuredClone(source)};
+    return {prompt,errors:validateStoryPagePromptDocument({$schema:STORY_PAGE_PROMPT_SCHEMA_ID,models:{anima:source}})};
+  }
   const prompt = {
     $schema: STORY_PAGE_PROMPT_SCHEMA_ID,
     text: typeof source.text === "string" ? source.text : "",
+    ...(source.composition?{composition:source.composition}:{}),
+    ...(source.loras?{loras:structuredClone(source.loras)}:{}),
     ...(source.scene_id ? { scene_id: source.scene_id, scene_variant_id: source.scene_variant_id } : {}),
     ...(isRecord(source.text_overrides) ? { text_overrides: structuredClone(source.text_overrides) } : {}),
     ...(isRecord(source.reference_overrides) ? { reference_overrides: structuredClone(source.reference_overrides) } : {}),
     ...(Array.isArray(source.reference_images) ? { reference_images: source.reference_images.filter(isRecord).map((entry) => structuredClone(entry)) } : {}),
   };
   const submitted = { $schema: STORY_PAGE_PROMPT_SCHEMA_ID, ...(isRecord(value) ? structuredClone(value) : {}) };
-  return { prompt, errors: validateStoryPagePromptDocument(submitted) };
+  return { prompt, errors: source.loras ? validateStoryPagePromptDocument({$schema:STORY_PAGE_PROMPT_SCHEMA_ID,models:{qwen:source}}) : validateStoryPagePromptDocument(submitted) };
 }
 
 async function readJsonFact(projectDirectory, relativePath, { optional = false } = {}) {
@@ -120,7 +128,7 @@ function variantIds(visual) {
   return new Set(visual.variants.map((variant) => variant.id));
 }
 
-async function readCharacter(projectDirectory, characterIndex, reference) {
+async function readCharacter(projectDirectory, characterIndex, reference, modelId = 'qwen') {
   const characterId = reference.character_id;
   if (!characterIndex.characters.includes(characterId)) fail("character_dangling", [`角色不存在：${characterId}`]);
   const [profileSource, visualSource, promptSource] = await Promise.all([
@@ -130,11 +138,11 @@ async function readCharacter(projectDirectory, characterIndex, reference) {
   ]);
   const profile = assertDocument(profileSource, validateCharacterProfileDocument);
   const visual = assertDocument(visualSource, validateCharacterVisualDocument);
-  const promptDocument = assertDocument(promptSource, validateCharacterPromptDocument);
+  const promptDocument = modelPrompt(assertDocument(promptSource, validateCharacterPromptDocument), modelId);
   if (!variantIds(visual).has(reference.variant_id)) {
     fail("character_variant_dangling", [`${characterId} 不存在 variant：${reference.variant_id}`]);
   }
-  const configuration = promptDocument.variants[reference.variant_id];
+  const configuration = promptDocument?.variants[reference.variant_id];
   if (!configuration) fail("character_configuration_dangling", [`${characterId}: variant ${reference.variant_id} 缺少 Prompt 设定`]);
   const character = {
     id: characterId,
@@ -144,6 +152,7 @@ async function readCharacter(projectDirectory, characterIndex, reference) {
     configuration_path: `variants.${reference.variant_id}`,
     text: configuration.text ?? "",
     reference_images: structuredClone(configuration.reference_images ?? []),
+    ...(modelId === 'anima' ? { ...structuredClone(configuration), identity: structuredClone(promptDocument.identity), loras: [] } : {}),
   };
   return {
     character,
@@ -186,6 +195,8 @@ export async function resolvePageIdentity(projectDirectory, pageId) {
 }
 
 async function loadPageSnapshot(projectDirectory, pageId, exactPageKey = null) {
+  const render = await readPageRenderSettings(projectDirectory, pageId);
+  const modelId = render.model_id ?? 'qwen';
   const identity = await readPageIdentity(projectDirectory, pageId);
   const [contentSource, promptSource, characterIndexSource] = await Promise.all([
     readJsonFact(projectDirectory, `pages/${pageId}.content.json`),
@@ -193,7 +204,10 @@ async function loadPageSnapshot(projectDirectory, pageId, exactPageKey = null) {
     readJsonFact(projectDirectory, "characters/index.json"),
   ]);
   const content = assertDocument(contentSource, validateStoryPageNarrativeDocument);
-  const pagePrompt = assertDocument(promptSource, validateStoryPagePromptDocument);
+  const promptDocument = assertDocument(promptSource, validateStoryPagePromptDocument);
+  const pagePrompt = modelPrompt(promptDocument, modelId);
+  if (!pagePrompt) fail('page_model_input_missing', [modelId]);
+  const standalone = modelId === 'qwen' && pagePrompt.composition === 'standalone';
   const characterIndex = assertDocument(characterIndexSource, validateCharacterIndexDocument);
   const references = content.characters;
   const sources = [...identity.sources, contentSource, promptSource, characterIndexSource];
@@ -202,8 +216,8 @@ async function loadPageSnapshot(projectDirectory, pageId, exactPageKey = null) {
   const invalidOwners = promptOverrideCharacterIds(pagePrompt).filter(id => !activeIds.has(id));
   if (invalidOwners.length) referenceErrors.push(...invalidOwners.map(id => `页面 Prompt 覆盖了未出场角色：${id}`));
   const resolvedCharacters = [];
-  for (const reference of references) {
-    try { resolvedCharacters.push(await readCharacter(projectDirectory, characterIndex, reference)); }
+  for (const reference of standalone ? [] : references) {
+    try { resolvedCharacters.push(await readCharacter(projectDirectory, characterIndex, reference, modelId)); }
     catch (error) {
       if (!["character_dangling", "character_variant_dangling", "character_configuration_dangling"].includes(error.code)) throw error;
       referenceErrors.push(...error.details);
@@ -211,11 +225,11 @@ async function loadPageSnapshot(projectDirectory, pageId, exactPageKey = null) {
   }
   sources.push(...resolvedCharacters.flatMap(entry => entry.sources));
   const scenes = [];
-  if (pagePrompt.scene_id) {
+  if (!standalone && pagePrompt.scene_id) {
     const scene = (await readScenes(projectDirectory)).scenes.find(item => item.id === pagePrompt.scene_id);
     if (!scene) referenceErrors.push(`场景不存在：${pagePrompt.scene_id}`);
     else {
-      try { scenes.push(resolveSceneConfiguration(scene, pagePrompt.scene_variant_id)); }
+      try { scenes.push(resolveSceneConfiguration(scene, pagePrompt.scene_variant_id, modelId)); }
       catch (error) { referenceErrors.push(error.message); }
       sources.push(...await Promise.all(['profile', 'visual', 'prompt'].map(kind => readJsonFact(projectDirectory, `scenes/${scene.id}.${kind}.json`))));
     }
@@ -227,6 +241,7 @@ async function loadPageSnapshot(projectDirectory, pageId, exactPageKey = null) {
     ...(identity.kind === "story" ? { sequence_id: identity.membership.sequence_id } : {}),
     title: content.title, scene_description: content.scene_description, page_kind: content.page_kind ?? null,
     character_references: references, page_prompt: pagePrompt, scenes,
+    model_id: modelId, prompt_document: promptDocument,
     reference_errors: referenceErrors,
     characters: resolvedCharacters.map(entry => entry.character),
     character_facts: Object.fromEntries(resolvedCharacters.map(entry => [entry.character.id, entry.facts])),
@@ -259,6 +274,7 @@ function assertStoryProjectFormat(project) {
  * 不分别排序。返回 errors 而不抛出，调用方决定阻断或投影为 blocker。
  */
 export function planPageReferenceImages(snapshot) {
+  if (snapshot.model_id === 'anima') return { groups: [], page: { entries: [] }, sequence: [], errors: [] };
   const errors = [];
   const overrides = isRecord(snapshot.page_prompt?.reference_overrides) ? snapshot.page_prompt.reference_overrides : {};
   const groups = [
@@ -305,6 +321,7 @@ export async function resolvePageReferenceImages(projectDirectory, snapshot) {
 }
 
 export function compilePagePromptSnapshot(snapshot, profile) {
+  if (snapshot.model_id && snapshot.model_id !== profileModelAdapter(profile).id) fail('page_profile_model_mismatch');
   const referencePlan = planPageReferenceImages(snapshot);
   const compiled = compileCurrentPagePrompt({
     pageId: snapshot.page_id,
@@ -317,7 +334,6 @@ export function compilePagePromptSnapshot(snapshot, profile) {
     referencePlan,
   });
   compiled.errors.push(...(snapshot.reference_errors ?? []));
-  if (profile.architecture_family === "qwen-image-2-1" && compiled.loras.length) compiled.errors.push("当前 Qwen 配置暂不支持 LoRA");
   compiled.ready = compiled.ready && !compiled.errors.length;
   return compiled;
 }
@@ -450,13 +466,13 @@ export async function compilePageRenderInspectionContext({
   }
 
   if (pagePromptDraft !== undefined) {
-    const normalized = normalizeInspectionPromptDraft(pagePromptDraft);
+    const normalized = normalizeInspectionPromptDraft(pagePromptDraft,snapshot.model_id);
     snapshot.page_prompt = normalized.prompt;
     snapshot.scenes = [];
     if (normalized.prompt.scene_id) {
       const scene = (await readScenes(projectDirectory)).scenes.find(s => s.id === normalized.prompt.scene_id);
       if (scene) {
-        try { snapshot.scenes = [resolveSceneConfiguration(scene, normalized.prompt.scene_variant_id)]; }
+        try { snapshot.scenes = [resolveSceneConfiguration(scene, normalized.prompt.scene_variant_id,snapshot.model_id)]; }
         catch (error) { blockers.push(inspectionBlocker("scene_variant_dangling", error.message)); }
       } else blockers.push(inspectionBlocker("scene_dangling", `场景不存在：${normalized.prompt.scene_id}`));
     }

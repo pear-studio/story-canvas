@@ -1,5 +1,7 @@
 import { validateReferenceEntries, validateReferenceOverrides } from "../shared/reference-images.mjs";
 import { parseOverrideSource } from "./prompt-contract.mjs";
+import { isModelPromptDocument, validateModelPromptDocument, promptModelEntries } from './model-prompts.mjs';
+import { validateStoryPagePromptDocument as validateQwenPagePrompt } from './models/qwen/prompt-contract.mjs';
 import { NARRATION_CHARACTER_LIMIT } from "../shared/story-content-guidance.mjs";
 export const STORY_OUTLINE_SCHEMA_ID = "https://storyvisualizer.local/schemas/story-outline.schema.json";
 export const STORY_PAGES_INDEX_SCHEMA_ID = "https://storyvisualizer.local/schemas/story-pages-index.schema.json";
@@ -209,26 +211,18 @@ export function validateTextOverrides(value) {
 }
 
 export function validateStoryPagePromptDocument(prompt) {
-  const errors = [];
-  if (!isRecord(prompt)) return ["prompt 必须是 JSON 对象"];
-  checkExactKeys(prompt, ["$schema", "text", "scene_id", "scene_variant_id", "text_overrides", "reference_overrides", "reference_images"], "prompt", errors);
-  if (prompt.$schema !== STORY_PAGE_PROMPT_SCHEMA_ID) errors.push("prompt.$schema 不匹配");
-  if (typeof prompt.text !== "string") errors.push("prompt.text 必须是字符串");
-  if (prompt.scene_id !== undefined && !storyIdPattern.test(prompt.scene_id)) errors.push('scene_id 无效');
-  if (prompt.scene_variant_id !== undefined && (!storyIdPattern.test(prompt.scene_variant_id) || prompt.scene_variant_id === 'main')) errors.push('scene_variant_id 无效');
-  if ((prompt.scene_id === undefined) !== (prompt.scene_variant_id === undefined)) errors.push('scene_id 和 scene_variant_id 必须同时提供');
-  errors.push(...validateTextOverrides(prompt.text_overrides));
-  errors.push(...validateReferenceEntries(prompt.reference_images, { allowPurpose: true }), ...validateReferenceOverrides(prompt.reference_overrides));
-  return errors;
+  if (isModelPromptDocument(prompt)) return validateModelPromptDocument(prompt, 'page');
+  return validateQwenPagePrompt(prompt);
 }
 
 // 页面 override 的 key 必须对应当前实际引用；切换子设定或移除引用后旧 key 不允许残留。
 export function checkPagePromptOverrideReferences(prompt, characterReferences) {
+  if (isModelPromptDocument(prompt)) return promptModelEntries(prompt).flatMap(([,value]) => checkPagePromptOverrideReferences(value, characterReferences));
   const errors = [];
   const active = new Set((Array.isArray(characterReferences) ? characterReferences : [])
     .map((reference) => `character:${reference?.character_id}:${reference?.variant_id}`));
   if (prompt?.scene_id) active.add(`scene:${prompt.scene_id}:${prompt.scene_variant_id}`);
-  for (const field of ["text_overrides", "reference_overrides"]) {
+  for (const field of ["text_overrides", "reference_overrides", "inheritance"]) {
     for (const source of Object.keys(isRecord(prompt?.[field]) ? prompt[field] : {})) {
       if (!active.has(source)) errors.push(`${field} 引用了未出场的设定：${source}`);
     }
@@ -237,8 +231,9 @@ export function checkPagePromptOverrideReferences(prompt, characterReferences) {
 }
 
 export function promptOverrideCharacterIds(prompt) {
+  if (isModelPromptDocument(prompt)) return [...new Set(promptModelEntries(prompt).flatMap(([,value]) => promptOverrideCharacterIds(value)))];
   const ids = new Set();
-  for (const field of ["text_overrides", "reference_overrides"]) {
+  for (const field of ["text_overrides", "reference_overrides", "inheritance"]) {
     for (const source of Object.keys(isRecord(prompt?.[field]) ? prompt[field] : {})) {
       const parsed = parseOverrideSource(source);
       if (parsed?.kind === "character") ids.add(parsed.id);

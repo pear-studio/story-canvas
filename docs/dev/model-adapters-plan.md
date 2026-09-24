@@ -198,3 +198,8 @@ PE-T2I 优化是 Qwen 专属能力：
 - 独立审查完成：第三项 P1（设定生命周期和材料清理遗漏非活动模型）补入第 4 节；三项均纳入行为验收。旧 Anima 独立编辑组件、纯 helper、Basic 资源已恢复；TypeScript 和恢复的 20 项 helper 测试通过，尚未接入工作台。
 - 基础阶段：显式后端注册、两模型 profile Prompt 解析、Qwen standalone 编译、页面 render 事实及创建/复制/归档和读取接线完成。完整测试 656 项（655 通过、1 跳过）；日志 `Saved/Agent/model-adapters/phase-b-foundation-verified.log`。旧格式读取 fallback 仅用于分阶段迁移窗口，新格式缺少 render 明确报错；正式项目尚未迁移，UI 尚未开放模型切换。
 - 后续在此记录审查结论、各阶段提交、实际测试命令/结果及尚未完成的验收。
+- 2026-09-24 实施续接：页面 Prompt 采用 models 容器，render 明确记录 model_id/profile_id/canvas；整页保存保留非活动模型。模型选择与画幅控件接入，首次 Qwen 导入完整有效 Anima 正向词，已有 Qwen 输入不被覆盖。
+- 从 64db906 恢复 Anima 页面与设定编辑组件；共用候选、保存和工作台外壳，模型内部处理词条、机位、人数和逐词继承。暂不恢复旧角色／子设定 LoRA 面板，页面 LoRA 编辑仍待接入。
+- 独立复审发现并修复：模型切换缓存、未保存草稿保护、Anima 角色变更误加 Qwen 字段、模板文字丢失、导入残缺 Anima 正向词。新增 8 项适配器行为测试通过；完整回归与浏览器验收分别记录，不能据此认为正式迁移已完成。
+- 设定改名、删除、参考材料检查开始遍历全部模型输入；Anima profile 的 policy/fragment override 恢复并按模型限制。正式项目仍未迁移，训练未修改。
+- 本次阶段回归：TypeScript、Vite、完整 Node 测试通过（661 项，660 通过、1 跳过）；日志 `Saved/Agent/model-adapters/phase-b-c-verified.log`。此前一次并行全测触发已有项目移动时序用例波动，单项复查和随后全测均通过。浏览器与真实生成尚未验收。

@@ -1,8 +1,8 @@
-import { resolveParticipantLoras } from "../../lora-config.mjs";
+import { resolveParticipantLoras, explicitPageLoras } from "../../lora-config.mjs";
 import { validatePageKey } from "../../page-key.mjs";
 import { pagePromptAudit } from "../../prompt-audit.mjs";
 import { characterSource, sceneSource } from "../../prompt-contract.mjs";
-import { checkPagePromptOverrideReferences } from "../../story-files.mjs";
+import { checkPagePromptOverrideReferences } from "./prompt-contract.mjs";
 
 const sentenceEndPattern = /[。！？.!?]$/;
 
@@ -108,7 +108,7 @@ export function compileCurrentPagePrompt({
     paragraphs.push(standalone ? pageText : `本页描述：\n${pageText}`);
   }
 
-  const resolvedLoras = resolveParticipantLoras(profile, participantIds, characters, pageId, scenes);
+  const resolvedLoras = explicitPageLoras(pagePrompt,pageId) ?? resolveParticipantLoras(profile, standalone?[]:participantIds, standalone?[]:characters, pageId, standalone?[]:scenes);
   errors.push(...resolvedLoras.errors);
 
   const positive = paragraphs.join("\n\n");

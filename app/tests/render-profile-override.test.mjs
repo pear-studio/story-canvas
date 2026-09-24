@@ -443,13 +443,13 @@ test("Schema 与运行时 target grammar 对所有语义族保持一致", async 
     "recipe.resolutions.3:4", "recipe.resolutions.9:16", "recipe.resolutions.4:3",
   ];
   const validTargets = [
-    "models.dit", "models.text_encoder", "prompt.text",
+    "models.dit", "models.text_encoder", "prompt.text", "prompt.policy", "prompt.fragments.quality",
     "style_loras.ink-style", "style_loras.ink-style.weight",
     ...[["candidates", "empty_latent"]]
       .flatMap(([operation, input]) => routeSuffixes.map((suffix) => `operations.${operation}.routes.${input}.${suffix}`)),
   ];
   const invalidTargets = [
-    "workflow", "recipes.candidate.steps", "models.Checkpoint", "prompt.policy", "prompt.fragments.quality_masterpiece",
+    "workflow", "recipes.candidate.steps", "models.Checkpoint", "prompt.fragments.quality_masterpiece",
     "legacy_targets.pose.workflow", "legacy_targets.normal.defaults.strength", "operations.candidates.routes.current_base.workflow",
     "operations.candidates.routes.empty_latent.recipe.strategy",
     "operations.render.routes.empty_latent.recipe.strategy",

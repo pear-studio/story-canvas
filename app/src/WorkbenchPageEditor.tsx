@@ -1,3 +1,6 @@
+import {ModelPromptEditor} from './models/registry';
+import {PageGenerationSettings} from './models/PageGenerationSettings';
+import {ReferenceRow,ReferenceLabel,ParticipantEditor} from './PromptReferences';
 import { ReferenceLibrary, ReferenceSelection, type ReferenceEntry } from "./ReferenceLibrary";
 import { defaultTextPageLayout, type TextPageLayout } from "../shared/text-page-layout.mjs";
 import { SceneReferenceEditor } from './SceneReferenceEditor';
@@ -182,141 +185,6 @@ function characterAbbreviation(name: string) {
   const words = name.trim().split(/\s+/).filter(Boolean);
   if (words.length > 1) return words.slice(0, 2).map((word) => Array.from(word)[0]).join("").toUpperCase();
   return Array.from(words[0] ?? "?").slice(0, 2).join("");
-}
-
-function ReferenceRow({ title, editor, children }: { title: string; editor: ReactNode; children: ReactNode }) {
-  const [open, setOpen] = useState(false);
-  return <div className="page-reference-row">
-    <div className="page-reference-header"><button type="button" className="reference-disclosure" title={`展开${title}引用`} aria-expanded={open} onClick={() => setOpen(value => !value)}><span aria-hidden="true">{open ? '▾' : '▸'}</span>{title}</button>{editor}</div>
-    <div className="page-reference-body" hidden={!open}>{children}</div>
-  </div>;
-}
-
-function ReferenceLabel({ name, variant, color }: { name: string; variant?: string; color?: string }) {
-  return <span className="character-setting-chip reference-summary-chip" style={{ '--role-color': color ?? '#89938e' } as CSSProperties}><i aria-hidden="true" /><b>{name}</b>{variant && <small>{variant}</small>}</span>;
-}
-function selectedReferenceImages(entries: ReferenceEntry[], selection?: string[]) {
-  return (selection ?? entries.slice(0, 1).map(e => e.id)).flatMap(id => entries.filter(e => e.id === id));
-}
-
-/** 引用文字框：显示生效文字（本页覆盖 ?? 当前子设定文字），编辑即成为本页 override，可一键恢复继承。 */
-function ReferenceTextField({ label, currentText, override, disabled, onChange, onRestore }: {
-  label: string;
-  currentText: string;
-  override: string | undefined;
-  disabled: boolean;
-  onChange: (text: string) => void;
-  onRestore: () => void;
-}) {
-  return <div className="page-reference-text">
-    <PromptTextArea ariaLabel={label} rows={2} value={override ?? currentText} disabled={disabled} onChange={onChange} />
-    {override !== undefined && <div className="page-reference-override-status"><span>已覆盖</span><button type="button" className="button button--quiet" disabled={disabled} onClick={onRestore}>恢复继承</button></div>}
-  </div>;
-}
-
-function ParticipantEditor({ characters, ownerCharacterId, value, onChange }: {
-  characters: WorkbenchCharacter[];
-  ownerCharacterId?: string;
-  value: Array<{ character_id: string; variant_id: string }>;
-  onChange: (value: Array<{ character_id: string; variant_id: string }>) => void;
-}) {
-  const [query, setQuery] = useState("");
-  const availableCharacters = characters.filter((character) => character.id !== ownerCharacterId);
-  const characterById = new Map(characters.map((character) => [character.id, character]));
-  const normalizedQuery = query.trim().toLowerCase();
-  const matches = availableCharacters.flatMap((character) => character.visual.variants.map((variant) => ({
-    character,
-    variantId: variant.id,
-    label: `${character.name} · ${variant.name}`,
-    settingLabel: variant.name,
-  }))).filter((option) => `${option.label} ${option.character.id} ${option.variantId}`.toLowerCase().includes(normalizedQuery));
-
-  function setCharacterVariant(characterId: string, variantId: string) {
-    const index = value.findIndex((entry) => entry.character_id === characterId);
-    const next = index >= 0
-      ? value.map((entry, position) => position === index ? { character_id: characterId, variant_id: variantId } : entry)
-      : [...value, { character_id: characterId, variant_id: variantId }];
-    onChange(next);
-  }
-
-  // 横向拖拽排序：与 Prompt 片段同一模式，指示线改为纵向、按 clientX 判断插入位置。
-  const chipsRef = useRef<HTMLDivElement | null>(null);
-  const dragRef = useRef<{ from: number; to: number; pointerId: number } | null>(null);
-  const [drag, setDrag] = useState<{ from: number; to: number; pointerId: number } | null>(null);
-
-  function updateDrag(next: { from: number; to: number; pointerId: number } | null) {
-    dragRef.current = next;
-    setDrag(next);
-  }
-
-  function startDragging(event: ReactPointerEvent<HTMLButtonElement>, index: number) {
-    if (event.button !== 0) return;
-    event.preventDefault();
-    event.stopPropagation();
-    chipsRef.current?.setPointerCapture(event.pointerId);
-    updateDrag({ from: index, to: index, pointerId: event.pointerId });
-  }
-
-  function moveDrag(clientX: number, clientY: number, pointerId: number) {
-    const current = dragRef.current;
-    if (!current || current.pointerId !== pointerId) return;
-    const chips = [...(chipsRef.current?.querySelectorAll<HTMLElement>(".character-setting-chip") ?? [])];
-    if (!chips.length) return;
-    const insertionSlot = chips.findIndex((chip) => {
-      const rect = chip.getBoundingClientRect();
-      if (clientY >= rect.top && clientY <= rect.bottom) return clientX < rect.left + rect.width / 2;
-      return clientY < rect.top;
-    });
-    const rawSlot = insertionSlot === -1 ? chips.length : insertionSlot;
-    const to = Math.max(0, Math.min(chips.length - 1, rawSlot > current.from ? rawSlot - 1 : rawSlot));
-    if (to !== current.to) updateDrag({ ...current, to });
-  }
-
-  function finishDrag(pointerId: number, canceled = false) {
-    const current = dragRef.current;
-    if (!current || current.pointerId !== pointerId) return;
-    updateDrag(null);
-    if (canceled || current.from === current.to) return;
-    const next = [...value];
-    const [item] = next.splice(current.from, 1);
-    next.splice(current.to, 0, item);
-    onChange(next);
-  }
-
-  return <div className="character-reference-editor">
-    {value.length > 0 && <div className="reference-chips" ref={chipsRef} onPointerMove={(event) => moveDrag(event.clientX, event.clientY, event.pointerId)} onPointerUp={(event) => finishDrag(event.pointerId)} onPointerCancel={(event) => finishDrag(event.pointerId, true)}>
-      {value.map((entry, index) => {
-        const character = characterById.get(entry.character_id);
-        const variant = character?.visual.variants.find((candidate) => candidate.id === entry.variant_id) ?? null;
-        const dragPosition = drag?.from === index ? "source" : drag && drag.to !== drag.from && drag.to === index ? (drag.to < drag.from ? "before" : "after") : undefined;
-        return <span className={`character-setting-chip${dragPosition ? ` is-drag-${dragPosition}` : ""}`} key={entry.character_id} style={{ "--role-color": character?.style?.display_color ?? "#89938e" } as CSSProperties}>
-          <button type="button" className="chip-drag" title="拖动排序" aria-label={`拖动排序：${character?.name ?? entry.character_id}`} onPointerDown={(event) => startDragging(event, index)}>⋮</button>
-          <i aria-hidden="true" />
-          <select aria-label={`${character?.name ?? entry.character_id}角色设定`} value={entry.variant_id || character?.visual.variants[0]?.id || ""} onChange={(event) => setCharacterVariant(entry.character_id, event.target.value)}>
-            {!variant && <option value={entry.variant_id}>缺失：{entry.character_id} · {entry.variant_id}</option>}{(character?.visual.variants ?? []).map((candidate) => <option value={candidate.id} key={candidate.id}>{character?.name ?? entry.character_id} · {candidate.name}</option>)}
-          </select>
-          <b>{character?.name ?? entry.character_id}</b>{variant && <small>{variant.name}</small>}
-          <button type="button" onClick={() => onChange(value.filter((item) => item.character_id !== entry.character_id))} aria-label={`移除${character?.name ?? entry.character_id}`}>×</button>
-        </span>;
-      })}
-    </div>}
-    <details>
-      <summary title="选择角色">＋</summary>
-      <div className="reference-picker-menu">
-        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索角色" />
-        {matches.map(({ character, variantId, label, settingLabel }) => {
-          const selected = value.find((entry) => entry.character_id === character.id);
-          const checked = Boolean(selected) && (selected?.variant_id || character.visual.variants[0]?.id || "") === variantId;
-          return <label key={`${character.id}:${variantId}`}>
-            <input type="checkbox" checked={checked} onChange={(event) => event.target.checked
-              ? setCharacterVariant(character.id, variantId)
-              : onChange(value.filter((entry) => entry.character_id !== character.id))} />
-            <span>{label}</span><small>{settingLabel}</small>
-          </label>;
-        })}
-      </div>
-    </details>
-  </div>;
 }
 
 function lineColor(line: WorkbenchDialogueDraft, characters: WorkbenchCharacter[]) {
@@ -764,7 +632,7 @@ export default function WorkbenchPageEditor({
   generationDisabledReason = "",
   generationProblems = [],
 }: WorkbenchPageEditorProps) {
-  const pageIdentity = page.page_id;
+  const pageIdentity = `${page.page_id}:${page.model_id??'qwen'}:${page.render_sha256??''}`;
   const isTextPage = page.page_kind === "text";
   const [textOverflow, setTextOverflow] = useState(false);
   const activeIdentity = useRef(pageIdentity);
@@ -781,7 +649,7 @@ export default function WorkbenchPageEditor({
   const [contentPhase, setContentPhase] = useState<SavePhase>("saved");
   const [contentError, setContentError] = useState("");
 
-  const incomingPrompt = useMemo(() => clone(page.prompt), [page.prompt_sha256]);
+  const incomingPrompt = useMemo(() => clone(page.prompt), [page.prompt_sha256,page.model_id]);
   const [promptBaseline, setPromptBaseline] = useState(incomingPrompt);
   const [promptDraft, setPromptDraft] = useState(incomingPrompt);
   const persistedPrompt = promptDraft;
@@ -801,7 +669,7 @@ export default function WorkbenchPageEditor({
 
   useEffect(() => {
     if (savingPage.current?.identity === pageIdentity) return;
-    if (editBaseline.current.page_id === pageIdentity && hasDraft.current) {
+    if (editBaseline.current.page_id === page.page_id && editBaseline.current.model_id === page.model_id && hasDraft.current) {
       const changed = editBaseline.current.content_sha256 !== page.content_sha256 || editBaseline.current.prompt_sha256 !== page.prompt_sha256 || editBaseline.current.prompt_context_sha256 !== page.prompt_context_sha256 || !sameJson(layoutBaseline, letteringItems);
       setExternalConflict(changed);
       // 其他页保存布局只改变全文件指纹，当前页布局未变时可继续使用新指纹。
@@ -893,24 +761,12 @@ export default function WorkbenchPageEditor({
   const rewriteStatus = rewriteRunning ? "运行中" : rewriteError ? "失败" : rewriteLoading ? "读取中" : anyDirty ? "待保存" : rewriteValue?.status === "current" ? "当前" : rewriteValue?.status === "stale" ? "已过期" : "未生成";
   const canChooseRewrite = !anyDirty && !rewriteLoading && rewriteValue?.status === "current";
 
-  const selectedScene = scenes.find(scene => scene.id === promptDraft.scene_id);
-  const sceneEntries = selectedScene?.prompt.variants[promptDraft.scene_variant_id ?? '']?.reference_images ?? [];
-  const sceneSelection = promptDraft.reference_overrides?.[sceneSource(promptDraft.scene_id ?? '', promptDraft.scene_variant_id ?? '')] ?? sceneEntries.slice(0, 1).map(e => e.id);
-  const referenceCount = (promptDraft.reference_images?.length ?? 0) + sceneSelection.length + (contentDraft.characters ?? []).reduce((count, ref) => {
-    const entries = characters.find(c => c.id === ref.character_id)?.prompt.variants[ref.variant_id]?.reference_images ?? [];
-    return count + (promptDraft.reference_overrides?.[characterSource(ref.character_id, ref.variant_id)] ?? entries.slice(0, 1)).length;
-  }, 0);
-  const enabledReferenceImages = [
-    ...(contentDraft.characters ?? []).flatMap(ref => selectedReferenceImages(characters.find(c => c.id === ref.character_id)?.prompt.variants[ref.variant_id]?.reference_images ?? [], promptDraft.reference_overrides?.[characterSource(ref.character_id, ref.variant_id)])),
-    ...selectedReferenceImages(sceneEntries, promptDraft.reference_overrides?.[sceneSource(promptDraft.scene_id ?? '', promptDraft.scene_variant_id ?? '')]),
-    ...(promptDraft.reference_images ?? []),
-  ];
-  /** 切换子设定或移除引用时清理对应的整段文字与图片 override，不保留隐藏草稿。 */
   function pruneOverrideSources(keep: (source: string) => boolean) {
     setPromptDraft(current => ({
       ...current,
-      text_overrides: Object.fromEntries(Object.entries(current.text_overrides ?? {}).filter(([key]) => keep(key))),
-      reference_overrides: Object.fromEntries(Object.entries(current.reference_overrides ?? {}).filter(([key]) => keep(key))),
+      ...(current.text_overrides ? {text_overrides: Object.fromEntries(Object.entries(current.text_overrides).filter(([key]) => keep(key)))} : {}),
+      ...(current.reference_overrides ? {reference_overrides: Object.fromEntries(Object.entries(current.reference_overrides).filter(([key]) => keep(key)))} : {}),
+      ...(current.inheritance?{inheritance: Object.fromEntries(Object.entries(current.inheritance).filter(([key]) => keep(key)))}:{}),
     }));
   }
   function changeCharacters(value: Array<{ character_id: string; variant_id: string }>) {
@@ -918,26 +774,7 @@ export default function WorkbenchPageEditor({
     pruneOverrideSources(key => !key.startsWith('character:') || keep.has(key));
     setContentDraft(current => ({ ...current, characters: value }));
   }
-  function changeScene(scene_id?: string, scene_variant_id?: string) {
-    pruneOverrideSources(key => !key.startsWith('scene:'));
-    setPromptDraft(current => ({ ...current, ...(scene_id ? { scene_id, scene_variant_id } : { scene_id: undefined, scene_variant_id: undefined }) }));
-  }
-  function setTextOverride(source: string, text: string | undefined) {
-    setPromptDraft(current => {
-      const next = { ...(current.text_overrides ?? {}) };
-      if (text === undefined) delete next[source];
-      else next[source] = text;
-      return { ...current, text_overrides: next };
-    });
-  }
-  function setReferenceOverride(source: string, ids: string[] | undefined) {
-    setPromptDraft(current => {
-      const next = { ...(current.reference_overrides ?? {}) };
-      if (ids === undefined) delete next[source];
-      else next[source] = ids;
-      return { ...current, reference_overrides: next };
-    });
-  }
+
   return <section className="document-editor workbench-page-editor" data-page-content-dirty={contentDirty ? "true" : undefined} data-page-prompt-dirty={promptDirty ? "true" : undefined} data-lettering-dirty={layoutDirty ? "true" : undefined}>
     <fieldset className="page-save-fields" inert={contentPhase === "saving"} disabled={contentPhase === "saving"}>
     <WorkspaceHeader breadcrumb={breadcrumb} className="story-toolbar" title={<span className="page-title-editor">
@@ -963,6 +800,7 @@ export default function WorkbenchPageEditor({
       </>}
     </div>
 
+    <PageGenerationSettings projectId={projectId} page={page} disabled={busy||saving} beforeChange={saveAll} onSaved={()=>onReloadPrompt?.()}/>
     {!isTextPage && <div className="editor-mode-tabs" role="tablist" aria-label="页面编辑内容">
       <button role="tab" aria-selected={visibleTab === "visual"} className={visibleTab === "visual" ? "is-active" : ""} onClick={() => setActiveTab("visual")}>视觉描述 / Prompt{promptDirty && <i />}</button>
       {<button role="tab" aria-selected={visibleTab === "lettering"} className={visibleTab === "lettering" ? "is-active" : ""} onClick={() => setActiveTab("lettering")}>嵌字{layoutDirty && <i />}</button>}
@@ -974,34 +812,7 @@ export default function WorkbenchPageEditor({
       <SectionHeader title="Prompt" actions={<div className="prompt-save-actions">{promptPhase === "error" && <button type="button" className="button button--quiet" onClick={() => void reloadAll()}>放弃本页草稿并重新载入</button>}{promptAuditWarnings.length > 0 && <button type="button" className="issue-indicator issue-indicator--warning" aria-label={`查看 ${promptAuditWarnings.length} 条 Prompt 警告`} title="查看 Prompt 警告" onClick={() => setPromptWarningsOpen(true)}>!</button>}</div>} />
       {promptError && <p className="prompt-save-error" role="alert">{promptError}</p>}
       {promptAuditErrors.length > 0 && <PromptIssueList issues={promptAuditErrors} title="Prompt 错误" />}
-      <div className="page-reference-rows">
-      <ReferenceRow title="角色" editor={<ParticipantEditor characters={characters} value={contentDraft.characters ?? []} onChange={changeCharacters} />}>
-      {(contentDraft.characters ?? []).map(reference => {
-        const character = characters.find(c => c.id === reference.character_id), variant = character?.prompt.variants[reference.variant_id];
-        if (!character || !variant) return <div className="page-reference-setting" key={reference.character_id}><p role="alert">设定缺失：{character?.name ?? reference.character_id} · {reference.variant_id}</p><button type="button" className="button" onClick={() => changeCharacters((contentDraft.characters ?? []).filter(r => r.character_id !== reference.character_id))}>移除缺失引用</button></div>;
-        const source = characterSource(character.id, reference.variant_id);
-        const entries = variant.reference_images ?? [];
-        const variantName = character.visual.variants.find(v => v.id === reference.variant_id)?.name ?? reference.variant_id;
-        return <div className="page-reference-setting" key={source} data-reference-source={source}><ReferenceLabel name={character.name} variant={variantName} color={character.style?.display_color} />
-          <ReferenceSelection projectId={projectId} entries={entries} selection={promptDraft.reference_overrides?.[source]} onChange={ids => setReferenceOverride(source, ids)} />
-          <ReferenceTextField label={`${character.name} · ${variantName} 引用文字`} currentText={variant.text ?? ""} override={promptDraft.text_overrides?.[source]} disabled={busy || promptPhase === "saving"} onChange={text => setTextOverride(source, text)} onRestore={() => setTextOverride(source, undefined)} />
-        </div>;
-      })}
-      </ReferenceRow>
-      <ReferenceRow title="场景" editor={
-        <SceneReferenceEditor scenes={scenes} value={promptDraft.scene_id} variantId={promptDraft.scene_variant_id} onChange={changeScene} />
-      }>
-        {scenes.filter(scene => scene.id === promptDraft.scene_id && scene.prompt.variants[promptDraft.scene_variant_id ?? '']).map(scene => {
-          const variantId = promptDraft.scene_variant_id!, variant = scene.prompt.variants[variantId], source = sceneSource(scene.id, variantId);
-          const variantName = scene.visual.variants.find(v => v.id === variantId)?.name ?? variantId;
-          return <div className="page-reference-setting" key={source} data-reference-source={source}><ReferenceLabel name={scene.name} variant={variantName} /><ReferenceSelection projectId={projectId} entries={variant.reference_images ?? []} selection={promptDraft.reference_overrides?.[source]} onChange={ids => setReferenceOverride(source, ids)} />
-            <ReferenceTextField label={`${scene.name} · ${variantName} 引用文字`} currentText={variant.text ?? ""} override={promptDraft.text_overrides?.[source]} disabled={busy || promptPhase === "saving"} onChange={text => setTextOverride(source, text)} onRestore={() => setTextOverride(source, undefined)} />
-          </div>;
-        })}
-      </ReferenceRow></div>
-      {referenceCount > 10 && <p role="alert">本页引用了 {referenceCount} 张参考图，最多支持 10 张，请展开设定取消部分图片。</p>}
-      <label className="page-prompt-field"><span>本页 Prompt</span><PromptTextArea ariaLabel="本页 Prompt" rows={3} value={promptDraft.text ?? ""} disabled={busy || promptPhase === "saving"} placeholder="本页画面描述，可留空" onChange={text => setPromptDraft(current => ({ ...current, text }))} /></label>
-      {onRewrite && <div className="page-rewrite" aria-label="最终 Prompt 重写">
+      <ModelPromptEditor projectId={projectId} page={page} prompt={promptDraft} onChange={setPromptDraft} characters={characters} scenes={scenes} references={contentDraft.characters??[]} onReferencesChange={changeCharacters} disabled={busy||saving} onOpenOverview={onOpenPromptOverview} rewrite={<>{onRewrite && <div className="page-rewrite" aria-label="最终 Prompt 重写">
         <div className="page-rewrite__toolbar">
           <label className="page-rewrite__choice"><input type="checkbox" checked={promptSource === "rewrite"} disabled={promptSource !== "rewrite" && !canChooseRewrite} onChange={(event) => onPromptSourceChange?.(event.target.checked ? "rewrite" : "original")} />使用重写结果</label>
           <span className="page-rewrite__status" role="status">状态：{rewriteStatus}</span>
@@ -1009,11 +820,9 @@ export default function WorkbenchPageEditor({
         </div>
         {anyDirty && <p className="page-rewrite__hint">请先保存本页修改，再运行重写或使用已有结果。</p>}
         {rewriteError && <p className="prompt-save-error" role="alert">重写失败：{rewriteError}</p>}
-        <details key={`${pageIdentity}:rewrite`} className="page-rewrite__details"><summary>重写文本</summary><div className="page-rewrite__body">{rewriteValue?.rewrite ? <><pre>{rewriteValue.rewrite.rewritten_prompt}</pre><small>建议画幅：{rewriteValue.rewrite.wh_ratio}（不改变项目画幅）</small></> : <p>尚无重写结果。</p>}</div></details>
+        <details key={`${pageIdentity}:rewrite`} className="page-rewrite__details"><summary>重写文本</summary><div className="page-rewrite__body">{rewriteValue?.rewrite ? <><pre>{rewriteValue.rewrite.rewritten_prompt}</pre><small>建议画幅：{rewriteValue.rewrite.wh_ratio}（不改变本页画幅）</small></> : <p>尚无重写结果。</p>}</div></details>
         <details key={`${pageIdentity}:original`} className="page-rewrite__details"><summary>原文</summary><div className="page-rewrite__body"><pre>{rewriteValue?.original_prompt || "当前最终合成 Prompt 尚未载入。"}</pre></div></details>
-      </div>}
-      {onOpenPromptOverview && <div className="prompt-camera-actions"><button type="button" className="button" disabled={busy || saving} onClick={onOpenPromptOverview}>Prompt 总览</button></div>}
-      <ReferenceLibrary key={pageIdentity} projectId={projectId} target={{ kind: 'page', id: page.page_id }} pages={[]} inheritedEntries={enabledReferenceImages.slice(0, enabledReferenceImages.length - (promptDraft.reference_images?.length ?? 0))} initialEntries={promptDraft.reference_images ?? []} capacity={10 - referenceCount} disabled={busy || saving} onChanged={() => {}} onDraftChange={entries => setPromptDraft(current => ({ ...current, reference_images: entries }))} />
+      </div>}</>}/>
     </section>}
 
     {!isTextPage && visibleTab === "lettering" && letteringStyle && <>

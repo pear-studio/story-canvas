@@ -1,5 +1,8 @@
 import { cleanRemovedReferences, removeUnusedFile, savePageReferenceInputs } from './reference-materials.mjs';
 import { pageSettingsFromDefaults, readPageRenderSettings } from './page-render-settings.mjs';
+import { modelPrompt, replaceModelPrompt, promptModelEntries, makeModelPromptDocument } from './model-prompts.mjs';
+import { modelAdapter, profileModelAdapter } from './model-adapters.mjs';
+import { compileEffectiveRenderProfile } from './render-profile-compiler.mjs';
 // 调用方持有项目写锁。本模块统一页面生命周期及整页提交，归属不参与生成引用推导。
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -54,7 +57,10 @@ async function newPageId(directory,index) {
 }
 export async function createPage(root,projectId,owner,{templateId=null,afterPageId=null,pageKind=null,characterId,variantId,beforeCommit}={}) {
   const project=await projectAt(root,projectId), directory=project.projectDirectory;
-  const render=pageSettingsFromDefaults(await optionalJson(directory,'project.json'));
+  const projectDocument=await optionalJson(directory,'project.json');
+  const bundle=projectDocument.format==='story-models-v1'?await compileEffectiveRenderProfile({repositoryRoot:root,projectRoot:directory,profileId:projectDocument.default_render_profile}):null;
+  if(bundle?.blocked)fail('render_profile_override_conflict');
+  const render=pageSettingsFromDefaults(projectDocument,bundle?profileModelAdapter(bundle.effective_profile).id:'qwen');
   await assertPageOwner(directory,owner);
   if(pageKind!==null&&pageKind!=='text')fail('invalid_page_kind');
   if(pageKind==='text'&&templateId!==null)fail('invalid_page_kind',['文字页不支持模板']);
@@ -71,6 +77,14 @@ export async function createPage(root,projectId,owner,{templateId=null,afterPage
     const template=catalog.templates.find(item=>item.id===templateId&&item.applies_to.includes(owner.owner_kind));if(!template)fail('page_template_not_found',[templateId]);
     const materialized=materializeVisualPageTemplate(template);
     content.title=materialized.title;content.scene_description=materialized.visual_goal;prompt={...prompt,...materialized.prompt};
+  }
+  if(bundle){
+    const native={...modelAdapter(render.model_id).emptyPrompt(),...(owner.owner_kind==='scene'?{scene_id:owner.scene_id,scene_variant_id:owner.variant_id}:{}),loras:Object.keys(bundle.effective_profile.style_loras??{}).sort().map(id=>clone(bundle.effective_profile.style_loras[id]))};
+    if (templateId !== null) {
+      if (render.model_id === 'qwen') native.text = prompt.text;
+      else if (prompt.text.trim()) native.person = [{id:`token-${randomBytes(6).toString('hex')}`,description:prompt.text}];
+    }
+    prompt=makeModelPromptDocument(STORY_PAGE_PROMPT_SCHEMA_ID,render.model_id,native);
   }
   assertValid(validateStoryPageNarrativeDocument(content));assertValid(validateStoryPagePromptDocument(prompt));
   insertEntry(next,{page_id:id,...owner},{afterPageId});
@@ -139,13 +153,17 @@ export async function savePage(root,projectId,value) {
   for(const item of contentInput.dialogue??[])if(typeof item.id==='string'&&item.id.startsWith('draft-dialogue-'))delete item.id;
   const content=prepareStoryPageNarrativeForPersistence({$schema:STORY_PAGE_NARRATIVE_SCHEMA_ID,...contentInput},{baselineNarrative:beforeContent,createDialogueId:()=>`dialogue-${randomBytes(6).toString('hex')}`});
   if(content.page_kind!==beforeContent.page_kind)fail('page_kind_immutable');
-  const prompt={$schema:STORY_PAGE_PROMPT_SCHEMA_ID,...clone(value.prompt)};
-  assertValid(validateStoryPageNarrativeDocument(content));assertValid(validateStoryPagePromptDocument(prompt));
-  const keep=new Set(content.characters.map(ref=>`character:${ref.character_id}:${ref.variant_id}`));
-  if(prompt.scene_id)keep.add(`scene:${prompt.scene_id}:${prompt.scene_variant_id}`);
-  for(const field of ['text_overrides','reference_overrides'])for(const source of Object.keys(prompt[field]??{}))if(!keep.has(source))delete prompt[field][source];
-  assertValid(checkPagePromptOverrideReferences(prompt,content.characters));
-  const writes=[{relative:pageRelativePath(pageId,'content'),before:beforeContent,after:content},{relative:pageRelativePath(pageId,'prompt'),before:beforePrompt,after:prompt}];
+  const render=await readPageRenderSettings(directory,pageId), modelId=render.model_id??'qwen';
+  const prompt=modelAdapter(modelId).preparePagePrompt({$schema:STORY_PAGE_PROMPT_SCHEMA_ID,...clone(value.prompt)}, {baselinePrompt:modelPrompt(beforePrompt,modelId),createFragmentId:()=>`token-${randomBytes(6).toString('hex')}`});
+  const persistedPrompt=replaceModelPrompt(beforePrompt,modelId,prompt);
+  for(const [,input] of promptModelEntries(persistedPrompt)) {
+    const keep=new Set(content.characters.map(ref=>`character:${ref.character_id}:${ref.variant_id}`));
+    if(input.scene_id)keep.add(`scene:${input.scene_id}:${input.scene_variant_id}`);
+    for(const field of ['text_overrides','reference_overrides','inheritance'])for(const source of Object.keys(input[field]??{}))if(!keep.has(source))delete input[field][source];
+  }
+  assertValid(validateStoryPageNarrativeDocument(content));assertValid(validateStoryPagePromptDocument(persistedPrompt));
+  assertValid(checkPagePromptOverrideReferences(persistedPrompt,content.characters));
+  const writes=[{relative:pageRelativePath(pageId,'content'),before:beforeContent,after:content},{relative:pageRelativePath(pageId,'prompt'),before:beforePrompt,after:persistedPrompt}];
   const dialogueIds=new Set(content.dialogue.map(item=>item.id));
   const dialogueIdMap=new Map(draftIds.map((id,index)=>[id,content.dialogue[index]?.id]));
   let lettering,layoutSha;
@@ -183,5 +201,5 @@ export async function savePage(root,projectId,value) {
   }
   const captured=await capturePromptAuditInput(()=>capturePagePromptSnapshot(directory,pageId,pageKey));
   const audit=await auditSavedPagePrompt(root,directory,auditPrepared,captured);
-  return {page_key:pageKey,content:publicDocument(content),prompt:publicDocument(prompt),content_sha256:hashCanonicalJson(content),prompt_sha256:hashCanonicalJson(prompt),prompt_context_sha256:hashCanonicalJson(await readStoryPromptUpstream(directory,pageId)),...(lettering?{lettering,layout_sha256:layoutSha}:{}),warnings:storyContentWarnings(content),downstream_diagnostics:await narrativeDownstreamDiagnostics(directory,pageId,content),audit};
+  return {page_key:pageKey,content:publicDocument(content),prompt:publicDocument(modelPrompt(persistedPrompt,modelId)),content_sha256:hashCanonicalJson(content),prompt_sha256:hashCanonicalJson(persistedPrompt),prompt_context_sha256:hashCanonicalJson(await readStoryPromptUpstream(directory,pageId)),...(lettering?{lettering,layout_sha256:layoutSha}:{}),warnings:storyContentWarnings(content),downstream_diagnostics:await narrativeDownstreamDiagnostics(directory,pageId,content),audit};
 }

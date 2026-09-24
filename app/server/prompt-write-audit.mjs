@@ -1,5 +1,6 @@
 import { compilePagePromptSnapshot, pagePromptDiagnostics } from "./page-render-resolver.mjs";
 import { compileEffectiveRenderProfile } from "./render-profile-compiler.mjs";
+import { promptModelEntries } from './model-prompts.mjs';
 
 // 后置诊断不能把已经完成的事实写入变成失败；只包围审计工作，不包围写入。
 export async function capturePromptAuditInput(read) {
@@ -48,7 +49,7 @@ export async function auditSavedCharacterPrompt(prepared, captured) {
     return {
       status: "complete",
       scope: "character_configurations",
-      variants: Object.fromEntries(Object.keys(prompt.variants).map((id) => [id, { valid: true, errors: [], warnings: [] }])),
+      variants: Object.fromEntries(promptModelEntries(prompt).flatMap(([,input]) => Object.keys(input.variants)).map((id) => [id, { valid: true, errors: [], warnings: [] }])),
       diagnostics: [],
     };
   });

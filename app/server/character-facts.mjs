@@ -1,4 +1,6 @@
 import { cleanRemovedReferences } from './reference-materials.mjs';
+import { mapModelPrompts, promptModelEntries, emptySettingVariant, renamePromptSource } from './model-prompts.mjs';
+import { modelAdapter } from './model-adapters.mjs';
 import { readPageIndex, validatePagesIndexDocument } from "./pages-store.mjs";
 import { randomBytes } from "node:crypto";
 import { lstat, mkdir, readdir, rename, stat } from "node:fs/promises";
@@ -67,14 +69,13 @@ function emptyVariant() {
 }
 
 function normalizePromptToVisual(promptDocument, visual) {
-  return {
-    $schema: CHARACTER_PROMPT_SCHEMA_ID,
-    prompt_name: promptDocument.prompt_name,
+  return mapModelPrompts(promptDocument, (input, modelId) => ({
+    ...input,
     variants: Object.fromEntries(variantIds(visual).map((variantId) => [
       variantId,
-      structuredClone(promptDocument.variants[variantId] ?? emptyVariant()),
+      structuredClone(input.variants[variantId] ?? emptySettingVariant(modelId)),
     ])),
-  };
+  }));
 }
 
 function variantIds(visual) {
@@ -82,7 +83,7 @@ function variantIds(visual) {
 }
 
 function promptVariantIds(promptDocument) {
-  return Object.keys(isRecord(promptDocument?.variants) ? promptDocument.variants : {}).sort((left, right) => left.localeCompare(right, "en"));
+  return [...new Set(promptModelEntries(promptDocument).flatMap(([,input]) => Object.keys(input?.variants ?? {})))].sort((left, right) => left.localeCompare(right, "en"));
 }
 
 function sameStrings(left, right) {
@@ -238,7 +239,8 @@ async function prepareCharacterPersistence(kind, baseline, edited, currentVisual
       persisted: edited,
     };
   }
-  const persisted = structuredClone(edited);
+  const baselineModels = new Map(promptModelEntries(baseline));
+  const persisted = mapModelPrompts(edited, (input, modelId) => modelAdapter(modelId).prepareSettingPrompt(input, {baselinePrompt:baselineModels.get(modelId),createFragmentId:()=>`token-${randomBytes(6).toString('hex')}`}));
   const unknownVariants = promptVariantIds(persisted).filter(id => !variantIds(currentVisual).includes(id));
   if (unknownVariants.length) fail("character_prompt_visual_mismatch", unknownVariants);
   assertDocument(validateCharacterPromptDocument(persisted));
@@ -446,9 +448,8 @@ export async function deleteCharacterVariant(projectRoot, projectId, characterId
 
   const nextVisual = structuredClone(visual);
   nextVisual.variants.splice(ordinal, 1);
-  const nextPrompt = structuredClone(prompt);
-  const promptCleaned = Object.hasOwn(nextPrompt.variants, variantId);
-  delete nextPrompt.variants[variantId];
+  const promptCleaned = promptModelEntries(prompt).some(([,input]) => Object.hasOwn(input.variants, variantId));
+  const nextPrompt = mapModelPrompts(prompt, input => { delete input.variants[variantId]; return input; });
   assertDocument(validateCharacterVisualDocument(nextVisual));
   assertDocument(validateCharacterPromptDocument(nextPrompt));
 
@@ -527,9 +528,8 @@ export async function renameCharacterVariant(projectRoot, projectId, characterId
 
   const nextVisual = structuredClone(visual);
   nextVisual.variants[ordinal] = { ...nextVisual.variants[ordinal], id: newId };
-  const nextPrompt = structuredClone(prompt);
-  nextPrompt.variants = Object.fromEntries(Object.entries(nextPrompt.variants)
-    .map(([variantId, configuration]) => [variantId === oldId ? newId : variantId, configuration]));
+  const nextPrompt = mapModelPrompts(prompt, input => ({...input, variants: Object.fromEntries(Object.entries(input.variants)
+    .map(([variantId, configuration]) => [variantId === oldId ? newId : variantId, configuration]))}));
   assertDocument(validateCharacterVisualDocument(nextVisual));
   assertDocument(validateCharacterPromptDocument(nextPrompt));
 
@@ -572,12 +572,8 @@ export async function renameCharacterVariant(projectRoot, projectId, characterId
       const relativePath = storage.projectRelativePath('pages', pageId + '.prompt.json');
       const previous = await storage.readJson(storage.targetPath(project.projectDirectory, relativePath), relativePath);
       const oldSource = 'character:' + characterId + ':' + oldId;
-      if (!Object.hasOwn(previous.text_overrides ?? {}, oldSource) && !Object.hasOwn(previous.reference_overrides ?? {}, oldSource)) continue;
-      const next = structuredClone(previous);
-      for (const field of ['text_overrides', 'reference_overrides']) if (Object.hasOwn(next[field] ?? {}, oldSource)) {
-        next[field]['character:' + characterId + ':' + newId] = next[field][oldSource];
-        delete next[field][oldSource];
-      }
+      const next = renamePromptSource(previous, oldSource, 'character:' + characterId + ':' + newId);
+      if (hashCanonicalJson(previous) === hashCanonicalJson(next)) continue;
       writes.push({ relativePath, next, previous });
   }
   await Promise.all(writes.map((write) => (

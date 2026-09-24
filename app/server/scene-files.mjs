@@ -2,6 +2,7 @@ import {
   CHARACTER_PROFILE_SCHEMA_ID, CHARACTER_VISUAL_SCHEMA_ID, CHARACTER_PROMPT_SCHEMA_ID,
   validateCharacterProfileDocument, validateCharacterVisualDocument, validateCharacterPromptDocument,
 } from './character-files.mjs';
+import { modelPrompt } from './model-prompts.mjs';
 
 export const SCENE_INDEX_SCHEMA_ID = 'https://storyvisualizer.local/schemas/scene-index.schema.json';
 export const SCENE_PROFILE_SCHEMA_ID = 'https://storyvisualizer.local/schemas/scene-profile.schema.json';
@@ -33,9 +34,10 @@ export function defaultSceneFacts(id, name) {
   };
 }
 
-export function resolveSceneConfiguration(scene, variantId) {
-  const variant = scene?.prompt?.variants?.[variantId];
+export function resolveSceneConfiguration(scene, variantId, modelId = 'qwen') {
+  const prompt = modelPrompt(scene?.prompt, modelId);
+  const variant = prompt?.variants?.[variantId];
   if (!variant || !scene.visual?.variants?.some(item => item.id === variantId)) throw new TypeError(`场景子设定不存在：${scene?.id} · ${variantId}`);
-  return { id: scene.id, name: scene.name, prompt_name: scene.prompt.prompt_name, configuration_id: variantId,
+  return { ...(modelId === 'anima' ? { ...structuredClone(variant), identity: structuredClone(prompt.identity), loras: [] } : {}), id: scene.id, name: scene.name, prompt_name: prompt.prompt_name, configuration_id: variantId,
     configuration_path: `variants.${variantId}`, text: variant.text ?? '', reference_images: structuredClone(variant.reference_images ?? []) };
 }

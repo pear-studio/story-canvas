@@ -3,6 +3,9 @@ import { checkRemovedSettingReferences, cleanRemovedReferences } from './referen
 import { createHash, randomBytes } from "node:crypto";
 import { lstat, mkdir, open, readFile, readdir, realpath, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { modelPrompt, isModelPromptDocument, promptModelEntries, mapModelPrompts } from './model-prompts.mjs';
+import { modelAdapter } from './model-adapters.mjs';
+import { readPageRenderSettings } from './page-render-settings.mjs';
 import { setTimeout as delay } from "node:timers/promises";
 
 import { resolveProjectLocation } from "./project-operations.mjs";
@@ -150,7 +153,7 @@ async function readPageMembership(projectDirectory, pageId) {
   return { ...entry, sha256: hashCanonicalJson(entry) };
 }
 
-async function readCharacterReferences(projectDirectory, references, { includePrompt, allowMissing = false }) {
+async function readCharacterReferences(projectDirectory, references, { includePrompt, allowMissing = false, modelId = 'qwen' }) {
   const index = await readPlainJson(path.join(projectDirectory, "characters", "index.json"), "characters/index.json");
   const knownCharacters = new Set(Array.isArray(index?.characters) ? index.characters : []);
   const result = [];
@@ -172,7 +175,7 @@ async function readCharacterReferences(projectDirectory, references, { includePr
     const entry = { character_id: characterId, variant_id: reference.variant_id };
     if (includePrompt) {
       const promptRelative = projectRelativePath("characters", `${characterId}.prompt.json`);
-      const prompt = await readPlainJson(targetPath(projectDirectory, promptRelative), promptRelative);
+      const prompt = modelPrompt(await readPlainJson(targetPath(projectDirectory, promptRelative), promptRelative),modelId);
       const configuration = prompt?.variants?.[reference.variant_id];
       if (!isRecord(configuration)) {
         if (!allowMissing) fail("invalid_story_edit_context", [`角色 ${characterId} 缺少当前设定的完整 Prompt：${reference.variant_id}`]);
@@ -181,7 +184,7 @@ async function readCharacterReferences(projectDirectory, references, { includePr
       }
       // 所选造型的说明文字与参考图是该引用实际生效内容的一部分,必须进入上游指纹。
       entry.visual_sha256 = hashCanonicalJson({ variant: { id: visualVariant.id, name: visualVariant.name } });
-      entry.prompt_sha256 = hashCanonicalJson({ prompt_name: prompt?.prompt_name ?? null, configuration });
+      entry.prompt_sha256 = hashCanonicalJson({ prompt_name: prompt?.prompt_name ?? null, identity: prompt?.identity??null, configuration });
     }
     result.push(entry);
   }
@@ -237,8 +240,8 @@ export async function readStoryFactDraft(projectRoot, projectId, pageId, kind) {
   } };
 }
 
-async function readSceneReferenceIdentity(projectDirectory, pageId) {
-  const prompt = await readPlainJson(targetPath(projectDirectory, targetRelativePath("prompt", pageId)), "page prompt");
+async function readSceneReferenceIdentity(projectDirectory, pageId, modelId = 'qwen') {
+  const prompt = modelPrompt(await readPlainJson(targetPath(projectDirectory, targetRelativePath("prompt", pageId)), "page prompt"), modelId);
   if (!prompt.scene_id) return hashCanonicalJson(null);
   const reference = { scene_id: prompt.scene_id, variant_id: prompt.scene_variant_id };
   const index = await optionalFact(projectDirectory, "scenes/index.json", { scenes: [] });
@@ -248,19 +251,25 @@ async function readSceneReferenceIdentity(projectDirectory, pageId) {
     optionalFact(projectDirectory, `scenes/${prompt.scene_id}.prompt.json`),
   ]);
   const variant = visual?.variants?.find(item => item.id === prompt.scene_variant_id);
-  const configuration = scenePrompt?.variants?.[prompt.scene_variant_id];
+  const activeScenePrompt = modelPrompt(scenePrompt,modelId);
+  const configuration = activeScenePrompt?.variants?.[prompt.scene_variant_id];
   if (!variant || !configuration) return hashCanonicalJson({ ...reference, missing: "variant" });
-  return hashCanonicalJson({ ...reference, visual: { id: variant.id, name: variant.name }, prompt_name: scenePrompt.prompt_name ?? null, configuration });
+  return hashCanonicalJson({ ...reference, visual: { id: variant.id, name: variant.name }, prompt_name: activeScenePrompt.prompt_name ?? null, identity: activeScenePrompt.identity??null, configuration });
 }
 
 export async function readStoryPromptUpstream(projectDirectory, pageId) {
   const narrativeRelative = targetRelativePath("narrative", pageId);
   const narrative = await readPlainJson(targetPath(projectDirectory, narrativeRelative), narrativeRelative);
   assertDocument(validateStoryPageNarrativeDocument(narrative));
+  const prompt=await readPlainJson(targetPath(projectDirectory,targetRelativePath('prompt',pageId)),'page prompt');
+  const render=isModelPromptDocument(prompt)?await readPageRenderSettings(projectDirectory,pageId):null;
+  const modelId=render?.model_id??'qwen';
+  const standalone=modelPrompt(prompt,modelId)?.composition==='standalone';
   return {
+    ...(render?{render_sha256:hashCanonicalJson(render)}:{}),
     narrative: { relative_path: narrativeRelative, sha256: hashCanonicalJson(narrative) },
-    characters: await readCharacterReferences(projectDirectory, narrative.characters, { includePrompt: true, allowMissing: true }),
-    scenes_sha256: await readSceneReferenceIdentity(projectDirectory, pageId),
+    characters: await readCharacterReferences(projectDirectory, standalone?[]:narrative.characters, { includePrompt: true, allowMissing: true, modelId }),
+    scenes_sha256: standalone?hashCanonicalJson(null):await readSceneReferenceIdentity(projectDirectory, pageId,modelId),
   };
 }
 
@@ -496,9 +505,9 @@ async function planRemovedReferenceCleanup(projectDirectory, pageId, persisted) 
   }
   const keep = new Set((persisted.characters ?? []).map((reference) => characterSource(reference.character_id, reference.variant_id)));
   const next = structuredClone(prompt);
-  for (const field of ["text_overrides", "reference_overrides"]) {
-    for (const source of Object.keys(next[field] ?? {})) {
-      if (source.startsWith("character:") && !keep.has(source)) delete next[field][source];
+  for (const [,input] of promptModelEntries(next)) for (const field of ["text_overrides", "reference_overrides", "inheritance"]) {
+    for (const source of Object.keys(input[field] ?? {})) {
+      if (source.startsWith("character:") && !keep.has(source)) delete input[field][source];
     }
   }
   if (hashCanonicalJson(next) === hashCanonicalJson(prompt)) return { writes: [] };
@@ -534,12 +543,15 @@ export async function commitStoryFact(projectRoot, context, readDocument, kind, 
     assertDocument(validateStoryPageNarrativeDocument(persisted));
     await assertPageLetteringAnchors(project.projectDirectory, context.page_id, baseline, persisted);
   } else {
-    persisted = structuredClone(edited);
+    const baselineModels = new Map(promptModelEntries(baseline));
+    persisted = mapModelPrompts(edited, (input, modelId) => modelAdapter(modelId).preparePagePrompt(input, {baselinePrompt:baselineModels.get(modelId),createFragmentId:()=>`token-${randomBytes(6).toString('hex')}`}));
     assertDocument(validateStoryPagePromptDocument(persisted));
     // 切换或移除场景引用时删除旧场景覆盖，不保留隐藏草稿；角色覆盖必须匹配当前引用，否则拒绝保存。
-    const activeScene = persisted.scene_id ? `scene:${persisted.scene_id}:${persisted.scene_variant_id}` : null;
-    for (const field of ["text_overrides", "reference_overrides"]) {
-      for (const source of Object.keys(persisted[field] ?? {})) if (source.startsWith("scene:") && source !== activeScene) delete persisted[field][source];
+    for (const [,input] of promptModelEntries(persisted)) {
+      const activeScene = input.scene_id ? `scene:${input.scene_id}:${input.scene_variant_id}` : null;
+      for (const field of ["text_overrides", "reference_overrides", "inheritance"]) {
+        for (const source of Object.keys(input[field] ?? {})) if (source.startsWith("scene:") && source !== activeScene) delete input[field][source];
+      }
     }
     const overrideErrors = checkPagePromptOverrideReferences(persisted, currentNarrative.characters);
     if (overrideErrors.length) fail('invalid_story_edit_document', overrideErrors);

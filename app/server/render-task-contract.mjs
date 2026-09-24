@@ -180,10 +180,10 @@ function promptItemBindingFingerprint(item) {
 
 export function currentPromptContractIdentity() {
   return {
-    version: 6,
+    version: 7,
     sha256: hashJson({
-      prompt_format: "story-free-text-v1",
-      negative_prompt: "empty",
+      prompt_format: "story-models-v1",
+      model_inputs: ['anima','qwen'],
     }),
   };
 }

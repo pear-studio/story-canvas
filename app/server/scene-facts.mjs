@@ -1,4 +1,6 @@
 import { cleanRemovedReferences } from './reference-materials.mjs';
+import { mapModelPrompts, promptModelEntries, emptySettingVariant, renamePromptSource } from './model-prompts.mjs';
+import { modelAdapter } from './model-adapters.mjs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { lstat, mkdir, readFile, rename, readdir, stat } from 'node:fs/promises';
@@ -55,7 +57,7 @@ async function sceneFact(directory, id, kind) {
 }
 const emptyVariant = () => ({ text: '', reference_images: [] });
 function normalizedPrompt(prompt, visual) {
-  return { ...prompt, variants: Object.fromEntries(visual.variants.map(v => [v.id, prompt.variants[v.id] ?? emptyVariant()])) };
+  return mapModelPrompts(prompt, (input, modelId) => ({ ...input, variants: Object.fromEntries(visual.variants.map(v => [v.id, input.variants[v.id] ?? emptySettingVariant(modelId)])) }));
 }
 export async function readSceneFactDraft(root, projectId, sceneId, kind = 'profile') {
   const project = await resolveProjectLocation(path.resolve(root), projectId);
@@ -72,15 +74,17 @@ export async function commitSceneFact(root, context, readDocument, kind, { befor
   const id = context.scene_id;
   await requireScene(project.projectDirectory, id);
   const baseline = await storage.assertTargetBaseline(project.projectDirectory, context);
-  const next = structuredClone(await readDocument());
+  let next = structuredClone(await readDocument());
   if (!validators[kind]) fail('invalid_scene_edit_kind', [kind]);
   const writes = [];
   if (kind === 'prompt') {
+    const baselineModels = new Map(promptModelEntries(baseline));
+    next = mapModelPrompts(next, (input, modelId) => modelAdapter(modelId).prepareSettingPrompt(input, {baselinePrompt:baselineModels.get(modelId),createFragmentId:()=>`token-${randomBytes(6).toString('hex')}`}));
     const visual = await sceneFact(project.projectDirectory, id, 'visual');
     if (visualIdentity(visual) !== context.upstream.visual.identity_sha256) throw new ApiError(409, 'scene_edit_upstream_conflict');
-    if (next?.$schema !== SCENE_PROMPT_SCHEMA_ID || !next.variants || typeof next.variants !== 'object' || Array.isArray(next.variants)) fail('invalid_scene_document', ['场景 Prompt 结构无效']);
+    assertValid(validateScenePromptDocument(next));
     const expected = visual.variants.map(v => v.id).sort();
-    if (JSON.stringify(Object.keys(next.variants).sort()) !== JSON.stringify(expected)) fail('scene_prompt_visual_mismatch');
+    if (promptModelEntries(next).some(([,input]) => JSON.stringify(Object.keys(input.variants).sort()) !== JSON.stringify(expected))) fail('scene_prompt_visual_mismatch');
   } else if (kind === 'visual') {
     assertValid(validateSceneVisualDocument(next));
     // 子设定列表与 Prompt 同次提交，新增立即可用；删除须经过引用检查。
@@ -129,7 +133,7 @@ export async function sceneReferences(directory, id) {
   for (const page of index.pages) {
     if (page.owner_kind === 'scene' && page.scene_id === id) references.push({ ...page, reference_kind: 'owner' });
     const prompt = await optionalFact(directory, `pages/${page.page_id}.prompt.json`);
-    if (prompt?.scene_id === id) references.push({ page_id: page.page_id, variant_id: prompt.scene_variant_id, reference_kind: 'scene' });
+    for (const [modelId,input] of promptModelEntries(prompt)) if (input?.scene_id === id) references.push({ page_id: page.page_id, variant_id: input.scene_variant_id, model_id: modelId, reference_kind: 'scene' });
   }
   return references;
 }
@@ -159,7 +163,7 @@ export async function renameSceneVariant(root, projectId, sceneId, oldId, newId,
   if (!visual.variants.some(v => v.id === oldId)) fail('scene_variant_not_found');
   if (visual.variants.some(v => v.id === newId)) fail('scene_variant_already_exists');
   const nextVisual = { ...visual, variants: visual.variants.map(v => v.id === oldId ? { ...v, id: newId } : v) };
-  const nextPrompt = { ...prompt, variants: Object.fromEntries(Object.entries(prompt.variants).map(([id,v]) => [id === oldId ? newId : id, v])) };
+  const nextPrompt = mapModelPrompts(prompt, input => ({ ...input, variants: Object.fromEntries(Object.entries(input.variants).map(([id,v]) => [id === oldId ? newId : id, v])) }));
   assertValid(validateSceneVisualDocument(nextVisual)); assertValid(validateScenePromptDocument(nextPrompt));
   const writes = [{ relative: relative(sceneId, 'visual'), before: visual, after: nextVisual }, { relative: relative(sceneId, 'prompt'), before: prompt, after: nextPrompt }];
   const index = await optionalFact(project.projectDirectory, 'pages/index.json', { pages: [] }), nextIndex = structuredClone(index);
@@ -167,14 +171,11 @@ export async function renameSceneVariant(root, projectId, sceneId, oldId, newId,
   for (const page of nextIndex.pages) {
     if (page.owner_kind === 'scene' && page.scene_id === sceneId && page.variant_id === oldId) { page.variant_id = newId; ids.add(page.page_id); }
     const file = `pages/${page.page_id}.prompt.json`, before = await optionalFact(project.projectDirectory, file);
-    if (before?.scene_id !== sceneId || before.scene_variant_id !== oldId) continue;
-    const after = structuredClone(before); after.scene_variant_id = newId;
-    for (const field of ['text_overrides', 'reference_overrides']) {
-      if (Object.hasOwn(after[field] ?? {}, sceneSource(sceneId, oldId))) {
-        after[field][sceneSource(sceneId, newId)] = after[field][sceneSource(sceneId, oldId)];
-        delete after[field][sceneSource(sceneId, oldId)];
-      }
-    }
+    if (!promptModelEntries(before).some(([,input]) => input?.scene_id === sceneId && input.scene_variant_id === oldId)) continue;
+    const after = mapModelPrompts(renamePromptSource(before, sceneSource(sceneId, oldId), sceneSource(sceneId, newId)), input => {
+      if (input.scene_id === sceneId && input.scene_variant_id === oldId) input.scene_variant_id = newId;
+      return input;
+    });
     writes.push({ relative: file, before, after }); ids.add(page.page_id);
   }
   if (hashCanonicalJson(index) !== hashCanonicalJson(nextIndex)) writes.push({ relative: 'pages/index.json', before: index, after: nextIndex });

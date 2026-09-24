@@ -6,19 +6,22 @@ import { resolveProjectLocation } from './project-operations.mjs';
 import { readPageEntry, pageRelativePath } from './pages-store.mjs';
 import { commitFactChanges } from './story-facts.mjs';
 import { compileEffectiveRenderProfile } from './render-profile-compiler.mjs';
+import { modelAdapter, profileModelAdapter } from './model-adapters.mjs';
+import { makeModelPromptDocument, isModelPromptDocument } from './model-prompts.mjs';
 
 export const pageCanvases = Object.freeze(['2:3', '3:4', '9:16', '4:3']);
 export function validatePageRenderSettings(value) {
   const errors = [];
   if (!value || typeof value !== 'object' || Array.isArray(value)) return ['页面生成设置必须是对象'];
-  if (Object.keys(value).some(key => !['version', 'profile_id', 'canvas'].includes(key))) errors.push('页面生成设置包含未知字段');
+  if (Object.keys(value).some(key => !['version', 'model_id', 'profile_id', 'canvas'].includes(key))) errors.push('页面生成设置包含未知字段');
+  if (value.model_id !== undefined) { try { modelAdapter(value.model_id); } catch(error) { errors.push(error.message); } }
   if (value.version !== 1) errors.push('页面生成设置 version 必须为 1');
   if (!/^[a-z0-9][a-z0-9-]*$/.test(value.profile_id ?? '')) errors.push('profile_id 无效');
   if (!pageCanvases.includes(value.canvas)) errors.push('页面画幅无效');
   return errors;
 }
-export function pageSettingsFromDefaults(project) {
-  return { version: 1, profile_id: project.default_render_profile, canvas: project.canvas };
+export function pageSettingsFromDefaults(project, modelId = 'qwen') {
+  return { version: 1, model_id: modelId, profile_id: project.default_render_profile, canvas: project.canvas };
 }
 export async function readPageRenderSettings(directory, pageId, project = null) {
   const relative = pageRelativePath(pageId, 'render');
@@ -42,7 +45,8 @@ export async function readPageRenderDraft(root, projectId, pageId) {
   const project = await resolveProjectLocation(path.resolve(root), projectId);
   if (!await readPageEntry(project.projectDirectory, pageId)) throw new ApiError(404, 'page_not_found');
   const persisted = await readPageRenderSettings(project.projectDirectory, pageId);
-  return { project, definition: { persisted, targetRelative: pageRelativePath(pageId, 'render'), identity: { page_id: pageId }, upstream: {} } };
+  const prompt=JSON.parse(await readFile(path.join(project.projectDirectory,pageRelativePath(pageId,'prompt')),'utf8'));
+  return { project, definition: { persisted, targetRelative: pageRelativePath(pageId, 'render'), identity: { page_id: pageId }, upstream: {prompt_sha256:hashCanonicalJson(prompt)} } };
 }
 export async function commitPageRender(root, context, readDocument) {
   const { project, definition } = await readPageRenderDraft(root, context.project_id, context.page_id);
@@ -52,10 +56,29 @@ export async function commitPageRender(root, context, readDocument) {
   if (errors.length) throw new ApiError(422, 'page_render_settings_invalid', errors);
   const bundle = await compileEffectiveRenderProfile({ repositoryRoot: root, projectRoot: project.projectDirectory, profileId: value.profile_id });
   if (bundle.blocked) throw new ApiError(422, 'render_profile_override_conflict');
+  if (value.model_id !== profileModelAdapter(bundle.effective_profile).id) throw new ApiError(422, 'page_profile_model_mismatch');
   const route = bundle.effective_profile.operations.candidates.routes.empty_latent;
   if (!route?.recipe.resolutions[value.canvas]) throw new ApiError(422, 'page_canvas_unsupported');
   const target = path.join(project.projectDirectory, definition.targetRelative);
   const before = await readFile(target, 'utf8').then(JSON.parse, error => error.code === 'ENOENT' ? null : Promise.reject(error));
-  await commitFactChanges(project.projectDirectory, [{ relative: definition.targetRelative, before, after: value }]);
+  const promptRelative=pageRelativePath(context.page_id,'prompt');
+  const beforePrompt=JSON.parse(await readFile(path.join(project.projectDirectory,promptRelative),'utf8'));
+  if(context.upstream.prompt_sha256!==hashCanonicalJson(beforePrompt))throw new ApiError(409,'page_render_input_conflict');
+  const nextPrompt=isModelPromptDocument(beforePrompt)?structuredClone(beforePrompt):makeModelPromptDocument(beforePrompt.$schema,'qwen',beforePrompt);
+  if(!nextPrompt.models[value.model_id]) {
+    const input=modelAdapter(value.model_id).emptyPrompt();
+    if(value.model_id==='qwen' && nextPrompt.models.anima) {
+      const {compilePageRenderInspectionContext}=await import('./page-render-resolver.mjs');
+      const source=await compilePageRenderInspectionContext({repositoryRoot:root,projectDirectory:project.projectDirectory,pageKey:{page_id:context.page_id}});
+      if(!source.compiled_page?.ready || !source.compiled_page.positive_prompt)throw new ApiError(422,'anima_prompt_unavailable');
+      input.text=source.compiled_page.positive_prompt;input.composition='standalone';
+    }
+    input.loras=Object.keys(bundle.effective_profile.style_loras??{}).sort().map(id=>structuredClone(bundle.effective_profile.style_loras[id]));
+    nextPrompt.models[value.model_id]=input;
+  }
+  await commitFactChanges(project.projectDirectory, [
+    {relative:promptRelative,before:beforePrompt,after:nextPrompt},
+    { relative: definition.targetRelative, before, after: value },
+  ]);
   return { page_id: context.page_id, render: value, render_sha256: hashCanonicalJson(value) };
 }
