@@ -1,8 +1,8 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const DEFAULT_TIMEOUT_MS = 180_000;
+const DEFAULT_TIMEOUT_MS = 900_000;
 const MAX_RESULT_CHARS = 2 * 1024 * 1024;
 
 export class PromptRewriteRunnerError extends Error {
@@ -95,50 +95,91 @@ async function pollDelay(signal) {
   });
 }
 
-async function runComfy(comfyUrl, graph, signal) {
+export function rewriteProgressFromMessage(message, promptId) {
+  let event;
+  try { event = JSON.parse(message); } catch { return null; }
+  if (!promptId || event?.data?.prompt_id !== promptId) return null;
+  if (event.type === 'executing' && ['1', '2'].includes(event.data.node)) return { phase: 'loading' };
+  if (event.type === 'progress' && Number.isFinite(event.data.value)) return { phase: 'generating', tokens: event.data.value };
+  if (event.type === 'executing' && event.data.node === '3') return { phase: 'saving' };
+  return null;
+}
+
+async function runComfy(comfyUrl, graph, signal, onProgress) {
   const base = comfyUrl.replace(/\/+$/, '');
-  let response;
+  const clientId = randomUUID();
+  let promptId = null, socket = null, phase = 'queued';
+  const report = value => { phase = value.phase; onProgress?.({ ...value, prompt_id: promptId }); };
   try {
-    response = await fetch(`${base}/prompt`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ prompt: graph }), signal,
+    socket = new WebSocket(`${base.replace(/^http/, 'ws')}/ws?clientId=${clientId}`);
+    socket.addEventListener('error', () => {});
+    socket.addEventListener('message', event => {
+      const value = rewriteProgressFromMessage(event.data, promptId);
+      if (value) report(value);
     });
-  } catch (error) {
-    if (signal.aborted) throw error;
-    throw new PromptRewriteRunnerError('COMFY_UNAVAILABLE', error);
-  }
-  if (!response.ok) throw new PromptRewriteRunnerError('COMFY_FAILED');
-  let queued;
-  try { queued = await response.json(); }
-  catch (error) { throw new PromptRewriteRunnerError('COMFY_FAILED', error); }
-  if (typeof queued.prompt_id !== 'string' || !queued.prompt_id) {
-    throw new PromptRewriteRunnerError('COMFY_FAILED');
-  }
-  for (;;) {
-    await pollDelay(signal);
-    let historyResponse;
-    try { historyResponse = await fetch(`${base}/history/${encodeURIComponent(queued.prompt_id)}`, { signal }); }
-    catch (error) {
+  } catch { /* 无 WebSocket 时仍可轮询执行状态与结果。 */ }
+  try {
+    let response;
+    try {
+      response = await fetch(`${base}/prompt`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: graph, client_id: clientId }), signal,
+      });
+    } catch (error) {
       if (signal.aborted) throw error;
       throw new PromptRewriteRunnerError('COMFY_UNAVAILABLE', error);
     }
-    if (!historyResponse.ok) throw new PromptRewriteRunnerError('COMFY_FAILED');
-    let envelope;
-    try { envelope = await historyResponse.json(); }
+    if (!response.ok) throw new PromptRewriteRunnerError('COMFY_FAILED');
+    let queued;
+    try { queued = await response.json(); }
     catch (error) { throw new PromptRewriteRunnerError('COMFY_FAILED', error); }
-    const history = envelope[queued.prompt_id];
-    if (!history) continue;
-    if (history.status?.status_str === 'error') throw new PromptRewriteRunnerError('COMFY_FAILED');
-    const text = history.outputs?.['3']?.text?.[0];
-    if (typeof text === 'string') return text;
-    if (history.status?.completed) throw new PromptRewriteRunnerError('COMFY_FAILED');
+    if (typeof queued.prompt_id !== 'string' || !queued.prompt_id) {
+      throw new PromptRewriteRunnerError('COMFY_FAILED');
+    }
+    promptId = queued.prompt_id;
+    report({ phase: 'queued' });
+    for (;;) {
+      await pollDelay(signal);
+      let historyResponse;
+      try { historyResponse = await fetch(`${base}/history/${encodeURIComponent(queued.prompt_id)}`, { signal }); }
+      catch (error) {
+        if (signal.aborted) throw error;
+        throw new PromptRewriteRunnerError('COMFY_UNAVAILABLE', error);
+      }
+      if (!historyResponse.ok) throw new PromptRewriteRunnerError('COMFY_FAILED');
+      let envelope;
+      try { envelope = await historyResponse.json(); }
+      catch (error) { throw new PromptRewriteRunnerError('COMFY_FAILED', error); }
+      const history = envelope[queued.prompt_id];
+      if (!history) {
+        if (phase === 'queued') {
+          try {
+            const queueResponse = await fetch(`${base}/queue`, { signal });
+            if (queueResponse.ok) {
+              const queue = await queueResponse.json();
+              if (queue.queue_running?.some(item => item[1] === promptId)) report({ phase: 'running' });
+            }
+          } catch (error) {
+            if (signal.aborted) throw error;
+            // 进度不可用不影响通过 history 获取结果。
+          }
+        }
+        continue;
+      }
+      if (history.status?.status_str === 'error') throw new PromptRewriteRunnerError('COMFY_FAILED');
+      const text = history.outputs?.['3']?.text?.[0];
+      if (typeof text === 'string') return text;
+      if (history.status?.completed) throw new PromptRewriteRunnerError('COMFY_FAILED');
+    }
+  } finally {
+    try { socket?.close(); } catch { /* 关闭可选进度连接。 */ }
   }
 }
 
 /** Run the official Qwen PE-T2I prompt on ComfyUI's installed INT8 TextGenerate node. */
 export async function runPromptRewrite({
   positivePrompt, comfyUrl, modelName, systemPromptPath,
-  taskDirectory, timeoutMs = DEFAULT_TIMEOUT_MS, signal,
+  taskDirectory, timeoutMs = DEFAULT_TIMEOUT_MS, signal, onProgress,
 }) {
   if (typeof positivePrompt !== 'string' || !positivePrompt.trim()) {
     throw new PromptRewriteRunnerError('EMPTY_PROMPT');
@@ -175,7 +216,10 @@ export async function runPromptRewrite({
     system_prompt_sha256: createHash('sha256').update(systemPrompt).digest('hex'),
   };
   try {
-    const raw = await runComfy(comfyUrl, graph, controller.signal);
+    const raw = await runComfy(comfyUrl, graph, controller.signal, progress => {
+      diagnostic.prompt_id = progress.prompt_id;
+      onProgress?.(progress);
+    });
     const result = parsePromptRewrite(raw);
     diagnostic = { ...diagnostic, status: 'completed', code: null };
     return result;

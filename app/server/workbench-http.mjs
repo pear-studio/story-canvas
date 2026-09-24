@@ -19,6 +19,7 @@ import { submitGenerationTask } from "./generation-lifecycle.mjs";
 import { inspectPageRender } from "./page-render-inspection.mjs";
 import { readPageRewriteState, rewriteSource, savePageRewriteResult } from "./page-rewrite.mjs";
 import { PromptRewriteRunnerError, runPromptRewrite } from "./prompt-rewrite-runner.mjs";
+import { readPageRewriteProgress, trackPageRewrite } from './page-rewrite-runtime.mjs';
 import {
   readPageCandidateDetail,
   readProjectWorkbenchView,
@@ -359,8 +360,16 @@ export async function handleWorkbenchRequest({
     let pageKey;
     try { pageKey = JSON.parse(requestUrl.searchParams.get("page_key") ?? ""); }
     catch { throw new ApiError(400, "invalid_page_rewrite_request"); }
-    const result = await readFacts(pageRewriteMatch[1], ({ projectDirectory }) => readPageRewriteState({
-      repositoryRoot: projectRoot, projectDirectory, pageKey,
+    if (requestUrl.searchParams.get('progress') === '1') {
+      const result = await readFacts(pageRewriteMatch[1], () => ({
+        progress: readPageRewriteProgress(projectRoot, pageRewriteMatch[1], pageKey),
+      }));
+      sendOperation(200, result);
+      return true;
+    }
+    const result = await readFacts(pageRewriteMatch[1], async ({ projectDirectory }) => ({
+      ...await readPageRewriteState({ repositoryRoot: projectRoot, projectDirectory, pageKey }),
+      progress: readPageRewriteProgress(projectRoot, pageRewriteMatch[1], pageKey),
     }));
     sendOperation(200, result);
     return true;
@@ -374,25 +383,32 @@ export async function handleWorkbenchRequest({
     const settings = config.prompt_rewrite ?? {};
     const systemPromptPath = configuredPath(projectRoot, settings.system_prompt);
     if (!config.comfyui_url || !settings.model || !systemPromptPath) throw new ApiError(422, "prompt_rewrite_not_configured");
-    const before = await readFacts(pageRewriteMatch[1], ({ projectDirectory }) => rewriteSource({
-      repositoryRoot: projectRoot, projectDirectory, pageKey: value.page_key,
-    }));
-    const taskDirectory = path.join(projectRoot, "Saved", "Agent", "page-rewrite", randomUUID());
-    await mkdir(taskDirectory, { recursive: true });
-    let rewritten;
-    try {
-      rewritten = await runPromptRewrite({
-        positivePrompt: before.value.original_prompt,
-        comfyUrl: config.comfyui_url, modelName: settings.model,
-        systemPromptPath, taskDirectory,
-      });
-    } catch (error) {
-      if (error instanceof PromptRewriteRunnerError) throw new ApiError(502, error.code);
-      throw error;
-    }
-    const result = await mutateTargetFacts(pageRewriteMatch[1], ({ projectDirectory }) => savePageRewriteResult({
-      repositoryRoot: projectRoot, projectDirectory, source: before.value, result: rewritten,
-    }));
+    const result = await trackPageRewrite(projectRoot, pageRewriteMatch[1], value.page_key, async onProgress => {
+      const before = await readFacts(pageRewriteMatch[1], ({ projectDirectory }) => rewriteSource({
+        repositoryRoot: projectRoot, projectDirectory, pageKey: value.page_key,
+      }));
+      const taskDirectory = path.join(projectRoot, "Saved", "Agent", "page-rewrite", randomUUID());
+      await mkdir(taskDirectory, { recursive: true });
+      let rewritten;
+      try {
+        rewritten = await runPromptRewrite({
+          positivePrompt: before.value.original_prompt,
+          comfyUrl: config.comfyui_url, modelName: settings.model,
+          systemPromptPath, taskDirectory, onProgress,
+        });
+      } catch (error) {
+        if (error instanceof PromptRewriteRunnerError) {
+          throw new ApiError(502, error.code, [error.code === 'TIMEOUT'
+            ? '等待重写超过 15 分钟；ComfyUI 可能仍在执行，请先检查运行状态再重试。'
+            : `ComfyUI 重写失败：${error.code}`]);
+        }
+        throw error;
+      }
+      onProgress({ phase: 'saving' });
+      return mutateTargetFacts(pageRewriteMatch[1], ({ projectDirectory }) => savePageRewriteResult({
+        repositoryRoot: projectRoot, projectDirectory, source: before.value, result: rewritten,
+      }));
+    });
     sendOperation(200, result);
     return true;
   }

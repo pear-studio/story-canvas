@@ -62,6 +62,7 @@ import {
   deleteCandidates,
   inspectPageRender,
   loadPageRewrite,
+  loadPageRewriteProgress,
   runPageRewrite,
   loadCandidateDetail,
   loadPageMedia,
@@ -573,7 +574,8 @@ export function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSet
   const [pageDirty, setPageDirty] = useState(false);
   const [promptDraft, setPromptDraft] = useState<PagePrompt>(() => structuredClone(page.prompt));
   const [promptSourceState, setPromptSourceState] = useState<{ identity: string; value: PromptSourceChoice }>(() => ({ identity: `${projectId}:${location.key}`, value: "original" }));
-  const [rewriteState, setRewriteState] = useState<{ identity: string; value: PageRewriteValue | null; loading: boolean; running: boolean; error: string }>(() => ({ identity: `${projectId}:${location.key}`, value: null, loading: true, running: false, error: "" }));
+  const [rewriteState, setRewriteState] = useState<{ identity: string; value: PageRewriteValue | null; loading: boolean; running: boolean; error: string; progress?: PageRewriteValue['progress'] }>(() => ({ identity: `${projectId}:${location.key}`, value: null, loading: true, running: false, error: "" }));
+  const pendingRewrites = useRef(new Set<string>());
   const [renderInspection, setRenderInspection] = useState<PageRenderInspection | null>(null);
   const [renderInspectionKey, setRenderInspectionKey] = useState("");
   const [inspectionBaseKey, setInspectionBaseKey] = useState("");
@@ -709,16 +711,42 @@ export function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSet
     setRewriteState((current) => ({ identity: workspaceIdentity, value: current.identity === workspaceIdentity ? current.value : null, loading: true, running: current.identity === workspaceIdentity && current.running, error: "" }));
     if (page.model_id === "anima") { setRewriteState({identity:workspaceIdentity,value:null,loading:false,running:false,error:""}); return () => controller.abort(); }
     void loadPageRewrite(projectId, page.page_key, controller.signal).then((value) => {
-      if (!controller.signal.aborted) setRewriteState((current) => current.identity === workspaceIdentity ? { ...current, value, loading: false } : current);
+      if (!controller.signal.aborted) setRewriteState((current) => current.identity === workspaceIdentity ? { ...current, value, loading: false, progress:value.progress, running:current.running||Boolean(value.progress&&!value.progress.finished_at), error:value.progress?.phase==='failed'?value.progress.error??'重写失败':current.error } : current);
     }).catch((error) => {
       if (!controller.signal.aborted) setRewriteState((current) => current.identity === workspaceIdentity ? { ...current, loading: false, error: error instanceof Error ? error.message : String(error) } : current);
     });
     return () => controller.abort();
   }, [rewriteDepsKey]);
 
+  useEffect(() => {
+    if (!currentRewriteState.running) return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const { progress } = await loadPageRewriteProgress(projectId, page.page_key, controller.signal);
+        if (controller.signal.aborted) return;
+        if (progress && !progress.finished_at) {
+          setRewriteState(current => current.identity === workspaceIdentity ? { ...current, progress } : current);
+        } else if (progress?.finished_at && !pendingRewrites.current.has(workspaceIdentity)) {
+          const value = await loadPageRewrite(projectId, page.page_key, controller.signal);
+          if (!controller.signal.aborted) setRewriteState(current => current.identity === workspaceIdentity ? {
+            ...current, value, progress, running: false, loading: false,
+            error: progress.phase === 'failed' ? progress.error ?? '重写失败' : '',
+          } : current);
+          return;
+        }
+      } catch { /* 进度读取暂时失败不终止正在执行的重写。 */ }
+      if (!controller.signal.aborted) timer = setTimeout(poll, 1000);
+    };
+    void poll();
+    return () => { controller.abort(); clearTimeout(timer); };
+  }, [workspaceIdentity, currentRewriteState.running]);
+
   async function rewriteCurrentPage() {
     if (pageDirty || busy || currentRewriteState.running) return;
-    setRewriteState((current) => current.identity === workspaceIdentity ? { ...current, running: true, error: "" } : current);
+    pendingRewrites.current.add(workspaceIdentity);
+    setRewriteState((current) => current.identity === workspaceIdentity ? { ...current, running: true, error: "",progress:null } : current);
     try {
       const value = await runPageRewrite(projectId, page.page_key);
       if (!isCurrentWorkspace()) return;
@@ -729,7 +757,7 @@ export function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSet
       notify({ kind: "success", message: "重写结果已保存" });
     } catch (error) {
       if (isCurrentWorkspace()) setRewriteState((current) => current.identity === workspaceIdentity ? { ...current, running: false, error: error instanceof Error ? error.message : String(error) } : current);
-    }
+    } finally {pendingRewrites.current.delete(workspaceIdentity);}
   }
 
   useEffect(() => {
@@ -854,7 +882,7 @@ export function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSet
     || (!renderInspection?.ready ? "当前页面尚未满足生成条件" : "");
   const isTextPage = page.kind === "story" && page.page_kind === "text";
   return <div ref={pageWorkspaceRef} className="story-layout current-workbench-page">
-    {<WorkbenchPageEditor editorTab={editorTab} onEditorTabChange={onEditorTabChange} onOpenLetteringSettings={onOpenLetteringSettings} onOpenPromptOverview={onOpenPromptOverview} projectId={projectId} page={page} characters={characters} scenes={scenes} breadcrumb={location.breadcrumb} pageOrder={pageOrder} busy={busy} canvas={artworkCanvas} letteringStyle={letteringStyle} letteringItems={page.lettering?.items ?? []} letteringTarget={letteringTarget} fullscreenLetteringTarget={fullscreenLetteringTarget} flowPreview={isTextPage ? null : inspectionBaseKey === currentBaseKey ? renderInspection : null} flowPreviewError={renderInspectionError} rewriteValue={currentRewriteState.value} rewriteLoading={currentRewriteState.loading} rewriteRunning={currentRewriteState.running} rewriteError={currentRewriteState.error} promptSource={promptSource} onPromptSourceChange={(value) => setPromptSourceState({ identity: workspaceIdentity, value })} onRewrite={isTextPage || page.model_id === "anima" ? undefined : () => void rewriteCurrentPage()} onSavePage={saveWhole} onReloadContent={onReload} onReloadPrompt={onReload} onPageSaved={() => { if (isCurrentWorkspace()) notify({ kind: "success", message: page.kind === "story" ? "文案与布局已保存" : "页面内容已保存" }); }} onPromptDraftChange={setPromptDraft} onDirtyChange={setPageDirty} saveAllRef={editorSaveAll} discardAllRef={editorDiscardAll} onGenerate={isTextPage ? undefined : saveAndGenerate} generationCount={generationCount} onGenerationCountChange={changeGenerationCount} generationDisabled={generationDisabled} generationDisabledReason={generateReason} generationProblems={isTextPage ? [] : generationProblems} />}
+    {<WorkbenchPageEditor editorTab={editorTab} onEditorTabChange={onEditorTabChange} onOpenLetteringSettings={onOpenLetteringSettings} onOpenPromptOverview={onOpenPromptOverview} projectId={projectId} page={page} characters={characters} scenes={scenes} breadcrumb={location.breadcrumb} pageOrder={pageOrder} busy={busy} canvas={artworkCanvas} letteringStyle={letteringStyle} letteringItems={page.lettering?.items ?? []} letteringTarget={letteringTarget} fullscreenLetteringTarget={fullscreenLetteringTarget} flowPreview={isTextPage ? null : inspectionBaseKey === currentBaseKey ? renderInspection : null} flowPreviewError={renderInspectionError} rewriteValue={currentRewriteState.value} rewriteLoading={currentRewriteState.loading} rewriteRunning={currentRewriteState.running} rewriteProgress={currentRewriteState.progress} rewriteError={currentRewriteState.error} promptSource={promptSource} onPromptSourceChange={(value) => setPromptSourceState({ identity: workspaceIdentity, value })} onRewrite={isTextPage || page.model_id === "anima" ? undefined : () => void rewriteCurrentPage()} onSavePage={saveWhole} onReloadContent={onReload} onReloadPrompt={onReload} onPageSaved={() => { if (isCurrentWorkspace()) notify({ kind: "success", message: page.kind === "story" ? "文案与布局已保存" : "页面内容已保存" }); }} onPromptDraftChange={setPromptDraft} onDirtyChange={setPageDirty} saveAllRef={editorSaveAll} discardAllRef={editorDiscardAll} onGenerate={isTextPage ? undefined : saveAndGenerate} generationCount={generationCount} onGenerationCountChange={changeGenerationCount} generationDisabled={generationDisabled} generationDisabledReason={generateReason} generationProblems={isTextPage ? [] : generationProblems} />}
     <PaneResizeHandle className="pane-resizer--editor" label="调整页面事实栏宽度" value={editorWidth} defaultValue={44} min={32} max={64} unit="%" onChange={onEditorWidthChange} />
     {isTextPage
       ? <TextPageWorkspace projectId={projectId} pageId={page.page_id} canvas={artworkCanvas} dimensionError={renderCapabilities.text_page?.error ?? (!textDimensions ? "无法确定成品尺寸，请检查生成设置。" : null)} dirty={pageDirty} disabled={busy || trackedTaskIds.length > 0} onLetteringTarget={setLetteringTarget} onOutput={async () => { if (!await editorSaveAll.current?.()) return null; if (!isCurrentWorkspace()) return null; return (await startFinishedPage(projectId, page.page_key)).job; }} />

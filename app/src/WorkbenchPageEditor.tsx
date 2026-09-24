@@ -125,6 +125,7 @@ export type WorkbenchPageEditorProps = {
   rewriteValue?: PageRewriteValue | null;
   rewriteLoading?: boolean;
   rewriteRunning?: boolean;
+  rewriteProgress?: PageRewriteValue['progress'];
   rewriteError?: string;
   promptSource?: PromptSourceChoice;
   onPromptSourceChange?: (value: PromptSourceChoice) => void;
@@ -609,6 +610,7 @@ export default function WorkbenchPageEditor({
   rewriteValue = null,
   rewriteLoading = false,
   rewriteRunning = false,
+  rewriteProgress = null,
   rewriteError = "",
   promptSource = "original",
   onPromptSourceChange,
@@ -758,7 +760,10 @@ export default function WorkbenchPageEditor({
   const anyDirty = contentDirty || promptDirty || layoutDirty;
   const saveNeeded = anyDirty || contentPhase === "error" || promptPhase === "error";
   const saving = contentPhase === "saving" || promptPhase === "saving";
-  const rewriteStatus = rewriteRunning ? "运行中" : rewriteError ? "失败" : rewriteLoading ? "读取中" : anyDirty ? "待保存" : rewriteValue?.status === "current" ? "当前" : rewriteValue?.status === "stale" ? "已过期" : "未生成";
+  const rewritePhases={preparing:'准备中',queued:'排队中',running:'执行中',loading:'加载模型／准备重写',generating:'重写中',saving:'保存结果',completed:'已完成',failed:'失败'};
+  const rewriteSeconds=Math.floor((rewriteProgress?.elapsed_ms??0)/1000);
+  const runningStatus=rewriteProgress?`${rewritePhases[rewriteProgress.phase]}${rewriteProgress.tokens?` · ${rewriteProgress.tokens} token`:''} · ${Math.floor(rewriteSeconds/60)}分${rewriteSeconds%60}秒`:'正在提交…';
+  const rewriteStatus = rewriteRunning ? runningStatus : rewriteError ? "失败" : rewriteLoading ? "读取中" : anyDirty ? "待保存" : rewriteValue?.status === "current" ? "当前" : rewriteValue?.status === "stale" ? "已过期" : "未生成";
   const canChooseRewrite = !anyDirty && !rewriteLoading && rewriteValue?.status === "current";
 
   function pruneOverrideSources(keep: (source: string) => boolean) {

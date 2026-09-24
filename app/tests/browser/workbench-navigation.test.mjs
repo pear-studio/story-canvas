@@ -130,6 +130,33 @@ async function setup(t, { character = false, mobile = false, visualPages = false
   return { page, renders, switchTo };
 }
 
+for (const mobile of [false, true]) test(`重写刷新后继续显示进度并读取成功或失败终态 ${mobile ? '手机' : '桌面'}`, async t => {
+  const { page } = await setup(t, { mobile, generationSettings: true });
+  let progress = { phase: 'generating', started_at: Date.now() - 200000, elapsed_ms: 200000, tokens: 620 };
+  let posts = 0;
+  await page.route('**/workbench/page-rewrite*', route => {
+    if (route.request().method() === 'POST') posts++;
+    const query = new URL(route.request().url()).searchParams;
+    return route.fulfill({ json: query.get('progress') === '1' ? { progress } : {
+      status: progress.phase === 'completed' ? 'current' : 'missing', original_prompt: 'quiet garden', progress,
+      rewrite: progress.phase === 'completed' ? { rewritten_prompt: 'A quiet garden.', wh_ratio: '3:4' } : null,
+    } });
+  });
+  await page.reload();
+  await page.getByRole('tab', { name: '视觉描述 / Prompt', exact: true }).click();
+  await page.getByText('状态：重写中 · 620 token · 3分20秒', { exact: true }).waitFor();
+  assert.equal(await page.getByRole('button', { name: '重写中…', exact: true }).isDisabled(), true);
+  assert.equal(await page.locator('body').evaluate(node => node.scrollWidth <= window.innerWidth), true);
+  progress = { ...progress, phase: 'completed', finished_at: Date.now() };
+  await page.getByText('状态：当前', { exact: true }).waitFor();
+  assert.equal(await page.getByLabel('使用重写结果').isEnabled(), true);
+  progress = { ...progress, phase: 'failed', error: '等待重写超过 15 分钟' };
+  await page.reload();
+  await page.getByRole('tab', { name: '视觉描述 / Prompt', exact: true }).click();
+  await page.getByText('重写失败：等待重写超过 15 分钟', { exact: true }).waitFor();
+  assert.equal(posts, 0);
+});
+
 for(const mobile of [false,true])test(`本页切换画幅和模型保留滚动位置，比例示意匹配横竖方向 ${mobile?'手机':'桌面'}`,async t=>{
   const {page}=await setup(t,{mobile,generationSettings:true});
   await page.getByLabel('本页画幅').waitFor();

@@ -464,11 +464,21 @@ export type PageRenderInspection = {
 };
 
 export type PromptSourceChoice = "original" | "rewrite";
+export type PageRewriteProgress = {
+  phase: 'preparing'|'queued'|'running'|'loading'|'generating'|'saving'|'completed'|'failed';
+  started_at: number; elapsed_ms: number; finished_at?: number; tokens?: number; error?: string;
+};
 export type PageRewriteValue = {
   status: "missing" | "current" | "stale";
   rewrite: null | { rewritten_prompt: string; wh_ratio: string };
   original_prompt: string;
+  progress?: PageRewriteProgress | null;
 };
+
+export async function loadPageRewriteProgress(projectId: string, pageKey: PageKey, signal?: AbortSignal) {
+  const query = new URLSearchParams({ page_key: JSON.stringify(pageKey), progress: '1' });
+  return workbenchResponseJson<{ progress: PageRewriteProgress | null }>(await readFacts(`${base(projectId)}/page-rewrite?${query}`, { signal }));
+}
 
 export async function loadPageRewrite(projectId: string, pageKey: PageKey, signal?: AbortSignal) {
   const query = new URLSearchParams({ page_key: JSON.stringify(pageKey) });

@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
-import { parsePromptRewrite, runPromptRewrite } from '../server/prompt-rewrite-runner.mjs';
+import { parsePromptRewrite, runPromptRewrite, rewriteProgressFromMessage } from '../server/prompt-rewrite-runner.mjs';
 
 async function fixture(t, answer) {
   const dir = await mkdtemp(path.join(tmpdir(), 'story-canvas-pe-'));
@@ -25,6 +25,8 @@ async function fixture(t, answer) {
           ? { status: { status_str: 'error' } }
           : { outputs: { '3': { text: [answer] } } },
       }));
+    } else if (request.url === '/queue') {
+      response.end(JSON.stringify({ queue_running: [[0, 'prompt-1']] }));
     } else {
       response.statusCode = 404;
       response.end('{}');
@@ -54,6 +56,8 @@ test('submits the official PE prompt to INT8 TextGenerate and parses the answer'
   assert.equal(graph['3'].class_type, 'SaveText');
   const diagnostic = JSON.parse(await readFile(path.join(args.taskDirectory, 'diagnostic.json'), 'utf8'));
   assert.equal(diagnostic.status, 'completed');
+  assert.equal(diagnostic.prompt_id, 'prompt-1');
+  assert.ok(args.submitted().client_id);
   assert.equal(JSON.stringify(diagnostic).includes(args.positivePrompt), false);
 });
 
@@ -68,8 +72,19 @@ test('reports ComfyUI errors and bounded timeout diagnostics', async (t) => {
   const failed = await fixture(t, 'error');
   await assert.rejects(runPromptRewrite(failed), { code: 'COMFY_FAILED' });
   const waiting = await fixture(t, null);
-  await assert.rejects(runPromptRewrite({ ...waiting, timeoutMs: 1100 }), { code: 'TIMEOUT' });
+  const progress = [];
+  await assert.rejects(runPromptRewrite({ ...waiting, timeoutMs: 1500, onProgress: value => progress.push(value) }), { code: 'TIMEOUT' });
+  assert.deepEqual(progress.map(value => value.phase), ['queued', 'running']);
   const diagnostic = JSON.parse(await readFile(path.join(waiting.taskDirectory, 'diagnostic.json'), 'utf8'));
   assert.equal(diagnostic.code, 'TIMEOUT');
   assert.equal(JSON.stringify(diagnostic).includes(waiting.positivePrompt), false);
+});
+
+test('rewrite progress filters other jobs and reports actual output counts without estimating percentages', () => {
+  const event = (type, data) => JSON.stringify({ type, data: { prompt_id: 'ours', ...data } });
+  assert.equal(rewriteProgressFromMessage(event('progress', { value: 30 }), 'other'), null);
+  assert.equal(rewriteProgressFromMessage('binary preview', 'ours'), null);
+  assert.deepEqual(rewriteProgressFromMessage(event('executing', { node: '2' }), 'ours'), { phase: 'loading' });
+  assert.deepEqual(rewriteProgressFromMessage(event('progress', { value: 620, max: 4096 }), 'ours'), { phase: 'generating', tokens: 620 });
+  assert.deepEqual(rewriteProgressFromMessage(event('executing', { node: '3' }), 'ours'), { phase: 'saving' });
 });
