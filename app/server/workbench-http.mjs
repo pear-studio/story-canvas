@@ -399,8 +399,8 @@ export async function handleWorkbenchRequest({
       } catch (error) {
         if (error instanceof PromptRewriteRunnerError) {
           throw new ApiError(502, error.code, [error.code === 'TIMEOUT'
-            ? '等待重写超过 3 分钟；ComfyUI 可能仍在执行，请先检查运行状态再重试。'
-            : `ComfyUI 重写失败：${error.code}`]);
+            ? '等待优化超过 3 分钟；ComfyUI 可能仍在执行，请先检查运行状态再重试。'
+            : `ComfyUI 优化失败：${error.code}`]);
         }
         throw error;
       }

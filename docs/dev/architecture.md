@@ -7,7 +7,7 @@ StoryCanvas 把项目创作事实、生成配置、本机执行任务和可重�
 剧情项目采用 `format: "story-models-v1"`，默认 Anima Basic，同时支持 Qwen-Image-2.1。
 页面 `render.json` 保存自己的模型、配置和画幅，创建时复制项目默认；之后互不联动。
 页面、角色和场景的 Prompt 采用 `models` 容器，每个模型适配器负责内部契约、编译和编辑器。
-Anima 保留分类词条、逐词继承、负向与机位；Qwen 保留整段文字和 ComfyUI PE-T2I 重写。
+Anima 保留分类词条、逐词继承、负向与机位；Qwen 保留整段文字和 ComfyUI PE-T2I 优化。
 首次从 Anima 切换到 Qwen，一次带入有效正向全文；不会重复追加角色、场景文字，之后独立编辑。
 候选、队列、保存、媒体和页面工作区共用。总览按各页模型展示编辑器，并逐页使用实际生成配置。
 实现入口与接入方式见[模型适配器](model-adapters.md)。已有 Qwen 项目沿用原读取路径，本轮不迁移，
@@ -187,9 +187,9 @@ Agent 使用“了解现状、分页、页面制作、Prompt 编写、主观探�
 - `POST /api/projects/:id/workbench/page-render-inspection`：以完整 PageKey 编译只读流程预览，可临时带入尚未保存的页面 Prompt 草稿；
   返回正负 Prompt（负向恒空）、按 sections 来源分段、编号参考图、出场角色 variant、有效生成配置、候选 route、recipe、workflow、画布、审计和阻断，
   不生成 Prompt ID、不落盘、不创建任务，也不要求 expected revision；
-- `GET|POST /api/projects/:id/workbench/page-rewrite`：读取单页最终 Prompt 的原文、独立重写结果与过期状态；POST 用官方 t2i 提示词调用本机 ComfyUI 的 PE-T2I INT8 `TextGenerate`，完成后在事实锁内重新核对输入指纹并写入 `pages/<page_id>.rewrite.json`。不修改页面 Prompt 与上游设定，不向重写器发送参考图；选用重写出图时按实际传图顺序确定性补上编号与用途说明；
+- `GET|POST /api/projects/:id/workbench/page-rewrite`：读取单页最终 Prompt 的原文、独立优化结果与过期状态；POST 用官方 t2i 提示词调用本机 ComfyUI 的 PE-T2I INT8 `TextGenerate`，完成后在事实锁内重新核对输入指纹并写入 `pages/<page_id>.rewrite.json`。不修改页面 Prompt 与上游设定，不向优化器发送参考图；选用优化结果出图时按实际传图顺序确定性补上编号与用途说明；
 - `POST /api/projects/:id/workbench/render`：完整 PageKey 单页候选生成入口；渲染读取提交时最新事实，
-  不要求 project revision，候选允许 1 到 3 张与可选 seed；`prompt_source` 可选 `original` 或 `rewrite`，后者缺失或过期时阻断，任务冻结实际选用的文本和来源分段；
+  不要求 project revision，候选允许 1 到 3 张与可选 seed；`prompt_source` 可选 `original` 或 `rewrite`，后者缺失时阻断，过期仅提示且允许继续使用，任务冻结实际选用的文本和来源分段；
 - `PUT /api/projects/:id/render-profile`：切换项目生成配置；
 - `GET/PUT /api/projects/:id/render-profile-override`：读取或完整替换项目稀疏生成配置调整；写入前
   验证所有 profile、语义目标、route 与 workflow topology，冲突可以保存但会阻止生成；

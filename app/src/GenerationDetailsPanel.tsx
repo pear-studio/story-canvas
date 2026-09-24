@@ -11,7 +11,7 @@ const promptSourceDefinitions: Array<{ id: PromptSource; label: string }> = [
   { id: "attachment", label: "附图用途" },
   { id: "page", label: "本页描述" },
   { id: "reference", label: "参考图用途" },
-  { id: "rewrite", label: "重写" },
+  { id: "rewrite", label: "优化" },
 ];
 
 function renderPromptSections(sections: PromptSection[], text: string, empty: string) {

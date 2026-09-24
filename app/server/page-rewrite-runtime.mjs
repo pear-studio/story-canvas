@@ -13,7 +13,7 @@ export function readPageRewriteProgress(root, projectId, pageKey) {
 export async function trackPageRewrite(root, projectId, pageKey, operation) {
   const id = key(root, projectId, pageKey);
   const previous = runs.get(id);
-  if (previous && !previous.finished_at) throw new ApiError(409, 'page_rewrite_running', ['本页正在重写，请等待当前任务完成']);
+  if (previous && !previous.finished_at) throw new ApiError(409, 'page_rewrite_running', ['本页正在优化，请等待当前任务完成']);
   const run = { phase: 'preparing', started_at: Date.now() };
   runs.set(id, run);
   try {

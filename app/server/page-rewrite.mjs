@@ -147,16 +147,7 @@ export async function selectedPagePrompt({ projectDirectory, resolved, promptSou
   if (promptSource !== "rewrite") throw new ApiError(400, "invalid_prompt_source");
   if (resolved.model_id === 'anima') throw new ApiError(422,'model_rewrite_unsupported');
   const document = await readDocument(projectDirectory, resolved.page_id);
-  const currentSha = sourceSha({
-    snapshot: resolved,
-    compiled_page: resolved.compiled_page,
-    reference_images: resolved.reference_images,
-    project: resolved.project,
-  });
   if (!document) throw new ApiError(409, "page_rewrite_missing");
-  if (!currentSha || document.input_sha256 !== currentSha || document.engine !== REWRITE_ENGINE) {
-    throw new ApiError(409, "page_rewrite_stale");
-  }
   const prefix = referencePrefix(resolved.compiled_page);
   const prompt = effectivePrompt(document, resolved.compiled_page);
   return {

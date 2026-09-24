@@ -130,7 +130,7 @@ async function setup(t, { character = false, mobile = false, visualPages = false
   return { page, renders, switchTo };
 }
 
-for (const mobile of [false, true]) test(`重写刷新后继续显示进度并读取成功或失败终态 ${mobile ? '手机' : '桌面'}`, async t => {
+for (const mobile of [false, true]) test(`优化刷新后继续显示进度并读取成功或失败终态 ${mobile ? '手机' : '桌面'}`, async t => {
   const { page } = await setup(t, { mobile, generationSettings: true });
   let progress = { phase: 'generating', started_at: Date.now() - 200000, elapsed_ms: 200000, tokens: 620 };
   let posts = 0;
@@ -144,17 +144,37 @@ for (const mobile of [false, true]) test(`重写刷新后继续显示进度并�
   });
   await page.reload();
   await page.getByRole('tab', { name: '视觉描述 / Prompt', exact: true }).click();
-  await page.getByText('状态：重写中 · 620 token · 3分20秒', { exact: true }).waitFor();
-  assert.equal(await page.getByRole('button', { name: '重写中…', exact: true }).isDisabled(), true);
+  await page.getByText('状态：优化中 · 620 token · 3分20秒', { exact: true }).waitFor();
+  assert.equal(await page.getByRole('button', { name: '优化中…', exact: true }).isDisabled(), true);
   assert.equal(await page.locator('body').evaluate(node => node.scrollWidth <= window.innerWidth), true);
   progress = { ...progress, phase: 'completed', finished_at: Date.now() };
   await page.getByText('状态：当前', { exact: true }).waitFor();
-  assert.equal(await page.getByLabel('使用重写结果').isEnabled(), true);
-  progress = { ...progress, phase: 'failed', error: '等待重写超过 3 分钟' };
+  assert.equal(await page.getByLabel('使用优化结果').isEnabled(), true);
+  progress = { ...progress, phase: 'failed', error: '等待优化超过 3 分钟' };
   await page.reload();
   await page.getByRole('tab', { name: '视觉描述 / Prompt', exact: true }).click();
-  await page.getByText('重写失败：等待重写超过 3 分钟', { exact: true }).waitFor();
+  await page.getByText('优化失败：等待优化超过 3 分钟', { exact: true }).waitFor();
   assert.equal(posts, 0);
+});
+
+for (const mobile of [false, true]) test(`过期优化结果仍可选用并提交生成 ${mobile ? '手机' : '桌面'}`, async t => {
+  const { page, renders } = await setup(t, { mobile, generationSettings: true });
+  await page.route('**/workbench/page-rewrite*', route => route.fulfill({ json: {
+    status: 'stale', original_prompt: 'A misty garden.',
+    rewrite: { rewritten_prompt: 'The previous garden description.', wh_ratio: '3:4' },
+  } }));
+  await page.reload();
+  await page.getByRole('tab', { name: '视觉描述 / Prompt', exact: true }).click();
+  await page.getByText('状态：已过期', { exact: true }).waitFor();
+  await page.getByLabel('使用优化结果').check();
+  await page.getByRole('button', { name: '优化', exact: true }).waitFor();
+  await page.locator('.page-rewrite__details > summary').filter({ hasText: '优化文本' }).click();
+  await page.getByText('The previous garden description.', { exact: true }).waitFor();
+  await page.locator('.current-workbench-page .generate-split__action').filter({ visible: true }).last().click();
+  await page.getByText('已启动当前页面任务', { exact: true }).waitFor();
+  assert.equal(renders.length, 1);
+  assert.equal(renders[0].prompt_source, 'rewrite');
+  assert.equal(await page.getByText('状态：已过期', { exact: true }).count(), 1);
 });
 
 for(const mobile of [false,true])test(`本页切换画幅和模型保留滚动位置，比例示意匹配横竖方向 ${mobile?'手机':'桌面'}`,async t=>{

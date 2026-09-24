@@ -711,7 +711,7 @@ export function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSet
     setRewriteState((current) => ({ identity: workspaceIdentity, value: current.identity === workspaceIdentity ? current.value : null, loading: true, running: current.identity === workspaceIdentity && current.running, error: "" }));
     if (page.model_id === "anima") { setRewriteState({identity:workspaceIdentity,value:null,loading:false,running:false,error:""}); return () => controller.abort(); }
     void loadPageRewrite(projectId, page.page_key, controller.signal).then((value) => {
-      if (!controller.signal.aborted) setRewriteState((current) => current.identity === workspaceIdentity ? { ...current, value, loading: false, progress:value.progress, running:current.running||Boolean(value.progress&&!value.progress.finished_at), error:value.progress?.phase==='failed'?value.progress.error??'重写失败':current.error } : current);
+      if (!controller.signal.aborted) setRewriteState((current) => current.identity === workspaceIdentity ? { ...current, value, loading: false, progress:value.progress, running:current.running||Boolean(value.progress&&!value.progress.finished_at), error:value.progress?.phase==='failed'?value.progress.error??'优化失败':current.error } : current);
     }).catch((error) => {
       if (!controller.signal.aborted) setRewriteState((current) => current.identity === workspaceIdentity ? { ...current, loading: false, error: error instanceof Error ? error.message : String(error) } : current);
     });
@@ -732,11 +732,11 @@ export function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSet
           const value = await loadPageRewrite(projectId, page.page_key, controller.signal);
           if (!controller.signal.aborted) setRewriteState(current => current.identity === workspaceIdentity ? {
             ...current, value, progress, running: false, loading: false,
-            error: progress.phase === 'failed' ? progress.error ?? '重写失败' : '',
+            error: progress.phase === 'failed' ? progress.error ?? '优化失败' : '',
           } : current);
           return;
         }
-      } catch { /* 进度读取暂时失败不终止正在执行的重写。 */ }
+      } catch { /* 进度读取暂时失败不终止正在执行的优化。 */ }
       if (!controller.signal.aborted) timer = setTimeout(poll, 1000);
     };
     void poll();
@@ -754,7 +754,7 @@ export function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSet
       setRenderInspection(null);
       setRenderInspectionKey("");
       setInspectionNonce((current) => current + 1);
-      notify({ kind: "success", message: "重写结果已保存" });
+      notify({ kind: "success", message: "优化结果已保存" });
     } catch (error) {
       if (isCurrentWorkspace()) setRewriteState((current) => current.identity === workspaceIdentity ? { ...current, running: false, error: error instanceof Error ? error.message : String(error) } : current);
     } finally {pendingRewrites.current.delete(workspaceIdentity);}

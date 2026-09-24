@@ -162,7 +162,7 @@ async function saveReferenceMaterial(fixture, id, background = "#123456") {
   return { id: `ref-${id}`, file, title: "参考", bytes };
 }
 
-test("页面重写独立保存，选择后进入生成任务，源变化使结果过期", async context => {
+test("页面优化独立保存，源变化提示过期但仍可选择并冻结进生成任务", async context => {
   const fixture = await createFixture(context);
   await prepareWriteAuditFixture(fixture);
   const pageKey = { page_id: "page-001" };
@@ -195,9 +195,14 @@ test("页面重写独立保存，选择后进入生成任务，源变化使结�
   prompt.text = "艾莲转身面向列车。";
   await writeJson(promptFile, prompt);
   assert.equal((await readPageRewriteState({ ...fixture, pageKey })).status, "stale");
-  await assert.rejects(compileAndPersistWorkbenchRenderTask(fixture.repositoryRoot, fixture.projectId, {
+  const staleInspection = await inspectPageRender({ ...fixture, pageKey, promptSource: "rewrite" });
+  assert.equal(staleInspection.prompt.positive, rewrittenPrompt);
+  const staleTask = await compileAndPersistWorkbenchRenderTask(fixture.repositoryRoot, fixture.projectId, {
     page_key: pageKey, operation: "candidates", count: 1, prompt_source: "rewrite",
-  }, { repositoryRoot: fixture.repositoryRoot }), { code: "page_rewrite_stale" });
+  }, { repositoryRoot: fixture.repositoryRoot });
+  assert.equal(staleTask.task.items[0].positive_prompt, rewrittenPrompt);
+  assert.equal((await readPageRewriteState({ ...fixture, pageKey })).status, "stale");
+  assert.equal(staleInspection.generation_signature, taskGenerationSignature(staleTask.task, staleTask.task.items[0]));
 });
 
 test("INT8 重写不保留图片标签时，最终 Prompt 仍按实际图片顺序补用途", async context => {
