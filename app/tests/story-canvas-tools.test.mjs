@@ -95,3 +95,22 @@ test('DSH 错误适配不改变两个工具的成功结果与渲染', async t =>
     assert.deepEqual(JSON.parse(tool.output.render(args, value)[0].text), expected);
   }
 });
+
+test('DSH help 可离线发现操作，混入执行参数时拒绝且不发送请求', async t => {
+  const { tools, requests } = await fixture(t, () => assert.fail('help 不应发送请求'));
+  const api = tools.get('story_canvas_api');
+  const facts = tools.get('story_canvas_facts');
+  const projects = await api.execute({ help: 'projects' });
+  assert.ok(projects.requests.some(item => item.path.endsWith('/copy') && item.method === 'POST'));
+  assert.ok(projects.requests.some(item => item.path.endsWith('/promote') && item.body.path));
+  assert.ok((await api.execute({ help: 'pages' })).revision.includes('value.revision'));
+  assert.equal((await api.execute({ help: 'project-create' })).steps[0].method, 'POST');
+  assert.ok((await facts.execute({ operation: 'help' })).save.includes('expected_context_sha256'));
+  for (const [tool, args] of [
+    [api, { help: 'unknown' }],
+    [api, { help: 'projects', method: 'POST', path: '/api/project-library/demo/delete' }],
+    [api, {}],
+    [facts, { operation: 'help', draft: {} }],
+  ]) assert.equal((await failurePayload(tool, args)).error, 'invalid_arguments');
+  assert.equal(requests(), 0);
+});

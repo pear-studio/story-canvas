@@ -10,6 +10,11 @@
 - **DSH 原生工具**：安装本仓库 [DSH 预设 bundle](../../.dsh/presets/README.md)，会话选择 StoryCanvas 创作或极简预设后可用 `story_canvas_facts` 与
   `story_canvas_api`，直接收发结构化对象，不要求先落盘。
 
+DSH 工具用法由工具内置 help 提供：`story_canvas_api({help:"projects"})`（项目生命周期）、
+`{help:"pages"}`（页面管理）、`{help:"project-create"}`（新建项目）；
+`story_canvas_facts({operation:"help"})` 提供事实草稿与 Prompt 编辑规则。
+help 不发送 HTTP 请求；本页保留 CLI 与底层协议说明，不另维护 DSH 调用细则。
+
 ## 查询关联项目的 Git
 
 `GET /api/project-library/:id/git` 为剧情与训练项目共用的只读查询；ID 来自 `GET /api/project-library`。
