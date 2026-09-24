@@ -1,0 +1,24 @@
+{
+  "$schema": "../schemas/workflow-manifest.schema.json",
+  "id": "anima-candidate-page",
+  "template": "anima-candidate-page.api.json",
+  "architecture_families": ["anima"],
+  "operations": ["candidates"],
+  "input_sources": ["empty_latent"],
+  "modifiers": ["lora.model_only"],
+  "bindings": {
+    "dit": "1.inputs.unet_name",
+    "text_encoder": "2.inputs.clip_name",
+    "vae": "3.inputs.vae_name",
+    "positive_prompt": "4.inputs.text",
+    "negative_prompt": "5.inputs.text",
+    "width": "6.inputs.width",
+    "height": "6.inputs.height",
+    "seed": "7.inputs.seed",
+    "steps": "7.inputs.steps",
+    "cfg": "7.inputs.cfg",
+    "sampler": "7.inputs.sampler_name",
+    "scheduler": "7.inputs.scheduler",
+    "filename_prefix": "9.inputs.filename_prefix"
+  }
+}

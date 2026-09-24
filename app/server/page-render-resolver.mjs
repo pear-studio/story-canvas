@@ -1,5 +1,6 @@
 import { readReferenceImage } from "./reference-image.mjs";
 import { readPageIndex } from './pages-store.mjs';
+import { readPageRenderSettings, pageProjectSettings } from './page-render-settings.mjs';
 import { resolveSceneConfiguration } from './scene-files.mjs';
 import { readScenes } from './scene-facts.mjs';
 import { createHash } from "node:crypto";
@@ -241,8 +242,11 @@ export async function capturePagePromptSnapshot(projectDirectory, pageId, pageKe
     loadPageSnapshot(projectDirectory, pageId, pageKey),
   ]);
   snapshot.sources.push(projectSource);
+  const render = await readPageRenderSettings(projectDirectory, pageId, projectSource.value);
+  const renderSource = { relative_path: `pages/${pageId}.render.json`, sha256: hashCanonicalJson(render), value: render };
+  snapshot.sources.push(renderSource);
   snapshot.source_fingerprint = hashCanonicalJson(Object.fromEntries(snapshot.sources.map((source) => [source.relative_path, source.sha256])));
-  return { ...snapshot, project: projectSource.value, project_source: projectSource };
+  return { ...snapshot, render, project_defaults: projectSource.value, project: pageProjectSettings(projectSource.value, render), project_source: projectSource };
 }
 
 function assertStoryProjectFormat(project) {

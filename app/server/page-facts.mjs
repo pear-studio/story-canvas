@@ -1,4 +1,5 @@
 import { cleanRemovedReferences, removeUnusedFile, savePageReferenceInputs } from './reference-materials.mjs';
+import { pageSettingsFromDefaults, readPageRenderSettings } from './page-render-settings.mjs';
 // 调用方持有项目写锁。本模块统一页面生命周期及整页提交，归属不参与生成引用推导。
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -53,6 +54,7 @@ async function newPageId(directory,index) {
 }
 export async function createPage(root,projectId,owner,{templateId=null,afterPageId=null,pageKind=null,characterId,variantId,beforeCommit}={}) {
   const project=await projectAt(root,projectId), directory=project.projectDirectory;
+  const render=pageSettingsFromDefaults(await optionalJson(directory,'project.json'));
   await assertPageOwner(directory,owner);
   if(pageKind!==null&&pageKind!=='text')fail('invalid_page_kind');
   if(pageKind==='text'&&templateId!==null)fail('invalid_page_kind',['文字页不支持模板']);
@@ -73,7 +75,7 @@ export async function createPage(root,projectId,owner,{templateId=null,afterPage
   assertValid(validateStoryPageNarrativeDocument(content));assertValid(validateStoryPagePromptDocument(prompt));
   insertEntry(next,{page_id:id,...owner},{afterPageId});
   if(beforeCommit)await beforeCommit({page_id:id,content_file:path.join(directory,pageRelativePath(id,'content')),prompt_file:path.join(directory,pageRelativePath(id,'prompt')),index_file:path.join(directory,'pages/index.json')});
-  await commitFactChanges(directory,[{relative:pageRelativePath(id,'content'),before:null,after:content},{relative:pageRelativePath(id,'prompt'),before:null,after:prompt},{relative:'pages/index.json',before:index,after:next}]);
+  await commitFactChanges(directory,[{relative:pageRelativePath(id,'content'),before:null,after:content},{relative:pageRelativePath(id,'prompt'),before:null,after:prompt},{relative:pageRelativePath(id,'render'),before:null,after:render},{relative:'pages/index.json',before:index,after:next}]);
   return {page_id:id,page_key:{page_id:id},...owner,template_id:templateId,content_file:path.join(directory,pageRelativePath(id,'content')),prompt_file:path.join(directory,pageRelativePath(id,'prompt')),index_file:path.join(directory,'pages/index.json')};
 }
 export async function movePage(root,projectId,pageId,owner,{beforePageId=null}={}) {
@@ -90,6 +92,7 @@ export async function duplicatePage(root,projectId,pageId) {
   const id=await newPageId(directory,index),next=clone(index);insertEntry(next,{...source,page_id:id},{afterPageId:pageId});
   const content=await readPageContent(directory,pageId),prompt=await readPagePrompt(directory,pageId);content.title+=' 副本';
   const writes=[{relative:pageRelativePath(id,'content'),before:null,after:content},{relative:pageRelativePath(id,'prompt'),before:null,after:prompt}];
+  writes.push({relative:pageRelativePath(id,'render'),before:null,after:await readPageRenderSettings(directory,pageId)});
   const sources=await optionalJson(directory,pageRelativePath(pageId,'text-sources'));if(sources)writes.push({relative:pageRelativePath(id,'text-sources'),before:null,after:sources});
   const layouts=await optionalJson(directory,'lettering/dialogue-layouts.json');const layout=layouts?.pages.find(item=>item.page===pageId);
   if(layout){const updated=clone(layouts);updated.pages.push({...clone(layout),page:id});writes.push({relative:'lettering/dialogue-layouts.json',before:layouts,after:updated});}
@@ -103,7 +106,7 @@ export async function deletePage(root,projectId,pageId,{beforeCommit}={}) {
   if((await listFinishedJobs(directory)).some(job=>job.page_id===pageId&&finishedBusyStatuses.has(job.status)))fail('page_finished_output_busy',[pageId]);
   const removedReferences = await optionalJson(directory, pageRelativePath(pageId, 'prompt'));
   const deletionId=`deleted-${randomBytes(6).toString('hex')}`,archive=path.join(path.resolve(root),'Saved/state/deleted-pages',project.projectId,deletionId);
-  const descriptors=[...['content','prompt','rewrite','text-sources'].map(kind=>pageRelativePath(pageId,kind)),`Outputs/pages/${pageId}`];
+  const descriptors=[...['content','prompt','render','rewrite','text-sources'].map(kind=>pageRelativePath(pageId,kind)),`Outputs/pages/${pageId}`];
   const siblings=index.pages.filter(page=>sameOwner(page,entry)),ordinal=siblings.findIndex(page=>page.page_id===pageId);
   const position={ordinal,previous_page_id:siblings[ordinal-1]?.page_id??null,next_page_id:siblings[ordinal+1]?.page_id??null};
   if(beforeCommit)await beforeCommit();

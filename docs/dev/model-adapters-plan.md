@@ -93,6 +93,8 @@ Anima 恢复来源固定为 `64db906`（`73d9c66` 的父提交）。该版本已
 只有实际使用过的模型才需要输入。角色/场景同样让适配器拥有其 Prompt 结构；已有 Qwen 设定与引用不丢失。
 公共 read/save 负责目标指纹、依赖指纹和提交，适配器校验自身数据。公共层不得把模型输入转换成另一模型的格式。
 保存、复制、删除归档、项目复制、revision 扫描、Agent read/save、材料引用扫描必须一起覆盖新事实。
+角色/场景子设定重命名和删除必须遍历所有已存在模型输入，包含非活动模型的 scene、inheritance、
+text/reference overrides 和材料引用；不能只修改当前 UI 投影。
 切模型涉及新增输入时与 render 选择一起原子提交；离开前沿用现有未保存草稿处理。
 
 ## 5. Qwen 的具体体验
@@ -193,4 +195,6 @@ PE-T2I 优化是 Qwen 专属能力：
 - 2026-09-24：建立计划，等待独立审查；未开始功能实现。
 - 基线验证：`npm --prefix C:/Workspace/story-canvas/app test` 通过；TypeScript、Vite 构建通过，Node 测试 633 项（632 通过、1 跳过、0 失败）。
 - 独立审查首轮：基础阶段放行；保留 models 容器并向成熟 UI 提供模型投影，避免维护重复当前 Prompt。两项 P1（Qwen 重复拼接、LoRA 自动触发词丢失）已在第 5、6 节补充规则；详细接缝审查继续进行。
+- 独立审查完成：第三项 P1（设定生命周期和材料清理遗漏非活动模型）补入第 4 节；三项均纳入行为验收。旧 Anima 独立编辑组件、纯 helper、Basic 资源已恢复；TypeScript 和恢复的 20 项 helper 测试通过，尚未接入工作台。
+- 基础阶段：显式后端注册、两模型 profile Prompt 解析、Qwen standalone 编译、页面 render 事实及创建/复制/归档和读取接线完成。完整测试 656 项（655 通过、1 跳过）；日志 `Saved/Agent/model-adapters/phase-b-foundation-verified.log`。旧格式读取 fallback 仅用于分阶段迁移窗口，新格式缺少 render 明确报错；正式项目尚未迁移，UI 尚未开放模型切换。
 - 后续在此记录审查结论、各阶段提交、实际测试命令/结果及尚未完成的验收。

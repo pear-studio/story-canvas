@@ -14,7 +14,7 @@ async function fixture(t) {
  const root=await mkdtemp(path.join(os.tmpdir(),'unified-save-'));t.after(()=>rm(root,{recursive:true,force:true}));
  const directory=path.join(root,'workspace','test');
  const write=async(relative,value)=>{const file=path.join(directory,relative);await mkdir(path.dirname(file),{recursive:true});await writeFile(file,JSON.stringify(value));};
- await write('project.json',{title:'测试',canvas:'2:3'});
+ await write('project.json',{format:'story-free-text-v1',title:'测试',canvas:'2:3',default_render_profile:'qwen-image-2-1'});
  await write('story/outline.json',{$schema:STORY_OUTLINE_SCHEMA_ID,synopsis:'测试',chapters:[{id:'chapter',title:'章',summary:'摘要',sequences:[{id:'a',title:'一',summary:'摘要'},{id:'b',title:'二',summary:'摘要'}]}]});
  await write('characters/index.json',{$schema:'https://storyvisualizer.local/schemas/character-index.schema.json',characters:[]});
  await write('scenes/index.json',{$schema:'https://storyvisualizer.local/schemas/scene-index.schema.json',scenes:[]});

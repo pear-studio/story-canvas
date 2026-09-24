@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { generationModels, profileModelAdapter } from './model-adapters.mjs';
 
 import {
   assertFrozenWorkflowDefinition,
@@ -19,7 +20,7 @@ const profileIdPattern = /^[a-z0-9][a-z0-9-]*$/;
 const stableIdPattern = /^[a-z0-9][a-z0-9_-]*$/;
 const fragmentIdPattern = /^[a-z0-9][a-z0-9-]*$/;
 const sha256Pattern = /^[0-9a-f]{64}$/;
-const architectures = new Set(["qwen-image-2-1"]);
+const architectures = new Set(generationModels.map(model => model.architecture));
 const canvases = new Set(["2:3", "3:4", "9:16", "4:3"]);
 const operationInputs = Object.freeze({
   candidates: new Set(["empty_latent", "reference_image"]),
@@ -33,7 +34,6 @@ const recipeFields = new Set([
 const modelFields = new Set(["filename", "relative_path", "size_bytes", "sha256", "source"]);
 const loraFields = new Set(["filename", "sha256", "weight", "trigger"]);
 const routeFields = new Set(["workflow", "recipe"]);
-const promptFields = new Set(["text"]);
 const operationFields = new Set(["routes"]);
 const relativeAssetPattern = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))(?!.*\\).+$/;
 
@@ -105,12 +105,6 @@ function assertModel(value, label) {
   if (value.source !== undefined) assertNonEmptyString(value.source, `${label}.source`);
 }
 
-function assertPromptText(value, label) {
-  assertRecord(value, label);
-  assertExactFields(value, promptFields, label);
-  if (typeof value.text !== "string") fail(`${label}.text 必须是字符串`);
-}
-
 function assertRecipe(value, expectedId) {
   assertRecord(value, `recipe ${expectedId}`);
   assertExactFields(value, recipeFields, `recipe ${expectedId}`);
@@ -162,7 +156,7 @@ function assertProfile(value, expectedId) {
     assertModel(model, `${expectedId}.models.${role}`);
   }
 
-  assertPromptText(value.prompt, `${expectedId}.prompt`);
+  profileModelAdapter(value).validateProfilePrompt(value.prompt);
 
   assertRecord(value.operations, `${expectedId}.operations`);
   for (const operation of requiredOperations) if (!Object.hasOwn(value.operations, operation)) fail(`${expectedId}.operations 缺少 ${operation}`);
@@ -233,7 +227,7 @@ function assertEffectiveContent(profile) {
     fail(`${profile.id}.models 与结构家族不一致`);
   }
   for (const [role, model] of Object.entries(profile.models)) assertModel(model, `${profile.id}.models.${role}`);
-  assertPromptText(profile.prompt, `${profile.id}.prompt`);
+  profileModelAdapter(profile).validateProfilePrompt(profile.prompt, { effective: true });
   for (const [id, lora] of Object.entries(profile.style_loras ?? {})) {
     assertRecord(lora, `${profile.id}.style_loras.${id}`);
     assertNonEmptyString(lora.filename, `${profile.id}.style_loras.${id}.filename`);
@@ -302,7 +296,7 @@ async function compileEffectiveRenderProfileImplementation({ repositoryRoot, pro
   }
 
   const effectiveProfile = clone(overrideResolution.effective_profile);
-  const sourceIdentity = clone(baseBundle.source_identity);
+  const sourceIdentity = await profileModelAdapter(effectiveProfile).resolveEffectivePrompt(repositoryRoot, baseBundle, overrideResolution, effectiveProfile);
   assertEffectiveContent(effectiveProfile);
   const workflows = await resolveEffectiveWorkflows(repositoryRoot, baseBundle, effectiveProfile);
   sourceIdentity.workflows = Object.fromEntries(Object.entries(workflows).map(([id, definition]) => [id, {
@@ -328,6 +322,7 @@ async function readResolvedRenderProfileImplementation(repositoryRoot, profileId
   const profileSource = await readJsonSource(repositoryRoot, "render-profiles", profileId, "render profile");
   assertProfile(profileSource.value, profileId);
   const profile = profileSource.value;
+  const promptBundle = await profileModelAdapter(profile).resolveProfilePrompt(repositoryRoot, profile);
 
   const profileOperations = profile.operations;
   const sharedAssetIdentity = {};
@@ -377,11 +372,12 @@ async function readResolvedRenderProfileImplementation(repositoryRoot, profileId
     ...(profile.tags ? { tags: clone(profile.tags) } : {}),
     architecture_family: profile.architecture_family,
     models: clone(profile.models),
-    prompt: { text: profile.prompt.text },
+    prompt: promptBundle.prompt,
     operations,
     style_loras: clone(profile.style_loras),
   };
   const sourceIdentity = {
+    ...promptBundle.identity,
     profile: profileSource.provenance,
     shared_assets: sharedAssetIdentity,
     recipes: recipeProvenance,

@@ -1,4 +1,5 @@
 import { readPageIndex, pageRelativePath } from './pages-store.mjs';
+import { readPageRenderSettings, pageProjectSettings } from './page-render-settings.mjs';
 import { resolveRenderRecipe } from "./render-task-contract.mjs";
 import { defaultTextPageLayout } from "../shared/text-page-layout.mjs";
 import { readScenes } from './scene-facts.mjs';
@@ -192,7 +193,10 @@ export async function readProjectWorkbenchView(projectRoot, projectId) {
       if (!scene) diagnostics.push({code:"dangling_scene_reference",page_id:pageId,scene_id:promptValue.scene_id});
       else if (!scene.visual.variants.some(variant => variant.id === promptValue.scene_variant_id)) diagnostics.push({code:"dangling_scene_variant_reference",page_id:pageId,scene_id:promptValue.scene_id,variant_id:promptValue.scene_variant_id});
     }
+    const render = await readPageRenderSettings(project.projectDirectory, pageId, projectDocument);
     const page = {
+      render, render_sha256: hashCanonicalJson(render),
+      render_capabilities: await readRenderCapabilities(path.resolve(projectRoot), project.projectDirectory, pageProjectSettings(projectDocument, render)),
       ...membership, kind: membership.owner_kind, owner: structuredClone(membership),
       owner_id: membership.character_id ?? membership.scene_id,
       page_key: createPageKey(pageId), title: content.title, scene_description: content.scene_description,

@@ -118,12 +118,12 @@ test("缺失引用、workflow 不兼容和多余拓扑参数都在解析时拒�
   await assert.rejects(() => readResolvedRenderProfile(legacyPrompt, "qwen-image-2-1"), /未知字段|prompt\.text 必须是字符串/);
 });
 
-test("生成配置只接受 Qwen 结构家族并拒绝旧家族", async () => {
+test("生成配置由各自模型校验 Prompt，拒绝家族与输入不匹配", async () => {
   const root = await fixture("qwen-image-2-1", async (fixtureRoot) => {
     const file = path.join(fixtureRoot, "library", "render-profiles", "qwen-image-2-1.json");
     const profile = await json(file);
     profile.architecture_family = "anima";
     await writeJson(file, profile);
   });
-  await assert.rejects(() => readResolvedRenderProfile(root, "qwen-image-2-1"), /architecture_family 无效/);
+  await assert.rejects(() => readResolvedRenderProfile(root, "qwen-image-2-1"), /anima.prompt/);
 });

@@ -27,7 +27,7 @@ export function validatePagesIndexDocument(value) {
 export function pageRelativePath(pageId, kind) {
   if (!isPageId(pageId)) throw new TypeError('无效页面 ID');
   const normalized = kind === 'narrative' || kind === 'goal' ? 'content' : kind;
-  if (!['content','prompt','rewrite','text-sources'].includes(normalized)) throw new TypeError('无效页面事实类型');
+  if (!['content','prompt','render','rewrite','text-sources'].includes(normalized)) throw new TypeError('无效页面事实类型');
   return `pages/${pageId}.${normalized}.json`;
 }
 export async function readPageIndex(directory) {

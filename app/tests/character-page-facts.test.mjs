@@ -70,6 +70,7 @@ async function createFixture(context, { templates = false } = {}) {
   }
   const projectId = "demo";
   const projectDirectory = path.join(repositoryRoot, "workspace", projectId);
+  await writeJson(path.join(projectDirectory, 'project.json'), { format: 'story-free-text-v1', title: '测试', canvas: '2:3', default_render_profile: 'qwen-image-2-1' });
   const charactersDirectory = path.join(projectDirectory, "characters");
   const pagesDirectory = path.join(projectDirectory, "pages");
   await mkdir(path.join(projectDirectory, "lettering"), { recursive: true });

@@ -48,6 +48,7 @@ function sourceSha(context) {
     page_key: encodePageKey(context.snapshot.page_key),
     positive_prompt: positive,
     canvas: context.project.canvas,
+    model_profile: context.project.default_render_profile,
     reference_images: context.reference_images.map(image => ({
       material_file: image.material_file,
       source_sha256: image.source_sha256,

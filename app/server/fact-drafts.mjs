@@ -4,10 +4,12 @@ import * as character from "./character-facts.mjs";
 import * as page from "./character-page-facts.mjs";
 import { hashCanonicalJson } from "./workflow-definition.mjs";
 import { ApiError } from "./http-support.mjs";
+import { readPageRenderDraft, commitPageRender } from './page-render-settings.mjs';
 
 function draftOperation(domain, kind) {
   if (domain === "scene" && ["profile", "visual", "prompt"].includes(kind)) return { read: scene.readSceneFactDraft, commit: scene.commitSceneFact, kind };
   if (domain === "page") {
+    if (kind === 'render') return { read: readPageRenderDraft, commit: commitPageRender, kind };
     if (["content", "prompt"].includes(kind)) return { read: story.readStoryFactDraft, commit: story.commitStoryFact, kind: kind === "content" ? "narrative" : kind };
     if (kind === "text-sources") return { read: story.readTextSourcesDraft, commit: story.commitTextSources, kind };
   }

@@ -1,0 +1,36 @@
+.prompt-dictionary-suggestion-row { min-width: 0; display: flex; align-items: center; gap: 8px; padding-right: 7px; border-radius: 6px; }
+.prompt-dictionary-suggestion-row:hover, .prompt-dictionary-suggestion-row.is-active { background: var(--green-soft); }
+.prompt-dictionary-suggestion-select { min-width: 0; flex: 1; padding: 8px; text-align: left; border: 0; border-radius: 6px; background: transparent; cursor: pointer; }
+.prompt-dictionary-suggestion-select > span { min-width: 0; display: grid; gap: 3px; }
+.prompt-dictionary-frequency-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: none; min-height: 30px; padding: 4px 8px; border: 1px solid currentColor; border-radius: 7px; font-size: var(--text-meta); font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--muted); background: white; cursor: pointer; }
+.prompt-dictionary-frequency-button:hover { filter: brightness(.96); }
+.prompt-dictionary-frequency-button:focus-visible, .prompt-dictionary-suggestion-select:focus-visible { outline: 2px solid var(--green); outline-offset: 1px; }
+.prompt-dictionary-frequency-button > span { font-size: var(--text-body); }
+.prompt-dictionary-details { width: min(760px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); padding: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; color: var(--ink); background: white; font-family: inherit; font-size: var(--text-body); box-shadow: 0 18px 60px rgba(22,40,31,.24); }
+.prompt-dictionary-details[open] { display: flex; flex-direction: column; }
+.prompt-dictionary-details::backdrop { background: rgba(22,40,31,.28); }
+.prompt-dictionary-details-header { display: flex; flex: none; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 22px 24px 18px; border-bottom: 1px solid var(--line); }
+.prompt-dictionary-details-header > div { min-width: 0; display: grid; gap: 6px; overflow-wrap: anywhere; }
+.prompt-dictionary-details-header h2 { margin: 0; font-size: var(--text-page-title); font-weight: 650; line-height: 1.4; letter-spacing: 0; }
+.prompt-dictionary-details-header code { color: var(--muted); font-size: var(--text-label); line-height: 1.5; }
+.prompt-dictionary-details-header > button { flex: none; width: 32px; height: 32px; padding: 0; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: white; cursor: pointer; font-size: 22px; line-height: 1; }
+.prompt-dictionary-details-header > button:hover { color: var(--ink); background: var(--paper); }
+.prompt-dictionary-details-content { min-height: 0; padding: 22px 24px 26px; overflow-y: auto; overscroll-behavior: contain; }
+.prompt-dictionary-detail-facts { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 12px 16px; margin: 0; font-size: var(--text-label); line-height: 1.6; }
+.prompt-dictionary-detail-facts dt { padding-top: 2px; color: var(--muted); }
+.prompt-dictionary-detail-facts dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.prompt-dictionary-detail-facts a { color: var(--green); text-underline-offset: 3px; }
+.prompt-dictionary-detail-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.prompt-dictionary-detail-chips > span { max-width: 100%; padding: 2px 8px; border-radius: 5px; background: #f0f4f1; overflow-wrap: anywhere; }
+.prompt-dictionary-detail-empty { margin: 0; color: var(--muted); font-size: var(--text-label); }
+.prompt-dictionary-description-section { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+.prompt-dictionary-description-section h3 { margin: 0 0 12px; font-size: var(--text-section-title); font-weight: 650; line-height: 1.5; }
+.prompt-dictionary-description-body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--text-body); line-height: 1.8; }
+.prompt-dictionary-original-section .prompt-dictionary-description-body { color: #52615c; }
+@media (max-width: 520px) {
+  .prompt-dictionary-details-header { padding: 18px 16px 14px; }
+  .prompt-dictionary-details-content { padding: 18px 16px 22px; }
+  .prompt-dictionary-detail-facts { grid-template-columns: 65px minmax(0, 1fr); gap: 10px; }
+  .prompt-dictionary-suggestion-row { gap: 3px; }
+  .prompt-dictionary-frequency-button { padding-inline: 5px; gap: 4px; }
+}
