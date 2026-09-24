@@ -1,0 +1,13 @@
+{
+  "name": "@local/dsh-story-canvas-presets",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./tools": "./story-canvas/story-canvas-tools.mjs",
+    "./lite-tools": "./lite-tools.mjs",
+    "./package.json": "./package.json"
+  },
+  "description": "StoryCanvas 创作与本地模型极简预设",
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
+}
