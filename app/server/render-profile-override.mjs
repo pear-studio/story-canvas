@@ -21,7 +21,7 @@ const recipeParameters = new Set([
   "second_pass_sampler",
   "second_pass_scheduler",
 ]);
-const canvases = new Set(["2:3", "3:4", "9:16", "4:3"]);
+const canvases = new Set(["3:4", "1:1", "4:3", "2:3", "9:16"]);
 const topLevelFields = new Set(["$schema", "version", "profiles"]);
 const groupFields = new Set(["changes"]);
 const changeFields = new Set(["target", "original", "project"]);
@@ -104,7 +104,7 @@ function parseTarget(target) {
   if (recipeParameter && recipeParameters.has(recipeParameter[1])) {
     return { kind: "route_recipe_parameter", ...base, parameter: recipeParameter[1] };
   }
-  const resolution = /^recipe\.resolutions\.(2:3|3:4|9:16|4:3)$/.exec(route[3]);
+  const resolution = /^recipe\.resolutions\.(3:4|1:1|4:3|2:3|9:16)$/.exec(route[3]);
   if (resolution && canvases.has(resolution[1])) return { kind: "route_recipe_resolution", ...base, canvas: resolution[1] };
   return null;
 }

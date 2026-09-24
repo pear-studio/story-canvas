@@ -3,12 +3,7 @@ import {readFacts,mutateTargetFacts} from '../project-write-client';
 import {workbenchResponseJson} from '../api-response';
 import type {WorkbenchPage} from '../project-workbench-client';
 import {modelChoices} from './registry';
-const canvasChoices = [
-  {value:'2:3',label:'2:3 · 竖幅'},
-  {value:'3:4',label:'3:4 · 竖幅'},
-  {value:'9:16',label:'9:16 · 长竖幅'},
-  {value:'4:3',label:'4:3 · 横幅'},
-];
+import canvasChoices from '../../shared/canvas-presets.json';
 export function PageGenerationSettings({projectId,page,disabled,beforeChange,onSaved}:{projectId:string;page:WorkbenchPage;disabled:boolean;beforeChange:()=>Promise<boolean>;onSaved:()=>Promise<void>|void}) {
   const [saving,setSaving]=useState(false),[error,setError]=useState('');
   if(!page.render)return null;
@@ -35,10 +30,13 @@ export function PageGenerationSettings({projectId,page,disabled,beforeChange,onS
   return <div className="page-generation-settings">
     <label>生成模型 <select aria-label="本页生成模型" disabled={disabled||saving} value={page.render.model_id??'qwen'} onChange={event=>{const choice=modelChoices.find(c=>c.id===event.target.value)!;void change({model_id:choice.id,profile_id:choice.profileId});}}>{modelChoices.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}</select></label>
     <label>画幅
-      <svg className="page-canvas-preview" width="30" height="30" viewBox="0 0 30 30" role="img" aria-label={`画幅示意：${canvasChoices.find(c=>c.value===page.render!.canvas)?.label??page.render.canvas}`}>
+      <svg className="page-canvas-preview" width="30" height="30" viewBox="0 0 30 30" role="img" aria-label={`画幅示意：${page.render.canvas} · ${canvasChoices.find(c=>c.value===page.render!.canvas)?.label??''}`}>
         <rect x={(30-width*scale)/2} y={(30-height*scale)/2} width={width*scale} height={height*scale} rx="1"/>
       </svg>
-      <select aria-label="本页画幅" disabled={disabled||saving} value={page.render.canvas} onChange={event=>void change({canvas:event.target.value})}>{canvasChoices.map(c=><option key={c.value} value={c.value}>{c.label}</option>)}</select>
+      <select aria-label="本页画幅" disabled={disabled||saving} value={page.render.canvas} onChange={event=>void change({canvas:event.target.value})}>
+        {!canvasChoices.some(c=>c.value===page.render!.canvas)&&<option value={page.render.canvas} disabled>原画幅 {page.render.canvas}</option>}
+        {canvasChoices.map(c=><option key={c.value} value={c.value}>{c.label} {c.value} · {c.width}×{c.height}</option>)}
+      </select>
     </label>
     {page.model_id==='qwen'&&page.model_prompts?.models?.anima&&<button type="button" className="button button--quiet" disabled={disabled||saving} onClick={()=>void reimport()}>从 Anima 重新带入文字</button>}
     {saving&&<small>保存中…</small>}{error&&<p role="alert">{error}</p>}

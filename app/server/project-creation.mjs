@@ -36,7 +36,7 @@ import { factStorage as storage } from "./story-facts.mjs";
 
 const projectSchemaId = "https://storyvisualizer.local/schemas/project.schema.json";
 const renderProfileOverrideSchemaId = "https://storyvisualizer.local/schemas/render-profile-override.schema.json";
-const canvasValues = new Set(["3:4", "2:3", "9:16", "4:3"]);
+const canvasValues = new Set(["3:4", "1:1", "4:3", "2:3", "9:16"]);
 const renderProfileIdPattern = /^[a-z0-9][a-z0-9-]*$/;
 
 function fail(status, code, details = []) {
@@ -68,7 +68,7 @@ export function createEmptyProjectCreationDocument(projectId) {
   return {
     metadata: {
       title: safeProjectId,
-      canvas: "2:3",
+      canvas: "3:4",
       default_render_profile: "anima-base-v1",
     },
     lettering_settings: defaultLetteringSettings(),

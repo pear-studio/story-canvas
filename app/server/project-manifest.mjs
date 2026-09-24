@@ -1,4 +1,4 @@
-const canvases = new Set(["3:4", "2:3", "9:16", "4:3"]);
+const canvases = new Set(["3:4", "1:1", "4:3", "2:3", "9:16"]);
 
 export const STORY_PROJECT_FORMAT = "story-models-v1";
 

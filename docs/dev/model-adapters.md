@@ -8,6 +8,10 @@ StoryCanvas 仍是独立的 Node + React 应用。当前内置 Anima Basic 与 Q
 - `project.json` 的格式为 `story-models-v1`，画幅和 default_render_profile 只作为新页默认。
 - `pages/<id>.render.json` 保存 `{version:1, model_id, profile_id, canvas}`。
   创建时复制；调整项目默认不改变已有页。复制页面保留完整 render 和各模型输入。
+- 工作台新选项统一为竖幅 3:4（960×1280）、方形 1:1（1024×1024）、横幅 4:3（1280×960）。
+  新项目默认竖幅；两模型的候选配方使用相同尺寸，切换模型不改变像素大小。
+  页面、项目默认和对比实验共用 `app/shared/canvas-presets.json` 中的选项，测试核对候选配方与其一致。
+  已保存的 2:3／9:16 仍可读取与生成，选择器仅展示当前原值并允许改选三种新画幅；不自动改写已有项目。
 - Prompt 文件为 `{$schema, models:{anima:…, qwen:…}}`，可以只有一个模型输入。
   切换不会清空另一份输入；首次 Anima → Qwen 复制有效正向全文，之后只在用户点击重新带入时更新。
 - Anima 原词条组件、词库、分类规则、机位和逐词继承由适配器复用。

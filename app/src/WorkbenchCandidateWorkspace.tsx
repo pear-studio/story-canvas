@@ -354,7 +354,7 @@ export function WorkbenchCandidateWorkspace({
   const mismatchedCount = currentGenerationSignature ? candidates.filter((candidate) => candidate.generation_signature !== currentGenerationSignature).length : 0;
   const generationReason = commonDisabledReason || generationDisabledReason || (!generationReady ? "当前页面尚未满足生成条件" : "");
   const generationDisabled = operationBusy || !generationReady || (!factReady && !onSaveAndGenerate);
-  const [canvasWidth, canvasHeight] = (canvas ?? "2:3").split(":").map(Number);
+  const [canvasWidth, canvasHeight] = (canvas ?? "3:4").split(":").map(Number);
   const aspectRatio = canvasWidth / canvasHeight || 2 / 3;
 
   useEffect(() => {

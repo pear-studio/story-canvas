@@ -61,7 +61,7 @@ async function setup(t, { character = false, mobile = false, visualPages = false
   const prompt = Object.fromEntries(["subject", "person", "setting", "camera", "avoid"].map(key => [key, []]));
   const pages = ["a", "b", "c"].map(id => ({ kind: "story", page_id: id, page_key: { page_id: id }, title: `页面${id}`, scene_description: "窗台", characters: [], dialogue: [], prompt, content_sha256: "a".repeat(64), prompt_sha256: "b".repeat(64), prompt_context_sha256: "c".repeat(64), lettering: { page: id, items: [] } }));
   const views = Object.fromEntries(["alpha", "beta"].map(id => [id, { version: 4, project: { id, title: id, canvas: "2:3", default_render_profile: "anima", lettering_settings: defaultLetteringSettings(), lettering_settings_sha256: "e".repeat(64) }, outline: { synopsis: "", chapters: [{ id: "chapter", title: "第一章", summary: "", sequences: [{ id: "sequence", title: "单元", summary: "", pages: structuredClone(pages) }] }] }, characters: [], render_capabilities: { candidates: { available: true, counts: [1, 3] } }, diagnostics: [] }]));
-  if(generationSettings) for(const view of Object.values(views)) for(const page of view.outline.chapters[0].sequences[0].pages) Object.assign(page,{model_id:'qwen',prompt:{text:'quiet garden'},render:{version:1,model_id:'qwen',profile_id:'qwen-image-2-1',canvas:'2:3'},render_sha256:'initial-render'});
+  if(generationSettings) for(const view of Object.values(views)) for(const page of view.outline.chapters[0].sequences[0].pages) Object.assign(page,{model_id:'qwen',prompt:{text:'quiet garden'},render:{version:1,model_id:'qwen',profile_id:'qwen-image-2-1',canvas:'3:4'},render_sha256:'initial-render'});
   if (character) views.alpha.characters = [{
     id: "alice", name: "Alice", description: "角色设定", profile_sha256: "profile",
     visual: { description: "视觉说明", variants: [{ id: "daily", name: "日常", description: "原日常说明" }, { id: "dress", name: "礼服", description: "原礼服说明" }] },
@@ -137,7 +137,7 @@ for(const mobile of [false,true])test(`本页切换画幅和模型保留滚动�
   const positions=()=>page.evaluate(()=>[window.scrollY,...['.project-main','.document-editor'].map(s=>document.querySelector(s)?.scrollTop??0)]);
   await page.evaluate(()=>{window.scrollTo(0,60);for(const selector of ['.project-main','.document-editor'])document.querySelector(selector)?.scrollTo(0,60);});
   const before=await positions();assert.ok(before.some(value=>value>40));
-  for(const canvas of ['4:3','9:16','3:4','2:3']){
+  for(const canvas of ['4:3','1:1','3:4']){
     await page.getByLabel('本页画幅').selectOption(canvas);
     await page.getByRole('img',{name:new RegExp(`画幅示意：${canvas}`)}).waitFor();
     const ratio=await page.locator('.page-canvas-preview rect').evaluate(rect=>Number(rect.getAttribute('width'))/Number(rect.getAttribute('height')));

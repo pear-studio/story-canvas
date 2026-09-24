@@ -9,7 +9,7 @@ import { compileEffectiveRenderProfile } from './render-profile-compiler.mjs';
 import { modelAdapter, profileModelAdapter } from './model-adapters.mjs';
 import { makeModelPromptDocument, isModelPromptDocument } from './model-prompts.mjs';
 
-export const pageCanvases = Object.freeze(['2:3', '3:4', '9:16', '4:3']);
+export const pageCanvases = Object.freeze(['3:4', '1:1', '4:3', '2:3', '9:16']);
 export function validatePageRenderSettings(value) {
   const errors = [];
   if (!value || typeof value !== 'object' || Array.isArray(value)) return ['页面生成设置必须是对象'];

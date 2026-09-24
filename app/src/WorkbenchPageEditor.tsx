@@ -206,7 +206,7 @@ function resolveLetteringObject(line: WorkbenchDialogueDraft, item: LetteringIte
   return resolveLetteringLayout({ text: line.text, direction: preset.direction, kind: preset.kind, fontSize: style.font_size, canvasWidth: dimensions.width, canvasHeight: dimensions.height, box: item.box });
 }
 
-export function WorkbenchLetteringOverlay({ dialogue, items, characters, style, canvas = "2:3", interactive = false, selectedId = "", onSelect, onChange, onDiagnosticsChange }: {
+export function WorkbenchLetteringOverlay({ dialogue, items, characters, style, canvas = "3:4", interactive = false, selectedId = "", onSelect, onChange, onDiagnosticsChange }: {
   dialogue: WorkbenchDialogueDraft[];
   items: LetteringItem[];
   characters: WorkbenchCharacter[];
@@ -599,7 +599,7 @@ export default function WorkbenchPageEditor({
   breadcrumb = [],
   pageOrder,
   busy = false,
-  canvas = "2:3",
+  canvas = "3:4",
   letteringStyle,
   letteringItems = [],
   letteringTarget,

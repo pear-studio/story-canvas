@@ -21,6 +21,18 @@ import sharp from 'sharp';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const schema=name=>`https://storyvisualizer.local/schemas/${name}.schema.json`;
+test('三种工作台画幅在两模型所有候选路线上具有相同的准确尺寸',async()=>{
+  const presets=JSON.parse(await readFile(path.join(root,'app/shared/canvas-presets.json'),'utf8'));
+  assert.deepEqual(presets.map(p=>p.value),['3:4','1:1','4:3']);
+  for(const id of ['anima-base-v1','qwen-image-2-1']){
+    const {resolved_profile:profile}=await readResolvedRenderProfile(root,id);
+    for(const route of Object.values(profile.operations.candidates.routes))for(const p of presets){
+      assert.deepEqual(route.recipe.resolutions[p.value],{width:p.width,height:p.height});
+      const [w,h]=p.value.split(':').map(Number);assert.equal(p.width*h,p.height*w);
+      assert.equal(p.width%64,0);assert.equal(p.height%64,0);
+    }
+  }
+});
 async function fixture(t, modelId='anima') {
   const base=path.join(root,'Saved/Tests');await mkdir(base,{recursive:true});
   const testRoot=await mkdtemp(path.join(base,'models-'));t.after(()=>rm(testRoot,{recursive:true,force:true}));
@@ -53,13 +65,17 @@ test('两模型均能冻结可执行任务，Anima policy 身份随任务保存�
     if(modelId==='anima')prompt.models.anima.setting=[{description:'quiet garden'}];
     else prompt.models.qwen.text='quiet garden';
     await f.put(`pages/${id}.prompt.json`,prompt);
-    const {task}=await compileAndPersistWorkbenchRenderTask(f.root,'demo',{page_key:{page_id:id},count:1});
-    assert.equal(task.snapshot.canvas,'2:3');assert.equal(task.snapshot.execution_units.length,1);
-    validateFrozenRenderTask(task);
-    if(modelId==='anima'){
-      assert.equal(task.snapshot.source_identity.prompt_policy.id,'anima-v1');
-      task.snapshot.source_identity.prompt_policy.id='wrong';
-      assert.throws(()=>validateFrozenRenderTask(task),/来源身份|identity/);
+    for(const canvas of ['3:4','1:1','4:3']){
+      const {definition:d}=await readPageRenderDraft(f.root,'demo',id);
+      await commitPageRender(f.root,{project_id:'demo',page_id:id,target:{sha256:hash(d.persisted)},upstream:d.upstream},()=>({...d.persisted,canvas}));
+      const {task}=await compileAndPersistWorkbenchRenderTask(f.root,'demo',{page_key:{page_id:id},count:1});
+      assert.equal(task.snapshot.canvas,canvas);assert.equal(task.snapshot.execution_units.length,1);
+      validateFrozenRenderTask(task);
+      if(modelId==='anima'){
+        assert.equal(task.snapshot.source_identity.prompt_policy.id,'anima-v1');
+        task.snapshot.source_identity.prompt_policy.id='wrong';
+        assert.throws(()=>validateFrozenRenderTask(task),/来源身份|identity/);
+      }
     }
   }
 });

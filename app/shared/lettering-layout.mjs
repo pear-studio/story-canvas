@@ -92,7 +92,7 @@ export function resizeLetteringBox(box, renderedBox, direction, dx, dy) {
   return next;
 }
 
-export function canvasDimensions(canvas = "2:3") {
+export function canvasDimensions(canvas = "3:4") {
   const match = /^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/.exec(canvas);
   const width = 1024;
   if (!match) return { width, height: 1536 };

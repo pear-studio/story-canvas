@@ -579,7 +579,7 @@ export function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSet
   const [inspectionBaseKey, setInspectionBaseKey] = useState("");
   const [inspectionNonce, setInspectionNonce] = useState(0);
   const [renderInspectionError, setRenderInspectionError] = useState("");
-  const [previewCanvas, setPreviewCanvas] = useState(canvas ?? "2:3");
+  const [previewCanvas, setPreviewCanvas] = useState(canvas ?? "3:4");
   const textDimensions = renderCapabilities.text_page?.dimensions;
   const artworkCanvas = page.page_kind === "text" && textDimensions ? `${textDimensions.width}:${textDimensions.height}` : previewCanvas;
   const [fullscreenLetteringTarget, setFullscreenLetteringTarget] = useState<ImageOverlayTarget | null>(null);
@@ -687,7 +687,7 @@ export function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSet
     setPageDirty(false);
     setPromptSourceState({ identity: workspaceIdentity, value: "original" });
     setRewriteState({ identity: workspaceIdentity, value: null, loading: true, running: false, error: "" });
-    setPreviewCanvas(canvas ?? "2:3");
+    setPreviewCanvas(canvas ?? "3:4");
     setPromptDraft(structuredClone(page.prompt));
     setRenderInspection(null);
     setRenderInspectionKey("");

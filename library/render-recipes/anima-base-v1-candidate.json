@@ -3,21 +3,25 @@
   "id": "anima-base-v1-candidate",
   "name": "Anima Base v1.0 · 候选",
   "resolutions": {
+    "3:4": {
+      "width": 960,
+      "height": 1280
+    },
+    "1:1": {
+      "width": 1024,
+      "height": 1024
+    },
+    "4:3": {
+      "width": 1280,
+      "height": 960
+    },
     "2:3": {
       "width": 832,
-      "height": 1216
-    },
-    "3:4": {
-      "width": 896,
-      "height": 1152
+      "height": 1248
     },
     "9:16": {
       "width": 768,
       "height": 1344
-    },
-    "4:3": {
-      "width": 1152,
-      "height": 896
     }
   },
   "steps": 32,

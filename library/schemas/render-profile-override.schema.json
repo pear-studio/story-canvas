@@ -52,7 +52,7 @@
             { "const": "prompt.policy" },
             { "pattern": "^prompt\\.fragments\\.[a-z0-9][a-z0-9-]*$" },
             {
-              "pattern": "^operations\\.candidates\\.routes\\.(empty_latent|reference_image)\\.(workflow|recipe\\.(steps|cfg|sampler|scheduler|clip_skip|scale|denoise|second_pass_steps|second_pass_cfg|second_pass_sampler|second_pass_scheduler|resolutions\\.(2:3|3:4|9:16|4:3)))$"
+              "pattern": "^operations\\.candidates\\.routes\\.(empty_latent|reference_image)\\.(workflow|recipe\\.(steps|cfg|sampler|scheduler|clip_skip|scale|denoise|second_pass_steps|second_pass_cfg|second_pass_sampler|second_pass_scheduler|resolutions\\.(3:4|1:1|4:3|2:3|9:16)))$"
             },
             {
               "pattern": "^style_loras\\.[a-z0-9][a-z0-9-]*$"

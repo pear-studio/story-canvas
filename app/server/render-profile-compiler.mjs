@@ -21,7 +21,7 @@ const stableIdPattern = /^[a-z0-9][a-z0-9_-]*$/;
 const fragmentIdPattern = /^[a-z0-9][a-z0-9-]*$/;
 const sha256Pattern = /^[0-9a-f]{64}$/;
 const architectures = new Set(generationModels.map(model => model.architecture));
-const canvases = new Set(["2:3", "3:4", "9:16", "4:3"]);
+const canvases = new Set(["3:4", "1:1", "4:3", "2:3", "9:16"]);
 const operationInputs = Object.freeze({
   candidates: new Set(["empty_latent", "reference_image"]),
 });

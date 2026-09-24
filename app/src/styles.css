@@ -1401,10 +1401,9 @@ html:has(.story-overview) { scrollbar-gutter: stable; }
 .canvas-choice:disabled { cursor: wait; opacity: .65; }
 .canvas-choice b { font-size: var(--text-body); }
 .canvas-choice__preview { display: block; width: 34px; height: 46px; border: 2px solid var(--green); border-radius: 4px; background: rgba(45,103,81,.08); }
-.canvas-choice__preview--3-4 { width: 34px; height: 45px; }
-.canvas-choice__preview--2-3 { width: 30px; height: 45px; }
-.canvas-choice__preview--9-16 { width: 25px; height: 45px; }
-.canvas-choice__preview--4-3 { width: 45px; height: 34px; }
+.canvas-choice__preview--3-4 { width: 33px; height: 44px; }
+.canvas-choice__preview--1-1 { width: 40px; height: 40px; }
+.canvas-choice__preview--4-3 { width: 44px; height: 33px; }
 .project-model-configs { display: grid; gap: 14px; }
 .project-generation-section-heading { padding: 0 2px; }
 .project-override-selector { display: grid; gap: 16px; }

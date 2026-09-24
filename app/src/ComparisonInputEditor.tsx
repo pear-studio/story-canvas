@@ -1,3 +1,4 @@
+import canvasChoices from "../shared/canvas-presets.json";
 import { useEffect, useState } from "react";
 import { PromptTextField } from "./SourcePromptEditor";
 import { responseJson } from "./api-response";
@@ -67,7 +68,7 @@ export function ComparisonInputEditor({ value, onChange, disabled, models }: { v
       {Boolean(input.reference_images?.length) && <small>参考图：{input.reference_images?.map(image => image.material_file).join("、")}</small>}
       <PromptTextField label="正向 Prompt" ariaLabel={`${input.label} 正向 Prompt`} value={input.prompt.positive} disabled={locked} onChange={positive => update(input.id, { prompt: { ...input.prompt, positive } })} />
       <PromptTextField label="负向 Prompt" ariaLabel={`${input.label} 负向 Prompt`} rows={4} value={input.prompt.negative} disabled={locked} onChange={negative => update(input.id, { prompt: { ...input.prompt, negative } })} />
-      <label>画幅<select value={input.render.canvas} onChange={event => update(input.id, { render: { ...input.render, canvas: event.target.value } })}>{["2:3", "3:4", "9:16", "4:3"].map(canvas => <option key={canvas}>{canvas}</option>)}</select></label>
+      <label>画幅<select value={input.render.canvas} onChange={event => update(input.id, { render: { ...input.render, canvas: event.target.value } })}>{!canvasChoices.some(c => c.value === input.render.canvas) && <option value={input.render.canvas} disabled>原画幅 {input.render.canvas}</option>}{canvasChoices.map(c => <option key={c.value} value={c.value}>{c.label} {c.value} · {c.width}×{c.height}</option>)}</select></label>
       {input.loras.map((lora, index) => <div className="free-lora-row" key={index}><span>{lora.filename}</span><label>权重<input type="number" min={-2} max={2} step={0.05} value={lora.weight} onChange={event => update(input.id, { loras: input.loras.map((entry, i) => i === index ? { ...entry, weight: event.target.valueAsNumber } : entry) })} /></label><button type="button" onClick={() => update(input.id, { loras: input.loras.filter((_, i) => i !== index) })}>移除 LoRA</button></div>)}
       <button type="button" className="button" onClick={() => setLoraPickerInputId(input.id)}>添加基础 LoRA</button>
       {loraPickerInputId === input.id && <Modal size="workspace" title="选择 LoRA" subtitle={input.render.profile.id} busy={locked} onClose={() => setLoraPickerInputId(null)}><div className="lora-picker-body"><ResourcePicker items={models.filter(model => loraMatchesProfile(model, input.render.profile)).map(loraResourceItem)} busy={locked} onSelect={item => { const model = models.find(model => model.id === item.id); if (model) void perform(async () => {

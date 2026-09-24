@@ -35,7 +35,7 @@ import {
 } from "./render-profile-override.mjs";
 
 const renderProfileIdPattern = /^[a-z0-9][a-z0-9-]*$/;
-const validCanvasRatios = new Set(["3:4", "2:3", "9:16", "4:3"]);
+const validCanvasRatios = new Set(["3:4", "1:1", "4:3", "2:3", "9:16"]);
 const editableProjectSettings = new Set(["title", "canvas", "default_render_profile"]);
 
 export async function readWorkspaceProjects(projectRoot) {

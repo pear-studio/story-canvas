@@ -137,7 +137,9 @@ test("文字页成品不需要候选图：黑底直出、记录无候选字段�
   assert.equal(textPage.record.candidate_id, null);
   const renderFile=path.join(f.directory,`pages/${textKey.page_id}.render.json`);
   await json(renderFile,{version:1,model_id:'anima',profile_id:'anima-base-v1',canvas:'2:3'});
-  assert.equal((await readFinishedPages(f.root,'demo',f.directory)).pages.find(page=>page.page_id===textKey.page_id).status,'stale','相同画幅换模型改变输出尺寸，也必须重新制作');
+  assert.equal((await readFinishedPages(f.root,'demo',f.directory)).pages.find(page=>page.page_id===textKey.page_id).status,'ready','两模型输出尺寸统一后，文字页换模型不需要重新制作');
+  await json(renderFile,{version:1,model_id:'anima',profile_id:'anima-base-v1',canvas:'1:1'});
+  assert.equal((await readFinishedPages(f.root,'demo',f.directory)).pages.find(page=>page.page_id===textKey.page_id).status,'stale','切换方形改变输出尺寸，必须重新制作');
   await json(renderFile,{version:1,model_id:'qwen',profile_id:'qwen-image-2-1',canvas:'2:3'});
   assert.equal((await readFinishedPages(f.root,'demo',f.directory)).pages.find(page=>page.page_id===textKey.page_id).status,'ready');
   const cleanPixels = await sharp(path.join(f.directory, record.outputs.clean)).stats();
@@ -168,7 +170,7 @@ test("文字页成品尺寸对齐当前渲染配置的候选出图尺寸", async
   await json(path.join(f.directory, `pages/${textKey.page_id}.prompt.json`), await readFile(path.join(f.directory, `pages/${key.page_id}.prompt.json`)).then(JSON.parse));
   await json(path.join(f.directory, "pages/index.json"), { $schema: PAGES_INDEX_SCHEMA_ID, pages: [key.page_id, textKey.page_id].map(page_id => ({ page_id, owner_kind: "story", sequence_id: "sequence" })) });
   const prepared = await f.operations.mutateDerived("demo", () => prepareFinishedPage(f.root, "demo", f.directory, { page_key: textKey })).then(result => result.value);
-  assert.deepEqual(prepared.textPage, { width: 1728, height: 2304 });
+  assert.deepEqual(prepared.textPage, { width: 1920, height: 2560 });
   const job = await f.run(prepared, { upscale: () => { throw new Error("文字页不应超分"); } });
   assert.equal(job.status, "completed");
   const record = await readFinishedRecord(f.directory, textKey.page_id);

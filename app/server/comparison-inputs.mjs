@@ -24,7 +24,7 @@ export async function importComparisonPage({ repositoryRoot, projectDirectory, p
   };
 }
 
-export async function createBlankComparisonInput(repositoryRoot, profileId, canvas = "2:3") {
+export async function createBlankComparisonInput(repositoryRoot, profileId, canvas = "3:4") {
   const bundle = await readResolvedRenderProfile(repositoryRoot, profileId);
   return { id: `input-${randomUUID()}`, label: "新测试输入", prompt: { positive: "", negative: "" }, loras: [],
     render: { profile: bundle.resolved_profile, workflows: bundle.workflow_definitions, canvas }, source: null };
@@ -35,7 +35,7 @@ export function assertComparisonInput(value) {
   if (!value || !/^[a-z0-9][a-z0-9_-]{0,79}$/.test(value.id ?? "") || typeof value.label !== "string" || !value.label.trim()) fail("测试输入缺少 id 或名称");
   if (typeof value.prompt?.positive !== "string" || !value.prompt.positive.trim() || typeof value.prompt?.negative !== "string") fail("测试输入需要完整正向与负向文本");
   const render = value.render;
-  if (!render?.profile || !render.workflows || !["2:3", "3:4", "9:16", "4:3"].includes(render.canvas)) fail("测试输入缺少生成配置或画幅");
+  if (!render?.profile || !render.workflows || !["3:4", "1:1", "4:3", "2:3", "9:16"].includes(render.canvas)) fail("测试输入缺少生成配置或画幅");
   if (value.reference_images !== undefined) {
     if (!Array.isArray(value.reference_images) || value.reference_images.length > 10) fail("参考图数量无效（最多 10 张）");
     for (const reference of value.reference_images) {

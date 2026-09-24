@@ -356,7 +356,7 @@ export async function compilePageRenderTarget({
   const snapshot = await capturePagePromptSnapshot(projectDirectory, pageId, requestedPageKey);
   const { project, project_source: projectSource } = snapshot;
   assertStoryProjectFormat(project);
-  if (!new Set(["2:3", "3:4", "9:16", "4:3"]).has(project.canvas)) {
+  if (!new Set(["3:4", "1:1", "4:3", "2:3", "9:16"]).has(project.canvas)) {
     fail("project_render_settings_invalid", ["project.json 缺少有效 canvas"]);
   }
   if (encodePageKey(snapshot.page_key) !== encodePageKey(requestedPageKey)) {
@@ -484,7 +484,7 @@ export async function compilePageRenderInspectionContext({
   if (typeof project.default_render_profile !== "string" || !project.default_render_profile) {
     blockers.push(inspectionBlocker("project_render_profile_missing", "project.json 缺少 default_render_profile"));
   }
-  if (!new Set(["2:3", "3:4", "9:16", "4:3"]).has(project.canvas)) {
+  if (!new Set(["3:4", "1:1", "4:3", "2:3", "9:16"]).has(project.canvas)) {
     blockers.push(inspectionBlocker("project_canvas_invalid", "project.json 缺少有效 canvas"));
   }
 
