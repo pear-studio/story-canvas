@@ -638,7 +638,7 @@ export function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSet
   const isCurrentWorkspace = () => workspaceIdentityRef.current === workspaceIdentity;
   const factReady = !busy && !pageDirty;
   const sceneFactsSignature = JSON.stringify(scenes);
-  const inspectionDepsKey = JSON.stringify([location.key, page.content_sha256, characterFactsSignature, sceneFactsSignature, defaultRenderProfile, promptDraft, promptSource]);
+  const inspectionDepsKey = JSON.stringify([location.key, page.content_sha256, page.render_sha256, characterFactsSignature, sceneFactsSignature, defaultRenderProfile, promptDraft, promptSource]);
   // 待保存附图不参与编译检查；其余草稿字段都影响编译结果，任意变化都应让旧预览失效。
   const { reference_images: _draftAttachments, ...promptCompileBase } = promptDraft;
   const currentBaseKey = JSON.stringify([location.key, page.content_sha256, characterFactsSignature, sceneFactsSignature, defaultRenderProfile, promptCompileBase, promptSource]);

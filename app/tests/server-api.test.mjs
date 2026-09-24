@@ -1,3 +1,4 @@
+import {createQwenFixtureProject as createProject, installModelResources} from './model-fixture.mjs';
 import { cp } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -18,12 +19,12 @@ import { enqueueGenerationTask, generationQueueFile, generationReference, readGe
 import { MEDIA_VARIANT_WIDTHS, warmMediaVariants } from "../server/media-variants.mjs";
 import { createRenderTask, listProjectRenderTaskStates, readRenderTaskState, updateRenderTask } from "../server/render-task-storage.mjs";
 import {
-  createProject,
   readProjectCreationTemplate,
 } from "../server/project-creation.mjs";
 
 async function startCurrentProjectServer(context, options = {}) {
   const projectRoot = await mkdtemp(path.join(tmpdir(), "story-canvas-api-"));
+  await installModelResources(projectRoot);
   const appRoot = path.join(projectRoot, "app");
   await mkdir(path.join(appRoot, "dist"), { recursive: true });
   await writeFile(path.join(appRoot, "dist", "index.html"), "<!doctype html><title>Workbench</title>");
@@ -344,7 +345,7 @@ test("持久 ComfyUI drain 不阻塞服务监听，调度器只 dispatch 等待�
 });
 
 test("流程预览是无需expected revision的只读POST，配置不可用仍返回inspection", async (context) => {
-  const { origin } = await startCurrentProjectServer(context);
+  const { origin, projectRoot } = await startCurrentProjectServer(context);
   const initial = await fetch(`${origin}/api/projects/current-story/workbench`);
   const revision = initial.headers.get("x-story-canvas-revision");
   const createdResponse = await fetch(`${origin}/api/projects/current-story/workbench/navigation/create-story-page`, {
@@ -354,6 +355,7 @@ test("流程预览是无需expected revision的只读POST，配置不可用仍�
   });
   const created = await createdResponse.json();
 
+  await rm(path.join(projectRoot,"library/render-profiles/qwen-image-2-1.json"));
   const response = await fetch(`${origin}/api/projects/current-story/workbench/page-render-inspection`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -464,7 +466,7 @@ test("子设定重命名端点联动更新引用并返回新指纹", async (cont
   assert.equal(renamed.new_id, "casual");
   assert.deepEqual(renamed.updated_page_ids, [page.page_id]);
   assert.deepEqual(renamed.visual.variants.map((variant) => variant.id), ["casual"]);
-  assert.deepEqual(Object.keys(renamed.prompt.variants), ["casual"]);
+  assert.deepEqual(Object.keys(renamed.prompt.models.qwen.variants), ["casual"]);
   assert.equal(Object.hasOwn(renamed.visual, "$schema"), false);
   assert.equal(Object.hasOwn(renamed.prompt, "$schema"), false);
   assert.match(renamed.visual_sha256, /^[a-f0-9]{64}$/);
@@ -473,7 +475,7 @@ test("子设定重命名端点联动更新引用并返回新指纹", async (cont
   const pagesIndex = JSON.parse(await readFile(path.join(projectDirectory, "pages", "index.json"), "utf8"));
   assert.deepEqual(pagesIndex.pages[0], { page_id: page.page_id, owner_kind: "character", character_id: character.character_id, variant_id: "casual" });
   const persistedPrompt = JSON.parse(await readFile(path.join(projectDirectory, "characters", `${character.character_id}.prompt.json`), "utf8"));
-  assert.deepEqual(Object.keys(persistedPrompt.variants), ["casual"]);
+  assert.deepEqual(Object.keys(persistedPrompt.models.qwen.variants), ["casual"]);
   // sha 与落盘事实一致，可直接刷新前端乐观锁指纹。
   const view = await (await fetch(`${origin}/api/projects/current-story/workbench`)).json();
   const viewCharacter = view.characters.find((item) => item.id === character.character_id);
@@ -728,14 +730,14 @@ test("Agent read/save 共用领域规则，依赖冲突与 LoRA 分离在无文�
   assert.equal((await call("story", "narrative", "save", narrative)).value.scene_description, "女孩站在门口");
   assert.equal((await call("story", "prompt", "save", prompt, 409)).error, "fact_upstream_conflict");
   const freshPrompt = await read("story", "prompt", storyPage.page_id);
-  freshPrompt.document.text = "女孩站在安静的门口。";
+  freshPrompt.document.models.qwen.text = "女孩站在安静的门口。";
   const savedPrompt = await call("story", "prompt", "save", freshPrompt);
-  assert.equal(savedPrompt.value.text, "女孩站在安静的门口。");
+  assert.equal(savedPrompt.value.models.qwen.text, "女孩站在安静的门口。");
   for (const [domain, kind, targetId, change, field, expected] of [
     ["character", "profile", "ellen", document => { document.name = "新名字"; }, value => value.name, "新名字"],
     ["character", "visual", "ellen", document => { document.variants[0].name = "日常服"; }, value => value.variants[0].name, "日常服"],
     ["page", "content", characterPage.page_id, document => { document.scene_description = "验证目标"; }, value => value.scene_description, "验证目标"],
-    ["page", "prompt", characterPage.page_id, document => { document.text = "干净背景。"; }, value => value.text, "干净背景。"],
+    ["page", "prompt", characterPage.page_id, document => { document.models.qwen.text = "干净背景。"; }, value => value.models.qwen.text, "干净背景。"],
   ]) {
     const draft = await read(domain, kind, targetId);
     change(draft.document);
@@ -744,9 +746,9 @@ test("Agent read/save 共用领域规则，依赖冲突与 LoRA 分离在无文�
     assert.deepEqual(JSON.parse(await readFile(saved.target_file, "utf8")), saved.value);
   }
   const characterPrompt = await read("character", "prompt", "ellen");
-  characterPrompt.document.variants.default.text = "银发少女。";
+  characterPrompt.document.models.qwen.variants.default.text = "银发少女。";
   const characterSaved = await call('character', 'prompt', 'save', characterPrompt);
-  assert.equal(characterSaved.value.variants.default.text, "银发少女。");
+  assert.equal(characterSaved.value.models.qwen.variants.default.text, "银发少女。");
   const staleCharacterPrompt = await call('character', 'prompt', 'save', characterPrompt, 409);
   assert.equal(staleCharacterPrompt.error, 'fact_target_conflict');
   const lora = await call("character", "lora", "read", { project_id: "current-story", target_id: "ellen" }, 400);
@@ -828,11 +830,11 @@ test("真实 CLI 经服务创建与管理项目，支持 stdin 事实提交，�
   await cli("agent-fact.mjs", "prompt-context", "cli-story", "v3/" + page.page_id, "--out", contextFile);
   const contextPack = JSON.parse(await readFile(contextFile, "utf8"));
   assert.deepEqual(contextPack.save, { domain: "page", kind: "prompt" });
-  contextPack.draft.document.text = "上下文文件提交的提示词。";
+  contextPack.draft.document.models.anima.person = [{description:"上下文文件提交的提示词。"}];
   await writeFile(contextFile, JSON.stringify(contextPack), "utf8");
   const contextSaved = JSON.parse(await cli("agent-fact.mjs", "save-context", contextFile, "--out", path.join(scratch, "save-result.json")));
   assert.equal(contextSaved.bytes > 0, true);
-  assert.equal(JSON.parse(await readFile(path.join(scratch, "save-result.json"), "utf8")).value.text, "上下文文件提交的提示词。");
+  assert.equal(JSON.parse(await readFile(path.join(scratch, "save-result.json"), "utf8")).value.models.anima.person[0].description, "上下文文件提交的提示词。");
   const mismatched = { ...contextPack, draft: { ...contextPack.draft, target_id: "other-page" } };
   await writeFile(contextFile, JSON.stringify(mismatched), "utf8");
   await assert.rejects(cli("agent-fact.mjs", "save-context", contextFile), error => {

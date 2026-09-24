@@ -31,7 +31,10 @@ async function validators() {
     assert.equal(schema.$id, id);
     ajv.addSchema(schema);
   }
-  return Object.fromEntries(Object.keys(schemaFiles).map((id) => [id, ajv.getSchema(id)]));
+  return Object.fromEntries(Object.keys(schemaFiles).map((id) => [id, document => {
+    if (id.endsWith('prompt.schema.json') && !document.models) {const {$schema,...qwen}=document;return ajv.getSchema(id)({$schema,models:{qwen}});}
+    return ajv.getSchema(id)(document);
+  }]));
 }
 
 function completePrompt() {

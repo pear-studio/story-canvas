@@ -242,7 +242,7 @@ export async function readStoryFactDraft(projectRoot, projectId, pageId, kind) {
 
 async function readSceneReferenceIdentity(projectDirectory, pageId, modelId = 'qwen') {
   const prompt = modelPrompt(await readPlainJson(targetPath(projectDirectory, targetRelativePath("prompt", pageId)), "page prompt"), modelId);
-  if (!prompt.scene_id) return hashCanonicalJson(null);
+  if (!prompt?.scene_id) return hashCanonicalJson(null);
   const reference = { scene_id: prompt.scene_id, variant_id: prompt.scene_variant_id };
   const index = await optionalFact(projectDirectory, "scenes/index.json", { scenes: [] });
   if (!index.scenes.includes(prompt.scene_id)) return hashCanonicalJson({ ...reference, missing: "scene" });
@@ -475,8 +475,8 @@ async function assertNarrativeUpstream(projectDirectory, baselineContext) {
 async function assertPromptUpstream(projectDirectory, baselineContext) {
   try {
     const narrative = await readPlainJson(targetPath(projectDirectory, baselineContext.upstream.narrative.relative_path), baselineContext.upstream.narrative.relative_path);
-    const characters = await readCharacterReferences(projectDirectory, baselineContext.upstream.characters.references, { includePrompt: true, allowMissing: true });
-    if (hashCanonicalJson(narrative) !== baselineContext.upstream.narrative.sha256 || characters.sha256 !== baselineContext.upstream.characters.sha256 || (baselineContext.upstream.scenes_sha256 && await readSceneReferenceIdentity(projectDirectory, baselineContext.page_id) !== baselineContext.upstream.scenes_sha256)) {
+    const upstream = await readStoryPromptUpstream(projectDirectory,baselineContext.page_id);
+    if (hashCanonicalJson(upstream) !== hashCanonicalJson(baselineContext.upstream)) {
       fail("story_edit_upstream_conflict", [baselineContext.target.relative_path]);
     }
     return narrative;

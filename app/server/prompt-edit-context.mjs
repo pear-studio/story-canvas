@@ -2,6 +2,7 @@ import { readFactDraft } from "./fact-drafts.mjs";
 import { decodePageKey } from "./page-key.mjs";
 import { compilePageRenderInspectionContext } from "./page-render-resolver.mjs";
 import { characterSource, sceneSource } from "./prompt-contract.mjs";
+import {variantPrompt} from '../shared/prompt-inheritance.mjs';
 
 function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -14,6 +15,7 @@ function referenceProjection(pagePrompt, source, kind, setting) {
   const selectedIds = pagePrompt?.reference_overrides?.[source]
     ?? (setting.reference_images ?? []).slice(0, 1).map((entry) => entry.id);
   return {
+    ...(setting.identity?{inherited_prompt:variantPrompt(setting.identity,setting),adjustments:structuredClone(pagePrompt.inheritance?.[source]??{})}:{}),
     source,
     kind,
     id: setting.id,
@@ -56,6 +58,7 @@ export async function readPromptEditContext({ projectRoot, repositoryRoot = proj
     negative: compiled.negative_prompt,
     images: structuredClone(compiled.images),
     sections: structuredClone(compiled.sections),
+    parts: structuredClone(compiled.prompt_parts??null),
   } : null;
   return {
     page_key: key,
@@ -63,6 +66,8 @@ export async function readPromptEditContext({ projectRoot, repositoryRoot = proj
     draft,
     context: {
       status: complete ? "complete" : "incomplete",
+      model_id: snapshot.model_id,
+      render: snapshot.render,
       title: snapshot.title,
       global_text: {
         text: globalText,
@@ -70,6 +75,7 @@ export async function readPromptEditContext({ projectRoot, repositoryRoot = proj
       },
       references,
       page: {
+        model_input: structuredClone(pagePrompt),
         text: typeof pagePrompt.text === "string" ? pagePrompt.text : "",
         reference_images: structuredClone(pagePrompt.reference_images ?? []),
       },

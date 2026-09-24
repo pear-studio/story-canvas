@@ -6,14 +6,14 @@ import { useLongPressContextMenu } from './use-long-press-context-menu';
 import { useFeedback } from './feedback';
 import { responseJson } from './api-response';
 import { mutateTargetFacts, readFacts } from './project-write-client';
-import { loadPageMedia, type WorkbenchPage } from './project-workbench-client';
+import { loadPageMedia, loadProjectWorkbench, type WorkbenchPage } from './project-workbench-client';
 import './ReferenceLibrary.css';
 
-export type ReferenceEntry = { id: string; file: string; title: string; purpose?: string; draft?: { content?: string; material_file?: string } };
-export type ReferenceTarget = { kind: 'character' | 'scene' | 'page'; id: string; variant_id?: string };
+export type ReferenceEntry = { id: string; file: string; title: string; purpose?: string; draft?: { content?: string; material_file?: string; candidate_id?:string;page_key?:{page_id:string};preview_url?:string } };
+export type ReferenceTarget = { kind: 'character' | 'scene' | 'page'; id: string; variant_id?: string; model_id?: 'anima'|'qwen' };
 export const referenceUrl = (project: string, file: string) => `/api/projects/${encodeURIComponent(project)}/materials/file?file=${encodeURIComponent(file)}`;
 
-const entryUrl = (project: string, entry: ReferenceEntry) => entry.draft?.content ? `data:image/png;base64,${entry.draft.content}` : referenceUrl(project, entry.draft?.material_file ?? entry.file);
+const entryUrl = (project: string, entry: ReferenceEntry) => entry.draft?.preview_url ?? (entry.draft?.content ? `data:image/png;base64,${entry.draft.content}` : referenceUrl(project, entry.draft?.material_file ?? entry.file));
 
 export function ReferenceSelection({ projectId, entries, selection, onChange }: {
   projectId: string; entries: ReferenceEntry[]; selection?: string[]; onChange: (ids?: string[]) => void;
@@ -45,6 +45,14 @@ export function ReferenceLibrary({ projectId, target, pages, disabled, onChanged
   const [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const [picker, setPicker] = useState<{ replaceId?: string } | null>(null);
   const [pageId, setPageId] = useState(''), [candidates, setCandidates] = useState<CandidateChoice[]>([]);
+  const [projectPages,setProjectPages]=useState<WorkbenchPage[]>([]);
+  const sourcePages=compact?projectPages:pages;
+  useEffect(()=>{
+    if(!picker||!compact)return;
+    let active=true;
+    void loadProjectWorkbench(projectId).then(({view})=>{if(active)setProjectPages(view.pages??view.outline.chapters.flatMap(chapter=>chapter.sequences.flatMap(sequence=>sequence.pages)));}).catch(cause=>{if(active)setError(cause.message);});
+    return ()=>{active=false;};
+  },[Boolean(picker),compact,projectId]);
   const [selected, setSelected] = useState<CandidateChoice[]>([]), [loading, setLoading] = useState(false);
   const [reload, setReload] = useState(0);
   const [menu, setMenu] = useState<NavigationMenuRequest | null>(null);
@@ -67,13 +75,13 @@ export function ReferenceLibrary({ projectId, target, pages, disabled, onChanged
   }, [targetKey, endpoint, reload, sourceVersion]);
   useEffect(() => {
     let current = true; setCandidates([]);
-    if (picker && compact) {
+    if (picker && compact && !pageId) {
       setLoading(true);
       void readFacts(`/api/projects/${encodeURIComponent(projectId)}/materials`).then(responseJson<{ materials: Array<{ file: string; title: string; available: boolean }> }>).then(value => { if (current) setCandidates(value.materials.filter(item => item.available && /\.(png|jpe?g|webp)$/i.test(item.file)).map(item => ({ candidate_id: item.file, material_file: item.file, title: item.title, url: referenceUrl(projectId, item.file) }))); }).catch(e => { if (current) setError(e.message); }).finally(() => { if (current) setLoading(false); });
     } else if (picker && pageId) {
       setLoading(true);
       void loadPageMedia(projectId, { page_id: pageId }).then(value => {
-        if (current) setCandidates((value?.media.candidates ?? []).map((candidate, index) => ({ ...candidate, page_id: pageId, title: `${pages.find(p => p.page_id === pageId)?.title ?? '候选'} · ${index + 1}` })));
+        if (current) setCandidates((value?.media.candidates ?? []).map((candidate, index) => ({ ...candidate, page_id: pageId, title: `${sourcePages.find(p => p.page_id === pageId)?.title ?? '候选'} · ${index + 1}` })));
       }).catch(e => { if (current) setError(e.message); }).finally(() => { if (current) setLoading(false); });
     } else setLoading(false);
     return () => { current = false; };
@@ -93,7 +101,7 @@ export function ReferenceLibrary({ projectId, target, pages, disabled, onChanged
     finally { setUploadReading(false); }
   }
   function saveChoices(choices: CandidateChoice[]) {
-    return mutate(choices.map(candidate => ({ action: 'save', id: picker?.replaceId, ...(candidate.content ? { content: candidate.content } : candidate.material_file ? { material_file: candidate.material_file } : { page_key: { page_id: candidate.page_id }, candidate_id: candidate.candidate_id }), title: candidate.title, ...(candidate.purpose?.trim() ? { purpose: candidate.purpose.trim() } : {}) })));
+    return mutate(choices.map(candidate => ({ action: 'save', id: picker?.replaceId, ...(candidate.content ? { content: candidate.content } : candidate.material_file ? { material_file: candidate.material_file } : { page_key: { page_id: candidate.page_id }, candidate_id: candidate.candidate_id, preview_url:candidate.url }), title: candidate.title, ...(candidate.purpose?.trim() ? { purpose: candidate.purpose.trim() } : {}) })));
   }
   async function mutate(values: object[]) {
     if ((!library && !onDraftChange) || busy || disabled) return;
@@ -101,13 +109,13 @@ export function ReferenceLibrary({ projectId, target, pages, disabled, onChanged
     if (onDraftChange) {
       let entries = [...initialEntries];
       for (const raw of values) {
-        const value = raw as { action: string; id?: string; ids?: string[]; title?: string; purpose?: string; content?: string; material_file?: string };
+        const value = raw as { action: string; id?: string; ids?: string[]; title?: string; purpose?: string; content?: string; material_file?: string;candidate_id?:string;page_key?:{page_id:string};preview_url?:string };
         if (value.action === 'delete') entries = entries.filter(entry => entry.id !== value.id);
         else if (value.action === 'reorder') entries = value.ids!.map(id => entries.find(entry => entry.id === id)!);
         else {
           const previous = value.id ? entries.find(entry => entry.id === value.id) : undefined;
           const purpose = value.purpose !== undefined ? value.purpose : previous?.purpose;
-          const next: ReferenceEntry = { id: value.id ?? `ref-${crypto.randomUUID()}`, file: `reference-${crypto.randomUUID()}.png`, title: value.title!.trim(), ...(purpose?.trim() ? { purpose: purpose.trim() } : {}), draft: { ...(value.content ? { content: value.content } : { material_file: value.material_file }) } };
+          const next: ReferenceEntry = { id: value.id ?? `ref-${crypto.randomUUID()}`, file: `reference-${crypto.randomUUID()}.png`, title: value.title!.trim(), ...(purpose?.trim() ? { purpose: purpose.trim() } : {}), draft: { ...(value.content ? { content: value.content } : value.material_file ? { material_file: value.material_file } : {candidate_id:value.candidate_id,page_key:value.page_key,preview_url:value.preview_url}) } };
           entries = value.id ? entries.map(entry => entry.id === value.id ? next : entry) : [...entries, next];
         }
       }
@@ -129,7 +137,7 @@ export function ReferenceLibrary({ projectId, target, pages, disabled, onChanged
     } finally { setBusy(false); if (completed) onChanged(); }
   }
   function openPicker(replaceId?: string) {
-    setSelected([]); setUploads(null); setError(''); setPageId(pages[0]?.page_id ?? ''); setPicker({ replaceId });
+    setSelected([]); setUploads(null); setError(''); setPageId(compact ? '' : pages[0]?.page_id ?? ''); setPicker({ replaceId });
   }
   async function remove(entry: ReferenceEntry) {
     if (onDraftChange) { await mutate([{ action: 'delete', id: entry.id }]); return; }
@@ -188,7 +196,7 @@ export function ReferenceLibrary({ projectId, target, pages, disabled, onChanged
       {error && <p role="alert">{error}</p>}
       <fieldset className="reference-library-body" disabled={busy || disabled || uploadReading} onDragOver={event => { event.preventDefault(); }} onDrop={event => { event.preventDefault(); void prepareUploads(Array.from(event.dataTransfer.files)); }}>
         <input ref={uploadInput} hidden type="file" accept=".png,.jpg,.jpeg,.webp" multiple={!picker.replaceId} onChange={event => { const files = Array.from(event.target.files ?? []); event.target.value = ''; void prepareUploads(files); }} />
-        {!compact && pages.length > 1 && <label className="reference-candidate-source">候选来源<select aria-label="参考图候选来源" value={pageId} onChange={event => setPageId(event.target.value)}>{pages.map(page => <option key={page.page_id} value={page.page_id}>{page.title}</option>)}</select></label>}
+        {(compact || sourcePages.length > 1) && <label className="reference-candidate-source">图片来源<select aria-label="参考图候选来源" value={pageId} onChange={event => setPageId(event.target.value)}>{compact&&<option value="">项目素材</option>}{sourcePages.map(page => <option key={page.page_id} value={page.page_id}>{page.title} · 候选</option>)}</select></label>}
         {loading ? <p>正在读取图片…</p> : <div className="reference-candidate-grid"><details className="reference-upload-menu"><summary aria-label="上传参考图"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12" /></svg></summary><div><button type="button" className="button button--quiet" onClick={() => uploadInput.current?.click()}>选择图片</button><small>或将图片拖入面板</small></div></details>{candidates.map(candidate => {
           const checked = selected.some(item => item.page_id === candidate.page_id && item.candidate_id === candidate.candidate_id);
           return <button type="button" className="reference-candidate-choice" aria-label={candidate.title} aria-pressed={checked} key={candidate.candidate_id} onClick={() => setSelected(current => checked ? current.filter(item => item.page_id !== candidate.page_id || item.candidate_id !== candidate.candidate_id) : picker.replaceId ? [candidate] : [...current, candidate])}>{candidate.url && <img src={candidate.url} alt="" />}<span>{candidate.title}</span>{checked && <i aria-hidden="true">✓</i>}</button>;

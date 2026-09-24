@@ -1,75 +1,400 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://storyvisualizer.local/schemas/scene-prompt.schema.json",
-  "$defs": {
-    "variant": {
-      "type": "object",
-      "required": [
-        "text"
-      ],
-      "properties": {
-        "text": {
-          "type": "string"
-        },
-        "reference_images": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "id",
-              "file",
-              "title"
-            ],
-            "properties": {
-              "id": {
-                "type": "string",
-                "pattern": "^ref-[a-f0-9-]{36}$"
-              },
-              "file": {
-                "type": "string",
-                "pattern": "^reference-[a-f0-9-]+\\.png$"
-              },
-              "title": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 200
-              }
-            }
-          }
-        }
-      },
-      "additionalProperties": false
-    }
-  },
   "type": "object",
   "required": [
     "$schema",
-    "prompt_name",
-    "variants"
+    "models"
   ],
   "properties": {
     "$schema": {
       "const": "https://storyvisualizer.local/schemas/scene-prompt.schema.json"
     },
-    "prompt_name": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 200
-    },
-    "variants": {
+    "models": {
       "type": "object",
       "minProperties": 1,
-      "propertyNames": {
-        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
-        "not": {
-          "const": "main"
+      "properties": {
+        "anima": {
+          "$ref": "#/$defs/anima"
+        },
+        "qwen": {
+          "$ref": "#/$defs/qwen"
         }
       },
-      "additionalProperties": {
-        "$ref": "#/$defs/variant"
-      }
+      "additionalProperties": false
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "$defs": {
+    "anima": {
+      "$defs": {
+        "fragment": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^token-[0-9a-f]{12}$"
+            },
+            "tag": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "description": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "weight": {
+              "type": "number"
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "camera_settings": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "direction",
+                "height",
+                "shot",
+                "view",
+                "hands",
+                "legs",
+                "shadow",
+                "perspective",
+                "foreshortening",
+                "backgroundBlur",
+                "foregroundBlur"
+              ],
+              "properties": {
+                "direction": {
+                  "enum": [
+                    null,
+                    "front",
+                    "side",
+                    "back"
+                  ]
+                },
+                "height": {
+                  "enum": [
+                    null,
+                    "above",
+                    "below"
+                  ]
+                },
+                "shot": {
+                  "enum": [
+                    null,
+                    "特写",
+                    "近景",
+                    "中景",
+                    "全身",
+                    "远景"
+                  ]
+                },
+                "view": {
+                  "enum": [
+                    null,
+                    "pov",
+                    "female_pov",
+                    "over_shoulder"
+                  ]
+                },
+                "hands": {
+                  "type": "boolean"
+                },
+                "legs": {
+                  "type": "boolean"
+                },
+                "shadow": {
+                  "type": "boolean"
+                },
+                "perspective": {
+                  "type": "boolean"
+                },
+                "foreshortening": {
+                  "type": "boolean"
+                },
+                "backgroundBlur": {
+                  "type": "boolean"
+                },
+                "foregroundBlur": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "oneOf": [
+            {
+              "properties": {
+                "tag": true
+              },
+              "required": [
+                "tag"
+              ]
+            },
+            {
+              "properties": {
+                "description": true
+              },
+              "required": [
+                "description"
+              ]
+            }
+          ],
+          "additionalProperties": false
+        },
+        "fragments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/anima/$defs/fragment"
+          }
+        },
+        "prompt": {
+          "type": "object",
+          "required": [
+            "subject",
+            "person",
+            "setting",
+            "camera",
+            "avoid"
+          ],
+          "properties": {
+            "subject": {
+              "$ref": "#/$defs/anima/$defs/fragments"
+            },
+            "person": {
+              "$ref": "#/$defs/anima/$defs/fragments"
+            },
+            "setting": {
+              "$ref": "#/$defs/anima/$defs/fragments"
+            },
+            "camera": {
+              "$ref": "#/$defs/anima/$defs/fragments"
+            },
+            "avoid": {
+              "$ref": "#/$defs/anima/$defs/fragments"
+            }
+          },
+          "additionalProperties": false
+        },
+        "lora": {
+          "type": "object",
+          "required": [
+            "filename",
+            "sha256",
+            "weight"
+          ],
+          "properties": {
+            "filename": {
+              "type": "string",
+              "pattern": "^(?!\\s)(?!.*\\s$)(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*[\\\\:]).+$"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "weight": {
+              "type": "number",
+              "minimum": -2,
+              "maximum": 2
+            },
+            "trigger": {
+              "type": "string",
+              "pattern": "\\S"
+            }
+          },
+          "additionalProperties": false
+        },
+        "identity": {
+          "type": "object",
+          "required": [
+            "prompt",
+            "lora"
+          ],
+          "properties": {
+            "prompt": {
+              "$ref": "#/$defs/anima/$defs/prompt"
+            },
+            "lora": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/$defs/anima/$defs/lora"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "configuration": {
+          "type": "object",
+          "required": [
+            "prompt",
+            "loras",
+            "identity_disabled"
+          ],
+          "properties": {
+            "prompt": {
+              "$ref": "#/$defs/anima/$defs/prompt"
+            },
+            "loras": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/anima/$defs/lora"
+              }
+            },
+            "identity_disabled": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "\\S"
+              },
+              "description": "本造型关闭的 identity.prompt 文本键（trim+小写比较）；每个键必须存在于 identity.prompt。"
+            },
+            "identity_overrides": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "weight": {
+                    "type": "number",
+                    "minimum": 0.2,
+                    "maximum": 10
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "reference_images": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "file",
+                  "title"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^ref-[a-f0-9-]{36}$"
+                  },
+                  "file": {
+                    "type": "string",
+                    "pattern": "^reference-[a-f0-9-]+\\.png$"
+                  },
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                }
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "type": "object",
+      "required": [
+        "identity",
+        "variants"
+      ],
+      "properties": {
+        "identity": {
+          "$ref": "#/$defs/anima/$defs/identity"
+        },
+        "variants": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "not": {
+              "const": "main"
+            }
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/anima/$defs/configuration"
+          },
+          "description": "按造型 id 拆分的配置，至少一个造型；variant_id 必填，直接引用这里的键。"
+        }
+      },
+      "additionalProperties": false
+    },
+    "qwen": {
+      "$defs": {
+        "variant": {
+          "type": "object",
+          "required": [
+            "text"
+          ],
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "reference_images": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "file",
+                  "title"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^ref-[a-f0-9-]{36}$"
+                  },
+                  "file": {
+                    "type": "string",
+                    "pattern": "^reference-[a-f0-9-]+\\.png$"
+                  },
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                }
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "type": "object",
+      "required": [
+        "prompt_name",
+        "variants"
+      ],
+      "properties": {
+        "prompt_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "variants": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "not": {
+              "const": "main"
+            }
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/qwen/$defs/variant"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
 }

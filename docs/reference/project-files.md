@@ -22,7 +22,7 @@ Agent 日常操作需要本地工作台服务在线；命令与 API 统一说明
 │  └─ <scene-id>.{profile,visual,prompt}.json
 ├─ pages/
 │  ├─ index.json          # 全局页面 ID、归属与顺序
-│  └─ <page-id>.{content,prompt,text-sources}.json
+│  └─ <page-id>.{content,prompt,render,rewrite,text-sources}.json
 ├─ story/
 │  └─ outline.json
 ├─ lettering/
@@ -58,7 +58,8 @@ Agent 临时工作统一位于仓库根 `Saved/Agent/<任务名>/`，同一任�
 
 ## 持久事实
 
-- `project.json` 保存 `format`（剧情项目必填 `story-free-text-v1`，旧格式项目不能打开）、标题、画幅和默认 render profile；
+- `project.json` 保存 `format: "story-models-v1"`、标题、新页默认画幅和默认 render profile；
+- 每页 `render.json` 保存模型、profile 与画幅，创建时复制默认，之后独立；Prompt 通过 `models` 分别保存各模型输入，详见[模型适配器](../dev/model-adapters.md)；
 - `creative-agreement.json` 保存用户确认的项目级创作约定；清单保持扁平，每条明确为必须遵守或创作偏好；
 - `materials/` 保存用户提供的原文与参考材料，只容纳一层纯文件（不支持子目录），目录中的实际文件会自动进入参考材料清单；
   `materials/index.json` 仅保存可选显示标题，不表达登记状态或阅读顺序；
@@ -77,7 +78,8 @@ Agent 临时工作统一位于仓库根 `Saved/Agent/<任务名>/`，同一任�
   `lettering/dialogue-layouts.json` 只保存逐页对白位置与尺寸；旁白使用通栏字幕条（按页选顶部或底部），不保存布局；
 训练也是独立项目：`project.json` 保存素材组织，`assets/` 保存图片与 Caption，`captioning/` 保存审核事实，`settings.json` 保存唯一当前训练设置（Qwen-Image-2.1，version 5）；这些内容进入该项目 Git。`Training/` 保存历史冻结输入、恢复包和结果，`Saved/` 保存缓存及执行副本，均不入 Git。
 
-角色与场景 `*.prompt.json` 形状为 `{ prompt_name, variants }`：`prompt_name` 是编译输出的名称，
+角色与场景 `*.prompt.json` 形状为 `{$schema,models:{anima:…,qwen:…}}`。Anima 输入保留 identity、分类词条及逐词继承；下列整段规则仅描述 Qwen 输入。
+Qwen 输入形状为 `{ prompt_name, variants }`：`prompt_name` 是编译输出的名称，
 创建时复制显示名称、之后独立；每个 `variants.<id>` 自包含一段自由文本 `text` 和有序
 `reference_images`（条目为 `{id, file, title}`），子设定之间互不继承，也没有 identity 层、LoRA
 或逐词继承。角色至少一个 variant（禁止删除最后一个），全部同构、无保留 id、无默认造型。

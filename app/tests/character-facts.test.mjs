@@ -68,6 +68,7 @@ async function createFixture(context) {
   context.after(() => rm(repositoryRoot, { recursive: true, force: true }));
   const projectId = "demo";
   const projectDirectory = path.join(repositoryRoot, "workspace", projectId);
+  await writeJson(path.join(projectDirectory,"project.json"),{format:"story-free-text-v1",title:"测试",canvas:"2:3",default_render_profile:"qwen-image-2-1"});
   const pagesDirectory = path.join(projectDirectory, "pages");
   const charactersDirectory = path.join(projectDirectory, "characters");
   await writeJson(path.join(projectDirectory, "story", "outline.json"), {

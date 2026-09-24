@@ -4,6 +4,7 @@ import { mkdir } from "node:fs/promises";
 
 import { readReferenceLibrary, mutateReferenceLibrary } from "./reference-library.mjs";
 import { savePage } from "./page-facts.mjs";
+import {reimportAnimaPrompt} from './page-render-settings.mjs';
 import { SCENE_PROFILE_SCHEMA_ID, SCENE_VISUAL_SCHEMA_ID, SCENE_PROMPT_SCHEMA_ID } from "./scene-files.mjs";
 import { hashCanonicalJson } from "./workflow-definition.mjs";
 import { readFactDraft, saveFactDraft } from './fact-drafts.mjs';
@@ -253,6 +254,11 @@ export async function handleWorkbenchRequest({
     return true;
   }
 
+  const qwenImportMatch = /^\/api\/projects\/([^/]+)\/workbench\/qwen-import$/.exec(decodedPath);
+  if(request.method==='POST'&&qwenImportMatch) {
+    const value=await readJsonBody(request);
+    sendOperation(200,await mutateTargetFacts(qwenImportMatch[1],({projectId})=>reimportAnimaPrompt(projectRoot,projectId,value)));return true;
+  }
   const pagePromptMatch = /^\/api\/projects\/([^/]+)\/workbench\/page-prompt\/?$/.exec(decodedPath);
   if (request.method === "PUT" && pagePromptMatch) {
     const value = await readJsonBody(request);

@@ -1,56 +1,469 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://storyvisualizer.local/schemas/story-page-prompt.schema.json",
-  "$defs": {
-    "overrideSource": {
-      "type": "string",
-      "pattern": "^(character|scene):[a-z0-9-]+:[a-z0-9-]+$"
-    },
-    "referenceImage": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["id", "file", "title"],
-      "properties": {
-        "id": { "type": "string", "pattern": "^ref-[a-f0-9-]{36}$" },
-        "file": { "type": "string", "pattern": "^reference-[a-f0-9-]+\\.png$" },
-        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
-        "purpose": { "type": "string", "minLength": 1, "maxLength": 200 }
-      }
-    }
-  },
   "type": "object",
-  "required": ["$schema", "text"],
+  "required": [
+    "$schema",
+    "models"
+  ],
   "properties": {
-    "$schema": { "const": "https://storyvisualizer.local/schemas/story-page-prompt.schema.json" },
-    "text": { "type": "string" },
-    "scene_id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
-    "scene_variant_id": {
-      "type": "string",
-      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
-      "not": { "const": "main" }
+    "$schema": {
+      "const": "https://storyvisualizer.local/schemas/story-page-prompt.schema.json"
     },
-    "text_overrides": {
+    "models": {
       "type": "object",
-      "propertyNames": { "$ref": "#/$defs/overrideSource" },
-      "additionalProperties": { "type": "string" }
-    },
-    "reference_images": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/referenceImage" }
-    },
-    "reference_overrides": {
-      "type": "object",
-      "propertyNames": { "$ref": "#/$defs/overrideSource" },
-      "additionalProperties": {
-        "type": "array",
-        "uniqueItems": true,
-        "items": { "type": "string", "pattern": "^ref-[a-f0-9-]{36}$" }
-      }
+      "minProperties": 1,
+      "properties": {
+        "anima": {
+          "$ref": "#/$defs/anima"
+        },
+        "qwen": {
+          "$ref": "#/$defs/qwen"
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
-  "dependentRequired": {
-    "scene_id": ["scene_variant_id"],
-    "scene_variant_id": ["scene_id"]
+  "$defs": {
+    "anima": {
+      "$defs": {
+        "fragment": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^token-[0-9a-f]{12}$"
+            },
+            "tag": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "description": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "character_id": {
+              "type": "string",
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+            },
+            "weight": {
+              "type": "number"
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "camera_settings": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "direction",
+                "height",
+                "shot",
+                "view",
+                "hands",
+                "legs",
+                "shadow",
+                "perspective",
+                "foreshortening",
+                "backgroundBlur",
+                "foregroundBlur"
+              ],
+              "properties": {
+                "direction": {
+                  "enum": [
+                    null,
+                    "front",
+                    "side",
+                    "back"
+                  ]
+                },
+                "height": {
+                  "enum": [
+                    null,
+                    "above",
+                    "below"
+                  ]
+                },
+                "shot": {
+                  "enum": [
+                    null,
+                    "特写",
+                    "近景",
+                    "中景",
+                    "全身",
+                    "远景"
+                  ]
+                },
+                "view": {
+                  "enum": [
+                    null,
+                    "pov",
+                    "female_pov",
+                    "over_shoulder"
+                  ]
+                },
+                "hands": {
+                  "type": "boolean"
+                },
+                "legs": {
+                  "type": "boolean"
+                },
+                "shadow": {
+                  "type": "boolean"
+                },
+                "perspective": {
+                  "type": "boolean"
+                },
+                "foreshortening": {
+                  "type": "boolean"
+                },
+                "backgroundBlur": {
+                  "type": "boolean"
+                },
+                "foregroundBlur": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "oneOf": [
+            {
+              "properties": {
+                "tag": true
+              },
+              "required": [
+                "tag"
+              ]
+            },
+            {
+              "properties": {
+                "description": true
+              },
+              "required": [
+                "description"
+              ]
+            }
+          ],
+          "additionalProperties": false
+        },
+        "fragments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/anima/$defs/fragment"
+          }
+        }
+      },
+      "type": "object",
+      "required": [
+        "subject",
+        "person",
+        "setting",
+        "camera",
+        "avoid"
+      ],
+      "properties": {
+        "subject": {
+          "$ref": "#/$defs/anima/$defs/fragments"
+        },
+        "person": {
+          "$ref": "#/$defs/anima/$defs/fragments"
+        },
+        "setting": {
+          "$ref": "#/$defs/anima/$defs/fragments"
+        },
+        "camera": {
+          "$ref": "#/$defs/anima/$defs/fragments"
+        },
+        "avoid": {
+          "$ref": "#/$defs/anima/$defs/fragments"
+        },
+        "scene_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "inheritance": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^(character:[a-z0-9-]+:[a-z0-9-]+|scene:[a-z0-9-]+:[a-z0-9-]+)$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "weight": {
+                  "type": "number",
+                  "minimum": 0.2,
+                  "maximum": 10
+                },
+                "enabled": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "scene_variant_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "not": {
+            "const": "main"
+          }
+        },
+        "reference_images": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "file",
+              "title"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^ref-[a-f0-9-]{36}$"
+              },
+              "file": {
+                "type": "string",
+                "pattern": "^reference-[a-f0-9-]+\\.png$"
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              }
+            }
+          }
+        },
+        "reference_overrides": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^ref-[a-f0-9-]{36}$"
+            }
+          }
+        },
+        "loras": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "filename",
+              "sha256",
+              "weight"
+            ],
+            "properties": {
+              "filename": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "weight": {
+                "type": "number",
+                "minimum": -2,
+                "maximum": 2
+              },
+              "trigger": {
+                "type": "string",
+                "minLength": 1
+              },
+              "enabled": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "trigger_sources": {
+          "type": "object",
+          "required": [
+            "style",
+            "characters",
+            "scenes"
+          ],
+          "properties": {
+            "style": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "characters": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "scenes": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false,
+      "dependentRequired": {
+        "scene_id": [
+          "scene_variant_id"
+        ],
+        "scene_variant_id": [
+          "scene_id"
+        ]
+      }
+    },
+    "qwen": {
+      "$defs": {
+        "overrideSource": {
+          "type": "string",
+          "pattern": "^(character|scene):[a-z0-9-]+:[a-z0-9-]+$"
+        },
+        "referenceImage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "file",
+            "title"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^ref-[a-f0-9-]{36}$"
+            },
+            "file": {
+              "type": "string",
+              "pattern": "^reference-[a-f0-9-]+\\.png$"
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "purpose": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          }
+        }
+      },
+      "type": "object",
+      "required": [
+        "text"
+      ],
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "scene_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "scene_variant_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "not": {
+            "const": "main"
+          }
+        },
+        "text_overrides": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/qwen/$defs/overrideSource"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "reference_images": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/qwen/$defs/referenceImage"
+          }
+        },
+        "reference_overrides": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/qwen/$defs/overrideSource"
+          },
+          "additionalProperties": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^ref-[a-f0-9-]{36}$"
+            }
+          }
+        },
+        "composition": {
+          "enum": [
+            "settings",
+            "standalone"
+          ]
+        },
+        "loras": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "filename",
+              "sha256",
+              "weight"
+            ],
+            "properties": {
+              "filename": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "weight": {
+                "type": "number",
+                "minimum": -2,
+                "maximum": 2
+              },
+              "trigger": {
+                "type": "string",
+                "minLength": 1
+              },
+              "enabled": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false,
+      "dependentRequired": {
+        "scene_id": [
+          "scene_variant_id"
+        ],
+        "scene_variant_id": [
+          "scene_id"
+        ]
+      }
+    }
   }
 }

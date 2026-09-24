@@ -8,7 +8,7 @@ import * as qwenPrompt from './models/qwen/prompt-contract.mjs';
 // 模型拥有 Prompt 和能力；候选/队列只消费编译结果。显式注册，不扫描或运行外部插件。
 const adapters = Object.freeze({
   anima: Object.freeze({
-    id: 'anima', architecture: 'anima', label: 'Anima Basic',
+    id: 'anima', architecture: 'anima', label: 'Anima Basic', defaultProfile: 'anima-base-v1',
     capabilities: Object.freeze({ references: false, rewrite: false }),
     emptyPrompt: () => ({ subject: [], person: [], setting: [], camera: [], avoid: [] }),
     compilePrompt: compileAnima,
@@ -21,7 +21,7 @@ const adapters = Object.freeze({
     resolveEffectivePrompt: animaProfile.resolveEffectivePrompt,
   }),
   qwen: Object.freeze({
-    id: 'qwen', architecture: 'qwen-image-2-1', label: 'Qwen-Image-2.1',
+    id: 'qwen', architecture: 'qwen-image-2-1', label: 'Qwen-Image-2.1', defaultProfile: 'qwen-image-2-1',
     capabilities: Object.freeze({ references: true, rewrite: true }),
     emptyPrompt: () => ({ text: '', composition: 'settings' }),
     compilePrompt: compileQwen,
@@ -49,5 +49,11 @@ export function profileModelAdapter(profile) {
   const adapter = Object.values(adapters).find(item => item.architecture === profile?.architecture_family);
   if (!adapter) throw new TypeError(`未知生成模型家族：${profile?.architecture_family}`);
   return adapter;
+}
+export async function defaultProfileAdapter(repositoryRoot, profileId) {
+  const adapter = Object.values(adapters).find(item => item.defaultProfile === profileId);
+  if (adapter) return adapter;
+  const {readResolvedRenderProfile}=await import('./render-profile-compiler.mjs');
+  return profileModelAdapter((await readResolvedRenderProfile(repositoryRoot,profileId)).resolved_profile);
 }
 export const generationModels = Object.freeze(Object.values(adapters).map(({ id, architecture, label, capabilities }) => Object.freeze({ id, architecture, label, capabilities })));

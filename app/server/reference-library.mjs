@@ -8,13 +8,15 @@ import { readCandidateResult } from './candidate-storage.mjs';
 import { resolveExistingProjectMedia } from './render-media.mjs';
 import { hashCanonicalJson } from './workflow-definition.mjs';
 import { ApiError } from './http-support.mjs';
+import {isModelPromptDocument} from './model-prompts.mjs';
 
 function targetArgs(projectId, target) {
   if (!target || !['character', 'scene', 'page'].includes(target.kind) || typeof target.id !== 'string') throw new ApiError(400, 'invalid_reference_target');
   return { projectId, domain: target.kind, kind: 'prompt', targetId: target.id };
 }
 function holder(draft, target) {
-  const value = target.kind === 'page' ? draft.document : draft.document.variants[target.variant_id];
+  const document = isModelPromptDocument(draft.document) ? draft.document.models[target.model_id ?? 'qwen'] : draft.document;
+  const value = target.kind === 'page' ? document : document?.variants[target.variant_id];
   if (!value) throw new ApiError(404, 'reference_setting_not_found');
   return value;
 }

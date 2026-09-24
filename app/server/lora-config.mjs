@@ -109,3 +109,14 @@ export function explicitPageLoras(prompt, pageId) {
   }
   return {loras,errors};
 }
+
+// 迁移只冻结触发词原来的位置；启用状态始终来自本页明确 LoRA 列表。
+export function pageLoraTriggers(prompt, kind, owner, fallback = []) {
+  if (!Array.isArray(prompt?.loras)) return fallback;
+  const active=[...new Set(prompt.loras.filter(lora=>lora.enabled!==false).map(lora=>lora.trigger?.trim()).filter(Boolean))];
+  const sources=prompt.trigger_sources;
+  if(!sources)return kind==='style'?active:[];
+  const mapped=new Set([...sources.style,...Object.values(sources.characters).flat(),...Object.values(sources.scenes).flat()]);
+  const original=kind==='style'?sources.style:sources[kind]?.[owner]??[];
+  return [...original.filter(trigger=>active.includes(trigger)),...(kind==='style'?active.filter(trigger=>!mapped.has(trigger)):[])];
+}

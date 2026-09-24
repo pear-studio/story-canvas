@@ -53,11 +53,11 @@ test("模板直接创建完整项目，重复创建拒绝覆盖", async (context
     pages: [],
   });
   const characterPrompt = await readJson(path.join(directory, "characters", "ellen.prompt.json"));
-  assert.equal(characterPrompt.prompt_name, "艾莲");
-  assert.deepEqual(characterPrompt.variants, { uniform: { text: "", reference_images: [] } });
+  assert.deepEqual(characterPrompt.models.anima.identity.prompt, {subject:[],person:[],setting:[],camera:[],avoid:[]});
+  assert.deepEqual(characterPrompt.models.anima.variants.uniform.loras, []);
   const projectManifest = await readJson(path.join(directory, "project.json"));
-  assert.equal(projectManifest.format, "story-free-text-v1");
-  assert.equal(projectManifest.default_render_profile, "qwen-image-2-1");
+  assert.equal(projectManifest.format, "story-models-v1");
+  assert.equal(projectManifest.default_render_profile, "anima-base-v1");
   for (const forbidden of ["story/storyboard.json", "characters/characters.json", "characters/pages.json", "collaboration", "assessment", "candidates", "tasks", "materials/adaptation.md"]) {
     assert.equal(await readFile(path.join(directory, ...forbidden.split("/")), "utf8").then(() => true, () => false), false, forbidden);
   }

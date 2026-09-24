@@ -1,6 +1,6 @@
 import { cleanRemovedReferences } from './reference-materials.mjs';
-import { mapModelPrompts, promptModelEntries, emptySettingVariant, renamePromptSource } from './model-prompts.mjs';
-import { modelAdapter } from './model-adapters.mjs';
+import { mapModelPrompts, promptModelEntries, emptySettingVariant, renamePromptSource, emptySettingPrompt, makeModelPromptDocument } from './model-prompts.mjs';
+import { modelAdapter, defaultProfileAdapter } from './model-adapters.mjs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { lstat, mkdir, readFile, rename, readdir, stat } from 'node:fs/promises';
@@ -105,6 +105,11 @@ export async function createScene(root, projectId, sceneId, { name, beforeCommit
   const before = await sceneIndex(project.projectDirectory);
   if (before.scenes.includes(sceneId)) fail('scene_already_exists', [sceneId]);
   const facts = defaultSceneFacts(sceneId, name);
+  const projectDocument = await optionalFact(project.projectDirectory,'project.json');
+  if (projectDocument.format === 'story-models-v1') {
+    const modelId = (await defaultProfileAdapter(root,projectDocument.default_render_profile)).id;
+    facts.prompt = makeModelPromptDocument(SCENE_PROMPT_SCHEMA_ID,modelId,emptySettingPrompt(modelId,facts.profile.name,['default']));
+  }
   const writes = [];
   for (const kind of ['profile', 'visual', 'prompt']) {
     if (await optionalFact(project.projectDirectory, relative(sceneId, kind))) fail('scene_fact_already_exists', [sceneId, kind]);

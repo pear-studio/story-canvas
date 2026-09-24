@@ -5,6 +5,8 @@ import { ApiError } from './http-support.mjs';
 import { saveMaterial, openMaterialFile } from './project-materials.mjs';
 import { deleteMaterial } from './project-materials.mjs';
 import { promptModelEntries } from './model-prompts.mjs';
+import {readCandidateResult} from './candidate-storage.mjs';
+import {resolveExistingProjectMedia} from './render-media.mjs';
 export async function promptDocuments(directory) {
   const result = [];
   for (const folder of ['pages', 'characters', 'scenes']) {
@@ -53,11 +55,17 @@ export async function savePageReferenceInputs(directory, projectId, prompt, inpu
   if (!Array.isArray(inputs) || new Set(inputs.map(input => input?.id)).size !== inputs.length) throw new ApiError(400, 'invalid_reference_inputs');
   for (const input of inputs) {
     const entry = prompt.reference_images?.find(entry => entry.id === input.id);
-    if (!entry || Object.keys(input).some(key => !['id', 'content', 'material_file'].includes(key)) || Boolean(input.content) === Boolean(input.material_file)) throw new ApiError(400, 'invalid_reference_inputs');
+    if (!entry || Object.keys(input).some(key => !['id', 'content', 'material_file','candidate_id','page_key'].includes(key)) || [input.content,input.material_file,input.candidate_id].filter(Boolean).length !== 1 || Boolean(input.candidate_id)!==Boolean(input.page_key)) throw new ApiError(400, 'invalid_reference_inputs');
     // 目标路径已由 Prompt 契约校验；草稿新图片不可覆盖已有素材。
     const exists = await stat(path.join(directory, 'materials', entry.file)).then(() => true, error => { if (error.code === 'ENOENT') return false; throw error; });
     if (exists) throw new ApiError(409, 'reference_file_conflict');
-    const bytes = input.content ? Buffer.from(input.content, 'base64') : await readFile((await openMaterialFile(directory, input.material_file)).target);
+    let bytes;
+    if(input.candidate_id) {
+      const result=await readCandidateResult(directory,input.page_key,input.candidate_id);
+      const media=result&&await resolveExistingProjectMedia(directory,result.file);
+      if(!media)throw new ApiError(404,'candidate_image_missing');
+      bytes=await readFile(media.target);
+    } else bytes = input.content ? Buffer.from(input.content, 'base64') : await readFile((await openMaterialFile(directory, input.material_file)).target);
     if (!bytes.length || bytes.length > 32 * 1024 * 1024) throw new ApiError(422, 'invalid_reference_image');
     const metadata = await sharp(bytes).metadata();
     if (!['png','jpeg','webp'].includes(metadata.format) || (metadata.pages ?? 1) > 1) throw new ApiError(422, 'invalid_reference_image');

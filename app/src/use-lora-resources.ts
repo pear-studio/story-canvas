@@ -30,7 +30,7 @@ export function rawLoraResourceDefinition(raw: RawLoraResource, compatibility: L
 }
 
 /** 读取 library LoRA 资源列表与当前项目基模的兼容性（架构家族 + Prompt 家族），供 LoRA 选择器使用。 */
-export function useProjectLoraResources(projectId: string) {
+export function useProjectLoraResources(projectId: string, profileId?: string) {
   const [state, setState] = useState<{ list: LoraResourceList | null; compatibility: LoraCompatibility; error: string | null }>({ list: null, compatibility: null, error: null });
   useEffect(() => {
     let cancelled = false;
@@ -40,7 +40,7 @@ export function useProjectLoraResources(projectId: string) {
       fetch(`/api/projects/${encodeURIComponent(projectId)}/render-profile`, { headers: { accept: "application/json" } }).then((response) => responseJson<RenderProfileSummaryResponse>(response)),
     ]).then(([list, profile]) => {
       if (cancelled) return;
-      const current = profile.render_profiles.find((entry) => entry.id === profile.current_profile_id) ?? null;
+      const current = profile.render_profiles.find((entry) => entry.id === (profileId ?? profile.current_profile_id)) ?? null;
       setState({
         list,
         compatibility: current ? { architectureFamily: current.architecture_family, promptFamily: current.prompt_family ?? undefined } : null,
@@ -50,6 +50,6 @@ export function useProjectLoraResources(projectId: string) {
       if (!cancelled) setState({ list: null, compatibility: null, error: cause instanceof Error ? cause.message : String(cause) });
     });
     return () => { cancelled = true; };
-  }, [projectId]);
+  }, [projectId,profileId]);
   return state;
 }

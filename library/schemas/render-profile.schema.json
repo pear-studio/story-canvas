@@ -141,7 +141,8 @@
     },
     "architecture_family": {
       "enum": [
-        "qwen-image-2-1"
+        "qwen-image-2-1",
+        "anima"
       ]
     },
     "models": {
@@ -155,16 +156,43 @@
       }
     },
     "prompt": {
-      "type": "object",
-      "required": [
-        "text"
-      ],
-      "properties": {
-        "text": {
-          "type": "string"
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "text"
+          ],
+          "properties": {
+            "text": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "policy",
+            "fragments"
+          ],
+          "properties": {
+            "policy": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]*$"
+            },
+            "fragments": {
+              "type": "object",
+              "propertyNames": {
+                "pattern": "^[a-z0-9][a-z0-9-]*$"
+              },
+              "additionalProperties": {
+                "$ref": "https://storyvisualizer.local/schemas/prompt-policy.schema.json#/$defs/fragment"
+              }
+            }
+          },
+          "additionalProperties": false
         }
-      },
-      "additionalProperties": false
+      ]
     },
     "operations": {
       "type": "object",

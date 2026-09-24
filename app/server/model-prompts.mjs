@@ -13,6 +13,12 @@ export function mapModelPrompts(document, transform) {
 export function emptySettingVariant(modelId) {
   return modelId==='anima'?{prompt:modelAdapter('anima').emptyPrompt(),loras:[],identity_disabled:[]}:{text:'',reference_images:[]};
 }
+export function emptySettingPrompt(modelId, name, variantIds) {
+  return {
+    ...(modelId === 'anima' ? {identity:{prompt:modelAdapter(modelId).emptyPrompt(),lora:null}} : {prompt_name:name}),
+    variants:Object.fromEntries(variantIds.map(id => [id,emptySettingVariant(modelId)])),
+  };
+}
 export function renamePromptSource(document, oldSource, newSource) {
   return mapModelPrompts(document,input=>{
     for(const field of ['inheritance','text_overrides','reference_overrides'])if(Object.hasOwn(input[field]??{},oldSource)){input[field][newSource]=input[field][oldSource];delete input[field][oldSource];}

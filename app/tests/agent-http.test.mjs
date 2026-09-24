@@ -1,3 +1,4 @@
+import {createQwenFixtureProject as createProject, installModelResources} from './model-fixture.mjs';
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
@@ -5,7 +6,7 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import test from "node:test";
 import { handleAgentRequest } from "../server/agent-http.mjs";
-import { createProject, readProjectCreationTemplate } from "../server/project-creation.mjs";
+import { readProjectCreationTemplate } from "../server/project-creation.mjs";
 import { createScene } from "../server/scene-facts.mjs";
 import { createPage } from "../server/page-facts.mjs";
 
@@ -29,10 +30,10 @@ test("Agent 公共页 content/prompt/text-sources read 返回的草稿可直接 
     const draft = await call(kind, "read", { project_id: "demo", target_id: page.page_id });
     assert.equal(draft.target_id, page.page_id);
     if (kind === "content") draft.document.title = "场景中的角色验证";
-    if (kind === "prompt") draft.document.text = "站台全景。";
+    if (kind === "prompt") draft.document.models.qwen.text = "站台全景。";
     await call(kind, "save", draft);
     const reread = await call(kind, "read", { project_id: "demo", target_id: page.page_id });
     if (kind === "content") assert.equal(reread.document.title, "场景中的角色验证");
-    if (kind === "prompt") assert.equal(reread.document.text, "站台全景。");
+    if (kind === "prompt") assert.equal(reread.document.models.qwen.text, "站台全景。");
   }
 });

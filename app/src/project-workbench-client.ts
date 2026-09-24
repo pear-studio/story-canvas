@@ -19,6 +19,8 @@ export type Scene = WorkbenchCharacter;
 export type PageOwner = { page_id: string; owner_kind: 'story' | 'character' | 'scene'; sequence_id?: string; character_id?: string; scene_id?: string; variant_id?: string };
 export type PageReferenceEntry = ReferenceEntry & { purpose?: string };
 export type PagePrompt = {
+  loras?: Array<{filename:string;sha256:string;weight:number;trigger?:string;enabled?:boolean}>;
+  trigger_sources?: {style:string[];characters:Record<string,string[]>;scenes:Record<string,string[]>};
   text?: string;
   composition?: 'settings' | 'standalone';
   subject?: import('./models/anima/types').PromptFragment[];
@@ -565,7 +567,7 @@ export const saveSettingPrompt = <T extends object>(kind: SettingKind, projectId
 export const renameSettingVariant = <T extends object>(kind: SettingKind, projectId: string, setting: WorkbenchCharacter<T>, oldId: string, newId: string) => renameCharacterVariant(projectId, setting, oldId, newId, kind);
 
 export async function saveWholePage(projectId: string, page: WorkbenchPage, content: StoryPageContentDraft, prompt: PagePrompt, items: LetteringItem[]) {
-  const reference_inputs = (prompt.reference_images ?? []).filter(entry => entry.draft).map(entry => ({ id: entry.id, ...entry.draft }));
+  const reference_inputs = (prompt.reference_images ?? []).filter(entry => entry.draft).map(entry => {const {preview_url,...source}=entry.draft!;return {id:entry.id,...source};});
   prompt = { ...prompt, ...(prompt.reference_images ? { reference_images: prompt.reference_images.map(({ draft, ...entry }) => entry) } : {}) };
   return workbenchResponseJson<{ content: StoryPageContentDraft & { dialogue: NonNullable<WorkbenchPage["dialogue"]> }; content_sha256: string; prompt: PagePrompt; prompt_sha256: string; prompt_context_sha256: string; lettering: { page: string; items: LetteringItem[] }; layout_sha256: string }>(await mutateTargetFacts(`${base(projectId)}/page-save`, {
     method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ page_key: page.page_key, content, prompt, reference_inputs,

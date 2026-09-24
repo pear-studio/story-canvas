@@ -1,7 +1,8 @@
+import {createQwenFixtureProject as createProject, installModelResources} from './model-fixture.mjs';
 import { cp, mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createProject, readProjectCreationTemplate } from "../server/project-creation.mjs";
+import { readProjectCreationTemplate } from "../server/project-creation.mjs";
 import { createCharacter } from "../server/character-facts.mjs";
 import { createScene } from "../server/scene-facts.mjs";
 import { readFactDraft } from "../server/fact-drafts.mjs";
@@ -163,8 +164,8 @@ test("公共页面模板创建传递显式人物引用", async t => {
   assert.deepEqual(content.characters, [{ character_id: "ellen", variant_id: "default" }]);
   const prompt = JSON.parse(await readFile(result.prompt_file, "utf8"));
   if (owner.owner_kind === "scene") {
-    assert.equal(prompt.scene_id, "station");
-    assert.equal(prompt.scene_variant_id, "default");
+    assert.equal(prompt.models.qwen.scene_id, "station");
+    assert.equal(prompt.models.qwen.scene_variant_id, "default");
   }
   }
 });

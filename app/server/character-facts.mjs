@@ -1,6 +1,6 @@
 import { cleanRemovedReferences } from './reference-materials.mjs';
-import { mapModelPrompts, promptModelEntries, emptySettingVariant, renamePromptSource } from './model-prompts.mjs';
-import { modelAdapter } from './model-adapters.mjs';
+import { mapModelPrompts, promptModelEntries, emptySettingVariant, renamePromptSource, emptySettingPrompt, makeModelPromptDocument } from './model-prompts.mjs';
+import { modelAdapter, defaultProfileAdapter } from './model-adapters.mjs';
 import { readPageIndex, validatePagesIndexDocument } from "./pages-store.mjs";
 import { randomBytes } from "node:crypto";
 import { lstat, mkdir, readdir, rename, stat } from "node:fs/promises";
@@ -309,6 +309,11 @@ export async function createCharacter(projectRoot, projectId, characterId, { nam
   const index = await readCharacterIndex(project.projectDirectory);
   if (index.characters.includes(characterId)) fail("character_already_exists", [characterId]);
   const facts = defaultCharacterFacts(characterId, name);
+  const projectDocument = await storage.readJson(path.join(project.projectDirectory,'project.json'),'project.json');
+  if (projectDocument.format === 'story-models-v1') {
+    const modelId = (await defaultProfileAdapter(projectRoot,projectDocument.default_render_profile)).id;
+    facts.prompt = makeModelPromptDocument(CHARACTER_PROMPT_SCHEMA_ID,modelId,emptySettingPrompt(modelId,facts.profile.name,['default']));
+  }
   assertDocument(validateCharacterProfileDocument(facts.profile));
   assertDocument(validateCharacterVisualDocument(facts.visual));
   assertDocument(validateCharacterPromptDocument(facts.prompt));

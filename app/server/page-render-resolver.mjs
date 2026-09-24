@@ -194,8 +194,8 @@ export async function resolvePageIdentity(projectDirectory, pageId) {
   };
 }
 
-async function loadPageSnapshot(projectDirectory, pageId, exactPageKey = null) {
-  const render = await readPageRenderSettings(projectDirectory, pageId);
+async function loadPageSnapshot(projectDirectory, pageId, exactPageKey = null, renderOverride = null) {
+  const render = renderOverride ?? await readPageRenderSettings(projectDirectory, pageId);
   const modelId = render.model_id ?? 'qwen';
   const identity = await readPageIdentity(projectDirectory, pageId);
   const [contentSource, promptSource, characterIndexSource] = await Promise.all([
@@ -251,13 +251,13 @@ async function loadPageSnapshot(projectDirectory, pageId, exactPageKey = null) {
 }
 
 // 写入入口在已有事实锁内捕获，后续编译只消费这份内存快照。
-export async function capturePagePromptSnapshot(projectDirectory, pageId, pageKey = null) {
+export async function capturePagePromptSnapshot(projectDirectory, pageId, pageKey = null, renderOverride = null) {
   const [projectSource, snapshot] = await Promise.all([
     readJsonFact(projectDirectory, "project.json"),
-    loadPageSnapshot(projectDirectory, pageId, pageKey),
+    loadPageSnapshot(projectDirectory, pageId, pageKey, renderOverride),
   ]);
   snapshot.sources.push(projectSource);
-  const render = await readPageRenderSettings(projectDirectory, pageId, projectSource.value);
+  const render = renderOverride ?? await readPageRenderSettings(projectDirectory, pageId, projectSource.value);
   const renderSource = { relative_path: `pages/${pageId}.render.json`, sha256: hashCanonicalJson(render), value: render };
   snapshot.sources.push(renderSource);
   snapshot.source_fingerprint = hashCanonicalJson(Object.fromEntries(snapshot.sources.map((source) => [source.relative_path, source.sha256])));
@@ -450,10 +450,11 @@ export async function compilePageRenderInspectionContext({
   projectDirectory,
   pageKey,
   pagePromptDraft = undefined,
+  renderOverride = null,
 }) {
   const requestedPageKey = decodeFullPageKey(pageKey);
   const pageId = requestedPageKey.page_id;
-  const snapshot = await capturePagePromptSnapshot(projectDirectory, pageId, requestedPageKey);
+  const snapshot = await capturePagePromptSnapshot(projectDirectory, pageId, requestedPageKey, renderOverride);
   const { project, project_source: projectSource } = snapshot;
   if (encodePageKey(snapshot.page_key) !== encodePageKey(requestedPageKey)) {
     fail("page_owner_mismatch", [`请求 ${encodePageKey(requestedPageKey)}，实际 ${encodePageKey(snapshot.page_key)}`], 404);

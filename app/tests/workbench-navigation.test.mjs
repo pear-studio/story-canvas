@@ -1,3 +1,4 @@
+import {createQwenFixtureProject as createProject, installModelResources} from './model-fixture.mjs';
 import { registerFixtureProjects } from "./project-registry-fixture.mjs";
 import assert from "node:assert/strict";
 import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -5,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { createProject, readProjectCreationTemplate } from "../server/project-creation.mjs";
+import { readProjectCreationTemplate } from "../server/project-creation.mjs";
 import { saveCharacterPrompt } from "../server/project-workbench.mjs";
 import {
   createWorkbenchScene, createWorkbenchSceneVariant, moveWorkbenchSceneVariant, deleteWorkbenchSceneVariant,
@@ -102,15 +103,15 @@ test("工作台导航语义复用当前事实契约完成创建、移动、删�
   const templatedPrompt = await readJson(templatedPage.prompt_file);
   assert.equal(templatedNarrative.title, "上半身肖像");
   assert.deepEqual(templatedNarrative.characters, [{ character_id: "ellen", variant_id: "default" }]);
-  assert.match(templatedPrompt.text, /上半身|头发|面部/);
+  assert.match(templatedPrompt.models.qwen.text, /上半身|头发|面部/);
   await deleteWorkbenchStoryPage(fixture.root, fixture.projectId, templatedPage.page_id);
 
   const variant = await createWorkbenchCharacterVariant(fixture.root, fixture.projectId, "ellen", "casual", "便服");
   assert.equal(variant.variant_id, "casual", "新建子设定保留显式指定的稳定 ID");
   const promptTarget = path.join(fixture.projectDirectory, "characters", "ellen.prompt.json");
   const prompt = await readJson(promptTarget);
-  assert.deepEqual(Object.keys(prompt.variants), ["default"], "新建 variant 只写上游 visual");
-  prompt.variants[variant.variant_id] = structuredClone(prompt.variants.default);
+  assert.deepEqual(Object.keys(prompt.models.qwen.variants), ["default"], "新建 variant 只写上游 visual");
+  prompt.models.qwen.variants[variant.variant_id] = structuredClone(prompt.models.qwen.variants.default);
   const visualTarget = path.join(fixture.projectDirectory, "characters", "ellen.visual.json");
   await saveCharacterPrompt(fixture.root, fixture.projectId, {
     character_id: "ellen", prompt, expected_sha256: hashCanonicalJson(await readJson(promptTarget)),
@@ -131,7 +132,7 @@ test("工作台导航语义复用当前事实契约完成创建、移动、删�
   await deleteWorkbenchCharacterPage(fixture.root, fixture.projectId, secondCharacterPage.page_id);
   await deleteWorkbenchCharacterVariant(fixture.root, fixture.projectId, "ellen", variant.variant_id);
   assert.deepEqual((await readJson(path.join(fixture.projectDirectory, "characters", "ellen.visual.json"))).variants.map((variant) => variant.id), ["default"]);
-  assert.deepEqual(Object.keys((await readJson(promptTarget)).variants), ["default"], "删除子设定会在同一动作中清理对应 Prompt 设定");
+  assert.deepEqual(Object.keys((await readJson(promptTarget)).models.qwen.variants), ["default"], "删除子设定会在同一动作中清理对应 Prompt 设定");
 });
 
 const readOutline = (fixture) => readJson(path.join(fixture.projectDirectory, "story", "outline.json"));
@@ -218,7 +219,7 @@ test("角色视觉页锚点移动支持同 variant 重排、跨 variant 移动�
   const casual = await createWorkbenchCharacterVariant(fixture.root, fixture.projectId, "ellen", "casual", "便服");
   const promptTarget = path.join(fixture.projectDirectory, "characters", "ellen.prompt.json");
   const prompt = await readJson(promptTarget);
-  prompt.variants[casual.variant_id] = structuredClone(prompt.variants.default);
+  prompt.models.qwen.variants[casual.variant_id] = structuredClone(prompt.models.qwen.variants.default);
   const visualTarget = path.join(fixture.projectDirectory, "characters", "ellen.visual.json");
   await saveCharacterPrompt(fixture.root, fixture.projectId, {
     character_id: "ellen", prompt, expected_sha256: hashCanonicalJson(await readJson(promptTarget)),
@@ -340,7 +341,7 @@ test("场景导航管理子设定，共同页面移动仅改变归属", async co
   assert.deepEqual((await readJson(path.join(projectDirectory, "scenes/station.visual.json"))).variants.map(v => v.id), ["night", "default"]);
   const page = await createWorkbenchPage(root, projectId, { owner_kind: "scene", scene_id: "station", variant_id: "night" });
   const prompt = await readJson(page.prompt_file), content = await readJson(page.content_file);
-  assert.equal(prompt.scene_id, "station"); assert.equal(prompt.scene_variant_id, "night");
+  assert.equal(prompt.models.qwen.scene_id, "station"); assert.equal(prompt.models.qwen.scene_variant_id, "night");
   await moveWorkbenchPage(root, projectId, page.page_id, { owner_kind: "character", character_id: "ellen", variant_id: "default" });
   assert.deepEqual(await readJson(page.prompt_file), prompt);
   assert.deepEqual(await readJson(page.content_file), content);

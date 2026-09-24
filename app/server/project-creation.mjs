@@ -25,6 +25,8 @@ import {
   requireProjectDirectoryName,
 } from "./project-contracts.mjs";
 import { STORY_PROJECT_FORMAT } from "./project-manifest.mjs";
+import { defaultProfileAdapter } from './model-adapters.mjs';
+import { emptySettingPrompt, makeModelPromptDocument } from './model-prompts.mjs';
 import {
   STORY_OUTLINE_SCHEMA_ID,
   validateStoryOutlineDocument,
@@ -67,7 +69,7 @@ export function createEmptyProjectCreationDocument(projectId) {
     metadata: {
       title: safeProjectId,
       canvas: "2:3",
-      default_render_profile: "qwen-image-2-1",
+      default_render_profile: "anima-base-v1",
     },
     lettering_settings: defaultLetteringSettings(),
     outline: defaultOutline(),
@@ -133,7 +135,7 @@ export function validateProjectCreationDocument(document) {
   return errors;
 }
 
-function materializeCreation(document, now) {
+function materializeCreation(document, now, modelId) {
   const outline = { $schema: STORY_OUTLINE_SCHEMA_ID, ...structuredClone(document.outline) };
   const characterIds = document.characters.map((character) => character.id);
   const characterIndex = { $schema: CHARACTER_INDEX_SCHEMA_ID, characters: characterIds };
@@ -153,11 +155,7 @@ function materializeCreation(document, now) {
       $schema: CHARACTER_VISUAL_SCHEMA_ID,
       variants: structuredClone(character.variants),
     };
-    const prompt = {
-      $schema: CHARACTER_PROMPT_SCHEMA_ID,
-      prompt_name: character.name,
-      variants: Object.fromEntries(character.variants.map((variant) => [variant.id, { text: "", reference_images: [] }])),
-    };
+    const prompt = makeModelPromptDocument(CHARACTER_PROMPT_SCHEMA_ID, modelId, emptySettingPrompt(modelId, character.name, character.variants.map(variant => variant.id)));
     return { id: character.id, profile, visual, prompt };
   });
 
@@ -258,7 +256,7 @@ export async function createProject(projectRoot, { project_id: projectId, docume
   requireProjectDirectoryName(projectId);
   const errors = validateProjectCreationDocument(document);
   if (errors.length) fail(422, "invalid_project_creation", errors);
-  const materialized = materializeCreation(document, now());
+  const materialized = materializeCreation(document, now(),(await defaultProfileAdapter(projectRoot,document.metadata.default_render_profile)).id);
   const { workspaceRoot, destination } = await assertDestinationAvailable(projectRoot, projectId);
   await mkdir(workspaceRoot, { recursive: true });
   await requirePlainDirectory(workspaceRoot, "workspace_not_found");

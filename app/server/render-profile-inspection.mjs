@@ -137,7 +137,7 @@ function recipeSummary(recipe) {
 
 function promptProjection(profile) {
   return {
-    text: profile.prompt.text,
+    text: profile.prompt.text ?? Object.values(profile.prompt.fragments??{}).sort((a,b)=>a.order-b.order).map(fragment=>`${fragment.polarity==='negative'?'负向':'正向'}：${fragment.prompt_text}`).join('\n'),
     diagnostics: [],
   };
 }

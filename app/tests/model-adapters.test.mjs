@@ -12,6 +12,8 @@ import { readStoryPromptUpstream } from '../server/story-facts.mjs';
 import { registerFixtureProjects } from './project-registry-fixture.mjs';
 import { makeModelPromptDocument, validateModelPromptDocument } from '../server/model-prompts.mjs';
 import { hashCanonicalJson as hash } from '../server/workflow-definition.mjs';
+import {planModelMigration,commitModelMigration} from '../server/model-migration.mjs';
+import {compilePageRenderInspectionContext} from '../server/page-render-resolver.mjs';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const schema=name=>`https://storyvisualizer.local/schemas/${name}.schema.json`;
@@ -110,4 +112,28 @@ test('场景改名修复非当前模型的引用和逐词覆盖，删除检查�
   await assert.rejects(deleteSceneVariant(f.root,'demo','room','day'),e=>e.code==='scene_variant_still_in_use');
   await renameSceneVariant(f.root,'demo','room','day','morning');
   const input=(await f.get(`pages/${id}.prompt.json`)).models.anima;assert.equal(input.scene_variant_id,'morning');assert.deepEqual(input.inheritance,{'scene:room:morning':{}});
+});
+test('旧 Anima 一次迁移逐页保留 Prompt、LoRA 顺序、触发词并备份原始事实',async t=>{
+  const f=await fixture(t),{page_id:id}=await f.create();
+  const project=await f.get('project.json');delete project.format;await f.put('project.json',project);
+  await f.put('characters/index.json',{$schema:schema('character-index'),characters:['person']});
+  const character={identity:{prompt:modelAdapter('anima').emptyPrompt(),lora:{filename:'identity.safetensors',sha256:'a'.repeat(64),weight:.7,trigger:'my_character'}},variants:{default:{prompt:modelAdapter('anima').emptyPrompt(),loras:[{filename:'outfit.safetensors',sha256:'b'.repeat(64),weight:.4,trigger:'my_outfit'}],identity_disabled:[]}}};
+  character.identity.prompt.person=[{tag:'blue_eyes'}];
+  await f.put('characters/person.prompt.json',{$schema:schema('character-prompt'),...character});
+  await f.put('characters/person.profile.json',{$schema:schema('character-profile'),name:'角色',description:'测试'});
+  await f.put('characters/person.visual.json',{$schema:schema('character-visual'),variants:[{id:'default',name:'默认'}]});
+  const content=await f.get(`pages/${id}.content.json`);content.characters=[{character_id:'person',variant_id:'default'}];await f.put(`pages/${id}.content.json`,content);
+  const native=modelAdapter('anima').emptyPrompt();native.person=[{description:'standing in garden'}];
+  await f.put(`pages/${id}.prompt.json`,{$schema:schema('story-page-prompt'),...native});
+  const plan=await planModelMigration(f.root,'demo');assert.equal(plan.pages[0].equivalent,true);assert.equal(plan.pages[0].loras.length,2);
+  const result=await commitModelMigration(f.root,'demo',plan.fingerprint);
+  assert.equal(JSON.parse(await readFile(path.join(result.backup_directory,'project.json'),'utf8')).format,undefined);
+  const migrated=await f.get(`pages/${id}.prompt.json`);assert.deepEqual(migrated.models.anima.trigger_sources.characters.person,['my_character','my_outfit']);
+  assert.equal(migrated.models.anima.loras[0].weight,.7);assert.equal((await f.get('project.json')).format,'story-models-v1');
+  assert.equal((await planModelMigration(f.root,'demo')).current,true);
+  const actual=await compilePageRenderInspectionContext({repositoryRoot:f.root,projectDirectory:f.directory,pageKey:{page_id:id}});
+  assert.deepEqual(actual.blockers,[]);
+  assert.equal(hash(actual.compiled_page.positive_prompt),plan.pages[0].positive_sha256);
+  assert.equal(hash(actual.compiled_page.negative_prompt),plan.pages[0].negative_sha256);
+  assert.deepEqual(actual.compiled_page.loras.map(({filename,sha256,weight})=>({filename,sha256,weight})),plan.pages[0].loras);
 });

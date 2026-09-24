@@ -2,6 +2,7 @@ import { promptDocuments } from './reference-materials.mjs';
 import { projectLibrary, openProjectDirectory, manageRegisteredProject } from "./project-library.mjs";
 import { readProjectGit } from "./project-git.mjs";
 import { registeredProjectPath, listRegisteredProjects, registerProject, unregisterProject, readProjectRegistry } from "./project-registry.mjs";
+import {planModelMigration,commitModelMigration,modelMigrationSummary} from './model-migration.mjs';
 import { readdir } from "node:fs/promises";
 import path from "node:path";
 
@@ -101,6 +102,7 @@ async function saveProjectSettings(projectRoot, projectId, value) {
   const current = await readJsonFile(target);
   const next = {
     ...(typeof current.$schema === "string" ? { $schema: current.$schema } : {}),
+    format: current.format,
     title: value.title.trim(),
     canvas: value.canvas,
     default_render_profile: value.default_render_profile,
@@ -126,6 +128,14 @@ export async function handleProjectRequest({
   sendOperation,
 }) {
   if (decodedPath === "/api/project-library" && request.method === "GET") { sendJson(response, 200, projectLibrary(projectRoot)); return true; }
+  const modelMigration = /^\/api\/projects\/([^/]+)\/model-migration$/.exec(decodedPath);
+  if (modelMigration && request.method === 'GET') {
+    sendOperation(200,await readFacts(modelMigration[1],async()=>modelMigrationSummary(await planModelMigration(projectRoot,modelMigration[1]))));return true;
+  }
+  if (modelMigration && request.method === 'POST') {
+    const body=await readJsonBody(request);
+    sendOperation(200,await mutateFacts(modelMigration[1],()=>commitModelMigration(projectRoot,modelMigration[1],body?.fingerprint)));return true;
+  }
   const libraryGit = /^\/api\/project-library\/([^/]+)\/git$/.exec(decodedPath);
   if (libraryGit && request.method === "GET") { sendJson(response, 200, await readProjectGit(projectRoot, libraryGit[1])); return true; }
   if (decodedPath === "/api/project-library/open" && request.method === "POST") { const body = await readJsonBody(request); sendJson(response, 201, await openProjectDirectory(projectRoot, body.path)); return true; }

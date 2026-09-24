@@ -35,7 +35,7 @@ export const readFinishedRecord = (directory, id) => optionalJson(recordPath(dir
 export function orderedFinishedPages(view) {
   return view.outline.chapters.flatMap(chapter => chapter.sequences.flatMap(sequence => sequence.pages.map(page => ({ page, chapter_id: chapter.id, chapter_title: chapter.title, sequence_title: sequence.title }))));
 }
-function letteringSnapshot(view, page, canvas = view.project.canvas) {
+function letteringSnapshot(view, page, canvas = page.render?.canvas ?? view.project.canvas) {
   const settings = structuredClone(view.project.lettering_settings);
   if (page.page_kind === "text") return { page_kind: "text", display_title: page.display_title ?? "", body: page.body ?? "", text_layout: structuredClone(page.text_layout ?? defaultTextPageLayout), settings: { font_family: settings.font_family }, canvas };
   const speakers = new Set((page.dialogue ?? []).map(line => line.speaker).filter(Boolean));
@@ -54,7 +54,7 @@ export async function readFinishedPages(repositoryRoot, projectId, directory, { 
     const candidate = candidates?.length === 1 ? candidates[0].candidate_id : null;
     const files = record ? await Promise.all(["lettered", "clean"].map(kind => resolveExistingProjectMedia(directory, record.outputs[kind]))) : [];
     const available = files.length === 2 && files.every(Boolean);
-    const stale = record ? (candidate !== null && candidate !== record.candidate_id) || hashCanonicalJson(letteringSnapshot(view, page, record.lettering.canvas)) !== hashCanonicalJson(record.lettering) : false;
+    const stale = record ? (candidate !== null && candidate !== record.candidate_id) || hashCanonicalJson(letteringSnapshot(view, page, page.page_kind === "text" ? undefined : record.lettering.canvas)) !== hashCanonicalJson(record.lettering) : false;
     const url = kind => `/api/projects/${encodeURIComponent(projectId)}/media/${record.outputs[kind]}`;
     pages.push({ ...chapter, page_id: page.page_id, page_key: page.page_key, title: page.title,
       candidate_id: candidate, candidate_count: candidates?.length ?? null,
@@ -124,7 +124,7 @@ export async function prepareFinishedPage(repositoryRoot, projectId, directory, 
   job.page_label = storyIndex >= 0 ? String(storyIndex + 1).padStart(3, "0") : page.title || id;
   if (page.page_kind === "text") {
     // 文字页没有候选底图：黑底按当前渲染配置候选出图尺寸的 2 倍直接渲染，与超分后的普通成品同尺寸。
-    const textPage = view.render_capabilities.text_page;
+    const textPage = (page.render_capabilities ?? view.render_capabilities).text_page;
     if (!textPage.dimensions) fail(textPage.error);
     const dimensions = textPage.dimensions;
     const snapshot = { page_key: page.page_key, page_kind: "text", lettering: letteringSnapshot(view, page) };
