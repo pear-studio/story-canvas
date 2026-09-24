@@ -89,6 +89,16 @@ node <仓库根>/app/scripts/visual-production.mjs context page <project-id> v3/
 
 读取在同一 `readFacts` 一致性边界内完成，不新增持久化上下文。正常读取不要求模型文件或 ComfyUI 在线；生成前仍用 `preview page` 检查生成条件。同轮未变内容不用重复读，发生目标或依赖冲突后重新读取判断。
 
+## 可选的单页最终 Prompt 重写
+
+Agent 可在本页事实保存后调用工作台语义接口。请求 JSON 只含 `page_key`，例如 `{ "page_key": { "page_id": "page-001" } }`：
+
+```powershell
+node <仓库根>/app/scripts/workbench-api.mjs POST /api/projects/<project-id>/workbench/page-rewrite --body <仓库根>/Saved/Agent/<任务>/rewrite-request.json --out <仓库根>/Saved/Agent/<任务>/rewrite-result.json
+```
+
+也可用 `GET /api/projects/<project-id>/workbench/page-rewrite?page_key=%7B%22page_id%22%3A%22page-001%22%7D` 读取状态。返回 `original_prompt`、独立的 `rewrite` 和 `status`（`missing`、`current`、`stale`）。重写调用本机 ComfyUI 的 Qwen-Image-2.1 PE-T2I INT8 模型，不向重写器发送图片；模型正文写入 `pages/<page_id>.rewrite.json`，读取与出图时由工作台固定补上图片编号及用途。生成前检查与单页候选生成可在请求中选 `prompt_source: "rewrite"`；默认 `original`，过期重写不可用于生成。Agent 不直接写重写文件。
+
 落盘后编辑并用 `save-context` 提交同一文件：它只从文件取 `save.domain`/`save.kind` 和 `draft` 调用
 read/save 契约（当前为 page/prompt），只读 `context`、`page_key` 不进入请求体，且校验
 `page_key.page_id` 与 `draft.target_id` 一致：

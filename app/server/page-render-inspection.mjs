@@ -4,6 +4,7 @@ import { compilePageRenderInspectionContext } from "./page-render-resolver.mjs";
 import { inspectionGenerationSignature } from "./generation-signature.mjs";
 import { hashCanonicalJson } from "./workflow-definition.mjs";
 import { generationDetailsProjection } from "./generation-details.mjs";
+import { selectedPagePrompt } from "./page-rewrite.mjs";
 
 function issue(code, message, source = null, details = []) {
   return {
@@ -87,6 +88,7 @@ export async function inspectPageRender({
   projectDirectory,
   pageKey,
   pagePromptDraft = undefined,
+  promptSource = "original",
   config = {},
 }) {
   const context = await compilePageRenderInspectionContext({
@@ -95,6 +97,27 @@ export async function inspectPageRender({
     pageKey,
     pagePromptDraft,
   });
+  if (promptSource === "rewrite" && context.compiled_page) {
+    try {
+      context.compiled_page = await selectedPagePrompt({
+        projectDirectory,
+        resolved: {
+          page_id: context.snapshot.page_id,
+          page_key: context.snapshot.page_key,
+          project: context.project,
+          compiled_page: context.compiled_page,
+          reference_images: context.reference_images,
+        },
+        promptSource,
+      });
+    } catch (error) {
+      context.compiled_page = null;
+      context.blockers.push(issue(error?.code ?? "page_rewrite_unavailable", error?.message ?? String(error), "page_rewrite"));
+    }
+  } else if (promptSource !== "original" && promptSource !== "rewrite") {
+    context.compiled_page = null;
+    context.blockers.push(issue("invalid_prompt_source", "Prompt 来源无效", "page_rewrite"));
+  }
   let profile;
   try {
     profile = await diagnoseProfileContext(context, repositoryRoot, config);

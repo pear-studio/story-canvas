@@ -57,6 +57,10 @@ npm --prefix <仓库根>/app run setup
     "preset": "a1111-tagcomplete",
     "tags_file": "app/data.local/prompt-dictionaries/danbooru.csv",
     "translations_file": "app/data.local/prompt-dictionaries/zh.csv"
+  },
+  "prompt_rewrite": {
+    "model": "qwen3.5_9b_qwen_image_2.1_pe_t2i.int8_convrot.safetensors",
+    "system_prompt": "C:/Workspace/Qwen-Image-2.1/prompt_rewrite/prompts/system_prompt_t2i.txt"
   }
 }
 ```
@@ -75,6 +79,7 @@ npm --prefix <仓库根>/app run setup
 - `lora_training.captioning`：可选的 LoRA 数据集基础 Prompt 打标器配置；当前提交的
   `animetimm-eva02-db4-full` 适配器使用素材处理环境的 `onnxruntime-gpu` 和 `CUDAExecutionProvider`，具体版本见 `app/python/materials.lock`，
   不支持 CPU-only ONNX Runtime，使用本机 ONNX 权重、标签和阈值文件，权重目录不进入 Git；
+- `prompt_rewrite`：可选的单页最终 Prompt 重写配置。`model` 是 ComfyUI `text_encoders` 目录中 PE-T2I INT8 权重的文件名，`system_prompt` 是 Qwen-Image-2.1 原版 t2i 系统提示词；复用本机 `comfyui_url`。ComfyUI 需提供 `CLIPLoader`、`TextGenerate` 和 `SaveText` 节点。缺少配置或 ComfyUI 未运行时仍可编辑并使用原始 Prompt，但无法运行重写。此功能不向重写器发送参考图片，暂不支持 edit 路线；建议画幅只展示，不改变项目画幅。
 - 图片后处理模型不由 `setup` 自动下载。清单位于
   `library/lora-training/upscalers/real-esrgan-x4plus-anime-6b.json`，首版权重应位于
   `models_root/upscale_models/RealESRGAN_x4plus_anime_6B.pth`，工作台和 `doctor`

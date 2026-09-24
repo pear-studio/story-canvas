@@ -1,3 +1,7 @@
+import path from "node:path";
+import { randomUUID } from "node:crypto";
+import { mkdir } from "node:fs/promises";
+
 import { readReferenceLibrary, mutateReferenceLibrary } from "./reference-library.mjs";
 import { savePage } from "./page-facts.mjs";
 import { SCENE_PROFILE_SCHEMA_ID, SCENE_VISUAL_SCHEMA_ID, SCENE_PROMPT_SCHEMA_ID } from "./scene-files.mjs";
@@ -5,13 +9,15 @@ import { hashCanonicalJson } from "./workflow-definition.mjs";
 import { readFactDraft, saveFactDraft } from './fact-drafts.mjs';
 import { inspectStoryCandidates, executeStoryCandidateRefresh } from "./story-candidate-refresh.mjs";
 import { deletePageCandidateById, deletePageCandidates } from "./candidate-delete.mjs";
-import { ApiError, readJsonBody, sendJson } from "./http-support.mjs";
+import { ApiError, configuredPath, readJsonBody, sendJson } from "./http-support.mjs";
 import { readWritingCorpusContext } from "./writing-corpus.mjs";
 import { primaryComfyUiUrl } from "./comfy-endpoint-selector.mjs";
 import { compileAndPersistWorkbenchRenderTask, runCompiledPageRenderTask } from "./page-render.mjs";
 import { generationReference } from "./generation-queue.mjs";
 import { submitGenerationTask } from "./generation-lifecycle.mjs";
 import { inspectPageRender } from "./page-render-inspection.mjs";
+import { readPageRewriteState, rewriteSource, savePageRewriteResult } from "./page-rewrite.mjs";
+import { PromptRewriteRunnerError, runPromptRewrite } from "./prompt-rewrite-runner.mjs";
 import {
   readPageCandidateDetail,
   readProjectWorkbenchView,
@@ -327,7 +333,7 @@ export async function handleWorkbenchRequest({
     const value = await readJsonBody(request);
     const keys = value && typeof value === "object" && !Array.isArray(value) ? Object.keys(value) : [];
     if (!value || typeof value !== "object" || Array.isArray(value)
-      || !value.page_key || keys.some((key) => !new Set(["page_key", "prompt"]).has(key))) {
+      || !value.page_key || keys.some((key) => !new Set(["page_key", "prompt", "prompt_source"]).has(key))) {
       throw new ApiError(400, "invalid_page_render_inspection_request");
     }
     const result = await readFacts(pageRenderInspectionMatch[1], ({ projectDirectory }) => inspectPageRender({
@@ -335,9 +341,53 @@ export async function handleWorkbenchRequest({
       projectDirectory,
       pageKey: value.page_key,
       ...(Object.hasOwn(value, "prompt") ? { pagePromptDraft: value.prompt } : {}),
+      promptSource: value.prompt_source ?? "original",
       config,
     }));
     sendOperation(200, result, { inspection: result.value });
+    return true;
+  }
+
+  const pageRewriteMatch = /^\/api\/projects\/([^/]+)\/workbench\/page-rewrite\/?$/.exec(decodedPath);
+  if (pageRewriteMatch && request.method === "GET") {
+    let pageKey;
+    try { pageKey = JSON.parse(requestUrl.searchParams.get("page_key") ?? ""); }
+    catch { throw new ApiError(400, "invalid_page_rewrite_request"); }
+    const result = await readFacts(pageRewriteMatch[1], ({ projectDirectory }) => readPageRewriteState({
+      repositoryRoot: projectRoot, projectDirectory, pageKey,
+    }));
+    sendOperation(200, result);
+    return true;
+  }
+  if (pageRewriteMatch && request.method === "POST") {
+    const value = await readJsonBody(request);
+    if (!value || typeof value !== "object" || Array.isArray(value)
+      || Object.keys(value).some(key => key !== "page_key") || !value.page_key) {
+      throw new ApiError(400, "invalid_page_rewrite_request");
+    }
+    const settings = config.prompt_rewrite ?? {};
+    const systemPromptPath = configuredPath(projectRoot, settings.system_prompt);
+    if (!config.comfyui_url || !settings.model || !systemPromptPath) throw new ApiError(422, "prompt_rewrite_not_configured");
+    const before = await readFacts(pageRewriteMatch[1], ({ projectDirectory }) => rewriteSource({
+      repositoryRoot: projectRoot, projectDirectory, pageKey: value.page_key,
+    }));
+    const taskDirectory = path.join(projectRoot, "Saved", "Agent", "page-rewrite", randomUUID());
+    await mkdir(taskDirectory, { recursive: true });
+    let rewritten;
+    try {
+      rewritten = await runPromptRewrite({
+        positivePrompt: before.value.original_prompt,
+        comfyUrl: config.comfyui_url, modelName: settings.model,
+        systemPromptPath, taskDirectory,
+      });
+    } catch (error) {
+      if (error instanceof PromptRewriteRunnerError) throw new ApiError(502, error.code);
+      throw error;
+    }
+    const result = await mutateTargetFacts(pageRewriteMatch[1], ({ projectDirectory }) => savePageRewriteResult({
+      repositoryRoot: projectRoot, projectDirectory, source: before.value, result: rewritten,
+    }));
+    sendOperation(200, result);
     return true;
   }
 

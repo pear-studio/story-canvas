@@ -103,7 +103,7 @@ export async function deletePage(root,projectId,pageId,{beforeCommit}={}) {
   if((await listFinishedJobs(directory)).some(job=>job.page_id===pageId&&finishedBusyStatuses.has(job.status)))fail('page_finished_output_busy',[pageId]);
   const removedReferences = await optionalJson(directory, pageRelativePath(pageId, 'prompt'));
   const deletionId=`deleted-${randomBytes(6).toString('hex')}`,archive=path.join(path.resolve(root),'Saved/state/deleted-pages',project.projectId,deletionId);
-  const descriptors=[...['content','prompt','text-sources'].map(kind=>pageRelativePath(pageId,kind)),`Outputs/pages/${pageId}`];
+  const descriptors=[...['content','prompt','rewrite','text-sources'].map(kind=>pageRelativePath(pageId,kind)),`Outputs/pages/${pageId}`];
   const siblings=index.pages.filter(page=>sameOwner(page,entry)),ordinal=siblings.findIndex(page=>page.page_id===pageId);
   const position={ordinal,previous_page_id:siblings[ordinal-1]?.page_id??null,next_page_id:siblings[ordinal+1]?.page_id??null};
   if(beforeCommit)await beforeCommit();

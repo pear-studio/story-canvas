@@ -14,6 +14,7 @@ import { compileFrozenExecutionUnits, createTaskSnapshot, validateFrozenRenderTa
 import { createRenderTask, readRenderTask } from "./render-task-storage.mjs";
 import { compilePageRenderTarget, PageRenderError, resolveExactPageIdentity, resolvePageIdentity } from "./page-render-resolver.mjs";
 import { hashCanonicalJson } from "./workflow-definition.mjs";
+import { selectedPagePrompt } from "./page-rewrite.mjs";
 
 function fail(code, details = [], status = 422) {
   throw new PageRenderError(code, details, status);
@@ -135,7 +136,7 @@ function compileTask({ resolved, projectDirectory, projectId, taskId, count, see
 
 async function compileAndPersistExactPageRenderTask(
   projectRoot, projectId, pageKey,
-  { count: requestedCount = 1, seed: requestedSeed = null, taskId = createRenderTaskId(), localConfig = {}, repositoryRoot = path.resolve(projectRoot) } = {},
+  { count: requestedCount = 1, seed: requestedSeed = null, promptSource = "original", taskId = createRenderTaskId(), localConfig = {}, repositoryRoot = path.resolve(projectRoot) } = {},
 ) {
   const count = normalizeCount(requestedCount);
   const seed = normalizeSeed(requestedSeed, count);
@@ -146,6 +147,7 @@ async function compileAndPersistExactPageRenderTask(
     projectDirectory: project.projectDirectory,
     pageKey: identity.page_key,
   });
+  resolved.compiled_page = await selectedPagePrompt({ projectDirectory: project.projectDirectory, resolved, promptSource });
 
   const task = compileTask({
     resolved,
@@ -188,7 +190,7 @@ export async function compileAndPersistWorkbenchRenderTask(
   options = {},
 ) {
   if (!value || typeof value !== "object" || Array.isArray(value)) fail("invalid_workbench_render_request", [], 400);
-  const allowed = new Set(["page_key", "operation", "count", "seed"]);
+  const allowed = new Set(["page_key", "operation", "count", "seed", "prompt_source"]);
   if (Object.keys(value).some((key) => !allowed.has(key)) || !value.page_key) fail("invalid_workbench_render_request", [], 400);
   const operation = value.operation ?? "candidates";
   if (operation !== "candidates") fail("invalid_workbench_render_request", [], 400);
@@ -196,6 +198,7 @@ export async function compileAndPersistWorkbenchRenderTask(
     ...options,
     count: value.count ?? 1,
     seed: value.seed ?? null,
+    promptSource: value.prompt_source ?? "original",
   });
 }
 

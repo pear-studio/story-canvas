@@ -31,6 +31,8 @@ import {
   loadPageTextSources,
   loadTextSourceContext,
   type PagePrompt,
+  type PageRewriteValue,
+  type PromptSourceChoice,
   type PageRenderInspection,
   type TextSourceContext,
   type TextSourceEntry,
@@ -117,6 +119,13 @@ export type WorkbenchPageEditorProps = {
   fullscreenLetteringTarget?: ImageOverlayTarget | null;
   flowPreview?: PageRenderInspection | null;
   flowPreviewError?: string;
+  rewriteValue?: PageRewriteValue | null;
+  rewriteLoading?: boolean;
+  rewriteRunning?: boolean;
+  rewriteError?: string;
+  promptSource?: PromptSourceChoice;
+  onPromptSourceChange?: (value: PromptSourceChoice) => void;
+  onRewrite?: () => void;
   onSavePage: (draft: WorkbenchPageContentDraft, prompt: PagePrompt, items: LetteringItem[], baseline: WorkbenchPage) => Promise<{ page: WorkbenchPage; content: WorkbenchPageContentDraft & { dialogue: NonNullable<WorkbenchPage["dialogue"]> }; prompt: PagePrompt; items: LetteringItem[] }>;
   onPageSaved?: () => void;
   onReloadContent?: () => Promise<void> | void;
@@ -729,6 +738,13 @@ export default function WorkbenchPageEditor({
   fullscreenLetteringTarget,
   flowPreview,
   flowPreviewError = "",
+  rewriteValue = null,
+  rewriteLoading = false,
+  rewriteRunning = false,
+  rewriteError = "",
+  promptSource = "original",
+  onPromptSourceChange,
+  onRewrite,
   onSavePage,
   onReloadContent,
   onReloadPrompt,
@@ -874,6 +890,8 @@ export default function WorkbenchPageEditor({
   const anyDirty = contentDirty || promptDirty || layoutDirty;
   const saveNeeded = anyDirty || contentPhase === "error" || promptPhase === "error";
   const saving = contentPhase === "saving" || promptPhase === "saving";
+  const rewriteStatus = rewriteRunning ? "运行中" : rewriteError ? "失败" : rewriteLoading ? "读取中" : anyDirty ? "待保存" : rewriteValue?.status === "current" ? "当前" : rewriteValue?.status === "stale" ? "已过期" : "未生成";
+  const canChooseRewrite = !anyDirty && !rewriteLoading && rewriteValue?.status === "current";
 
   const selectedScene = scenes.find(scene => scene.id === promptDraft.scene_id);
   const sceneEntries = selectedScene?.prompt.variants[promptDraft.scene_variant_id ?? '']?.reference_images ?? [];
@@ -983,6 +1001,17 @@ export default function WorkbenchPageEditor({
       </ReferenceRow></div>
       {referenceCount > 10 && <p role="alert">本页引用了 {referenceCount} 张参考图，最多支持 10 张，请展开设定取消部分图片。</p>}
       <label className="page-prompt-field"><span>本页 Prompt</span><PromptTextArea ariaLabel="本页 Prompt" rows={3} value={promptDraft.text ?? ""} disabled={busy || promptPhase === "saving"} placeholder="本页画面描述，可留空" onChange={text => setPromptDraft(current => ({ ...current, text }))} /></label>
+      {onRewrite && <div className="page-rewrite" aria-label="最终 Prompt 重写">
+        <div className="page-rewrite__toolbar">
+          <label className="page-rewrite__choice"><input type="checkbox" checked={promptSource === "rewrite"} disabled={promptSource !== "rewrite" && !canChooseRewrite} onChange={(event) => onPromptSourceChange?.(event.target.checked ? "rewrite" : "original")} />使用重写结果</label>
+          <span className="page-rewrite__status" role="status">状态：{rewriteStatus}</span>
+          <button type="button" className="button button--quiet" disabled={busy || saving || anyDirty || rewriteRunning} onClick={onRewrite}>{rewriteRunning ? "重写中…" : "重写"}</button>
+        </div>
+        {anyDirty && <p className="page-rewrite__hint">请先保存本页修改，再运行重写或使用已有结果。</p>}
+        {rewriteError && <p className="prompt-save-error" role="alert">重写失败：{rewriteError}</p>}
+        <details key={`${pageIdentity}:rewrite`} className="page-rewrite__details"><summary>重写文本</summary><div className="page-rewrite__body">{rewriteValue?.rewrite ? <><pre>{rewriteValue.rewrite.rewritten_prompt}</pre><small>建议画幅：{rewriteValue.rewrite.wh_ratio}（不改变项目画幅）</small></> : <p>尚无重写结果。</p>}</div></details>
+        <details key={`${pageIdentity}:original`} className="page-rewrite__details"><summary>原文</summary><div className="page-rewrite__body"><pre>{rewriteValue?.original_prompt || "当前最终合成 Prompt 尚未载入。"}</pre></div></details>
+      </div>}
       {onOpenPromptOverview && <div className="prompt-camera-actions"><button type="button" className="button" disabled={busy || saving} onClick={onOpenPromptOverview}>Prompt 总览</button></div>}
       <ReferenceLibrary key={pageIdentity} projectId={projectId} target={{ kind: 'page', id: page.page_id }} pages={[]} inheritedEntries={enabledReferenceImages.slice(0, enabledReferenceImages.length - (promptDraft.reference_images?.length ?? 0))} initialEntries={promptDraft.reference_images ?? []} capacity={10 - referenceCount} disabled={busy || saving} onChanged={() => {}} onDraftChange={entries => setPromptDraft(current => ({ ...current, reference_images: entries }))} />
     </section>}

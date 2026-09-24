@@ -46,6 +46,7 @@ import { auditSavedPagePrompt, preparePromptWriteAudit } from "../server/prompt-
 import { handleWorkbenchRequest } from "../server/workbench-http.mjs";
 import { inspectStoryCandidates, executeStoryCandidateRefresh } from "../server/story-candidate-refresh.mjs";
 import { inspectionGenerationSignature, taskGenerationSignature } from "../server/generation-signature.mjs";
+import { readPageRewriteState, rewriteSource, savePageRewriteResult } from "../server/page-rewrite.mjs";
 
 const sourceRepositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -160,6 +161,72 @@ async function saveReferenceMaterial(fixture, id, background = "#123456") {
   await saveMaterial(fixture.projectDirectory, fixture.projectId, { file, title: "参考", encoding: "base64", content: bytes.toString("base64") });
   return { id: `ref-${id}`, file, title: "参考", bytes };
 }
+
+test("页面重写独立保存，选择后进入生成任务，源变化使结果过期", async context => {
+  const fixture = await createFixture(context);
+  await prepareWriteAuditFixture(fixture);
+  const pageKey = { page_id: "page-001" };
+  const source = await rewriteSource({ ...fixture, pageKey });
+  const original = await readPageRewriteState({ ...fixture, pageKey });
+  assert.equal(original.status, "missing");
+  assert.equal(original.original_prompt, source.original_prompt);
+  const rewrittenPrompt = "A silver-haired girl in a dark school uniform stands on a train platform.";
+  const saved = await savePageRewriteResult({
+    ...fixture, source,
+    result: { rewritten_prompt: rewrittenPrompt, wh_ratio: "2:3" },
+  });
+  assert.equal(saved.status, "current");
+  const inspection = await inspectPageRender({ ...fixture, pageKey, promptSource: "rewrite" });
+  assert.equal(inspection.prompt.positive, rewrittenPrompt);
+  assert.deepEqual(inspection.prompt.sections.map(section => section.kind), ["rewrite"]);
+  const task = await compileAndPersistWorkbenchRenderTask(fixture.repositoryRoot, fixture.projectId, {
+    page_key: pageKey, operation: "candidates", count: 1, prompt_source: "rewrite",
+  }, { repositoryRoot: fixture.repositoryRoot });
+  assert.equal(task.task.items[0].positive_prompt, rewrittenPrompt);
+  assert.deepEqual(task.task.items[0].prompt_parts.sections.map(section => section.kind), ["rewrite"]);
+  assert.equal(inspection.generation_signature, taskGenerationSignature(task.task, task.task.items[0]));
+  const originalTask = await compileAndPersistWorkbenchRenderTask(fixture.repositoryRoot, fixture.projectId, {
+    page_key: pageKey, operation: "candidates", count: 1, prompt_source: "original",
+  }, { repositoryRoot: fixture.repositoryRoot });
+  assert.equal(originalTask.task.items[0].positive_prompt, source.original_prompt);
+
+  const promptFile = path.join(fixture.projectDirectory, "pages", "page-001.prompt.json");
+  const prompt = await readJson(promptFile);
+  prompt.text = "艾莲转身面向列车。";
+  await writeJson(promptFile, prompt);
+  assert.equal((await readPageRewriteState({ ...fixture, pageKey })).status, "stale");
+  await assert.rejects(compileAndPersistWorkbenchRenderTask(fixture.repositoryRoot, fixture.projectId, {
+    page_key: pageKey, operation: "candidates", count: 1, prompt_source: "rewrite",
+  }, { repositoryRoot: fixture.repositoryRoot }), { code: "page_rewrite_stale" });
+});
+
+test("INT8 重写不保留图片标签时，最终 Prompt 仍按实际图片顺序补用途", async context => {
+  const fixture = await createFixture(context);
+  await prepareWriteAuditFixture(fixture);
+  const reference = await saveReferenceMaterial(fixture, "11111111-1111-4111-8111-111111111111");
+  const draft = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
+  draft.document.reference_images = [{ id: reference.id, file: reference.file, title: "参考", purpose: "构图参考" }];
+  await saveStoryPromptDraft(fixture.repositoryRoot, draft);
+  const pageKey = { page_id: "page-001" };
+  const source = await rewriteSource({ ...fixture, pageKey });
+  assert.equal(source.compiled_page.images.length, 1);
+  const saved = await savePageRewriteResult({
+    ...fixture, source,
+    result: { rewritten_prompt: "The girl waits on the platform.", wh_ratio: "3:2" },
+  });
+  assert.equal(saved.status, "current");
+  assert.match(saved.rewrite.rewritten_prompt, /^参考图用途：\n<image1>：构图参考。\n\nThe girl waits/);
+  const inspection = await inspectPageRender({ ...fixture, pageKey, promptSource: "rewrite" });
+  assert.equal(inspection.prompt.positive, saved.rewrite.rewritten_prompt);
+  assert.deepEqual(inspection.prompt.sections.map(section => section.kind), ["reference", "rewrite"]);
+  const task = await compileAndPersistWorkbenchRenderTask(fixture.repositoryRoot, fixture.projectId, {
+    page_key: pageKey, operation: "candidates", count: 1, prompt_source: "rewrite",
+  }, { repositoryRoot: fixture.repositoryRoot });
+  assert.equal(task.task.items[0].positive_prompt, saved.rewrite.rewritten_prompt);
+  const document = await readJson(path.join(fixture.projectDirectory, "pages", "page-001.rewrite.json"));
+  assert.equal(document.rewritten_prompt, "The girl waits on the platform.");
+  assert.equal(document.engine, "qwen-pe-t2i-int8");
+});
 
 test("单张参考图使用“参考图：”约定，冻结输入贯通；源材料变化不改变排队输入", async context => {
   const fixture = await createFixture(context);

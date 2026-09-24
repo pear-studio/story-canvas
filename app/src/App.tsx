@@ -61,6 +61,8 @@ import {
   loadCandidateCounts,
   deleteCandidates,
   inspectPageRender,
+  loadPageRewrite,
+  runPageRewrite,
   loadCandidateDetail,
   loadPageMedia,
   loadProjectRevision,
@@ -77,6 +79,8 @@ import {
   type CharacterVisualDraft,
   type CandidateDetail,
   type PageRenderInspection,
+  type PageRewriteValue,
+  type PromptSourceChoice,
   type PageMedia,
   type PagePrompt,
   type ProjectWorkbenchView,
@@ -568,6 +572,8 @@ export function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSet
   if (incomingPage.current !== page) { incomingPage.current = page; latestPage.current = page; }
   const [pageDirty, setPageDirty] = useState(false);
   const [promptDraft, setPromptDraft] = useState<PagePrompt>(() => structuredClone(page.prompt));
+  const [promptSourceState, setPromptSourceState] = useState<{ identity: string; value: PromptSourceChoice }>(() => ({ identity: `${projectId}:${location.key}`, value: "original" }));
+  const [rewriteState, setRewriteState] = useState<{ identity: string; value: PageRewriteValue | null; loading: boolean; running: boolean; error: string }>(() => ({ identity: `${projectId}:${location.key}`, value: null, loading: true, running: false, error: "" }));
   const [renderInspection, setRenderInspection] = useState<PageRenderInspection | null>(null);
   const [renderInspectionKey, setRenderInspectionKey] = useState("");
   const [inspectionBaseKey, setInspectionBaseKey] = useState("");
@@ -584,6 +590,8 @@ export function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSet
   const editorDiscardAll = useRef<(() => void) | null>(null);
   const mediaRevision = useRef("");
   const workspaceIdentity = `${projectId}:${location.key}`;
+  const promptSource: PromptSourceChoice = promptSourceState.identity === workspaceIdentity ? promptSourceState.value : "original";
+  const currentRewriteState = rewriteState.identity === workspaceIdentity ? rewriteState : { identity: workspaceIdentity, value: null, loading: true, running: false, error: "" };
   const pageWorkspaceRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const workspace = pageWorkspaceRef.current;
@@ -630,10 +638,11 @@ export function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSet
   const isCurrentWorkspace = () => workspaceIdentityRef.current === workspaceIdentity;
   const factReady = !busy && !pageDirty;
   const sceneFactsSignature = JSON.stringify(scenes);
-  const inspectionDepsKey = JSON.stringify([location.key, page.content_sha256, characterFactsSignature, sceneFactsSignature, defaultRenderProfile, promptDraft]);
+  const inspectionDepsKey = JSON.stringify([location.key, page.content_sha256, characterFactsSignature, sceneFactsSignature, defaultRenderProfile, promptDraft, promptSource]);
   // 待保存附图不参与编译检查；其余草稿字段都影响编译结果，任意变化都应让旧预览失效。
   const { reference_images: _draftAttachments, ...promptCompileBase } = promptDraft;
-  const currentBaseKey = JSON.stringify([location.key, page.content_sha256, characterFactsSignature, sceneFactsSignature, defaultRenderProfile, promptCompileBase]);
+  const currentBaseKey = JSON.stringify([location.key, page.content_sha256, characterFactsSignature, sceneFactsSignature, defaultRenderProfile, promptCompileBase, promptSource]);
+  const rewriteDepsKey = JSON.stringify([workspaceIdentity, page.content_sha256, page.prompt_sha256, page.prompt_context_sha256, characterFactsSignature, sceneFactsSignature, defaultRenderProfile, canvas]);
 
   useEffect(() => {
     onTrackedTasksChange(projectId, trackedTaskIds);
@@ -676,6 +685,8 @@ export function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSet
 
   useEffect(() => {
     setPageDirty(false);
+    setPromptSourceState({ identity: workspaceIdentity, value: "original" });
+    setRewriteState({ identity: workspaceIdentity, value: null, loading: true, running: false, error: "" });
     setPreviewCanvas(canvas ?? "2:3");
     setPromptDraft(structuredClone(page.prompt));
     setRenderInspection(null);
@@ -694,9 +705,36 @@ export function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSet
   }, [refreshPageMedia, workspaceIdentity]);
 
   useEffect(() => {
+    const controller = new AbortController();
+    setRewriteState((current) => ({ identity: workspaceIdentity, value: current.identity === workspaceIdentity ? current.value : null, loading: true, running: current.identity === workspaceIdentity && current.running, error: "" }));
+    void loadPageRewrite(projectId, page.page_key, controller.signal).then((value) => {
+      if (!controller.signal.aborted) setRewriteState((current) => current.identity === workspaceIdentity ? { ...current, value, loading: false } : current);
+    }).catch((error) => {
+      if (!controller.signal.aborted) setRewriteState((current) => current.identity === workspaceIdentity ? { ...current, loading: false, error: error instanceof Error ? error.message : String(error) } : current);
+    });
+    return () => controller.abort();
+  }, [rewriteDepsKey]);
+
+  async function rewriteCurrentPage() {
+    if (pageDirty || busy || currentRewriteState.running) return;
+    setRewriteState((current) => current.identity === workspaceIdentity ? { ...current, running: true, error: "" } : current);
+    try {
+      const value = await runPageRewrite(projectId, page.page_key);
+      if (!isCurrentWorkspace()) return;
+      setRewriteState({ identity: workspaceIdentity, value, loading: false, running: false, error: "" });
+      setRenderInspection(null);
+      setRenderInspectionKey("");
+      setInspectionNonce((current) => current + 1);
+      notify({ kind: "success", message: "重写结果已保存" });
+    } catch (error) {
+      if (isCurrentWorkspace()) setRewriteState((current) => current.identity === workspaceIdentity ? { ...current, running: false, error: error instanceof Error ? error.message : String(error) } : current);
+    }
+  }
+
+  useEffect(() => {
     let disposed = false;
     const timer = window.setTimeout(() => {
-      void inspectPageRender(projectId, page.page_key, promptDraft).then(({ inspection }) => {
+      void inspectPageRender(projectId, page.page_key, promptDraft, promptSource).then(({ inspection }) => {
         if (!disposed) { setRenderInspection(inspection); setInspectionBaseKey(currentBaseKey); setRenderInspectionKey(inspectionDepsKey); setRenderInspectionError(""); }
       }).catch((error) => {
         if (!disposed) { setRenderInspection(null); setRenderInspectionError(error instanceof Error ? error.message : String(error)); }
@@ -731,8 +769,9 @@ export function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSet
   }
 
   async function startCurrentPage(request: { count: 1 | 3 }) {
+    if (!renderInspection?.ready || renderInspectionKey !== inspectionDepsKey) return;
     try {
-      const result = await startPageRender(projectId, page.page_key, { operation: "candidates", count: request.count });
+      const result = await startPageRender(projectId, page.page_key, { operation: "candidates", count: request.count, prompt_source: promptSource });
       if (!isCurrentWorkspace()) return;
       setTrackedTaskIds(current => [...new Set([...current, result.task.task_id])]);
       notify({ kind: "success", message: "已启动当前页面任务" });
@@ -748,7 +787,7 @@ export function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSet
 
   const saveAndGenerateInFlight = useRef(false);
   async function saveAndGenerate(request: { count: 1 | 3 }) {
-    if (saveAndGenerateInFlight.current || busy || trackedTaskIds.length || !renderInspection?.ready) return;
+    if (saveAndGenerateInFlight.current || busy || trackedTaskIds.length || !renderInspection?.ready || renderInspectionKey !== inspectionDepsKey) return;
     saveAndGenerateInFlight.current = true;
     try {
       if (pageDirty) {
@@ -759,7 +798,7 @@ export function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSet
         }
         if (!isCurrentWorkspace()) return;
         // 草稿检查跳过未落盘附图；提交后以完整事实检查文件、数量和实际生成路由。
-        const { inspection } = await inspectPageRender(projectId, page.page_key);
+        const { inspection } = await inspectPageRender(projectId, page.page_key, undefined, promptSource);
         if (!isCurrentWorkspace()) return;
         if (!inspection.ready) {
           setRenderInspection(inspection);
@@ -808,17 +847,17 @@ export function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSet
   if (capabilityBlocker && !generationProblems.some((issue) => promptIssueSummary(issue) === capabilityBlocker)) {
     generationProblems.push({ code: "generation_capability_unavailable", message: capabilityBlocker });
   }
-  const generationDisabled = busy || trackedTaskIds.length > 0 || !renderInspection?.ready;
+  const generationDisabled = busy || trackedTaskIds.length > 0 || !renderInspection?.ready || renderInspectionKey !== inspectionDepsKey;
   const generateReason = (trackedTaskIds.length ? "已启动任务，等待本轮完成" : "")
-    || (renderInspection ? renderInspection.blockers.map(promptIssueSummary).join("；") || capabilityBlocker : renderInspectionError || "正在编译当前 Prompt")
+    || (renderInspectionKey === inspectionDepsKey && renderInspection ? renderInspection.blockers.map(promptIssueSummary).join("；") || capabilityBlocker : renderInspectionError || "正在编译当前 Prompt")
     || (!renderInspection?.ready ? "当前页面尚未满足生成条件" : "");
   const isTextPage = page.kind === "story" && page.page_kind === "text";
   return <div ref={pageWorkspaceRef} className="story-layout current-workbench-page">
-    {<WorkbenchPageEditor editorTab={editorTab} onEditorTabChange={onEditorTabChange} onOpenLetteringSettings={onOpenLetteringSettings} onOpenPromptOverview={onOpenPromptOverview} projectId={projectId} page={page} characters={characters} scenes={scenes} breadcrumb={location.breadcrumb} pageOrder={pageOrder} busy={busy} canvas={artworkCanvas} letteringStyle={letteringStyle} letteringItems={page.lettering?.items ?? []} letteringTarget={letteringTarget} fullscreenLetteringTarget={fullscreenLetteringTarget} flowPreview={isTextPage ? null : inspectionBaseKey === currentBaseKey ? renderInspection : null} flowPreviewError={renderInspectionError} onSavePage={saveWhole} onReloadContent={onReload} onReloadPrompt={onReload} onPageSaved={() => { if (isCurrentWorkspace()) notify({ kind: "success", message: page.kind === "story" ? "文案与布局已保存" : "页面内容已保存" }); }} onPromptDraftChange={setPromptDraft} onDirtyChange={setPageDirty} saveAllRef={editorSaveAll} discardAllRef={editorDiscardAll} onGenerate={isTextPage ? undefined : saveAndGenerate} generationCount={generationCount} onGenerationCountChange={changeGenerationCount} generationDisabled={generationDisabled} generationDisabledReason={generateReason} generationProblems={isTextPage ? [] : generationProblems} />}
+    {<WorkbenchPageEditor editorTab={editorTab} onEditorTabChange={onEditorTabChange} onOpenLetteringSettings={onOpenLetteringSettings} onOpenPromptOverview={onOpenPromptOverview} projectId={projectId} page={page} characters={characters} scenes={scenes} breadcrumb={location.breadcrumb} pageOrder={pageOrder} busy={busy} canvas={artworkCanvas} letteringStyle={letteringStyle} letteringItems={page.lettering?.items ?? []} letteringTarget={letteringTarget} fullscreenLetteringTarget={fullscreenLetteringTarget} flowPreview={isTextPage ? null : inspectionBaseKey === currentBaseKey ? renderInspection : null} flowPreviewError={renderInspectionError} rewriteValue={currentRewriteState.value} rewriteLoading={currentRewriteState.loading} rewriteRunning={currentRewriteState.running} rewriteError={currentRewriteState.error} promptSource={promptSource} onPromptSourceChange={(value) => setPromptSourceState({ identity: workspaceIdentity, value })} onRewrite={isTextPage ? undefined : () => void rewriteCurrentPage()} onSavePage={saveWhole} onReloadContent={onReload} onReloadPrompt={onReload} onPageSaved={() => { if (isCurrentWorkspace()) notify({ kind: "success", message: page.kind === "story" ? "文案与布局已保存" : "页面内容已保存" }); }} onPromptDraftChange={setPromptDraft} onDirtyChange={setPageDirty} saveAllRef={editorSaveAll} discardAllRef={editorDiscardAll} onGenerate={isTextPage ? undefined : saveAndGenerate} generationCount={generationCount} onGenerationCountChange={changeGenerationCount} generationDisabled={generationDisabled} generationDisabledReason={generateReason} generationProblems={isTextPage ? [] : generationProblems} />}
     <PaneResizeHandle className="pane-resizer--editor" label="调整页面事实栏宽度" value={editorWidth} defaultValue={44} min={32} max={64} unit="%" onChange={onEditorWidthChange} />
     {isTextPage
       ? <TextPageWorkspace projectId={projectId} pageId={page.page_id} canvas={artworkCanvas} dimensionError={renderCapabilities.text_page?.error ?? (!textDimensions ? "无法确定成品尺寸，请检查生成设置。" : null)} dirty={pageDirty} disabled={busy || trackedTaskIds.length > 0} onLetteringTarget={setLetteringTarget} onOutput={async () => { if (!await editorSaveAll.current?.()) return null; if (!isCurrentWorkspace()) return null; return (await startFinishedPage(projectId, page.page_key)).job; }} />
-      : <WorkbenchCandidateWorkspace finishedOutput={{ projectId, pageId: page.page_id, onOutput: async (candidateId) => { if (!await editorSaveAll.current?.()) return null; if (!isCurrentWorkspace()) return null; return (await startFinishedPage(projectId, page.page_key, candidateId)).job; } }} pageIdentity={workspaceIdentity} pageTitle={page.title} canvas={previewCanvas} onPreviewCanvasChange={setPreviewCanvas} ownerLabel={location.breadcrumb.at(-2)} media={media} mediaStatus={mediaStatus} mediaError={mediaError} onReloadMedia={() => refreshPageMedia(false, true)} candidateWidth={candidateWidth} factReady={factReady} currentGenerationSignature={!pageDirty && renderInspection && renderInspectionKey === inspectionDepsKey ? renderInspection.generation_signature : null} mediaReady={mediaStatus === "ready"} generationReady={Boolean(renderInspection?.ready)} busy={busy || trackedTaskIds.length > 0} busyReason={trackedTaskIds.length ? "已启动任务，等待本轮完成" : undefined} generationDisabledReason={renderInspection ? renderInspection.blockers.map(promptIssueSummary).join("；") || capabilityBlocker : renderInspectionError || "正在编译当前 Prompt"} generationProblems={generationProblems} onLetteringTarget={setLetteringTarget} onFullscreenLetteringTarget={setFullscreenLetteringTarget} onCandidateWidthChange={onCandidateWidthChange} onGenerate={(request) => startCurrentPage(request)} generationCount={generationCount} onGenerationCountChange={changeGenerationCount} onSaveAndGenerate={saveAndGenerate} pageDirty={pageDirty} onSaveAll={async () => { await editorSaveAll.current?.(); }} onDiscardAll={() => editorDiscardAll.current?.()} onDeleteCandidates={async (request) => { mediaMutationPending.current += 1; mediaRequestGuard.current.cancel(); try { await deleteCandidates(projectId, page.page_key, request); if (!isCurrentWorkspace()) return false; await refreshPageMedia(false, true); return true; } catch (error) { if (isCurrentWorkspace()) { setInspectionNonce((value) => value + 1); notify({ kind: "error", message: error instanceof Error ? error.message : String(error) }); } return false; } finally { mediaMutationPending.current -= 1; } }} onLoadCandidateDetail={async (candidate) => candidateDetailWorkspace((await loadCandidateDetail(projectId, page.page_key, candidate.candidate_id)).detail)} />}
+      : <WorkbenchCandidateWorkspace finishedOutput={{ projectId, pageId: page.page_id, onOutput: async (candidateId) => { if (!await editorSaveAll.current?.()) return null; if (!isCurrentWorkspace()) return null; return (await startFinishedPage(projectId, page.page_key, candidateId)).job; } }} pageIdentity={workspaceIdentity} pageTitle={page.title} canvas={previewCanvas} onPreviewCanvasChange={setPreviewCanvas} ownerLabel={location.breadcrumb.at(-2)} media={media} mediaStatus={mediaStatus} mediaError={mediaError} onReloadMedia={() => refreshPageMedia(false, true)} candidateWidth={candidateWidth} factReady={factReady} currentGenerationSignature={!pageDirty && renderInspection && renderInspectionKey === inspectionDepsKey ? renderInspection.generation_signature : null} mediaReady={mediaStatus === "ready"} generationReady={Boolean(renderInspection?.ready) && renderInspectionKey === inspectionDepsKey} busy={busy || trackedTaskIds.length > 0} busyReason={trackedTaskIds.length ? "已启动任务，等待本轮完成" : undefined} generationDisabledReason={renderInspectionKey === inspectionDepsKey && renderInspection ? renderInspection.blockers.map(promptIssueSummary).join("；") || capabilityBlocker : renderInspectionError || "正在编译当前 Prompt"} generationProblems={generationProblems} onLetteringTarget={setLetteringTarget} onFullscreenLetteringTarget={setFullscreenLetteringTarget} onCandidateWidthChange={onCandidateWidthChange} onGenerate={(request) => startCurrentPage(request)} generationCount={generationCount} onGenerationCountChange={changeGenerationCount} onSaveAndGenerate={saveAndGenerate} pageDirty={pageDirty} onSaveAll={async () => { await editorSaveAll.current?.(); }} onDiscardAll={() => editorDiscardAll.current?.()} onDeleteCandidates={async (request) => { mediaMutationPending.current += 1; mediaRequestGuard.current.cancel(); try { await deleteCandidates(projectId, page.page_key, request); if (!isCurrentWorkspace()) return false; await refreshPageMedia(false, true); return true; } catch (error) { if (isCurrentWorkspace()) { setInspectionNonce((value) => value + 1); notify({ kind: "error", message: error instanceof Error ? error.message : String(error) }); } return false; } finally { mediaMutationPending.current -= 1; } }} onLoadCandidateDetail={async (candidate) => candidateDetailWorkspace((await loadCandidateDetail(projectId, page.page_key, candidate.candidate_id)).detail)} />}
   </div>;
 }
 

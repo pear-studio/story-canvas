@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { validatePagesIndexDocument } from '../server/pages-store.mjs';
+import { validatePageRewriteDocument } from '../server/page-rewrite.mjs';
 import { validateSceneIndexDocument, validateSceneProfileDocument, validateSceneVisualDocument, validateScenePromptDocument } from '../server/scene-files.mjs';
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
@@ -92,14 +93,16 @@ export async function validateProject(projectRoot) {
   const pageDirectory = path.join(projectRoot, "pages");
   const narrativePageIds = await matchingFileIds(pageDirectory, ".content.json");
   const storyPromptPageIds = await matchingFileIds(pageDirectory, ".prompt.json");
+  const rewritePageIds = await matchingFileIds(pageDirectory, ".rewrite.json");
   const storyNarratives = await readAndValidateFiles(projectRoot, narrativePageIds, { directory: "pages", extension: ".content.json" }, validateStoryPageNarrativeDocument, errors);
   await readAndValidateFiles(projectRoot, storyPromptPageIds, { directory: "pages", extension: ".prompt.json" }, validateStoryPagePromptDocument, errors);
+  await readAndValidateFiles(projectRoot, rewritePageIds, { directory: "pages", extension: ".rewrite.json" }, validatePageRewriteDocument, errors);
   const indexedIds = new Set((pagesIndex.pages ?? []).map(entry => entry.page_id));
   for (const id of indexedIds) {
     if (!narrativePageIds.includes(id)) errors.push(`页面文件：missing_content_file（page_id=${id}）`);
     if (!storyPromptPageIds.includes(id)) errors.push(`页面文件：missing_prompt_file（page_id=${id}）`);
   }
-  for (const id of new Set([...narrativePageIds, ...storyPromptPageIds])) if (!indexedIds.has(id)) errors.push(`页面文件：unindexed_page（page_id=${id}）`);
+  for (const id of new Set([...narrativePageIds, ...storyPromptPageIds, ...rewritePageIds])) if (!indexedIds.has(id)) errors.push(`页面文件：unindexed_page（page_id=${id}）`);
   const characterDirectory = path.join(projectRoot, "characters");
   const profileCharacterIds = await matchingFileIds(characterDirectory, ".profile.json");
   const visualCharacterIds = await matchingFileIds(characterDirectory, ".visual.json");

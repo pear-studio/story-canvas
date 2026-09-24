@@ -2,7 +2,7 @@ import type { GenerationDetails, PromptSection } from "./project-workbench-clien
 import { generationPromptSegments } from "./generation-prompt-segments";
 import "./GenerationDetailsPanel.css";
 
-type PromptSource = "global" | "character" | "scene" | "attachment" | "page";
+type PromptSource = "global" | "character" | "scene" | "attachment" | "page" | "reference" | "rewrite";
 
 const promptSourceDefinitions: Array<{ id: PromptSource; label: string }> = [
   { id: "global", label: "全局" },
@@ -10,6 +10,8 @@ const promptSourceDefinitions: Array<{ id: PromptSource; label: string }> = [
   { id: "scene", label: "场景" },
   { id: "attachment", label: "附图用途" },
   { id: "page", label: "本页描述" },
+  { id: "reference", label: "参考图用途" },
+  { id: "rewrite", label: "重写" },
 ];
 
 function renderPromptSections(sections: PromptSection[], text: string, empty: string) {

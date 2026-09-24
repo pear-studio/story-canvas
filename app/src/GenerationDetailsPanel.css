@@ -34,7 +34,9 @@
 .generation-prompt-source--character, .generation-prompt-part--character { color: #724e90; background: #f2eafa; }
 .generation-prompt-source--scene, .generation-prompt-part--scene { color: #855c16; background: #fff1cc; }
 .generation-prompt-source--attachment, .generation-prompt-part--attachment { color: #984b45; background: #faecea; }
+.generation-prompt-source--reference, .generation-prompt-part--reference { color: #984b45; background: #faecea; }
 .generation-prompt-source--page, .generation-prompt-part--page { color: #2f6d50; background: #e7f4eb; }
+.generation-prompt-source--rewrite, .generation-prompt-part--rewrite { color: #245d66; background: #e4f4f5; }
 .generation-details__prompts { padding: 12px; display: grid; grid-template-columns: 1fr; gap: 10px; }
 .generation-details__prompts article { min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 9px; background: white; }
 .generation-details__prompts article > header { padding: 9px 11px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--line); background: #fbfcfb; }

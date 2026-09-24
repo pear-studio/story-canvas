@@ -311,7 +311,7 @@ export async function loadTextSourceContext(projectId: string, entry: { source_f
 export async function startPageRender(
   projectId: string,
   pageKey: WorkbenchPage["page_key"],
-  options: { operation: "candidates"; count: number; seed?: number },
+  options: { operation: "candidates"; count: number; seed?: number; prompt_source?: PromptSourceChoice },
 ) {
   return workbenchResponseJson<{
     task: { task_id: string; status: string; operation: "candidates"; page_key: WorkbenchPage["page_key"]; count: number };
@@ -351,7 +351,7 @@ export async function refreshStoryCandidates(projectId: string, options: StoryCa
 export type PageRenderInspectionIssue = import("./prompt-audit-display").PromptIssue;
 
 export type PromptSection = {
-  kind: "global" | "character" | "scene" | "attachment" | "page";
+  kind: "global" | "character" | "scene" | "attachment" | "page" | "reference" | "rewrite";
   source?: string;
   prompt_name?: string;
   text: string;
@@ -444,10 +444,31 @@ export type PageRenderInspection = {
   warnings: PageRenderInspectionIssue[];
 };
 
+export type PromptSourceChoice = "original" | "rewrite";
+export type PageRewriteValue = {
+  status: "missing" | "current" | "stale";
+  rewrite: null | { rewritten_prompt: string; wh_ratio: string };
+  original_prompt: string;
+};
+
+export async function loadPageRewrite(projectId: string, pageKey: PageKey, signal?: AbortSignal) {
+  const query = new URLSearchParams({ page_key: JSON.stringify(pageKey) });
+  return workbenchResponseJson<PageRewriteValue>(await readFacts(`${base(projectId)}/page-rewrite?${query}`, { signal }));
+}
+
+export async function runPageRewrite(projectId: string, pageKey: PageKey) {
+  return workbenchResponseJson<PageRewriteValue>(await mutateTargetFacts(`${base(projectId)}/page-rewrite`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ page_key: pageKey }),
+  }));
+}
+
 export async function inspectPageRender(
   projectId: string,
   pageKey: WorkbenchPage["page_key"],
   prompt?: PagePrompt,
+  promptSource: PromptSourceChoice = "original",
 ) {
   // 本页待保存附图尚未落盘；编辑检查保留其他已保存素材的严格校验。
   // 保存并生成会在提交后重新检查完整页面，不能将这里的结果直接用于出图。
@@ -458,7 +479,7 @@ export async function inspectPageRender(
   return workbenchResponseJson<{ inspection: PageRenderInspection }>(await readFacts(`${base(projectId)}/page-render-inspection`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ page_key: pageKey, ...(inspectionPrompt === undefined ? {} : { prompt: inspectionPrompt }) }),
+    body: JSON.stringify({ page_key: pageKey, prompt_source: promptSource, ...(inspectionPrompt === undefined ? {} : { prompt: inspectionPrompt }) }),
   }));
 }
 
