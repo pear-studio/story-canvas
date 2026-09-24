@@ -6,6 +6,7 @@ import { compilePageRenderInspectionContext, compilePageRenderTarget } from "./p
 import { factStorage } from "./story-facts.mjs";
 import { hashCanonicalJson } from "./workflow-definition.mjs";
 import { profileModelAdapter } from './model-adapters.mjs';
+import { describePromptImages } from './current-page-prompt.mjs';
 
 const REWRITE_ENGINE = "qwen-pe-t2i-int8";
 
@@ -59,17 +60,9 @@ function sourceSha(context) {
 }
 
 function referencePrefix(compiledPage) {
-  const images = compiledPage?.images ?? [];
+  const images = describePromptImages(compiledPage, '本页附图参考。');
   if (!images.length) return "";
-  const sections = compiledPage.sections ?? [];
-  const lines = images.map((image) => {
-    const section = sections.find((entry) => entry.source === image.source && entry.image_ids?.includes(image.id));
-    let purpose = "本页附图参考。";
-    if (section?.kind === "character") purpose = `${section.prompt_name}的身份与服装参考。`;
-    else if (section?.kind === "scene") purpose = `${section.prompt_name}的环境外观参考。`;
-    else if (section?.kind === "attachment") purpose = section.text;
-    return `<image${image.index}>：${purpose}`;
-  });
+  const lines = images.map(image => `<image${image.index}>：${image.purpose}`);
   return `参考图用途：\n${lines.join("\n")}`;
 }
 

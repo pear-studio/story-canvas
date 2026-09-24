@@ -118,7 +118,7 @@ test('同一设定外部参考图更新后重新读取列表与指纹',async t=>
  await page.waitForFunction(()=>document.querySelectorAll('[data-reference-card]').length===0);assert.equal(writes.at(-1).expected_sha256,'1');
 });
 
-test('剧情页附图：上传确认时填写用途，添加后经右键菜单编辑与清除',async t=>{
+test('剧情页附图：上传确认时填写用途，添加后直接编辑与清除',async t=>{
  const {page}=await open(t,false,'?page-draft');
  const entries=()=>page.evaluate(()=>JSON.parse(document.querySelector('output').textContent));
  await page.getByRole('button',{name:'添加参考图',exact:true}).click();
@@ -132,15 +132,10 @@ test('剧情页附图：上传确认时填写用途，添加后经右键菜单�
  await page.getByRole('dialog',{name:'选择参考图',exact:true}).waitFor({state:'hidden'});
  assert.equal((await entries())[0].title,'示意图');
  assert.equal((await entries())[0].purpose,'画风参考','添加确认弹窗中可填用途');
- await page.locator('[data-reference-card]').first().click({button:'right'});
- await page.getByRole('menuitem',{name:'编辑用途',exact:true}).click();
- const edit=page.getByRole('dialog',{name:'编辑附图用途',exact:true});await edit.waitFor();
- await edit.getByLabel('附图用途').fill('构图参考');
- await edit.getByRole('button',{name:'确定',exact:true}).click();
+ await page.getByLabel('参考图 1 用途说明').fill('构图参考');
  assert.equal((await entries())[0].purpose,'构图参考');
- await page.locator('[data-reference-card]').first().click({button:'right'});
- await page.getByRole('menuitem',{name:'编辑用途',exact:true}).click();
- await edit.getByLabel('附图用途').fill('');
- await edit.getByRole('button',{name:'确定',exact:true}).click();
+ await page.setViewportSize({width:390,height:844});
+ assert.equal(await page.locator('.page-attached-references').evaluate(node=>node.scrollWidth<=node.clientWidth),true);
+ await page.getByLabel('参考图 1 用途说明').fill('');
  assert.equal((await entries())[0].purpose,undefined,'清空用途回到未填状态');
 });

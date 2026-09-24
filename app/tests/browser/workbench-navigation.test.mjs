@@ -157,6 +157,27 @@ for (const mobile of [false, true]) test(`优化刷新后继续显示进度并�
   assert.equal(posts, 0);
 });
 
+for (const mobile of [false, true]) test(`生成详情显示按顺序传入的参考图和用途 ${mobile ? '手机' : '桌面'}`, async t => {
+  const { page } = await setup(t, { mobile, generationSettings: true });
+  const images = [
+    { index: 1, source: 'page', id: 'first', file: 'first.png', purpose: '仅参考建筑外观。' },
+    { index: 2, source: 'page', id: 'second', file: 'second.png', purpose: '' },
+  ];
+  await page.route('**/materials/file?*', route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="80" height="96"><rect width="80" height="96" fill="green"/></svg>' }));
+  await page.route('**/workbench/page-render-inspection', route => route.fulfill({ json: { inspection: {
+    ready: true, blockers: [], warnings: [], audit: { status: 'complete', errors: [], warnings: [] },
+    prompt: { positive: 'quiet garden', negative: '', sections: [], images },
+    generation: { profile_name: 'Qwen', canvas: '3:4', parameters: null, models: [], loras: [], prompt: { positive: 'quiet garden', negative: '', sections: [] } },
+  } } }));
+  await page.reload();
+  await page.getByRole('tab', { name: '生成详情', exact: true }).click();
+  const region = page.getByRole('region', { name: '生成参考图' });
+  await region.getByText('仅参考建筑外观。', { exact: true }).waitFor();
+  await region.getByText('未填写用途说明', { exact: true }).waitFor();
+  assert.deepEqual(await region.locator('img').evaluateAll(nodes => nodes.map(node => new URL(node.src).searchParams.get('file'))), ['first.png', 'second.png']);
+  assert.equal(await region.evaluate(node => node.scrollWidth <= node.clientWidth), true);
+});
+
 for (const mobile of [false, true]) test(`过期优化结果仍可选用并提交生成 ${mobile ? '手机' : '桌面'}`, async t => {
   const { page, renders } = await setup(t, { mobile, generationSettings: true });
   await page.route('**/workbench/page-rewrite*', route => route.fulfill({ json: {

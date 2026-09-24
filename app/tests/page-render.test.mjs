@@ -223,6 +223,11 @@ test("INT8 重写不保留图片标签时，最终 Prompt 仍按实际图片顺�
   assert.match(saved.rewrite.rewritten_prompt, /^参考图用途：\n<image1>：构图参考。\n\nThe girl waits/);
   const inspection = await inspectPageRender({ ...fixture, pageKey, promptSource: "rewrite" });
   assert.equal(inspection.prompt.positive, saved.rewrite.rewritten_prompt);
+  assert.deepEqual(inspection.prompt.images.map(image => ({ index: image.index, file: image.file, purpose: image.purpose })), [
+    { index: 1, file: reference.file, purpose: '构图参考。' },
+  ]);
+  const originalInspection = await inspectPageRender({ ...fixture, pageKey });
+  assert.deepEqual(originalInspection.prompt.images, inspection.prompt.images);
   assert.deepEqual(inspection.prompt.sections.map(section => section.kind), ["reference", "rewrite"]);
   const task = await compileAndPersistWorkbenchRenderTask(fixture.repositoryRoot, fixture.projectId, {
     page_key: pageKey, operation: "candidates", count: 1, prompt_source: "rewrite",

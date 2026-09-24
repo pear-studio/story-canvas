@@ -1,4 +1,9 @@
 .generation-details { container-type: inline-size; display: grid; align-content: start; gap: 12px; }
+.generation-reference-images { display: grid; gap: 10px; padding: 12px; }
+.generation-reference-images figure { display: flex; align-items: center; gap: 12px; margin: 0; min-width: 0; }
+.generation-reference-images img { display: block; width: 80px; height: 96px; object-fit: contain; border-radius: 6px; background: var(--paper); }
+.generation-reference-images figcaption { min-width: 0; font-size: var(--text-body); overflow-wrap: anywhere; }
+.generation-reference-images p { margin: 4px 0 0; white-space: pre-wrap; font-size: var(--text-body); color: var(--muted); }
 .generation-details__section { overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: white; }
 .generation-details__section > h3,
 .generation-details__prompt > header { min-height: 40px; margin: 0; padding: 9px 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--line); background: #f8faf8; }

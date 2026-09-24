@@ -1,7 +1,7 @@
 import {ModelPromptEditor} from './models/registry';
 import {PageGenerationSettings} from './models/PageGenerationSettings';
 import {ReferenceRow,ReferenceLabel,ParticipantEditor} from './PromptReferences';
-import { ReferenceLibrary, ReferenceSelection, type ReferenceEntry } from "./ReferenceLibrary";
+import { ReferenceLibrary, ReferenceSelection, referenceUrl, type ReferenceEntry } from "./ReferenceLibrary";
 import { defaultTextPageLayout, type TextPageLayout } from "../shared/text-page-layout.mjs";
 import { SceneReferenceEditor } from './SceneReferenceEditor';
 import { characterSource, sceneSource } from './project-workbench-client';
@@ -587,9 +587,18 @@ function LetteringEditor({ dialogue, items, characters, style, diagnostics, hasI
   </div>;
 }
 
-function FlowPreviewPanel({ preview, error = "" }: { preview?: PageRenderInspection | null; error?: string }) {
+function FlowPreviewPanel({ projectId, preview, error = "" }: { projectId: string; preview?: PageRenderInspection | null; error?: string }) {
   if (!preview) return <div className="workbench-flow-placeholder"><b>{error ? "生成详情读取失败" : "正在编译生成详情"}</b><p>{error || "稍后将显示当前配置、参数、模型、LoRA 与最终 Prompt。"}</p></div>;
-  return <GenerationDetailsPanel details={preview.generation} />;
+  return <div className="generation-details">
+    <section className="generation-details__section" aria-label="生成参考图">
+      <h3>参考图 · {preview.prompt.images.length} 张</h3>
+      <div className="generation-reference-images">{preview.prompt.images.length ? preview.prompt.images.map(image => <figure key={`${image.source}:${image.id}`}>
+        <a href={referenceUrl(projectId, image.file)} target="_blank" rel="noreferrer" aria-label={`查看参考图 ${image.index}`}><img src={referenceUrl(projectId, image.file)} alt={`参考图 ${image.index}`} /></a>
+        <figcaption><b>参考图 {image.index}</b><p>{image.purpose || '未填写用途说明'}</p></figcaption>
+      </figure>) : <p>本页未使用参考图。</p>}</div>
+    </section>
+    <GenerationDetailsPanel details={preview.generation} />
+  </div>;
 }
 
 export default function WorkbenchPageEditor({
@@ -850,7 +859,7 @@ export default function WorkbenchPageEditor({
     {!isTextPage && fullscreenLetteringTarget && letteringStyle && createPortal(
       <WorkbenchLetteringOverlay dialogue={previewDialogue} items={previewItems} characters={characters} style={letteringStyle} canvas={fullscreenLetteringTarget.canvas} />,
       fullscreenLetteringTarget.element)}
-    {!isTextPage && visibleTab === "flow" && <FlowPreviewPanel preview={flowPreview} error={flowPreviewError} />}
+    {!isTextPage && visibleTab === "flow" && <FlowPreviewPanel projectId={projectId} preview={flowPreview} error={flowPreviewError} />}
     {promptWarningsOpen && <Modal title="Prompt 警告" subtitle={`${promptAuditWarnings.length} 条`} onClose={() => setPromptWarningsOpen(false)} ariaLabel="Prompt 警告"><div className="issue-dialog-body"><PromptIssueList issues={promptAuditWarnings} tone="warning" /></div></Modal>}
     {generationProblemsOpen && <Modal title="无法生成" subtitle={`${generationProblems.length} 个问题`} onClose={() => setGenerationProblemsOpen(false)} ariaLabel="生成问题"><div className="issue-dialog-body"><PromptIssueList issues={generationProblems} /></div></Modal>}
     </fieldset>

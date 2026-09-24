@@ -97,10 +97,11 @@
 .reference-upload-previews input { min-width: 0; flex: 1; }
 .page-attached-references { padding-top: 10px; border-top: 1px solid var(--line); margin: 12px 0 0; }
 .page-attached-references .setting-reference-grid { gap: 6px; }
-.page-attached-references .inherited-reference-image, .page-attached-references .setting-reference-card { width: 56px; height: 64px; object-fit: contain; border-radius: 4px; }
-.page-attached-references .setting-reference-image { height: 62px; padding: 0; }
+.page-attached-references .inherited-reference-image { width: 56px; height: 64px; object-fit: contain; border-radius: 4px; }
+.page-attached-references .setting-reference-card { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px; }
+.page-attached-references .setting-reference-image { width: 72px; flex: none; height: 80px; padding: 0; }
 .page-attached-references .setting-reference-default { top: auto; left: 0; bottom: 0; font-size: 9px; padding: 0 3px; }
 .page-attached-references .reference-grip { top: 0; right: 0; width: 22px; height: 22px; padding: 2px; }
-.reference-purpose-field { display: grid; gap: 6px; }
+.reference-purpose-field { display: grid; gap: 6px; flex: 1; min-width: 0; margin: 0; }
 .reference-purpose-field > span { color: var(--muted); font-size: var(--text-meta); }
-.reference-purpose-field input { min-height: 44px; }
+.reference-purpose-field textarea { display: block; width: 100%; min-height: 64px; resize: vertical; font: inherit; font-size: var(--text-body); line-height: 1.5; }

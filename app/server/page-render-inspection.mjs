@@ -5,6 +5,7 @@ import { inspectionGenerationSignature } from "./generation-signature.mjs";
 import { hashCanonicalJson } from "./workflow-definition.mjs";
 import { generationDetailsProjection } from "./generation-details.mjs";
 import { selectedPagePrompt } from "./page-rewrite.mjs";
+import { describePromptImages } from './current-page-prompt.mjs';
 
 function issue(code, message, source = null, details = []) {
   return {
@@ -97,6 +98,7 @@ export async function inspectPageRender({
     pageKey,
     pagePromptDraft,
   });
+  const images = describePromptImages(context.compiled_page, promptSource === 'rewrite' ? '本页附图参考。' : '');
   if (promptSource === "rewrite" && context.compiled_page) {
     try {
       context.compiled_page = await selectedPagePrompt({
@@ -178,7 +180,7 @@ export async function inspectPageRender({
       positive: compiled?.positive_prompt ?? "",
       negative: compiled?.negative_prompt ?? "",
       sections: structuredClone(compiled?.sections ?? []),
-      images: structuredClone(compiled?.images ?? []),
+      images,
     },
     characters: characterProjection(context, diagnosedLoras),
     loras: diagnosedLoras,

@@ -377,7 +377,7 @@ export type PromptSection = {
   image_ids?: string[];
 };
 
-export type CompiledPromptImage = { index: number; source: string; id: string; file: string };
+export type CompiledPromptImage = { index: number; source: string; id: string; file: string; purpose?: string };
 
 export type GenerationDetails = {
   profile_name: string | null;

@@ -70,6 +70,8 @@ Anima 沿用分类词条、片段 ID、逐词权重与继承、机位、人数�
   匹配当前引用，残留 key 被拒绝。
 - `reference_overrides`：缺省跟随设定首张图，空数组停用，显式 ID 列表固定选择与顺序。
 - 页面级 `reference_images` 是本页独立附图，`purpose` 可选；未填用途仍传图，只是不生成说明行。
+  工作台在参考图旁直接编辑用途，与页面草稿一起保存；当前页“生成详情”按实际传图顺序展示图片与用途。
+  Agent 通过页面 Prompt 的 `read/save` 修改对应条目的 `purpose`，沿用目标和依赖指纹，不另设说明文件。
 - 文字 override 与图片选择相互独立：改文字不改变图片选择。
 
 全局基础 Prompt 是 render profile 的 `prompt.text`，默认为空。项目生成设置可通过 override 的 `prompt.text` target

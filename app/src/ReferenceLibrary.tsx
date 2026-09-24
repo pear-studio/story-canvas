@@ -57,7 +57,6 @@ export function ReferenceLibrary({ projectId, target, pages, disabled, onChanged
   const [reload, setReload] = useState(0);
   const [menu, setMenu] = useState<NavigationMenuRequest | null>(null);
   const [preview, setPreview] = useState<ReferenceEntry | null>(null);
-  const [purposeEdit, setPurposeEdit] = useState<{ entry: ReferenceEntry; purpose: string } | null>(null);
   const longPress = useLongPressContextMenu();
   const grid = useRef<HTMLDivElement>(null);
   const drag = useRef<{ from: number; to: number; pointer: number } | null>(null);
@@ -146,16 +145,9 @@ export function ReferenceLibrary({ projectId, target, pages, disabled, onChanged
   function openMenu(point: { clientX: number; clientY: number; preventDefault?: () => void; stopPropagation?: () => void }, entry: ReferenceEntry) {
     point.preventDefault?.(); point.stopPropagation?.();
     setMenu({ x: point.clientX, y: point.clientY, label: '参考图', items: [
-      ...(onDraftChange ? [{ id: 'purpose', label: '编辑用途', disabled: busy || disabled, onSelect: () => setPurposeEdit({ entry, purpose: entry.purpose ?? '' }) }] : []),
       { id: 'replace', label: '替换', disabled: busy || disabled, onSelect: () => openPicker(entry.id) },
       { id: 'remove', label: '移除', danger: true, disabled: busy || disabled, onSelect: () => void remove(entry) },
     ] });
-  }
-  function savePurpose() {
-    if (!purposeEdit || !onDraftChange) return;
-    const purpose = purposeEdit.purpose.trim();
-    onDraftChange(initialEntries.map(entry => entry.id === purposeEdit.entry.id ? { ...entry, ...(purpose ? { purpose } : { purpose: undefined }) } : entry));
-    setPurposeEdit(null);
   }
   function turnPreview(direction: number) {
     if (!preview) return;
@@ -171,7 +163,7 @@ export function ReferenceLibrary({ projectId, target, pages, disabled, onChanged
     ids.splice(current.to, 0, id); void mutate([{ action: 'reorder', ids }]);
   }
   return <section className={compact ? "setting-reference-library page-attached-references" : "setting-reference-library"} aria-label={compact ? "最终启用的参考图" : "参考图"} {...longPress.captureProps}>
-    {!compact && <div className="section-header"><h3>参考图</h3></div>}
+    <div className="section-header"><h3>参考图</h3></div>
     {error && !picker && <p role="alert">{error}<button type="button" className="button button--quiet" disabled={busy} onClick={() => setReload(value => value + 1)}>刷新</button></p>}
     {!onDraftChange && !library && !error && <p className="muted">正在读取…</p>}
     <fieldset className="reference-library-body" disabled={disabled || busy || (!library && !onDraftChange)}>
@@ -185,6 +177,10 @@ export function ReferenceLibrary({ projectId, target, pages, disabled, onChanged
         {compact && inheritedEntries.map((entry, index) => <img className="inherited-reference-image" key={index + entry.id} src={entryUrl(projectId, entry)} alt={entry.title} />)}
         {(library?.entries ?? initialEntries).map((entry, index) => <div className={`setting-reference-card${dragState?.from === index ? ' is-drag-source' : ''}${dragState && dragState.from !== dragState.to && dragState.to === index ? (dragState.to < dragState.from ? ' is-drag-before' : ' is-drag-after') : ''}`} data-reference-card={entry.id} key={entry.id} data-long-press-context-menu onContextMenu={event => openMenu(event, entry)} onPointerDown={event => longPress.start(event, point => openMenu(point, entry))}>
           <button type="button" className="setting-reference-image" aria-label={`查看参考图：${entry.title}`} title={entry.purpose ? `用途：${entry.purpose}` : undefined} onClick={() => setPreview(entry)}><img src={entryUrl(projectId, entry)} alt={entry.title} draggable={false} />{compact ? <span className="setting-reference-default">本页</span> : index === 0 && <span className="setting-reference-default">默认</span>}</button>
+          {compact && onDraftChange && <label className="reference-purpose-field" onPointerDown={event => event.stopPropagation()}>
+            <span>用途说明</span>
+            <textarea aria-label={`参考图 ${inheritedEntries.length + index + 1} 用途说明`} rows={2} placeholder="如：参考建筑外观，保留当前构图" value={entry.purpose ?? ''} onChange={event => onDraftChange(initialEntries.map(item => item.id === entry.id ? { ...item, purpose: event.target.value || undefined } : item))} />
+          </label>}
           <button type="button" className="reference-grip" aria-label={`拖动排序：${entry.title}`} title="拖动排序" onPointerDown={event => { if (event.button !== 0) return; event.preventDefault(); event.stopPropagation(); grid.current?.setPointerCapture(event.pointerId); drag.current = { from: index, to: index, pointer: event.pointerId }; setDragState({ from: index, to: index }); }} onClick={event => { event.preventDefault(); event.stopPropagation(); }}><svg viewBox="0 0 12 18" aria-hidden="true">{[4, 9, 14].flatMap(y => [3, 8].map(x => <circle key={`${x}:${y}`} cx={x} cy={y} r="1.2" />))}</svg></button>
         </div>)}
         <ReferenceAddButton title={disabled ? '请先保存修改' : '添加参考图'} onClick={() => openPicker()} />
@@ -207,9 +203,6 @@ export function ReferenceLibrary({ projectId, target, pages, disabled, onChanged
     {uploads && <Modal title="确认上传" busy={busy} onClose={() => setUploads(null)} footer={<><button type="button" className="button button--quiet" disabled={busy} onClick={() => setUploads(null)}>取消</button><button type="button" className="button button--primary" disabled={busy || uploads.some(item => !item.title.trim())} onClick={() => void saveChoices(uploads)}>{busy ? '上传中…' : '确认添加'}</button></>}>
       {error && <p role="alert">{error}</p>}
       <div className="reference-upload-previews">{uploads.map((item, index) => <label key={item.candidate_id}><img src={item.url ?? ''} alt="上传预览" /><input aria-label={`图片名称 ${index + 1}`} value={item.title} disabled={busy} onChange={event => setUploads(current => current!.map((entry, i) => i === index ? { ...entry, title: event.target.value } : entry))} />{compact && <input aria-label={`图片用途 ${index + 1}`} value={item.purpose ?? ''} placeholder="用途说明（可选）" disabled={busy} onChange={event => setUploads(current => current!.map((entry, i) => i === index ? { ...entry, purpose: event.target.value } : entry))} />}</label>)}</div>
-    </Modal>}
-    {purposeEdit && <Modal title="编辑附图用途" subtitle={purposeEdit.entry.title} busy={busy} onClose={() => setPurposeEdit(null)} footer={<><button type="button" className="button button--quiet" onClick={() => setPurposeEdit(null)}>取消</button><button type="button" className="button button--primary" onClick={savePurpose}>确定</button></>}>
-      <label className="reference-purpose-field"><span>用途说明（可选，随页面草稿一起保存）</span><input aria-label="附图用途" value={purposeEdit.purpose} autoFocus onChange={event => setPurposeEdit(current => current ? { ...current, purpose: event.target.value } : current)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); savePurpose(); } }} /></label>
     </Modal>}
   </section>;
 }
