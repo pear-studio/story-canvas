@@ -615,7 +615,7 @@ export function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSet
     pageWorkspaceRef.current?.querySelectorAll(".document-editor, .candidate-grid").forEach((element) => {
       element.scrollTo({ top: 0, left: 0, behavior: "instant" });
     });
-  }, [workspaceIdentity]);
+  }, [projectId, location.key]);
   const workspaceIdentityRef = useRef(workspaceIdentity);
   workspaceIdentityRef.current = workspaceIdentity;
   const mediaRequestGuard = useRef(createPageMediaRequestGuard());

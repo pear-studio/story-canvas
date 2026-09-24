@@ -52,7 +52,7 @@ function qwenRunSettingsMock(task) {
   };
 }
 
-async function setup(t, { character = false, mobile = false, visualPages = false, longStory = false } = {}) {
+async function setup(t, { character = false, mobile = false, visualPages = false, longStory = false, generationSettings = false } = {}) {
   const page = await browser.newPage({ viewport: mobile ? { width: 390, height: 844 } : { width: 1500, height: 1000 }, hasTouch: mobile });
   page.setDefaultTimeout(8000);
   const errors = [], renders = [];
@@ -61,6 +61,7 @@ async function setup(t, { character = false, mobile = false, visualPages = false
   const prompt = Object.fromEntries(["subject", "person", "setting", "camera", "avoid"].map(key => [key, []]));
   const pages = ["a", "b", "c"].map(id => ({ kind: "story", page_id: id, page_key: { page_id: id }, title: `页面${id}`, scene_description: "窗台", characters: [], dialogue: [], prompt, content_sha256: "a".repeat(64), prompt_sha256: "b".repeat(64), prompt_context_sha256: "c".repeat(64), lettering: { page: id, items: [] } }));
   const views = Object.fromEntries(["alpha", "beta"].map(id => [id, { version: 4, project: { id, title: id, canvas: "2:3", default_render_profile: "anima", lettering_settings: defaultLetteringSettings(), lettering_settings_sha256: "e".repeat(64) }, outline: { synopsis: "", chapters: [{ id: "chapter", title: "第一章", summary: "", sequences: [{ id: "sequence", title: "单元", summary: "", pages: structuredClone(pages) }] }] }, characters: [], render_capabilities: { candidates: { available: true, counts: [1, 3] } }, diagnostics: [] }]));
+  if(generationSettings) for(const view of Object.values(views)) for(const page of view.outline.chapters[0].sequences[0].pages) Object.assign(page,{model_id:'qwen',prompt:{text:'quiet garden'},render:{version:1,model_id:'qwen',profile_id:'qwen-image-2-1',canvas:'2:3'},render_sha256:'initial-render'});
   if (character) views.alpha.characters = [{
     id: "alice", name: "Alice", description: "角色设定", profile_sha256: "profile",
     visual: { description: "视觉说明", variants: [{ id: "daily", name: "日常", description: "原日常说明" }, { id: "dress", name: "礼服", description: "原礼服说明" }] },
@@ -89,6 +90,12 @@ async function setup(t, { character = false, mobile = false, visualPages = false
     if (pathname === "/api/health") return reply({ instance_id: "test" });
     if (pathname === "/api/hardware-status") return reply({ cpu: { available: false }, memory: { available: false }, gpu: { available: false }, comfyui: { connected: false, status: "offline" } });
     if (pathname === "/api/tasks") return reply({ tasks: [], history: [] });
+    if(generationSettings && pathname.startsWith('/api/agent/facts/page/render/')){
+      const body=route.request().postDataJSON(),target=views[body.project_id].outline.chapters[0].sequences[0].pages.find(p=>p.page_id===body.target_id);
+      if(pathname.endsWith('/read'))return reply({project_id:body.project_id,target_id:target.page_id,document:target.render,expected_sha256:'a'.repeat(64),expected_context_sha256:'b'.repeat(64)});
+      Object.assign(target,{render:body.document,model_id:body.document.model_id,render_sha256:`render-${++revision}`,prompt:body.document.model_id==='anima'?structuredClone(prompt):{text:'quiet garden'}});
+      return reply({});
+    }
     if (pathname === "/api/lora-training/datasets") return reply({ datasets: [] });
     if (pathname === "/api/lora-training/tasks") return reply({ tasks: [] });
     if (pathname === "/api/lora-training/runs") return reply({ runs: [] });
@@ -122,6 +129,25 @@ async function setup(t, { character = false, mobile = false, visualPages = false
   };
   return { page, renders, switchTo };
 }
+
+for(const mobile of [false,true])test(`本页切换画幅和模型保留滚动位置，比例示意匹配横竖方向 ${mobile?'手机':'桌面'}`,async t=>{
+  const {page}=await setup(t,{mobile,generationSettings:true});
+  await page.getByLabel('本页画幅').waitFor();
+  await page.addStyleTag({content:'.document-editor::after {content:"";display:block;height:1200px;flex-shrink:0}'});
+  const positions=()=>page.evaluate(()=>[window.scrollY,...['.project-main','.document-editor'].map(s=>document.querySelector(s)?.scrollTop??0)]);
+  await page.evaluate(()=>{window.scrollTo(0,60);for(const selector of ['.project-main','.document-editor'])document.querySelector(selector)?.scrollTo(0,60);});
+  const before=await positions();assert.ok(before.some(value=>value>40));
+  for(const canvas of ['4:3','9:16','3:4','2:3']){
+    await page.getByLabel('本页画幅').selectOption(canvas);
+    await page.getByRole('img',{name:new RegExp(`画幅示意：${canvas}`)}).waitFor();
+    const ratio=await page.locator('.page-canvas-preview rect').evaluate(rect=>Number(rect.getAttribute('width'))/Number(rect.getAttribute('height')));
+    const [w,h]=canvas.split(':').map(Number);assert.ok(Math.abs(ratio-w/h)<.001);
+    assert.deepEqual(await positions(),before);
+  }
+  await page.getByLabel('本页生成模型').selectOption('anima');
+  await page.getByRole('button',{name:'机位控制',exact:true}).waitFor();
+  assert.deepEqual(await positions(),before);
+});
 
 test("全局训练入口保留手机状态与项目翻页，返回项目恢复页面", async t => {
   const { page } = await setup(t, { mobile: true });
