@@ -108,7 +108,7 @@ export function compileCurrentPagePrompt({
     paragraphs.push(standalone ? pageText : `本页描述：\n${pageText}`);
   }
 
-  const resolvedLoras = explicitPageLoras(pagePrompt,pageId) ?? resolveParticipantLoras(profile, standalone?[]:participantIds, standalone?[]:characters, pageId, standalone?[]:scenes);
+  const resolvedLoras = explicitPageLoras(pagePrompt,pageId,profile) ?? resolveParticipantLoras(profile, standalone?[]:participantIds, standalone?[]:characters, pageId, standalone?[]:scenes);
   errors.push(...resolvedLoras.errors);
 
   const positive = paragraphs.join("\n\n");

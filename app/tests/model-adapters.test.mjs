@@ -21,6 +21,49 @@ import sharp from 'sharp';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const schema=name=>`https://storyvisualizer.local/schemas/${name}.schema.json`;
+
+for (const modelId of ['anima', 'qwen']) test(`${modelId} 项目 LoRA 实时生效，本页可覆盖、停用、恢复且任务冻结不随项目变化`, async t => {
+  const f = await fixture(t, modelId);
+  const profileId = modelAdapter(modelId).defaultProfile;
+  const projectLora = { filename: 'shared.safetensors', sha256: 'a'.repeat(64), weight: .9, trigger: 'shared_style' };
+  const setProject = async value => f.put('render-profile.override.json', { $schema: schema('render-profile-override'), version: 1, profiles: {
+    [profileId]: { changes: value ? [{ target: 'style_loras.shared', original: { exists: false }, project: { exists: true, value } }] : [] },
+  } });
+  const { page_id: id, page_key: pageKey } = await f.create();
+  const input = await f.get(`pages/${id}.prompt.json`);
+  if (modelId === 'qwen') input.models.qwen.text = 'quiet garden';
+  else input.models.anima.setting = [{ description: 'quiet garden' }];
+  await f.put(`pages/${id}.prompt.json`, input);
+  const compile = () => compilePageRenderInspectionContext({ repositoryRoot: f.root, projectDirectory: f.directory, pageKey });
+  const local = async loras => { input.models[modelId].loras = loras; await f.put(`pages/${id}.prompt.json`, input); };
+  await setProject(projectLora);
+  assert.equal((await compile()).compiled_page.loras[0].weight, .9);
+  const created = await f.create();
+  assert.deepEqual((await f.get(`pages/${created.page_id}.prompt.json`)).models[modelId].loras, [], '新页不复制项目 LoRA');
+  const frozen = await compileAndPersistWorkbenchRenderTask(f.root, 'demo', { page_key: pageKey, count: 1 });
+  validateFrozenRenderTask(frozen.task);
+  assert.equal(frozen.task.items[0].loras[0].weight, .9);
+  await setProject({ ...projectLora, weight: .6 });
+  assert.equal((await compile()).compiled_page.loras[0].weight, .6);
+  assert.equal(frozen.task.items[0].loras[0].weight, .9);
+  const extra = { filename: 'local.safetensors', sha256: 'b'.repeat(64), weight: .4 };
+  await local([{ ...projectLora, weight: .3 }, extra]);
+  assert.deepEqual((await compile()).compiled_page.loras.map(lora => lora.weight), [.3, .4]);
+  await local([{ ...projectLora, enabled: false }]);
+  const disabled = (await compile()).compiled_page;
+  assert.deepEqual(disabled.loras, []);
+  if (modelId === 'anima') assert.doesNotMatch(disabled.positive_prompt, /shared_style/);
+  await local([]);
+  const restored = (await compile()).compiled_page;
+  assert.equal(restored.loras[0].weight, .6);
+  if (modelId === 'anima') assert.equal(restored.positive_prompt.match(/shared_style/g)?.length, 1);
+  await f.switchModel(id, modelId === 'anima' ? 'qwen' : 'anima');
+  assert.deepEqual((await compile()).compiled_page.loras, [], '不同配置不串用项目 LoRA');
+  await f.switchModel(id, modelId);
+  await setProject(null);
+  assert.deepEqual((await compile()).compiled_page.loras, []);
+  assert.deepEqual((await f.get(`pages/${id}.prompt.json`)).models[modelId].loras, []);
+});
 test('三种工作台画幅在两模型所有候选路线上具有相同的准确尺寸',async()=>{
   const presets=JSON.parse(await readFile(path.join(root,'app/shared/canvas-presets.json'),'utf8'));
   assert.deepEqual(presets.map(p=>p.value),['3:4','1:1','4:3']);

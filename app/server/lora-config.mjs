@@ -97,23 +97,34 @@ export function styleLoraTriggers(profile) {
     .filter(Boolean))];
 }
 
-export function explicitPageLoras(prompt, pageId) {
+export function pageLoraDefinitions(profile, prompt) {
+  const project = Object.keys(profile?.style_loras ?? {}).sort(compareStableIds).map(id => profile.style_loras[id]);
+  const overrides = new Map((prompt.loras ?? []).map(lora => [lora.filename, lora]));
+  const inherited = new Set(project.map(lora => lora.filename));
+  return [...project.map(lora => overrides.get(lora.filename) ?? lora), ...(prompt.loras ?? []).filter(lora => !inherited.has(lora.filename))];
+}
+
+export function explicitPageLoras(prompt, pageId, profile) {
   if (!Array.isArray(prompt?.loras)) return null;
-  const errors=[],loras=[],seen=new Set();
-  for (const [index,item] of prompt.loras.entries()) {
+  const errors = profile ? validateStyleLoras(profile) : [];
+  const loras = [], seen = new Set();
+  for (const item of prompt.loras) {
+    if (seen.has(item.filename)) errors.push(`LoRA 重复：${item.filename}`);
+    seen.add(item.filename);
+  }
+  for (const [index,item] of pageLoraDefinitions(profile, prompt).entries()) {
     const {enabled,...definition}=item;
     errors.push(...validateLoraDefinition(definition,`${pageId}.loras[${index}]`));
-    if(seen.has(definition.filename))errors.push(`LoRA 重复：${definition.filename}`);
-    seen.add(definition.filename);
-    if(enabled!==false)loras.push({kind:'page',owner:pageId,filename:definition.filename,sha256:definition.sha256,weight:definition.weight,...(definition.trigger?{trigger:definition.trigger}:{})});
+    const local = seen.has(definition.filename);
+    if(enabled!==false)loras.push({kind:local?'page':'style',owner:local?pageId:profile.id,filename:definition.filename,sha256:definition.sha256,weight:definition.weight,...(definition.trigger?{trigger:definition.trigger}:{})});
   }
   return {loras,errors};
 }
 
-// 迁移只冻结触发词原来的位置；启用状态始终来自本页明确 LoRA 列表。
-export function pageLoraTriggers(prompt, kind, owner, fallback = []) {
+// 迁移保留触发词原来的位置；项目与本页合并后的启用状态决定实际触发词。
+export function pageLoraTriggers(prompt, kind, owner, fallback = [], profile = null) {
   if (!Array.isArray(prompt?.loras)) return fallback;
-  const active=[...new Set(prompt.loras.filter(lora=>lora.enabled!==false).map(lora=>lora.trigger?.trim()).filter(Boolean))];
+  const active=[...new Set(pageLoraDefinitions(profile,prompt).filter(lora=>lora.enabled!==false).map(lora=>lora.trigger?.trim()).filter(Boolean))];
   const sources=prompt.trigger_sources;
   if(!sources)return kind==='style'?active:[];
   const mapped=new Set([...sources.style,...Object.values(sources.characters).flat(),...Object.values(sources.scenes).flat()]);

@@ -70,7 +70,7 @@ export async function commitPageRender(root, context, readDocument) {
     if(value.model_id==='qwen' && nextPrompt.models.anima) {
       input.text=await animaImportText(root,project.projectDirectory,context.page_id);input.composition='standalone';
     }
-    input.loras=Object.keys(bundle.effective_profile.style_loras??{}).sort().map(id=>structuredClone(bundle.effective_profile.style_loras[id]));
+    input.loras=[];
     nextPrompt.models[value.model_id]=input;
   }
   await commitFactChanges(project.projectDirectory, [

@@ -68,6 +68,7 @@ export type TextSourceContext = {
   lines: Array<{ number: number; text: string; hit: boolean }>;
 };
 export type WorkbenchPage = {
+  project_loras?: PagePrompt['loras'];
   model_id?: 'anima' | 'qwen';
   render?: {version:1;model_id:'anima'|'qwen';profile_id:string;canvas:string};
   render_sha256?: string;

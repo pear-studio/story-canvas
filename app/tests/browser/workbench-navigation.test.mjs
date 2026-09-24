@@ -52,7 +52,7 @@ function qwenRunSettingsMock(task) {
   };
 }
 
-async function setup(t, { character = false, mobile = false, visualPages = false, longStory = false, generationSettings = false } = {}) {
+async function setup(t, { character = false, mobile = false, visualPages = false, longStory = false, generationSettings = false, projectLoras = false } = {}) {
   const page = await browser.newPage({ viewport: mobile ? { width: 390, height: 844 } : { width: 1500, height: 1000 }, hasTouch: mobile });
   page.setDefaultTimeout(8000);
   const errors = [], renders = [];
@@ -62,6 +62,10 @@ async function setup(t, { character = false, mobile = false, visualPages = false
   const pages = ["a", "b", "c"].map(id => ({ kind: "story", page_id: id, page_key: { page_id: id }, title: `页面${id}`, scene_description: "窗台", characters: [], dialogue: [], prompt, content_sha256: "a".repeat(64), prompt_sha256: "b".repeat(64), prompt_context_sha256: "c".repeat(64), lettering: { page: id, items: [] } }));
   const views = Object.fromEntries(["alpha", "beta"].map(id => [id, { version: 4, project: { id, title: id, canvas: "2:3", default_render_profile: "anima", lettering_settings: defaultLetteringSettings(), lettering_settings_sha256: "e".repeat(64) }, outline: { synopsis: "", chapters: [{ id: "chapter", title: "第一章", summary: "", sequences: [{ id: "sequence", title: "单元", summary: "", pages: structuredClone(pages) }] }] }, characters: [], render_capabilities: { candidates: { available: true, counts: [1, 3] } }, diagnostics: [] }]));
   if(generationSettings) for(const view of Object.values(views)) for(const page of view.outline.chapters[0].sequences[0].pages) Object.assign(page,{model_id:'qwen',prompt:{text:'quiet garden'},render:{version:1,model_id:'qwen',profile_id:'qwen-image-2-1',canvas:'3:4'},render_sha256:'initial-render'});
+  if (projectLoras) for (const view of Object.values(views)) for (const page of view.outline.chapters[0].sequences[0].pages) page.project_loras = [
+    { filename: 'project-a.safetensors', sha256: 'a'.repeat(64), weight: .9 },
+    { filename: 'project-b.safetensors', sha256: 'b'.repeat(64), weight: .8 },
+  ];
   if (character) views.alpha.characters = [{
     id: "alice", name: "Alice", description: "角色设定", profile_sha256: "profile",
     visual: { description: "视觉说明", variants: [{ id: "daily", name: "日常", description: "原日常说明" }, { id: "dress", name: "礼服", description: "原礼服说明" }] },
@@ -155,6 +159,31 @@ for (const mobile of [false, true]) test(`优化刷新后继续显示进度并�
   await page.getByRole('tab', { name: '视觉描述 / Prompt', exact: true }).click();
   await page.getByText('优化失败：等待优化超过 3 分钟', { exact: true }).waitFor();
   assert.equal(posts, 0);
+});
+
+for (const mobile of [false, true]) test(`页面显示项目 LoRA，单项调整和恢复不复制其他项目项 ${mobile ? '手机' : '桌面'}`, async t => {
+  const { page } = await setup(t, { mobile, generationSettings: true, projectLoras: true });
+  const saves = [];
+  await page.route('**/workbench/page-save', route => {
+    const body = route.request().postDataJSON(); saves.push(body.prompt);
+    return route.fulfill({ json: { content: body.content, prompt: body.prompt, content_sha256: 'c'.repeat(64), prompt_sha256: String(saves.length), prompt_context_sha256: 'd'.repeat(64), lettering: { page: 'b', items: [] }, layout_sha256: 'e'.repeat(64) } });
+  });
+  await page.getByRole('tab', { name: '视觉描述 / Prompt', exact: true }).click();
+  const section = page.getByRole('region', { name: '本页 LoRA' });
+  await section.getByText('来自项目设置', { exact: true }).first().waitFor();
+  assert.equal(await section.getByText('来自项目设置', { exact: true }).count(), 2);
+  await section.getByRole('spinbutton').first().fill('0.5');
+  await section.getByLabel('启用 project-a.safetensors').uncheck();
+  const save = async () => { const response = page.waitForResponse(r => r.url().endsWith('/page-save')); await page.keyboard.press('Control+s'); await response; };
+  await save();
+  assert.equal(saves.at(-1).loras.length, 1);
+  assert.equal(saves.at(-1).loras[0].weight, .5);
+  assert.equal(saves.at(-1).loras[0].enabled, false);
+  await section.getByRole('button', { name: '恢复项目设置', exact: true }).click();
+  assert.equal(await section.getByRole('spinbutton').first().inputValue(), '0.9');
+  assert.equal(await section.getByLabel('启用 project-a.safetensors').isChecked(), true);
+  await save();
+  assert.deepEqual(saves.at(-1).loras, []);
 });
 
 for (const mobile of [false, true]) test(`生成详情显示按顺序传入的参考图和用途 ${mobile ? '手机' : '桌面'}`, async t => {

@@ -296,7 +296,7 @@ export function compileCurrentPagePrompt({
       errors.push(`${pageId} 引用了未知角色：${characterId}`);
       continue;
     }
-    for (const trigger of pageLoraTriggers(pagePrompt,'characters',characterId,characterLoraTriggers(character))) {
+    for (const trigger of pageLoraTriggers(pagePrompt,'characters',characterId,characterLoraTriggers(character),profile)) {
       positiveBodyParts.push(loraTriggerPart(trigger, characterId));
     }
     const characterParts = characterPromptParts(character, pagePrompt.inheritance?.[characterSource(character.id, character.configuration_id)]);
@@ -310,13 +310,13 @@ export function compileCurrentPagePrompt({
 
   const sceneSettingParts = [];
   for (const scene of scenes) {
-    sceneSettingParts.push(...pageLoraTriggers(pagePrompt,'scenes',scene.id,characterLoraTriggers(scene)).map(trigger => loraTriggerPart(trigger, scene.id, "scene")));
+    sceneSettingParts.push(...pageLoraTriggers(pagePrompt,'scenes',scene.id,characterLoraTriggers(scene),profile).map(trigger => loraTriggerPart(trigger, scene.id, "scene")));
     const sceneParts = characterPromptParts(scene, pagePrompt.inheritance?.[sceneSource(scene.id, scene.configuration_id)], "scene", pageId);
     missing.push(...sceneParts.missing);
     sceneSettingParts.push(...sceneParts.parts.filter(part => part.polarity === "positive"));
     characterNegativeParts.push(...sceneParts.parts.filter(part => part.polarity === "negative"));
   }
-  const resolvedLoras = explicitPageLoras(pagePrompt,pageId) ?? resolveParticipantLoras(profile, participantIds, characters, pageId, scenes);
+  const resolvedLoras = explicitPageLoras(pagePrompt,pageId,profile) ?? resolveParticipantLoras(profile, participantIds, characters, pageId, scenes);
   errors.push(...resolvedLoras.errors);
   if ((categoryPrompts.avoid.length || characterNegativeParts.length) && !["negative_prompt", "positive_avoid"].includes(rules.avoidanceStrategy)) {
     errors.push(`${profile?.id ?? "当前生成配置"} 不支持 avoid token`);
@@ -331,7 +331,7 @@ export function compileCurrentPagePrompt({
   ]));
   const positiveAuditParts = [
     ...rules.positivePrefix.map((entry) => profileFragmentPart(profile, entry, "positive", profilePromptFragmentSources)),
-    ...pageLoraTriggers(pagePrompt,'style',profile?.id,styleLoraTriggers(profile)).map((text) => loraTriggerPart(text, profile?.id, "style")),
+    ...pageLoraTriggers(pagePrompt,'style',profile?.id,styleLoraTriggers(profile),profile).map((text) => loraTriggerPart(text, profile?.id, "style")),
     ...populationParts,
     ...positiveBodyParts,
     ...rules.positiveSuffix.map((entry) => profileFragmentPart(profile, entry, "positive", profilePromptFragmentSources)),

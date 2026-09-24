@@ -116,7 +116,7 @@ async function readCharacters(projectDirectory) {
   return characters;
 }
 
-async function readRenderCapabilities(repositoryRoot, projectDirectory, projectDocument) {
+async function readPageRenderConfiguration(repositoryRoot, projectDirectory, projectDocument) {
   try {
     const compilation = await compileEffectiveRenderProfile({
       repositoryRoot,
@@ -125,10 +125,10 @@ async function readRenderCapabilities(repositoryRoot, projectDirectory, projectD
     });
     if (compilation.blocked) {
       const details = compilation.override_resolution.conflicts.map((conflict) => conflict.target);
-      return {
+      return { project_loras: [], render_capabilities: {
         candidates: { available: false, counts: [1, 2, 3], blocker: "render_profile_override_conflict", details },
         text_page: { dimensions: null, error: "渲染配置 override 存在冲突，文字页无法确定成品尺寸" },
-      };
+      } };
     }
     const operations = compilation.effective_profile.operations ?? {};
     const candidatesAvailable = Boolean(operations.candidates?.routes?.empty_latent);
@@ -142,18 +142,21 @@ async function readRenderCapabilities(repositoryRoot, projectDirectory, projectD
       textPage = { dimensions: null, error: error.message };
     }
     return {
-      text_page: textPage,
-      candidates: {
-        available: candidatesAvailable,
-        counts: [1, 2, 3],
-        ...(candidatesAvailable ? {} : { blocker: "render_route_unavailable" }),
+      project_loras: Object.keys(compilation.effective_profile.style_loras ?? {}).sort().map(id => structuredClone(compilation.effective_profile.style_loras[id])),
+      render_capabilities: {
+        text_page: textPage,
+        candidates: {
+          available: candidatesAvailable,
+          counts: [1, 2, 3],
+          ...(candidatesAvailable ? {} : { blocker: "render_route_unavailable" }),
+        },
       },
     };
   } catch (error) {
-    return {
+    return { project_loras: [], render_capabilities: {
       candidates: { available: false, counts: [1, 2, 3], blocker: error?.code ?? "render_profile_invalid" },
       text_page: { dimensions: null, error: "生成配置不可用，文字页无法确定成品尺寸" },
-    };
+    } };
   }
 }
 
@@ -208,7 +211,7 @@ export async function readProjectWorkbenchView(projectRoot, projectId) {
     const page = {
       model_id: render.model_id ?? 'qwen', model_prompts: structuredClone(promptDocument),
       render, render_sha256: hashCanonicalJson(render),
-      render_capabilities: await readRenderCapabilities(path.resolve(projectRoot), project.projectDirectory, pageProjectSettings(projectDocument, render)),
+      ...await readPageRenderConfiguration(path.resolve(projectRoot), project.projectDirectory, pageProjectSettings(projectDocument, render)),
       ...membership, kind: membership.owner_kind, owner: structuredClone(membership),
       owner_id: membership.character_id ?? membership.scene_id,
       page_key: createPageKey(pageId), title: content.title, scene_description: content.scene_description,
@@ -240,7 +243,7 @@ export async function readProjectWorkbenchView(projectRoot, projectId) {
   for (const character of characters) character.style = letteringSettings.character_colors[character.id]
     ? { display_color: letteringSettings.character_colors[character.id] }
     : null;
-  const renderCapabilities = await readRenderCapabilities(path.resolve(projectRoot), project.projectDirectory, projectDocument);
+  const { render_capabilities: renderCapabilities } = await readPageRenderConfiguration(path.resolve(projectRoot), project.projectDirectory, projectDocument);
   return {
     version: 6,
     pages, orphan_pages: orphanPages,

@@ -79,7 +79,7 @@ export async function createPage(root,projectId,owner,{templateId=null,afterPage
     content.title=materialized.title;content.scene_description=materialized.visual_goal;prompt={...prompt,...materialized.prompt};
   }
   if(bundle){
-    const native={...modelAdapter(render.model_id).emptyPrompt(),...(owner.owner_kind==='scene'?{scene_id:owner.scene_id,scene_variant_id:owner.variant_id}:{}),loras:Object.keys(bundle.effective_profile.style_loras??{}).sort().map(id=>clone(bundle.effective_profile.style_loras[id]))};
+    const native={...modelAdapter(render.model_id).emptyPrompt(),...(owner.owner_kind==='scene'?{scene_id:owner.scene_id,scene_variant_id:owner.variant_id}:{}),loras:[]};
     if (templateId !== null) {
       if (render.model_id === 'qwen') native.text = prompt.text;
       else if (prompt.text.trim()) native.person = [{id:`token-${randomBytes(6).toString('hex')}`,description:prompt.text}];
