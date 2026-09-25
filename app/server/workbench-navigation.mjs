@@ -6,10 +6,12 @@ import { characterIdPattern, characterVariantIdPattern } from "./character-files
 
 import {
   createCharacter,
+  moveCharacter,
   deleteCharacter,
   deleteCharacterVariant,
   renameCharacterVariant,
 } from "./character-facts.mjs";
+export const moveWorkbenchCharacter = moveCharacter;
 import { readProjectWorkbenchView } from "./project-workbench.mjs";
 import { FactError } from "./story-facts.mjs";
 import { createPage, duplicatePage, deletePage, movePage } from "./page-facts.mjs";

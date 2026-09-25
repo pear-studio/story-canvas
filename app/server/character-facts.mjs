@@ -38,6 +38,19 @@ import { auditSavedCharacterPrompt, capturePromptAuditInput, preparePromptWriteA
 
 export const DELETED_CHARACTER_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
+export async function moveCharacter(root, projectId, characterId, beforeCharacterId = null) {
+  const project = await resolveProjectLocation(path.resolve(root), projectId);
+  const before = await readCharacterIndex(project.projectDirectory);
+  if (!before.characters.includes(characterId)) fail('character_not_found', [characterId]);
+  if (beforeCharacterId !== null && !before.characters.includes(beforeCharacterId)) fail('character_not_found', [beforeCharacterId]);
+  if (beforeCharacterId === characterId) return { character_id: characterId };
+  const after = structuredClone(before);
+  after.characters = after.characters.filter(id => id !== characterId);
+  after.characters.splice(beforeCharacterId === null ? after.characters.length : after.characters.indexOf(beforeCharacterId), 0, characterId);
+  await commitFactChanges(project.projectDirectory, [{ relative: 'characters/index.json', before, after }]);
+  return { character_id: characterId };
+}
+
 function fail(code, details = []) {
   throw new FactError(code, details);
 }

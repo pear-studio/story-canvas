@@ -265,7 +265,7 @@ export async function readLoraAssetRequest(request) {
       asset_id: String(form.get(`asset_id:${entry.name}`) ?? sharedAssetId),
     });
   }
-  return { group_id: String(form.get("group_id") ?? ""), asset_id: sharedAssetId, files };
+  return { group_id: String(form.get("group_id") ?? ""), asset_id: sharedAssetId, files, prepare: form.get('prepare') !== 'false' };
 }
 
 export async function serveProjectMedia(response, projectRoot, projectId, relativePath, { variantWidth = null } = {}) {

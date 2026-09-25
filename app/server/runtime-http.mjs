@@ -113,12 +113,13 @@ export async function handleRuntimeRequest({
     return true;
   }
   if (request.method === "GET" && decodedPath === "/api/tasks/history") {
-    sendJson(response, 200, await listWorkspaceRenderHistory(projectRoot, { before: requestUrl.searchParams.get("before") }));
+    sendJson(response, 200, await listWorkspaceRenderHistory(projectRoot, { before: requestUrl.searchParams.get("before"), projectId: requestUrl.searchParams.get('project_id') }));
     return true;
   }
   if (request.method === "GET" && decodedPath === "/api/tasks") {
     sendJson(response, 200, await listWorkspaceRenderTasks(projectRoot, {
       trackedByProject: trackedTaskQuery(requestUrl.searchParams),
+      projectId: requestUrl.searchParams.get('project_id'),
     }));
     return true;
   }

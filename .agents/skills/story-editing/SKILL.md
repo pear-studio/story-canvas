@@ -19,7 +19,7 @@ scene_description 简短白描，不超过 20 字的创作规范保留，不作�
 
 基础文案原样放入对应页，不润色、不扩写；缺失或分配疑问在草案中指出。新增对白不指定 ID，已有对白保留 ID，避免破坏排版引用。字段和文案类型见 docs/reference/visual-pages.md 与 docs/reference/project-files.md。
 
-新建、删除使用语义入口，顺序与 narrative 使用 read/save；具体命令见 docs/reference/agent-interfaces.md。保存警告不等于保存失败，应读取结果后判断，不重复提交。
+有 story_canvas 时优先查 page、structure 与 facts 分类帮助；新建、删除用语义操作，顺序与 narrative 用 read/save。参数查操作 help，无该工具时用 docs/reference/agent-interfaces.md 的 CLI。保存警告不等于保存失败，应读取结果后判断，不重复提交。
 
 文案优化是后期独立任务：可以参考语料，不要求照抄或记录出处映射。方法见 library/writing-policies/copy-from-corpus.md。不要以优化文案为由修改用户原文、画面或重新生成。
 

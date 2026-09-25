@@ -88,6 +88,8 @@
 | `app/server/runtime-http.mjs` | 健康、硬件、任务、ComfyUI、全局资源、LoRA 资源和 Prompt 词库 HTTP Adapter |
 | `app/server/project-http.mjs` | 项目列表、生命周期、材料、生成设置和项目媒体 HTTP Adapter |
 | `app/server/agent-http.mjs` | Agent 文件式 read/save 与无文件 read/save HTTP Adapter |
+| `app/server/agent-directory.mjs` | Agent 分页目录摘要：在事实读取边界内查询章节、单元、设定、子设定、页面与模板，不载入 Prompt 和媒体 |
+| `app/scripts/workbench-actions/` | 统一 Agent 工具的领域操作：参数、帮助和执行一起维护，自动汇总分组目录 |
 | `app/server/prompt-edit-context.mjs` | 一致性事实读取内组合可写草稿和只读引用文字、override、图片选择、有效配置及最终编译，不诊断本机模型 |
 | `app/server/fact-drafts.mjs` | 统一草稿、目标/依赖指纹与领域提交调度；网页保存也直接复用领域提交 |
 | `app/server/workbench-http.mjs` | 页面工作台、导航、候选、嵌字和单页生成 HTTP Adapter |

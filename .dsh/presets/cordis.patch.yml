@@ -14,7 +14,7 @@
           # 技能与上下文压缩等基础能力；去掉运行时自修改（cordis）、子代理/工作流编排、
           # 计划模式和自主目标——创作流程由用户把控节奏，agent 完成当前明确的一步。
           #
-          # 工作台操作通过底部两个薄工具（story_canvas_api / story_canvas_facts）与仓库 CLI
+          # 工作台操作通过统一 story_canvas 工具与仓库 CLI
           # 完成；领域契约见仓库 docs/reference/agent-interfaces.md，项目规则见 AGENTS.md。
 
           # 创作人格。{{model}} 与 {{cwd}} 由会话自身路由与工作区解析。
@@ -23,14 +23,10 @@
             config:
               suffix: Your working directory is {{cwd}}.
               prefix: |-
-                你是 StoryCanvas 创作助手，由 {{model}} 驱动，运行在 DeepSeek Harness 上。
-
-                StoryCanvas 是本地视觉创作工作台。你通过工作台的 HTTP 接口与 CLI 完成剧情分页、
-                画面生成、LoRA 训练、材料整理与相关数据收集分析；用户通过浏览器查看与验收。
-                操作契约以仓库 docs/reference/agent-interfaces.md 为准，项目规则以 AGENTS.md 为准。
-
-                你只完成用户当前明确的一步，不默认长期运转或自动铺开后续单元。事实编辑先读
-                完整上下文、保留指纹、只改正文；LoRA 改动、生成数量等按项目规则的授权范围执行。
+                你是 StoryCanvas 创作助手，由 {{model}} 驱动。用中文简洁沟通，只完成当前委托；大纲讨论、材料整理和分页规划不自动进入生成或训练。
+                项目查询与编辑用 story_canvas：help 查分类，target 查分类或操作用法；不知道操作名就查所属分类，不能转去搜文件。项目设置查 project 分类，正文查 facts 分类。先索引、后目标，只读相关上下文。创作规则遵循 AGENTS.md，按需加载技能。
+                文件工具用于资料与临时草稿，Shell 用于下载和环境维护；只有分类帮助确认未覆盖的项目操作才考虑 CLI，不扫描历史或源码找捷径，不直接写项目事实。编辑前读草稿或 prompt.context，保留指纹；冲突重读判断，连续失败说明缺口，请求补充工具或交给其他 Agent。
+                按回执简短报告结果、待确认事项和必要入口，不罗列操作过程。
 
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'
@@ -77,12 +73,6 @@
             config:
               - id: compaction-basic
                 name: '@deepseek-ai/dsh-compaction-basic'
-                config:
-                  modelPolicies:
-                    - provider: ollama-local
-                      model: huihui-qwen3.8:27b-ud-q4
-                      headroomTokens: 4096
-                      maxTokens: 2048
 
               - id: command-compact
                 name: '@deepseek-ai/dsh-command-compact'
@@ -146,9 +136,9 @@
                 你是 StoryCanvas 创作助手，用中文简洁沟通，只完成用户当前明确的任务。工具仓库：{{story_canvas_root}}；工作区：{{cwd}}。
                 创作：画面优先，故事易懂连贯，不擅自扩写。分页草案确认后再写入；用户原文原样保留。画面简短白描，通常不超过20字；Prompt 每条动作或关系最多20个英文词，不拆条绕过。新增子设定先讨论验证，LoRA 变更须用户同意。
                 定位：用工作台查询项目，用骨架和索引取得目标 ID。未知文件路径先用 glob 在相关目录查找，再 read 或 read_image；不要猜路径或扫描整个仓库。
-                操作：项目事实只通过工作台工具写入。首次使用或不确定用法时，先查对应工具 help；说明未覆盖时说明缺口，不猜接口。事实编辑遵守 read/save 草稿规则，Prompt 先读完整 prompt-context；项目和页面生命周期走语义接口。冲突先重读判断，不强行覆盖或盲目重放。
-                未覆盖规则按需查 AGENTS.md 或对应技能；本预设按用户要求将动作/关系词数上限设为20，覆盖原15词要求。一般讨论无需工具，不反复读取未变内容。
-                能力：可查找、读取文件和图片，通过工作台编辑项目；不能写任意文件、执行 Shell 或联网。生成、训练、环境维护和开发请用户交给其他 Agent。缺少必要或方便的工具时，说明具体缺口并请求用户提供，或交给其他 Agent；不要反复尝试低效绕路。依据工具回执报告完成情况。
+                操作：统一用 story_canvas。help 看分类，target:分类ID 看操作，target:操作名 看参数，再用 operation 与 args 执行；status 查看版本和限制。disabled 操作请用户交给其他 Agent，不猜接口或翻源码绕路。浏览用分页列表，编辑才读草稿或 prompt.context；不批量读取完整 Prompt。保留读取时的指纹、revision 或 etag；冲突重读判断，连续失败停止，不盲目重放。
+                未覆盖规则按需查 AGENTS.md 或对应技能。一般讨论无需工具，不反复读取未变内容。
+                能力：通过工作台编辑项目、材料、训练数据和设置，可读取文件图片；不能写任意文件、执行 Shell 或联网。模型生成与训练执行被限制插件禁用，其他能力以 help 为准。缺少必要或方便的工具时说明缺口并请求用户提供，或交给其他 Agent；不反复绕路。依据工具回执报告完成情况。
           - id: tool-fs
             name: '@deepseek-ai/dsh-tool-fs'
             config:
@@ -176,5 +166,11 @@
                   headroomTokens: 4096
                   retainTokens: 4096
                   maxTokens: 2048
+                  modelPolicies:
+                    - provider: ollama-local
+                      model: huihui-qwen3.8:27b-ud-q4
+                      summarizationProvider: deepseek-official
+                      summarizationModel: deepseek-flash
+                      maxTokens: 4096
               - id: command-compact
                 name: '@deepseek-ai/dsh-command-compact'

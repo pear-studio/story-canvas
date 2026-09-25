@@ -221,7 +221,7 @@ export async function handleProjectRequest({
       const currentProfileId = project.default_render_profile;
       return {
         current_profile_id: currentProfileId,
-        render_profiles: await listProjectRenderProfiles(projectRoot, projectDirectory, config, null, currentProfileId),
+        render_profiles: await listProjectRenderProfiles(projectRoot, projectDirectory, config, null, requestUrl.searchParams.get('profile_id') ?? currentProfileId),
       };
     });
     sendOperation(200, result);
@@ -248,6 +248,13 @@ export async function handleProjectRequest({
   }
 
   const projectSettingsMatch = /^\/api\/projects\/([^/]+)\/project\/?$/.exec(decodedPath);
+  if (request.method === "GET" && projectSettingsMatch) {
+    sendOperation(200, await readFacts(projectSettingsMatch[1], async ({ projectDirectory }) => {
+      const { title, canvas, default_render_profile } = await readJsonFile(path.join(projectDirectory, 'project.json'));
+      return { title, canvas, default_render_profile };
+    }));
+    return true;
+  }
   if (request.method === "PUT" && projectSettingsMatch) {
     const value = await readJsonBody(request);
     const result = await mutateFacts(projectSettingsMatch[1], () => saveProjectSettings(projectRoot, projectSettingsMatch[1], value));

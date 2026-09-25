@@ -113,7 +113,7 @@ export async function handleLoraTrainingRequest({
       const detail = loraPostprocessApplyMatch[2] === "apply"
         ? await loraTrainingModule.media.postprocess.apply(resolvedProjectRoot, projectDirectory, loraPostprocessApplyMatch[1], value, config)
         : await loraTrainingModule.media.postprocess.restore(projectDirectory, loraPostprocessApplyMatch[1], value?.item_id);
-      return prepareChanged(projectDirectory, detail, [value?.item_id]);
+      return value?.prepare === false ? detail : prepareChanged(projectDirectory, detail, [value?.item_id]);
     });
     sendOperation(200, result);
     return true;
@@ -133,7 +133,7 @@ export async function handleLoraTrainingRequest({
         const before = await loraTrainingModule.facts.datasets.read(projectDirectory, loraDatasetActionMatch[1]);
         const detail = await loraTrainingModule.facts.datasets.importAssets(projectDirectory, loraDatasetActionMatch[1], value);
         const existing = new Set(before.items.map(item => item.id));
-        return prepareChanged(projectDirectory, detail, detail.items.filter(item => !existing.has(item.id)).map(item => item.id));
+        return value.prepare === false ? detail : prepareChanged(projectDirectory, detail, detail.items.filter(item => !existing.has(item.id)).map(item => item.id));
       });
       sendOperation(201, result);
     } else {

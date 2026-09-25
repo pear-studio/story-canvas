@@ -20,6 +20,12 @@ function checkNonemptyText(value, valuePath, errors) {
 
 export const storyPromptFragmentIdPattern = /^token-[a-f0-9]{12}$/;
 
+function invalidFragmentId(field, message) {
+  return Object.assign(new TypeError(message), {
+    status: 400, code: 'invalid_prompt_fragment', details: [{ field, message }],
+  });
+}
+
 function validatePromptFragment(fragment, valuePath, errors) {
   if (!isRecord(fragment)) { errors.push(`${valuePath} 必须是对象`); return; }
   checkExactKeys(fragment, ["id", "tag", "description", "camera_settings", "character_id", "weight", "enabled"], valuePath, errors);
@@ -44,8 +50,9 @@ export function preparePromptForPersistence(prompt, { baselinePrompt, createFrag
     for (const [index, fragment] of (Array.isArray(prepared?.[category]) ? prepared[category] : []).entries()) {
       if (!isRecord(fragment)) continue;
       if (fragment.id !== undefined) {
-        if (!baselineIds.has(fragment.id)) throw new TypeError(`${category}[${index}] 的新增 Prompt 片段不允许指定 id`);
-        if (submittedIds.has(fragment.id)) throw new TypeError(`${category}[${index}] 的 Prompt 片段 id 重复`);
+        const field = `${category}[${index}].id`;
+        if (!baselineIds.has(fragment.id)) throw invalidFragmentId(field, `${field}：新增 Prompt 片段请省略 id，由服务端生成；已有片段保留读取时的 id`);
+        if (submittedIds.has(fragment.id)) throw invalidFragmentId(field, `${field}：片段 id 重复；已有片段只能提交一次，新副本请省略 id`);
         submittedIds.add(fragment.id);
         occupiedIds.add(fragment.id);
         continue;
@@ -95,4 +102,3 @@ export function promptCharacterIds(prompt) {
   }
   return [...ids];
 }
-

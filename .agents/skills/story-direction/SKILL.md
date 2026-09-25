@@ -13,6 +13,6 @@ description: 为 StoryCanvas 与用户讨论完整故事骨架和角色 profile�
 
 用户原文保持原样；可提出删并非必要过程的改编建议。造型变化涉及新子设定时先与用户讨论，按指南单独验证。不得代写具体分页、Prompt 或改 LoRA。
 
-事实使用 story:page 的 outline/synopsis/chapter/sequence 与 character:fact 的 profile read/save；命令和指纹规则见 docs/reference/agent-interfaces.md。多 Agent 时遵守分工，单 Agent 可以随后在授权范围内切换专项职责，不强制派发。
+有 story_canvas 时优先用其分类帮助查找骨架、章节、单元与角色事实操作；参数和指纹规则查操作 help。无该工具时用 docs/reference/agent-interfaces.md 的 CLI。多 Agent 时遵守分工，单 Agent 可以随后在授权范围内切换专项职责，不强制派发。
 
 交付骨架、实际变更或发现的矛盾，不做必经的末端故事就绪审批，不自动推进下个单元。用户要求复盘时再使用 story-craft-review；解法库不是必读清单。

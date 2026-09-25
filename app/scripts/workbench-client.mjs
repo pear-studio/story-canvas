@@ -24,7 +24,7 @@ export async function loadWorkbenchConfig(repositoryRoot = path.resolve(appRoot,
   }
 }
 
-export async function requestWorkbench(route, { method = "GET", body, revision } = {}) {
+export async function requestWorkbench(route, { method = "GET", body, revision, etag } = {}) {
   if (!route.startsWith("/api/")) throw new Error("请求路径必须以 /api/ 开头");
   const port = resolveWorkbenchPort(await loadWorkbenchConfig());
   let response;
@@ -32,7 +32,7 @@ export async function requestWorkbench(route, { method = "GET", body, revision }
     response = await fetch(`http://127.0.0.1:${port}${route}`, {
       method,
       headers: { accept: "application/json", ...(body === undefined ? {} : { "content-type": "application/json" }),
-        ...(revision ? { "x-story-canvas-expected-revision": revision } : {}) },
+        ...(revision ? { "x-story-canvas-expected-revision": revision } : {}), ...(etag ? { 'if-match': etag } : {}) },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
   } catch (cause) {
@@ -40,7 +40,7 @@ export async function requestWorkbench(route, { method = "GET", body, revision }
   }
   const value = await response.json();
   if (!response.ok) throw Object.assign(new Error(value.message ?? value.error), { code: value.error, status: response.status, details: value.details });
-  return { value, revision: response.headers.get("x-story-canvas-revision") };
+  return { value, revision: response.headers.get("x-story-canvas-revision"), ...(response.headers.has('etag') ? { etag: response.headers.get('etag') } : {}) };
 }
 
 // 领域与 kind 的合法性以服务端为准；路径片段作为单个编码片段构造，不拼接原始参数。

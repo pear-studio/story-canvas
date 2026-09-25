@@ -234,3 +234,24 @@ test("活动任务轮询不读取终态 comparison 的完整存储", async (cont
   assert.deepEqual(result.tasks, []);
   assert.deepEqual(result.history, []);
 });
+
+test('项目任务筛选在历史分页前执行，并由 HTTP 查询透传',async context=>{
+  const {root,projectDirectory}=await fixture(context);
+  const other=path.join(root,'workspace','other');await mkdir(other,{recursive:true});registerFixtureProjects(root);
+  for(const [directory,prefix] of [[projectDirectory,'1111111'],[other,'2222222']]) {
+    for(let i=1;i<=2;i++) {
+      const id=`render-20260828T01020${i}Z-${prefix}${i}`;
+      await createRenderTask(directory,task(id),{project_title:'Fixture',pages:[]});
+      await updateRenderTask(directory,id,value=>({...value,status:'completed'}));
+    }
+    await createRenderTask(directory,task(`render-20260828T010203Z-${prefix}3`),{project_title:'Fixture',pages:[]});
+  }
+  assert.equal((await listWorkspaceRenderTasks(root,{projectId:'demo'})).tasks.length,1);
+  const first=await listWorkspaceRenderHistory(root,{projectId:'demo',limit:1});assert.equal(first.history.length,1);assert.equal(first.history[0].project_id,'demo');assert.ok(first.next_cursor);
+  const second=await listWorkspaceRenderHistory(root,{projectId:'demo',limit:1,before:first.next_cursor});assert.equal(second.history.length,1);assert.notEqual(first.history[0].id,second.history[0].id);assert.equal(second.next_cursor,null);
+  for(const route of ['/api/tasks?project_id=other','/api/tasks/history?project_id=other']) {
+    let result;const url=new URL('http://localhost'+route);
+    await handleRuntimeRequest({request:{method:'GET'},requestUrl:url,decodedPath:url.pathname,projectRoot:root,response:{writeHead(status){assert.equal(status,200)},end(value){result=JSON.parse(value)}}});
+    const items=route.includes('history')?result.history:result.tasks;assert.ok(items.length);assert.ok(items.every(item=>item.project_id==='other'));
+  }
+});

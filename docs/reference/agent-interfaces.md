@@ -7,13 +7,12 @@
 同一契约有两种传输方式，编辑纪律完全相同（读取上下文、保留指纹、只改正文、冲突后重读判断）：
 
 - **CLI**：`node <仓库根>/app/scripts/<脚本>.mjs …`，草稿通过 `--out <文件>` 与文件输入做 UTF-8 传输；
-- **DSH 原生工具**：安装本仓库 [DSH 预设 bundle](../../.dsh/presets/README.md)，会话选择 StoryCanvas 创作或极简预设后可用 `story_canvas_facts` 与
-  `story_canvas_api`，直接收发结构化对象，不要求先落盘。
+- **DSH 原生工具**：安装本仓库 [DSH 预设 bundle](../../.dsh/presets/README.md)，选择创作或极简预设后使用统一 `story_canvas`。
 
-DSH 工具用法由工具内置 help 提供：`story_canvas_api({help:"projects"})`（项目生命周期）、
-`{help:"pages"}`（页面管理）、`{help:"project-create"}`（新建项目）；
-`story_canvas_facts({operation:"help"})` 提供事实草稿与 Prompt 编辑规则。
-help 不发送 HTTP 请求；本页保留 CLI 与底层协议说明，不另维护 DSH 调用细则。
+工具使用 `operation:help` 一次返回分组总目录，加 `target` 可直接查询操作详情或查看指定分组；
+`operation:status` 检查已加载版本。说明与执行由 `app/scripts/workbench-actions/` 各领域模块共同维护。
+本页保留 CLI 与底层协议说明，不重复维护 DSH 操作清单。
+有 `story_canvas` 时优先使用该工具及其分级 help；CLI 供无该工具的环境或明确未覆盖的操作使用。
 
 ## 查询关联项目的 Git
 
@@ -120,8 +119,8 @@ node <仓库根>/app/scripts/agent-fact.mjs save-context <仓库根>/Saved/Agent
 ```
 
 save 回执默认打印到 stdout；需要落盘时用与输入不同的文件（如上例的 save-result.json），不要用回执
-覆盖草稿或完整上下文。DSH 原生工具不用落盘：`story_canvas_facts` 的 `prompt-context` 读取完整包后，
-仅将返回的 `save.domain`/`save.kind` 与修改后的完整 `draft` 交给 `save`，不回传只读 `context`。
+覆盖草稿或完整上下文。DSH 原生工具不用落盘：`story_canvas` 的 `prompt.context` 读取完整包后，
+仅将返回的 `save.domain`/`save.kind` 与修改后的完整 `draft` 交给 `facts.save`，不回传只读 `context`。
 
 原有局部 read/save 继续用于事实操作和排查，但不能代替编辑前的完整上下文。
 
@@ -246,17 +245,13 @@ API 本身沿用领域响应，不为与 CLI 外观一致而增加重复包装�
 
 ## DSH 原生工具
 
-DeepSeek Harness 安装本仓库 `.dsh/presets/` bundle 后，选择 `story-canvas` 或 `story-canvas-lite` 预设获得两个工具，与 CLI 共用
-同一份连接与事实编辑实现，编辑纪律不变（先读上下文、保留指纹、只改正文、冲突后重读判断）：
+DSH 适配层只注册 `story_canvas`，不承载领域知识；各领域操作把参数契约、摘要、详细帮助与执行放在同一声明中。
+总入口仅列分类，分类帮助列操作摘要，单项帮助提供参数与规则。分页摘要用于浏览，完整草稿和 Prompt 编辑上下文不截断。
+常用语义操作内部处理路径；设置类编辑使用读取时返回的 revision，不能临写前换成最新版本掩盖陈旧读取。
+冲突不自动重试。完整能力由同一插件提供，极简限制插件按 Agent 禁用模型生成与训练执行能力，
+帮助标记 `availability: disabled`，执行入口也会拒绝。普通编辑不受此限制，不提供任意 HTTP 绕过入口。
+训练修改使用 ETag/If-Match；导入、应用与恢复素材可以显式跳过自动模型处理，工作台界面默认行为不变。
+具体设置、资源、媒体、对比和训练操作以各自工具 help 为准。
 
-- `story_canvas_facts`：`operation=read`（domain、kind、project_id、可选 target_id）返回裸草稿；
-  `operation=save`（domain、kind、完整 draft）提交草稿；`operation=prompt-context`（project_id、page_key）
-  返回完整 `{ page_key, save, draft, context }`，之后只把 `save.domain`/`save.kind` 与修改后的完整
-  `draft` 交给 save，不回传只读 context。
-- `story_canvas_api`：`method`、`path`（`/api/` 开头）、可选 `body`、可选 `revision`，调用任意 JSON
-  接口，始终返回 `{ value, revision }`；`revision` 写入 `x-story-canvas-expected-revision` 请求头，
-  遗漏版本 428、过期版本 409，工具不自动刷新重提。
-
-失败保持工具失败状态；DSH 只呈现异常 message，因此插件将 `{ error, message, status?, details? }`
-序列化到异常文本中（平台显示为 `Error: {…}`），不会仅依赖异常的自定义属性。连接失败为 `workbench_unavailable`。
-媒体、流式下载与 multipart 上传仍走现有专用路径，不经过这两个工具。
+失败保持工具失败状态，将错误码、状态、诊断、帮助入口与恢复建议放入异常文本，避免 DSH 丢失异常附加字段。
+媒体、流式下载与 multipart 上传仍走专用路径。具体参数只查工具 help。

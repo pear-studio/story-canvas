@@ -3,15 +3,21 @@ import { readFactDraft, saveFactDraft } from "./fact-drafts.mjs";
 import { readStoryContext } from "./story-facts.mjs";
 import { readProjectCreationTemplate, createProject } from "./project-creation.mjs";
 import { readPromptEditContext } from "./prompt-edit-context.mjs";
+import { readAgentDirectory } from './agent-directory.mjs';
 
 export async function handleAgentRequest({ request, response, decodedPath, projectRoot, config = {}, readFacts, mutateTargetFacts, sendOperation }) {
   const match = /^\/api\/agent\/facts\/(story|character|scene|page)\/([a-z-]+)\/(read|save)$/.exec(decodedPath);
   const creation = /^\/api\/agent\/project-create\/(template|create)$/.exec(decodedPath);
   const contextRead = decodedPath === "/api/agent/story-context";
   const promptContextRead = decodedPath === "/api/agent/prompt-context";
-  if (request.method !== "POST" || (!match && !creation && !contextRead && !promptContextRead)) return false;
+  const directoryRead = decodedPath === '/api/agent/directory';
+  if (request.method !== "POST" || (!match && !creation && !contextRead && !promptContextRead && !directoryRead)) return false;
   const body = await readJsonBody(request);
   if (!body || typeof body !== "object" || Array.isArray(body)) throw new ApiError(400, "invalid_edit_request");
+  if (directoryRead) {
+    sendOperation(200, await readFacts(body.project_id, ({ projectDirectory }) => readAgentDirectory(projectRoot, projectDirectory, body)));
+    return true;
+  }
   if (promptContextRead) {
     sendOperation(200, await readFacts(body.project_id, ({ projectDirectory }) => readPromptEditContext({
       projectRoot, projectDirectory, projectId: body.project_id, pageKey: body.page_key, config,

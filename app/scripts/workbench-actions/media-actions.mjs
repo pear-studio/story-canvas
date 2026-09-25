@@ -1,0 +1,40 @@
+import { requestWorkbench } from '../workbench-client.mjs';
+import { schema, string, object, array, boolean } from './contract.mjs';
+import { endpoint, projectId, pageKey, projectPath, encode, localImage, downloadArtifact } from './http-action.mjs';
+const post = (summary, suffix, fields, options = {}) => endpoint(summary, 'POST', a => projectPath(a, `workbench/${suffix}`), fields, { project: true, ...options });
+const target = { ...schema({ kind: { ...string('归属'), enum: ['character','scene','page'] }, id: string('角色/场景/页面 ID'), variant_id: string('角色和场景需要子设定 ID'), model_id: string('模型分支，默认 qwen') }, ['kind','id']), description: '参考图归属；角色和场景必须给 variant_id' };
+const reference = (summary, action, fields, required, body) => post(summary, 'reference-library', { target, ...fields }, { required: ['target', ...required], details: '先 reference.list 取得 entries 与 sha256；修改传 expected_sha256。参考图最多十张，候选提升后保存到 materials，不依赖临时输出。', body: a => ({ target:a.target, action, ...body(a) }) });
+export const mediaActions = {
+  'page.editor.read': endpoint('读取单页整页编辑草稿','GET',a=>projectPath(a,'workbench'),{page_key:pageKey},{project:true,details:'返回可用于 page.editor.save 的 document；只编辑 content、prompt 和 lettering.items，保留指纹。编辑 Prompt 前仍需 prompt.context 检查引用上下文。',transform:(r,a)=>{
+    const p=r.value.pages.find(p=>p.page_id===a.page_key.page_id);if(!p)throw new Error('页面不存在');
+    const content={title:p.title,scene_description:p.scene_description,characters:p.characters,dialogue:p.dialogue,...(p.page_kind==='text'?{page_kind:'text',body:p.body,display_title:p.display_title,text_layout:p.text_layout}:{})};
+    return {document:{page_key:p.page_key,content,prompt:p.prompt,lettering:{items:p.lettering.items},expected_content_sha256:p.content_sha256,expected_prompt_sha256:p.prompt_sha256,expected_context_sha256:p.prompt_context_sha256,expected_layout_sha256:p.layout_sha256}};
+  }}),
+  'page.editor.save': endpoint('原子保存页面正文、Prompt 和布局','PUT',a=>projectPath(a,'workbench/page-save'),{document:object('page.editor.read 的完整 document')},{project:true,body:a=>a.document,details:'只修改草稿内容，保留四个指纹；整页事务成功或回滚。通常优先使用窄 facts.save；需要同时调整文案与布局时使用整页草稿。'}),
+  'reference.list': reference('读取角色、场景或页面参考图', 'read', {}, [], () => ({})),
+  'reference.save': reference('导入/替换本地图片、材料或候选为参考图', 'save', { expected_sha256: string('reference.list 的 sha256'), id: string('替换已有参考图时提供'), title: string('图片标题'), file: string('本机 PNG/JPEG/WebP 绝对路径'), material_file: string('已有材料文件名'), candidate_id: string('已有候选 ID'), page_key: pageKey }, ['expected_sha256'], a => ({ expected_sha256:a.expected_sha256, id:a.id, title:a.title, material_file:a.material_file, candidate_id:a.candidate_id, page_key:a.page_key })),
+  'reference.delete': reference('删除指定参考图引用', 'delete', { expected_sha256:string('读取时 sha256'), id:string('参考图 ID') }, ['expected_sha256','id'], a=>({expected_sha256:a.expected_sha256,id:a.id})),
+  'reference.reorder': reference('调整参考图顺序', 'reorder', { expected_sha256:string('读取时 sha256'), ids:array('全部参考图 ID，不能缺项或重复') }, ['expected_sha256','ids'], a=>({expected_sha256:a.expected_sha256,ids:a.ids})),
+  'candidate.list': post('读取一个页面候选与媒体', 'page-media', { page_key:pageKey }, { body:a=>({page_key:a.page_key}), details:'返回页面媒体与候选 ID；只读，不生成、不选优。' }),
+  'candidate.counts': endpoint('读取各页面候选数量','GET',a=>projectPath(a,'workbench/candidate-counts'),{}, {project:true}),
+  'candidate.inspect': post('查看一个候选的生成详情','candidate-detail',{page_key:pageKey,candidate_id:string('候选 ID')},{body:a=>({page_key:a.page_key,candidate_id:a.candidate_id}),details:'candidate.list 取得真实候选 ID；返回冻结的生成记录。'}),
+  'candidate.delete': endpoint('删除指定候选','DELETE',a=>projectPath(a,'workbench/candidates'),{page_key:pageKey,candidate_ids:array('明确授权删除的候选 ID')},{project:true,body:a=>({page_key:a.page_key,candidate_ids:a.candidate_ids}),details:'不可恢复；只删除用户授权的候选，不自动挑选。'}),
+  'candidate.scan': post('检查最多八页的候选是否符合当前生成条件','story-candidate-refresh',{page_keys:array('剧情页面身份',pageKey,8)},{body:a=>({action:'inspect',page_keys:a.page_keys})}),
+  'candidate.clean': post('清理已确认的候选集合','story-candidate-refresh',{page_key:pageKey,scope:{...string('清理范围'),enum:['mismatch','all']},candidate_ids:array('扫描后确认的候选 ID'),expected_signature:string('mismatch 必须提供 scan 的 signature')},{required:['page_key','scope','candidate_ids'],body:a=>({action:'clean',page_key:a.page_key,scope:a.scope,candidate_ids:a.candidate_ids,expected_signature:a.expected_signature}),details:'仅删除确认集合与当前扫描集合的交集。mismatch 必须携带 expected_signature，变化返回409。'}),
+  'generation.page.inspect': post('检查页面最终模型输入与依赖，不运行模型','page-render-inspection',{page_key:pageKey},{body:a=>({page_key:a.page_key})}),
+  'generation.rewrite.read': endpoint('读取页面 Prompt 重写结果与进度','GET',a=>projectPath(a,'workbench/page-rewrite'),{page_key:pageKey},{project:true,query:a=>({page_key:JSON.stringify(a.page_key)}),details:'只读取已有结果；启动重写由生成插件提供。'}),
+  'lettering.settings.read': endpoint('读取项目文字样式和指纹','GET',a=>projectPath(a,'workbench'),{}, {project:true,transform:r=>({settings:r.value.project.lettering_settings,expected_sha256:r.value.project.lettering_settings_sha256}),details:'返回可编辑 settings 与 expected_sha256；只修改 settings。'}),
+  'lettering.settings.save': endpoint('保存项目文字样式','PUT',a=>projectPath(a,'workbench/lettering-settings'),{settings:object('read 返回的完整 settings'),expected_sha256:string('读取时指纹')},{project:true,body:a=>({settings:a.settings,expected_sha256:a.expected_sha256})}),
+  'lettering.page.read': endpoint('读取页面文字布局和指纹','GET',a=>projectPath(a,'workbench'),{page_key:pageKey},{project:true,details:'返回 lettering 与整份布局文件的 expected_sha256。items 的字段以读取结果为准；保存仅传 {items}，不把 page 写回。',transform:(r,a)=>{const page=r.value.pages.find(p=>p.page_key.page_id===a.page_key.page_id);if(!page)throw new Error('页面不存在');return {lettering:page.lettering,expected_sha256:page.layout_sha256};}}),
+  'lettering.page.save': endpoint('保存一个页面文字布局','PUT',a=>projectPath(a,'workbench/page-lettering'),{page_key:pageKey,lettering:object('仅 {items:[...]}，来自 read，保留每项身份'),expected_sha256:string('读取时布局指纹')},{project:true,body:a=>({page_key:a.page_key,lettering:a.lettering,expected_sha256:a.expected_sha256})}),
+  'finished.list': endpoint('查看成品和当前状态','GET',a=>projectPath(a,'finished'),{page_id:string('可选页面筛选')},{project:true,required:[],query:a=>({page_id:a.page_id})}),
+  'finished.jobs': endpoint('查看成品输出任务','GET',a=>projectPath(a,'finished/jobs'),{}, {project:true}),
+  'finished.delete': endpoint('删除一个成品记录','DELETE',a=>projectPath(a,'finished'),{page_key:pageKey,expected_sha256:string('finished.list 返回的 record.sha256')},{project:true,body:a=>({page_key:a.page_key,expected_sha256:a.expected_sha256}),details:'删除成品需用户授权，不删除源候选。'}),
+  'finished.export': {summary:'导出已有成品 ZIP 或 HTML 阅读页',parameters:schema({...projectId,variant:{...string('导出版本'),enum:['lettered','clean','both']},chapter_id:string('可选章节'),preview:boolean('true 导出HTML，否则ZIP')},['project_id','variant']),details:'只导出已完成的成品，不生成或超分。文件放 Saved/Agent/workbench-artifacts，返回绝对路径。',execute:a=>downloadArtifact(projectPath(a,'finished/export'),{method:'POST',body:{variant:a.variant,chapter_id:a.chapter_id,preview:a.preview},extension:a.preview?'html':'zip'})},
+  'media.download': {summary:'将项目媒体下载为本地审阅文件',parameters:schema({...projectId,relative_path:string('工作台媒体返回的项目相对路径，不猜测') }),details:'下载现有图片到 Saved/Agent/workbench-artifacts 后可用 read_image 查看；不改项目文件。',execute:a=>downloadArtifact(projectPath(a,`media/${a.relative_path.split('/').map(encode).join('/')}`))},
+};
+mediaActions['reference.save'].execute = async a => {
+  if ([a.file,a.material_file,a.candidate_id].filter(Boolean).length !== 1) throw new Error('file、material_file、candidate_id 必须且只能提供一项');
+  if (a.candidate_id && !a.page_key) throw new Error('候选来源必须提供 page_key');
+  return requestWorkbench(projectPath(a,'workbench/reference-library'),{method:'POST',body:{action:'save',target:a.target,expected_sha256:a.expected_sha256,id:a.id,title:a.title,material_file:a.material_file,candidate_id:a.candidate_id,page_key:a.page_key,...(a.file?{content:(await localImage(a.file)).content}:{})}});
+};

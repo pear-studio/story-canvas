@@ -202,8 +202,9 @@ export async function readWorkspaceTaskResults(projectRoot, projectId, taskId, p
 export async function listWorkspaceRenderTasks(projectRoot, {
   trackedByProject = new Map(),
   strict = false,
+  projectId: filterProjectId = null,
 } = {}) {
-  const entries = listRegisteredProjects(projectRoot, "story").filter(entry => entry.available);
+  const entries = listRegisteredProjects(projectRoot, "story").filter(entry => entry.available && (!filterProjectId || entry.id === filterProjectId));
   const tasks = [];
   const history = [];
   const tracked = [];
@@ -238,7 +239,7 @@ export async function listWorkspaceRenderTasks(projectRoot, {
       else if (terminalStatuses.has(state.status)) history.push(await publicRenderTaskState(projectDirectory, projectId, state));
     }
   }
-  for (const status of await listComparisonRuntimeStatuses(projectRoot)) {
+  for (const status of filterProjectId ? [] : await listComparisonRuntimeStatuses(projectRoot)) {
     if (!activeStatuses.has(status.status) || !status.started_at) continue;
     tasks.push(publicComparisonTask(null, await readComparisonExperimentView(projectRoot, status.id)));
   }
@@ -268,8 +269,8 @@ export async function listWorkspaceRenderTasks(projectRoot, {
 }
 
 // 历史按提交顺序翻页。只枚举目录名，再读取本页 state；不加载整段历史或 manifest。
-export async function listWorkspaceRenderHistory(projectRoot, { before = null, limit = 30 } = {}) {
-  const entries = listRegisteredProjects(projectRoot, "story").filter(entry => entry.available);
+export async function listWorkspaceRenderHistory(projectRoot, { before = null, limit = 30, projectId: filterProjectId = null } = {}) {
+  const entries = listRegisteredProjects(projectRoot, "story").filter(entry => entry.available && (!filterProjectId || entry.id === filterProjectId));
   const references = [];
   const comparisonSummaries = new Map();
   for (const entry of entries) {
@@ -289,7 +290,7 @@ export async function listWorkspaceRenderHistory(projectRoot, { before = null, l
       if (!before || cursor < before) references.push({ projectId: entry.id, taskId: job.id, cursor, kind: "finished" });
     }
   }
-  for (const record of await listComparisonExperimentViews(projectRoot)) {
+  for (const record of filterProjectId ? [] : await listComparisonExperimentViews(projectRoot)) {
     if (!terminalStatuses.has(record.status.status) && record.status.status !== "incomplete") continue;
     const cursor = `${record.manifest.created_at}/comparison/${record.id}`;
     comparisonSummaries.set(`null\0${record.id}`, publicComparisonTask(null, record));

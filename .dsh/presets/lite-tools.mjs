@@ -1,11 +1,12 @@
 // 复用 DSH 原生读文件和读图实现，只保留当前任务需要的模型工具。
 import { fileURLToPath } from 'node:url'
+import { restrictWorkbench } from '../../app/scripts/workbench-actions/access-policy.mjs'
 export const name = 'story-canvas-lite-tools'
 export const inject = ['tools', 'systemPrompt']
 
 export function apply(ctx) {
   ctx.systemPrompt.variable('story_canvas_root', () => fileURLToPath(new URL('../../', import.meta.url)))
-  const allowed = ['glob', 'read', 'read_image', 'story_canvas_api', 'story_canvas_facts']
+  const allowed = ['glob', 'read', 'read_image', 'story_canvas']
   const restrictions = new Map()
   const release = id => {
     restrictions.get(id)?.()
@@ -13,7 +14,11 @@ export function apply(ctx) {
   }
   const restrict = agent => {
     if (restrictions.has(agent.id)) return
-    restrictions.set(agent.id, ctx.effect(() => agent.ctx.tools.restrict({ allow: allowed })))
+    restrictions.set(agent.id, ctx.effect(() => {
+      const releaseTools = agent.ctx.tools.restrict({ allow: allowed })
+      const releaseCapabilities = restrictWorkbench(agent, ['generation', 'training'])
+      return () => { releaseCapabilities(); releaseTools() }
+    }))
   }
   ctx.on('agent/created', ({ agent }) => { restrict(agent) })
   ctx.on('agent/disposed', ({ agent }) => { release(agent.id) })
