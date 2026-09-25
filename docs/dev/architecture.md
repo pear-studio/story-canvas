@@ -74,7 +74,7 @@ scheduler、RNG 与采样游标）冻结一个新 run 后按同一路径执行�
 | 浏览器工作台 | 通过原工作台布局读取项目事实；让最高权限的用户编辑单页 narrative/goal、角色 profile/visual、页面与角色 Prompt 和嵌字布局，并生成、预览和删除候选 | 提供万能 JSON 编辑、替 Agent 选图或保存创作阶段状态机 |
 | 本地 Node.js 服务 | 受限读写项目事实、确定性编译生成任务、配置诊断、词库搜索和媒体访问 | 内置 LLM、数据库、云同步或 Agent 调度 |
 | 模型适配器 | 模型 Prompt 契约、确定性编译、模型专用编辑器与能力 | 候选存储、项目生命周期和任务队列 |
-| `render_profile` | 模型文件、模型专用全局 Prompt、候选工作流、配方和新页默认 LoRA | 保存角色或页面 Prompt、单页事实或项目创作事实 |
+| `render_profile` | 模型文件、模型专用全局 Prompt、候选工作流、配方和项目 LoRA | 保存角色或页面 Prompt、单页事实或项目创作事实 |
 | ComfyUI | 执行生成工作流 | 管理故事、用户审核或项目版本 |
 | 固定 commit 的 DiffSynth-Studio | 提供 Qwen-Image-2.1 的模型加载、LoRA 注入与 loss 实现 | 管理项目、下载环境或决定结果；训练循环、采样、保存与恢复由仓库内 runner 自管 |
 

@@ -163,6 +163,17 @@ test('切模型只首次带入全文，往返、复制和整页保存保留另�
   imported.models.qwen.text='own qwen text';await f.put(`pages/${id}.prompt.json`,imported);
   await f.switchModel(id,'anima');await f.switchModel(id,'qwen');assert.equal((await f.get(`pages/${id}.prompt.json`)).models.qwen.text,'own qwen text');
   const copy=await duplicatePage(f.root,'demo',id);assert.deepEqual(await f.get(`pages/${copy.page_id}.prompt.json`),imported);
+  const originalRender=await f.get(`pages/${id}.render.json`);
+  assert.deepEqual(await f.get(`pages/${copy.page_id}.render.json`),originalRender);
+  const {definition:copyRender}=await readPageRenderDraft(f.root,'demo',copy.page_id);
+  await commitPageRender(f.root,{project_id:'demo',page_id:copy.page_id,target:{sha256:hash(copyRender.persisted)},upstream:copyRender.upstream},()=>({...copyRender.persisted,canvas:'4:3'}));
+  const copyContent=await f.get(`pages/${copy.page_id}.content.json`);
+  await savePage(f.root,'demo',{page_key:{page_id:copy.page_id},content:copyContent,prompt:{...imported.models.qwen,text:'independent copied page'},expected_content_sha256:hash(copyContent),expected_prompt_sha256:hash(imported),expected_context_sha256:hash(await readStoryPromptUpstream(f.directory,copy.page_id))});
+  assert.deepEqual(await f.get(`pages/${id}.prompt.json`),imported);
+  assert.deepEqual(await f.get(`pages/${id}.render.json`),originalRender);
+  assert.equal((await f.get(`pages/${copy.page_id}.render.json`)).canvas,'4:3');
+  const savedCopy=await f.get(`pages/${copy.page_id}.prompt.json`);
+  assert.equal(savedCopy.models.qwen.text,'independent copied page');assert.deepEqual(savedCopy.models.anima,imported.models.anima);
   await f.switchModel(id,'anima');
   const content=await f.get(`pages/${id}.content.json`),prompt=await f.get(`pages/${id}.prompt.json`);
   await savePage(f.root,'demo',{page_key:{page_id:id},content,prompt:prompt.models.anima,expected_content_sha256:hash(content),expected_prompt_sha256:hash(prompt),expected_context_sha256:hash(await readStoryPromptUpstream(f.directory,id))});
