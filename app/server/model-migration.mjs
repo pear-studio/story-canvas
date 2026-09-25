@@ -9,7 +9,6 @@ import {compileEffectiveRenderProfile} from './render-profile-compiler.mjs';
 import {profileModelAdapter} from './model-adapters.mjs';
 import {makeModelPromptDocument, validateModelPromptDocument} from './model-prompts.mjs';
 import {pageSettingsFromDefaults} from './page-render-settings.mjs';
-import {styleLoraTriggers} from './lora-config.mjs';
 import {hashCanonicalJson as hash} from './workflow-definition.mjs';
 import {validateStoryPageNarrativeDocument} from './story-files.mjs';
 import {validateScenePromptDocument} from './scene-files.mjs';
@@ -38,7 +37,6 @@ function settingConfiguration(record,variantId) {
   };
 }
 const executionLoras=compiled=>compiled.loras.map(({filename,sha256,weight})=>({filename,sha256,weight}));
-const triggers=setting=>[...new Set((setting.loras??[]).map(lora=>lora.trigger?.trim()).filter(Boolean))];
 
 // 在 readFacts 内 dry-run；正式提交会在写锁内重算并核对指纹，不信任浏览器传来的写入计划。
 export async function planModelMigration(root,projectId) {
@@ -59,7 +57,6 @@ export async function planModelMigration(root,projectId) {
       const metadata=await read(directory,`${folder}/${id}.profile.json`);
       records[folder].set(id,{id,name:metadata.name,prompt});
       const native=clone(prompt);
-      native.identity.lora=null;for(const variant of Object.values(native.variants))variant.loras=[];
       const after=makeModelPromptDocument(before.$schema,modelId,native);
       const errors=folder==='scenes'?validateScenePromptDocument(after):validateModelPromptDocument(after,'setting');
       if(errors.length)fail('migration_prompt_invalid',[relative,...errors]);
@@ -76,13 +73,8 @@ export async function planModelMigration(root,projectId) {
     const input={pageId:id,pageKey:{page_id:id},pagePrompt:before,characters,scenes,participantIds,profile};
     const original=adapter.compilePrompt(input);
     if(original.errors.length)fail('migration_page_not_compilable',[id,...original.errors]);
-    const definitions=[...Object.keys(profile.style_loras??{}).sort().map(key=>profile.style_loras[key]),...characters.flatMap(value=>value.loras??[]),...scenes.flatMap(value=>value.loras??[])];
-    const native=clone(before);native.loras=original.loras.map(({filename,sha256,weight})=>{
-      const trigger=definitions.find(value=>value.filename===filename)?.trigger;
-      return {filename,sha256,weight,...(trigger?{trigger}:{})};
-    });
-    native.trigger_sources={style:styleLoraTriggers(profile),characters:Object.fromEntries(characters.map(value=>[value.id,triggers(value)])),scenes:Object.fromEntries(scenes.map(value=>[value.id,triggers(value)]))};
-    const migrated=adapter.compilePrompt({...input,pagePrompt:native,characters:characters.map(value=>({...value,loras:[]})),scenes:scenes.map(value=>({...value,loras:[]}))});
+    const native=clone(before);native.loras=[];
+    const migrated=adapter.compilePrompt({...input,pagePrompt:native});
     const equivalent=original.positive_prompt===migrated.positive_prompt && original.negative_prompt===migrated.negative_prompt && hash(executionLoras(original))===hash(executionLoras(migrated));
     if(!equivalent)fail('migration_generation_changed',[id]);
     const after=makeModelPromptDocument(schema('story-page-prompt'),modelId,native);

@@ -1,3 +1,4 @@
+import {mergeInheritedLoras} from '../shared/lora-inheritance.mjs';
 const sha256Pattern = /^[0-9a-f]{64}$/;
 
 function isRecord(value) {
@@ -97,37 +98,42 @@ export function styleLoraTriggers(profile) {
     .filter(Boolean))];
 }
 
-export function pageLoraDefinitions(profile, prompt) {
-  const project = Object.keys(profile?.style_loras ?? {}).sort(compareStableIds).map(id => profile.style_loras[id]);
-  const overrides = new Map((prompt.loras ?? []).map(lora => [lora.filename, lora]));
-  const inherited = new Set(project.map(lora => lora.filename));
-  return [...project.map(lora => overrides.get(lora.filename) ?? lora), ...(prompt.loras ?? []).filter(lora => !inherited.has(lora.filename))];
+function inheritedSources(profile, characters = [], scenes = []) {
+  return [...Object.keys(profile?.style_loras ?? {}).sort(compareStableIds).map(id=>({lora:profile.style_loras[id],kind:'style',owner:profile.id})),
+    ...characters.flatMap(value=>(value.loras??[]).map(lora=>({lora,kind:'character',owner:value.id}))),
+    ...scenes.flatMap(value=>(value.loras??[]).map(lora=>({lora,kind:'scene',owner:value.id})))];
 }
-
-export function explicitPageLoras(prompt, pageId, profile) {
-  if (!Array.isArray(prompt?.loras)) return null;
+export function pageLoraDefinitions(profile, prompt, characters = [], scenes = []) {
+  return mergeInheritedLoras(inheritedSources(profile,characters,scenes).map(value=>value.lora),prompt.loras,prompt.lora_overrides);
+}
+export function explicitPageLoras(prompt, pageId, profile, characters = [], scenes = []) {
   const errors = profile ? validateStyleLoras(profile) : [];
-  const loras = [], seen = new Set();
-  for (const item of prompt.loras) {
-    if (seen.has(item.filename)) errors.push(`LoRA 重复：${item.filename}`);
-    seen.add(item.filename);
+  const loras=[], local=new Map(), inherited=new Map();
+  for(const lora of prompt.loras??[]) {
+    if(local.has(lora.filename))errors.push('LoRA 重复：'+lora.filename);
+    local.set(lora.filename,lora);
   }
-  for (const [index,item] of pageLoraDefinitions(profile, prompt).entries()) {
-    const {enabled,...definition}=item;
-    errors.push(...validateLoraDefinition(definition,`${pageId}.loras[${index}]`));
-    const local = seen.has(definition.filename);
-    if(enabled!==false)loras.push({kind:local?'page':'style',owner:local?pageId:profile.id,filename:definition.filename,sha256:definition.sha256,weight:definition.weight,...(definition.trigger?{trigger:definition.trigger}:{})});
+  for(const source of inheritedSources(profile,characters,scenes)) {
+    const previous=inherited.get(source.lora.filename);
+    if(previous && !local.has(source.lora.filename) && prompt.lora_overrides?.[source.lora.filename]?.enabled!==false &&
+      (previous.lora.sha256!==source.lora.sha256 || previous.lora.weight!==source.lora.weight && prompt.lora_overrides?.[source.lora.filename]?.weight===undefined))errors.push(pageId+' 的继承 LoRA 配置冲突：'+source.lora.filename);
+    inherited.set(source.lora.filename,source);
+  }
+  for(const [index,item] of pageLoraDefinitions(profile,prompt,characters,scenes).entries()) {
+    const {enabled,...definition}=item; errors.push(...validateLoraDefinition(definition,pageId+'.loras['+index+']'));
+    const source=inherited.get(definition.filename);
+    if(enabled!==false)loras.push({...definition,kind:local.has(definition.filename)?'page':source?.kind??'page',owner:local.has(definition.filename)?pageId:source?.owner??pageId});
   }
   return {loras,errors};
 }
-
-// 迁移保留触发词原来的位置；项目与本页合并后的启用状态决定实际触发词。
-export function pageLoraTriggers(prompt, kind, owner, fallback = [], profile = null) {
-  if (!Array.isArray(prompt?.loras)) return fallback;
-  const active=[...new Set(pageLoraDefinitions(profile,prompt).filter(lora=>lora.enabled!==false).map(lora=>lora.trigger?.trim()).filter(Boolean))];
+// 触发词与实际启用的 LoRA 共用继承结果，并保留旧迁移页面的来源位置。
+export function pageLoraTriggers(prompt, kind, owner, fallback = [], profile = null, characters = [], scenes = []) {
+  const active=[...new Set(pageLoraDefinitions(profile,prompt,characters,scenes).filter(lora=>lora.enabled!==false).map(lora=>lora.trigger?.trim()).filter(Boolean))];
   const sources=prompt.trigger_sources;
-  if(!sources)return kind==='style'?active:[];
-  const mapped=new Set([...sources.style,...Object.values(sources.characters).flat(),...Object.values(sources.scenes).flat()]);
-  const original=kind==='style'?sources.style:sources[kind]?.[owner]??[];
-  return [...original.filter(trigger=>active.includes(trigger)),...(kind==='style'?active.filter(trigger=>!mapped.has(trigger)):[])];
+  const inherited=inheritedSources(profile,characters,scenes);
+  const roleTriggers=inherited.filter(value=>value.kind!=='style').map(value=>value.lora.trigger).filter(Boolean);
+  const legacy=[...Object.values(sources?.characters??{}).flat(),...Object.values(sources?.scenes??{}).flat()];
+  if(kind==='style')return active.filter(trigger=>!roleTriggers.includes(trigger)&&!legacy.includes(trigger));
+  const original=[...fallback,...(sources?.[kind]?.[owner]??[])];
+  return [...new Set(original.filter(trigger=>active.includes(trigger)))];
 }

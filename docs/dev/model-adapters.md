@@ -18,10 +18,12 @@ StoryCanvas 仍是独立的 Node + React 应用。当前内置 Anima Basic 与 Q
   角色/场景缺少 Anima 输入时，可在设定页明确创建；不从 Qwen 自由文本猜测分类词条。
 - Qwen `composition:"standalone"` 直接使用全文及本页附图，不追加全局、角色或场景文字。
   已有 Qwen 的 `settings` 组合方式继续保留；本轮不迁移 Qwen 项目。
-- 项目 LoRA 对使用对应 profile 的全部页面实时生效；本页 `loras` 数组只保存追加项和覆盖项。
-  按 filename 合并，同名项采用本页完整定义（包括权重、触发词与停用）；停用不加载该项。
-  新建页和首次切换模型不再复制项目 LoRA，已有本页条目保留为明确覆盖，不隐式叠加角色 LoRA。
-  工作台显示项目来源与本页调整，可恢复项目设置；恢复即移除本页覆盖，项目条目仍保留。
+- 项目 LoRA 对使用对应 profile 的全部页面实时生效；Anima 角色／场景的 `identity.lora`
+  由子设定继承，子设定 `loras` 可以追加或按 filename 替换。页面自动继承当前引用的有效 LoRA。
+  子设定和页面用 `lora_overrides:{"filename":{"weight":0.8,"enabled":false}}` 单独覆盖权重或开关，
+  未覆盖字段随上游更新；恢复继承即删除覆盖。页面 `loras` 保存本页新增项或明确的完整替换项。
+  同名继承项的文件身份或权重冲突会报错，需要明确处理；停用项及其触发词不进入生成输入。
+  工作台把角色／场景 LoRA 放在对应引用 Prompt 内，项目继承列表默认收起。
   Anima 触发词来自合并后启用的列表，不重写词条事实；迁移的 `trigger_sources` 保留旧触发词位置。
 - 候选作为参考图保存时复制到项目 materials，持久输入不引用可删除的 Outputs 文件。
 - Qwen 的 PE-T2I 优化仍通过 ComfyUI 运行；源指纹包含实际页面配置、画幅与参考图。

@@ -1,3 +1,4 @@
+import {settingLoras} from '../shared/lora-inheritance.mjs';
 import {
   CHARACTER_PROFILE_SCHEMA_ID, CHARACTER_VISUAL_SCHEMA_ID, CHARACTER_PROMPT_SCHEMA_ID,
   validateCharacterProfileDocument, validateCharacterVisualDocument, validateCharacterPromptDocument,
@@ -38,6 +39,6 @@ export function resolveSceneConfiguration(scene, variantId, modelId = 'qwen') {
   const prompt = modelPrompt(scene?.prompt, modelId);
   const variant = prompt?.variants?.[variantId];
   if (!variant || !scene.visual?.variants?.some(item => item.id === variantId)) throw new TypeError(`场景子设定不存在：${scene?.id} · ${variantId}`);
-  return { ...(modelId === 'anima' ? { ...structuredClone(variant), identity: structuredClone(prompt.identity), loras: [] } : {}), id: scene.id, name: scene.name, prompt_name: prompt.prompt_name, configuration_id: variantId,
+  return { ...(modelId === 'anima' ? { ...structuredClone(variant), identity: structuredClone(prompt.identity), loras: settingLoras(prompt.identity, variant) } : {}), id: scene.id, name: scene.name, prompt_name: prompt.prompt_name, configuration_id: variantId,
     configuration_path: `variants.${variantId}`, text: variant.text ?? '', reference_images: structuredClone(variant.reference_images ?? []) };
 }

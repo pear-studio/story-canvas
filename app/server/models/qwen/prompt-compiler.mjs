@@ -1,4 +1,4 @@
-import { resolveParticipantLoras, explicitPageLoras } from "../../lora-config.mjs";
+import { explicitPageLoras } from "../../lora-config.mjs";
 import { validatePageKey } from "../../page-key.mjs";
 import { pagePromptAudit } from "../../prompt-audit.mjs";
 import { characterSource, sceneSource } from "../../prompt-contract.mjs";
@@ -108,7 +108,7 @@ export function compileCurrentPagePrompt({
     paragraphs.push(standalone ? pageText : `本页描述：\n${pageText}`);
   }
 
-  const resolvedLoras = explicitPageLoras(pagePrompt,pageId,profile) ?? resolveParticipantLoras(profile, standalone?[]:participantIds, standalone?[]:characters, pageId, standalone?[]:scenes);
+  const resolvedLoras = explicitPageLoras(pagePrompt,pageId,profile,standalone?[]:characters.filter(c=>participantIds.includes(c.id)),standalone?[]:scenes);
   errors.push(...resolvedLoras.errors);
 
   const positive = paragraphs.join("\n\n");

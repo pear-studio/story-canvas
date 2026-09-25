@@ -1,3 +1,4 @@
+import {settingLoras} from '../shared/lora-inheritance.mjs';
 import { readReferenceImage } from "./reference-image.mjs";
 import { readPageIndex } from './pages-store.mjs';
 import { readPageRenderSettings, pageProjectSettings } from './page-render-settings.mjs';
@@ -79,13 +80,14 @@ function normalizeInspectionPromptDraft(value, modelId = 'qwen') {
     text: typeof source.text === "string" ? source.text : "",
     ...(source.composition?{composition:source.composition}:{}),
     ...(source.loras?{loras:structuredClone(source.loras)}:{}),
+    ...(source.lora_overrides?{lora_overrides:structuredClone(source.lora_overrides)}:{}),
     ...(source.scene_id ? { scene_id: source.scene_id, scene_variant_id: source.scene_variant_id } : {}),
     ...(isRecord(source.text_overrides) ? { text_overrides: structuredClone(source.text_overrides) } : {}),
     ...(isRecord(source.reference_overrides) ? { reference_overrides: structuredClone(source.reference_overrides) } : {}),
     ...(Array.isArray(source.reference_images) ? { reference_images: source.reference_images.filter(isRecord).map((entry) => structuredClone(entry)) } : {}),
   };
   const submitted = { $schema: STORY_PAGE_PROMPT_SCHEMA_ID, ...(isRecord(value) ? structuredClone(value) : {}) };
-  return { prompt, errors: source.loras ? validateStoryPagePromptDocument({$schema:STORY_PAGE_PROMPT_SCHEMA_ID,models:{qwen:source}}) : validateStoryPagePromptDocument(submitted) };
+  return { prompt, errors: source.loras || source.lora_overrides ? validateStoryPagePromptDocument({$schema:STORY_PAGE_PROMPT_SCHEMA_ID,models:{qwen:source}}) : validateStoryPagePromptDocument(submitted) };
 }
 
 async function readJsonFact(projectDirectory, relativePath, { optional = false } = {}) {
@@ -152,7 +154,7 @@ async function readCharacter(projectDirectory, characterIndex, reference, modelI
     configuration_path: `variants.${reference.variant_id}`,
     text: configuration.text ?? "",
     reference_images: structuredClone(configuration.reference_images ?? []),
-    ...(modelId === 'anima' ? { ...structuredClone(configuration), identity: structuredClone(promptDocument.identity), loras: [] } : {}),
+    ...(modelId === 'anima' ? { ...structuredClone(configuration), identity: structuredClone(promptDocument.identity), loras: settingLoras(promptDocument.identity, configuration) } : {}),
   };
   return {
     character,

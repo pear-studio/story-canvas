@@ -22,7 +22,7 @@ description: 为 StoryCanvas 编写简洁的角色与页面 Prompt 原型，生�
 
 完整读取命令的 draft 可交给现有对应 save。只通过现有 read/save 修改项目 Prompt，不直接写 JSON。页面 text_overrides 的 key 必须匹配当前引用：编辑引用文字即成为本页整段 override，恢复继承即删除 key；override 不随上游更新，切换子设定或移除引用时删除对应 key。
 
-角色与场景 prompt 为 `{ prompt_name, variants }`，每个子设定一段自由文本和有序参考图；prompt_name 创建时复制显示名、之后独立，页面动作按实际 prompt_name 编写。没有 identity 层、逐词继承或隐藏继承链，以当前实现和参考契约为准，不发明覆盖字段。剧情事实不再包含 LoRA；生成配置风格 LoRA 与训练的任何变更先取得用户明确同意。共享 render profile 不属于普通页面制作。
+先确认页面模型：Qwen 使用 prompt_name、子设定自由文本与有序参考图；Anima 使用分类词条以及基础→子设定→页面的 Prompt／LoRA 继承。字段与覆盖规则见模型适配器文档及工具详细帮助，不发明字段。LoRA 新增、删除、替换与训练变更须先经用户同意；共享 render profile 不属于普通页面制作。
 
 读取保存后的 audit；退出码成功不代表审计无误。生成前用 preview page 检查最终 Prompt、来源与冲突。busy 有界退避，目标或依赖指纹冲突重新读取判断，不覆盖他人改动。
 

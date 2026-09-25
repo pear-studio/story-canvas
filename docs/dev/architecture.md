@@ -9,7 +9,7 @@ StoryCanvas 把项目创作事实、生成配置、本机执行任务和可重�
 页面、角色和场景的 Prompt 采用 `models` 容器，每个模型适配器负责内部契约、编译和编辑器。
 Anima 保留分类词条、逐词继承、负向与机位；Qwen 保留整段文字和 ComfyUI PE-T2I 优化。
 首次从 Anima 切换到 Qwen，一次带入有效正向全文；不会重复追加角色、场景文字，之后独立编辑。
-项目 LoRA 按页面所用配置实时生效，本页 LoRA 用于追加及同名覆盖；新页不复制项目 LoRA。
+项目 LoRA 按页面所用配置实时生效；Anima 角色／场景 LoRA 随当前引用继承。本页可追加、覆盖权重或停用，恢复即删除覆盖；新页不复制上游 LoRA。
 候选、队列、保存、媒体和页面工作区共用。总览按各页模型展示编辑器，并逐页使用实际生成配置。
 实现入口与接入方式见[模型适配器](model-adapters.md)。已有 Qwen 项目沿用原读取路径，本轮不迁移，
 普通读取不改写事实；未登记的旧 Anima 项目不自动恢复。
@@ -246,7 +246,7 @@ Agent 在目标或依赖指纹冲突后重新读取并判断，不自动覆盖�
 `story/outline.json` 保存 synopsis、chapter 和 sequence；`pages/index.json` 保存所有页面的稳定 ID、
 归属与同组顺序。页面 content 保存标题、画面内容、明确角色引用及文案，Prompt 独立保存。
 角色与场景分别在 characters/、scenes/ 保存 index 和 profile、visual、Prompt，两者共用同一设定契约：
-`prompt_name` 加各子设定一段自由文本与有序参考图，没有身份层、LoRA 或逐词继承。
+Qwen 使用 `prompt_name` 加各子设定一段自由文本与有序参考图；Anima 使用 identity、子设定词条与 LoRA 继承。具体契约见[模型适配器](model-adapters.md)。
 页面归属与生成引用分离：新建时默认填入所属设定，之后允许移除；移动归属不修改内容。
 三种归属共用页面编辑、生成、候选、嵌字及单页成品；系列导出只包含剧情目录。
 `lettering/dialogue-layouts.json` 只保存对白稳定 ID 的归一化位置与尺寸，不复制文本或单条样式。
@@ -325,7 +325,7 @@ PageKey 统一为 `{ page_id }`，编码为 `v3/<page-id>`。`app/server/page-ke
 资源说明复制进项目，而是在当前 profile 的 sparse override 中新增、移除完整 `style_lora` 语义
 target；单独修改既有 LoRA 权重仍可使用窄 `weight` target。资源记录提供选择用预览或示例图、
 来源链接与版本、底座身份、触发词、标签、推荐权重和采样建议；有效配置只保留生成需要的文件名、
-SHA-256、权重与触发词，继续经过统一诊断和任务冻结。剧情事实不再包含角色／场景 LoRA；
+SHA-256、权重与触发词，继续经过统一诊断和任务冻结。Anima 角色／场景 Prompt 保存所属 LoRA 并由页面引用继承；
 当前 qwen-image-2-1 profile 未声明任何风格 LoRA。
 
 每份当前工作流由同 ID 的 API JSON 与 manifest 成对组成。manifest 已经是结构家族、operation、
@@ -370,7 +370,7 @@ route/registry 与 execution unit 由 `render-task-contract.mjs` 的主要 Inter
 （单图用“参考图：……”），上限十张，负向恒空。所有输出保留 sections 来源追踪。完整契约
 见 [Prompt 编写与审计](../reference/prompt.md)。
 
-风格 LoRA 属于生成配置事实，剧情事实不再包含角色／场景 LoRA。页面渲染统一按
+风格 LoRA 属于生成配置事实，Anima 角色／场景 LoRA 属于对应 Prompt 事实。页面渲染统一按
 content 的 `characters` 与 Prompt 的场景子设定引用解析出场对象。生成任务冻结配置、最终文本、
 解析后的 recipe、工作流模板、有序参考图及每页 seed，恢复时优先使用快照，不受后来配置修改影响。
 

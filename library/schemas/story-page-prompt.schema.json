@@ -318,6 +318,9 @@
             }
           },
           "additionalProperties": false
+        },
+        "lora_overrides": {
+          "$ref": "#/$defs/loraOverrides"
         }
       },
       "additionalProperties": false,
@@ -453,6 +456,9 @@
             },
             "additionalProperties": false
           }
+        },
+        "lora_overrides": {
+          "$ref": "#/$defs/loraOverrides"
         }
       },
       "additionalProperties": false,
@@ -463,6 +469,23 @@
         "scene_variant_id": [
           "scene_id"
         ]
+      }
+    },
+    "loraOverrides": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "weight": {
+            "type": "number",
+            "minimum": -2,
+            "maximum": 2
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
       }
     }
   }

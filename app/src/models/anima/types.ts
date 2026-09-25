@@ -21,6 +21,7 @@ export type CharacterPromptSetting = {
   reference_images?: ReferenceEntry[];
   prompt: PagePrompt;
   loras: CharacterLora[];
+  lora_overrides?: import("../../../shared/lora-inheritance.mjs").LoraOverrides;
   /** 本造型排除的 identity.prompt 文本键（tag/description 文本）；必有，可为空数组。 */
   identity_disabled: string[];
   identity_overrides?: InheritedAdjustments;

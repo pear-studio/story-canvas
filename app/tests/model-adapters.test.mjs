@@ -18,9 +18,22 @@ import {compileAndPersistWorkbenchRenderTask} from '../server/page-render.mjs';
 import {validateFrozenRenderTask} from '../server/render-task-contract.mjs';
 import {publishCandidateResult} from '../server/candidate-storage.mjs';
 import sharp from 'sharp';
+import Ajv from 'ajv/dist/2020.js';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const schema=name=>`https://storyvisualizer.local/schemas/${name}.schema.json`;
+test('公开 JSON Schema 与 LoRA 权重/开关覆盖契约一致',async()=>{
+  for(const name of ['character-prompt','scene-prompt','story-page-prompt']) {
+    const definition=JSON.parse(await readFile(path.join(root,'library/schemas',name+'.schema.json'),'utf8'));
+    const ajv=new Ajv({strict:false});ajv.addSchema(definition);
+    const validate=ajv.compile({$ref:definition.$id+'#/$defs/loraOverrides'});
+    assert.equal(validate({'role.safetensors':{weight:.7,enabled:false}}),true);
+    assert.equal(validate({'role.safetensors':{weight:3}}),false);
+    assert.equal(validate({'role.safetensors':{sha256:'not-an-override'}}),false);
+    const targets=name==='story-page-prompt'?[definition.$defs.anima.properties,definition.$defs.qwen.properties]:[definition.$defs.anima.$defs.configuration.properties];
+    for(const properties of targets)assert.equal(properties.lora_overrides.$ref,'#/$defs/loraOverrides');
+  }
+});
 
 for (const modelId of ['anima', 'qwen']) test(`${modelId} 项目 LoRA 实时生效，本页可覆盖、停用、恢复且任务冻结不随项目变化`, async t => {
   const f = await fixture(t, modelId);
@@ -233,12 +246,35 @@ test('旧 Anima 一次迁移逐页保留 Prompt、LoRA 顺序、触发词并备�
   const plan=await planModelMigration(f.root,'demo');assert.equal(plan.pages[0].equivalent,true);assert.equal(plan.pages[0].loras.length,2);
   const result=await commitModelMigration(f.root,'demo',plan.fingerprint);
   assert.equal(JSON.parse(await readFile(path.join(result.backup_directory,'project.json'),'utf8')).format,undefined);
-  const migrated=await f.get(`pages/${id}.prompt.json`);assert.deepEqual(migrated.models.anima.trigger_sources.characters.person,['my_character','my_outfit']);
-  assert.equal(migrated.models.anima.loras[0].weight,.7);assert.equal((await f.get('project.json')).format,'story-models-v1');
+  const migrated=await f.get(`pages/${id}.prompt.json`);assert.deepEqual(migrated.models.anima.loras,[]);
+  assert.equal((await f.get('characters/person.prompt.json')).models.anima.identity.lora.trigger,'my_character');
+  assert.equal((await f.get('characters/person.prompt.json')).models.anima.identity.lora.weight,.7);assert.equal((await f.get('project.json')).format,'story-models-v1');
   assert.equal((await planModelMigration(f.root,'demo')).current,true);
   const actual=await compilePageRenderInspectionContext({repositoryRoot:f.root,projectDirectory:f.directory,pageKey:{page_id:id}});
   assert.deepEqual(actual.blockers,[]);
   assert.equal(hash(actual.compiled_page.positive_prompt),plan.pages[0].positive_sha256);
   assert.equal(hash(actual.compiled_page.negative_prompt),plan.pages[0].negative_sha256);
   assert.deepEqual(actual.compiled_page.loras.map(({filename,sha256,weight})=>({filename,sha256,weight})),plan.pages[0].loras);
+});
+
+test('角色 LoRA 随引用与子设定实时继承，页面仅保存覆盖，触发词跟随启用状态',async t=>{
+  const f=await fixture(t),{page_id:id}=await f.create();
+  const lora={filename:'character.safetensors',sha256:'c'.repeat(64),weight:.7,trigger:'character_trigger'};
+  const outfit={filename:'outfit.safetensors',sha256:'d'.repeat(64),weight:.5,trigger:'outfit_trigger'};
+  const character={identity:{prompt:modelAdapter('anima').emptyPrompt(),lora},variants:{default:{prompt:modelAdapter('anima').emptyPrompt(),loras:[outfit],identity_disabled:[],lora_overrides:{'character.safetensors':{weight:.8}}}}};
+  character.identity.prompt.person=[{tag:'blue_eyes'}];
+  await f.put('characters/index.json',{$schema:schema('character-index'),characters:['person']});
+  await f.put('characters/person.prompt.json',makeModelPromptDocument(schema('character-prompt'),'anima',character));
+  await f.put('characters/person.profile.json',{$schema:schema('character-profile'),name:'角色',description:'测试'});
+  await f.put('characters/person.visual.json',{$schema:schema('character-visual'),variants:[{id:'default',name:'默认'}]});
+  const content=await f.get(`pages/${id}.content.json`);content.characters=[{character_id:'person',variant_id:'default'}];await f.put(`pages/${id}.content.json`,content);
+  const document=await f.get(`pages/${id}.prompt.json`);document.models.anima.loras=[];await f.put(`pages/${id}.prompt.json`,document);
+  const inspect=async()=> (await compilePageRenderInspectionContext({repositoryRoot:f.root,projectDirectory:f.directory,pageKey:{page_id:id}})).compiled_page;
+  let compiled=await inspect();assert.equal(compiled.loras.find(v=>v.filename===lora.filename).weight,.8);assert.match(compiled.positive_prompt,/character_trigger/);assert.match(compiled.positive_prompt,/outfit_trigger/);
+  document.models.anima.lora_overrides={[lora.filename]:{weight:.3},[outfit.filename]:{enabled:false}};await f.put(`pages/${id}.prompt.json`,document);
+  character.identity.lora={...lora,sha256:'e'.repeat(64),weight:1.2,trigger:'updated_trigger'};await f.put('characters/person.prompt.json',makeModelPromptDocument(schema('character-prompt'),'anima',character));
+  compiled=await inspect();assert.equal(compiled.loras.find(v=>v.filename===lora.filename).weight,.3);assert.equal(compiled.loras.find(v=>v.filename===lora.filename).sha256,'e'.repeat(64));assert.match(compiled.positive_prompt,/updated_trigger/);assert.doesNotMatch(compiled.positive_prompt,/outfit_trigger|character_trigger/);assert.ok(!compiled.loras.some(v=>v.filename===outfit.filename));
+  delete document.models.anima.lora_overrides;await f.put(`pages/${id}.prompt.json`,document);assert.equal((await inspect()).loras.find(v=>v.filename===lora.filename).weight,.8);
+  content.characters=[];await f.put(`pages/${id}.content.json`,content);compiled=await inspect();assert.ok(!compiled.loras.some(v=>v.filename===lora.filename||v.filename===outfit.filename));assert.doesNotMatch(compiled.positive_prompt,/updated_trigger|outfit_trigger/);
+  document.models.anima.lora_overrides={bad:{weight:3}};assert.ok(validateModelPromptDocument(document,'page').some(message=>message.includes('weight')));
 });

@@ -1,3 +1,4 @@
+import {validateLoraOverrides} from '../../../shared/lora-inheritance.mjs';
 import { validateReferenceEntries } from "../../../shared/reference-images.mjs";
 import { validateCameraSettings } from "../../../shared/camera-prompt.mjs";
 import { adjustmentKey, validateAdjustments, promptWord } from '../../../shared/prompt-inheritance.mjs';
@@ -95,7 +96,7 @@ export function validateCharacterPromptDocument(promptDocument) {
     for (const [variantId, configuration] of Object.entries(promptDocument.variants)) {
       const valuePath = `character prompt.variants.${variantId}`;
       if (!isRecord(configuration)) { errors.push(`${valuePath} 必须是对象`); continue; }
-      checkExactKeys(configuration, ["prompt", "loras", "identity_disabled", "identity_overrides", "reference_images"], valuePath, errors);
+      checkExactKeys(configuration, ["prompt", "loras", "lora_overrides", "identity_disabled", "identity_overrides", "reference_images"], valuePath, errors);
       errors.push(...validateReferenceEntries(configuration.reference_images));
       validatePrompt(configuration.prompt, `${valuePath}.prompt`, errors);
       if (!Array.isArray(configuration.loras)) errors.push(`${valuePath}.loras 必须是数组`);
@@ -103,6 +104,7 @@ export function validateCharacterPromptDocument(promptDocument) {
         if (!isRecord(lora)) errors.push(`${valuePath}.loras[${index}] 必须是对象`);
         else validateLora(lora, `${valuePath}.loras[${index}]`, errors);
       });
+      errors.push(...validateLoraOverrides(configuration.lora_overrides, `${valuePath}.lora_overrides`));
       errors.push(...validateAdjustments(configuration.identity_overrides, `${valuePath}.identity_overrides`));
       const availableWords = new Set(Object.entries(promptDocument.identity?.prompt ?? {}).flatMap(([category, fragments]) => Array.isArray(fragments) ? fragments.map(fragment => adjustmentKey(fragment, category)) : []));
       for (const key of Object.keys(configuration.identity_overrides ?? {})) if (!availableWords.has(key)) errors.push(valuePath + ' 的继承词不存在：' + key);

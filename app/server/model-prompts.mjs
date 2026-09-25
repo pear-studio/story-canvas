@@ -1,3 +1,4 @@
+import {validateLoraOverrides} from '../shared/lora-inheritance.mjs';
 import { modelAdapter } from './model-adapters.mjs';
 import { validateLoraDefinition } from './lora-config.mjs';
 
@@ -49,7 +50,8 @@ export function validateModelPromptDocument(document, kind) {
     let adapter;
     try { adapter=modelAdapter(id); } catch(error) { errors.push(error.message); continue; }
     if (!isRecord(value)) { errors.push(`models.${id} 必须是对象`); continue; }
-    const { loras, trigger_sources, ...prompt }=value;
+    const { loras, lora_overrides, trigger_sources, ...prompt }=value;
+    errors.push(...validateLoraOverrides(lora_overrides, `models.${id}.lora_overrides`));
     errors.push(...adapter[kind==='page'?'validatePagePrompt':'validateSettingPrompt']({$schema:schema,...prompt}).map(message=>`models.${id}: ${message}`));
     if (loras!==undefined) {
       if (!Array.isArray(loras)) errors.push(`models.${id}.loras 必须是数组`);

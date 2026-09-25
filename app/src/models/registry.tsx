@@ -1,3 +1,4 @@
+import {settingLoras} from '../../shared/lora-inheritance.mjs';
 import {useState} from 'react';
 import {AnimaPageEditor} from './anima/PageEditor';
 import {QwenPageEditor} from './qwen/PageEditor';
@@ -34,5 +35,6 @@ export const modelChoices=[{id:'anima',label:'Anima Basic',profileId:'anima-base
 export function ModelPromptEditor(props:ModelPageEditorProps) {
   const adapter=models[props.page.model_id??'qwen'];
   const projectSetting=(value:WorkbenchCharacter)=>({...value,prompt:value.model_prompts?.models?.[props.page.model_id??'qwen']??value.prompt}) as WorkbenchCharacter;
-  return <><PageLoraEditor projectId={props.projectId} page={props.page} prompt={props.prompt} onChange={props.onChange} disabled={props.disabled}/><adapter.PageEditor {...props} characters={props.characters.map(projectSetting)} scenes={props.scenes.map(projectSetting)}/></>;
+  const inheritedNames=props.page.model_id==='anima'?[...props.references.flatMap(ref=>{const input=props.characters.find(c=>c.id===ref.character_id)?.model_prompts?.models?.anima;return input?settingLoras(input.identity,input.variants[ref.variant_id]).map(lora=>lora.filename):[];}),...props.scenes.filter(c=>c.id===props.prompt.scene_id).flatMap(c=>{const input=c.model_prompts?.models?.anima;return input?settingLoras(input.identity,input.variants[props.prompt.scene_variant_id??'']).map(lora=>lora.filename):[];})]:[];
+  return <><PageLoraEditor settingFilenames={inheritedNames} projectId={props.projectId} page={props.page} prompt={props.prompt} onChange={props.onChange} disabled={props.disabled}/><adapter.PageEditor {...props} characters={props.characters.map(projectSetting)} scenes={props.scenes.map(projectSetting)}/></>;
 }

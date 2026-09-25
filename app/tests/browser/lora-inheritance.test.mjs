@@ -1,0 +1,28 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import {fileURLToPath} from 'node:url';
+import {mkdir} from 'node:fs/promises';
+import {createServer} from 'vite';
+import {chromium} from 'playwright';
+test('项目 LoRA 默认收起，角色 LoRA 归入引用 Prompt，覆盖与恢复不复制上游',async t=>{
+ const server=await createServer({cacheDir:'.temp/vite-lora-inheritance',root:fileURLToPath(new URL('../../',import.meta.url)),server:{host:'127.0.0.1',port:0},logLevel:'error'});await server.listen();t.after(()=>server.close());
+ const browser=await chromium.launch({headless:true,channel:process.platform==='win32'?'msedge':undefined});t.after(()=>browser.close());const page=await browser.newPage({viewport:{width:1200,height:900}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.route('**/api/lora-resources',route=>route.fulfill({json:{resources:[],raw:[],errors:[]}}));
+ await page.route('**/api/projects/demo/render-profile',route=>route.fulfill({json:{current_profile_id:'anima-base-v1',render_profiles:[{id:'anima-base-v1',architecture_family:'anima'}]}}));
+ await page.route('**/api/prompt-dictionary**',route=>route.fulfill({json:{available:true,matches:[],suggestions:[]}}));
+ await page.goto('http://127.0.0.1:'+server.httpServer.address().port+'/tests/browser/lora-inheritance.html');
+ const project=page.getByRole('region',{name:'本页 LoRA',exact:true});await project.locator('summary').waitFor();assert.equal(await project.locator('details').evaluate(e=>e.open),false);
+ assert.equal(await project.getByText('character.safetensors',{exact:true}).count(),0);
+ await page.getByTitle('展开角色引用').click();
+ const role=page.locator('[data-reference-source="character:alice:default"]').getByRole('region',{name:'继承 LoRA'});
+ assert.equal(await role.getByRole('spinbutton').inputValue(),'0.7');
+ await page.getByRole('button',{name:'修改上游权重'}).click();assert.equal(await role.getByRole('spinbutton').inputValue(),'1.1');
+ await role.getByRole('spinbutton').fill('0.4');let draft=JSON.parse(await page.locator('#draft').textContent());assert.deepEqual(draft.loras,[]);assert.deepEqual(draft.lora_overrides,{'character.safetensors':{weight:.4}});
+ await role.getByRole('checkbox').uncheck();draft=JSON.parse(await page.locator('#draft').textContent());assert.equal(draft.lora_overrides['character.safetensors'].enabled,false);
+ await role.getByRole('button',{name:'恢复继承'}).click();assert.equal(await role.getByRole('spinbutton').inputValue(),'1.1');assert.deepEqual(JSON.parse(await page.locator('#draft').textContent()).lora_overrides,{});
+ await page.getByTitle('展开场景引用').click();
+ const scene=page.locator('[data-reference-source="scene:room:default"]').getByRole('region',{name:'继承 LoRA'});
+ assert.equal(await scene.getByRole('spinbutton').inputValue(),'1.1');await scene.getByRole('checkbox').uncheck();
+ assert.equal(JSON.parse(await page.locator('#draft').textContent()).lora_overrides['room.safetensors'].enabled,false);
+ await mkdir('C:/Workspace/story-canvas/Saved/Tests/lora-inheritance',{recursive:true});await page.screenshot({path:'C:/Workspace/story-canvas/Saved/Tests/lora-inheritance/page.png',fullPage:true});assert.deepEqual(errors,[]);
+});

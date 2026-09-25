@@ -19,6 +19,7 @@ export type Scene = WorkbenchCharacter;
 export type PageOwner = { page_id: string; owner_kind: 'story' | 'character' | 'scene'; sequence_id?: string; character_id?: string; scene_id?: string; variant_id?: string };
 export type PageReferenceEntry = ReferenceEntry & { purpose?: string };
 export type PagePrompt = {
+  lora_overrides?: import("../shared/lora-inheritance.mjs").LoraOverrides;
   loras?: Array<{filename:string;sha256:string;weight:number;trigger?:string;enabled?:boolean}>;
   trigger_sources?: {style:string[];characters:Record<string,string[]>;scenes:Record<string,string[]>};
   text?: string;

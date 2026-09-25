@@ -1,3 +1,5 @@
+import {LoraListEditor} from '../LoraListEditor';
+import type {LoraOverrides} from '../../../shared/lora-inheritance.mjs';
 import { type ReferenceEntry } from "../../ReferenceLibrary";
 import { PromptPopulationEditor } from "../../PromptPopulationEditor";
 import { useFactDraft } from '../../use-fact-draft';
@@ -15,7 +17,7 @@ const characterVariantIdPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const sameJson = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
 
 type EditableCharacterLora = { filename: string; sha256: string; weight: string; trigger: string };
-type EditableCharacterSetting = { reference_images?: ReferenceEntry[]; prompt: Record<string, DisplayPromptFragment[]>; loras: EditableCharacterLora[]; identityDisabled: string[]; identityOverrides: InheritedAdjustments };
+type EditableCharacterSetting = { reference_images?: ReferenceEntry[]; prompt: Record<string, DisplayPromptFragment[]>; loras: EditableCharacterLora[]; loraOverrides: LoraOverrides; identityDisabled: string[]; identityOverrides: InheritedAdjustments };
 type EditableCharacterIdentity = { prompt: Record<string, DisplayPromptFragment[]>; lora: EditableCharacterLora | null };
 type EditableCharacterPrompt = { identity: EditableCharacterIdentity; variants: Record<string, EditableCharacterSetting> };
 
@@ -41,6 +43,7 @@ function editableCharacterSetting(setting?: CharacterPromptSetting): EditableCha
     reference_images: setting?.reference_images,
     prompt: setting ? displayPromptDraft(setting.prompt) : emptyDisplayPrompt(),
     loras: (setting?.loras ?? []).map(editableLora),
+    loraOverrides: setting?.lora_overrides ?? {},
     identityDisabled: [...(setting?.identity_disabled ?? [])],
     identityOverrides: structuredClone(setting?.identity_overrides ?? {}),
   };
@@ -61,6 +64,7 @@ function persistedCharacterSetting(setting: EditableCharacterSetting): Character
     ...(setting.reference_images ? { reference_images: setting.reference_images } : {}),
     prompt: persistPromptDraft(setting.prompt),
     loras: setting.loras.map(persistedLora),
+    lora_overrides: setting.loraOverrides,
     identity_disabled: [...setting.identityDisabled],
     ...(Object.keys(setting.identityOverrides).length ? { identity_overrides: setting.identityOverrides } : {}),
   };
@@ -200,6 +204,7 @@ export function AnimaSettingView({ kind = 'character', projectId, character, ini
           <section className="resource-form--wide character-fact-section character-generation-section">
             <SectionHeader title="基础设定" description="所有子设定共享的 Prompt" actions={<button type="button" aria-label="保存基础设定" className="button button--quiet character-section-save" disabled={busy || savingSection !== null || !promptDirty} onClick={() => void savePrompt()}>{savingSection === "prompt" ? "保存中…" : "保存"}</button>} />
             {kind === "character" && <PromptPopulationEditor fragments={promptDraft.identity.prompt.subject} disabled={busy || savingSection !== null} onChange={subject => updateIdentity(identity => ({ ...identity, prompt: { ...identity.prompt, subject } }))} />}
+          <LoraListEditor projectId={projectId} profileId="anima-base-v1" title="基础 LoRA" single value={promptDraft.identity.lora?[persistedLora(promptDraft.identity.lora)]:[]} disabled={busy||savingSection!==null} onChange={value=>updateIdentity(identity=>({...identity,lora:value[0]?editableLora(value[0]):null}))}/>
           <PromptFragmentEditor categories={categories.map((category) => ({ id: category, label: promptLabels[category] }))} scope="character" fragments={promptDraft.identity.prompt} createFragment={createPromptDraftFragment} onChange={(prompt) => updateIdentity((identity) => ({ ...identity, prompt }))} historyScopeKey={`${character.id}:identity:${character.prompt_sha256}`} />
 
           </section>
@@ -208,6 +213,7 @@ export function AnimaSettingView({ kind = 'character', projectId, character, ini
         {selectedVariant && <section className="resource-form--wide character-fact-section"><SectionHeader title="子设定" description="名称与稳定 ID" actions={<button type="button" aria-label="保存子设定" className="button button--quiet character-section-save" disabled={busy || savingSection !== null || (!visualDirty && !variantIdDirty) || !selectedVariant.name.trim() || (variantIdDirty && (!variantIdValid || variantIdConflict))} onClick={() => void saveVisual()}>{savingSection === "visual" ? "保存中…" : "保存"}</button>} /><div className="character-fact-fields"><label className="resource-form--wide"><span>子设定 ID</span><input className={variantIdDirty && (!variantIdValid || variantIdConflict) ? "is-missing mono-input" : "mono-input"} value={variantIdDraft} onChange={(event) => setVariantIdDraft(event.target.value)} />{variantIdDirty && (!variantIdValid || variantIdConflict) && <small className="character-color-hint">ID 由小写字母、数字与连字符组成，且不能与现有子设定重复。</small>}</label></div></section>}
         {!hasSelectedSetting ? <section className="resource-form--wide character-fact-section character-generation-section"><SectionHeader title="生成配置" description="尚未建立" /><div className="character-generation-empty character-generation-empty--action"><button type="button" className="button button--quiet" onClick={() => updateSelectedSetting(() => editableCharacterSetting())}>建立 Prompt</button></div></section> : <section className="resource-form--wide character-fact-section character-generation-section">
           <SectionHeader title="生成配置" description="子设定 Prompt" actions={<button type="button" aria-label="保存 Prompt" className="button button--quiet character-section-save" disabled={busy || savingSection !== null || !promptDirty} onClick={() => void savePrompt()}>{savingSection === "prompt" ? "保存中…" : "保存"}</button>} />
+          <LoraListEditor projectId={projectId} profileId="anima-base-v1" title="子设定 LoRA" inherited={promptDraft.identity.lora?[persistedLora(promptDraft.identity.lora)]:[]} value={selectedSetting.loras.map(persistedLora)} overrides={selectedSetting.loraOverrides} disabled={busy||savingSection!==null} onChange={(value,loraOverrides)=>updateSelectedSetting(setting=>({...setting,loras:value.map(editableLora),loraOverrides}))}/>
           <InheritedPromptEditor title="基础 Prompt" source={character.id + ':' + settingId + ':' + character.prompt_sha256} prompt={persistPromptDraft(promptDraft.identity.prompt)} adjustments={selectedSetting.identityOverrides} disabled={selectedSetting.identityDisabled} defaultOpen onChange={value => updateSelectedSetting(setting => ({ ...setting, identityDisabled: [], identityOverrides: value }))} />
           {kind === "character" && <PromptPopulationEditor fragments={selectedSetting.prompt.subject} disabled={busy || savingSection !== null} onChange={subject => updateSelectedSetting(setting => ({ ...setting, prompt: { ...setting.prompt, subject } }))} />}
           <PromptFragmentEditor categories={categories.map((category) => ({ id: category, label: promptLabels[category] }))} scope="character" fragments={selectedSetting.prompt} createFragment={createPromptDraftFragment} onChange={(prompt) => updateSelectedSetting((setting) => ({ ...setting, prompt }))} historyScopeKey={`${character.id}:${settingId}:${character.prompt_sha256}`} />
