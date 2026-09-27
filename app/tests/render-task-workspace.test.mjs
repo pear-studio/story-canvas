@@ -119,6 +119,13 @@ test("列表只发摘要，独立详情接口返回单任务条目和共享批�
   assert.equal(responseStatus, 200);
   assert.deepEqual(responseBody.task.items.map(item => [item.id, item.seed, item.status]), [["item-001", 7, "available"], ["item-002", 8, "available"]]);
   assert.deepEqual(responseBody.task.execution_units, [{ id: "unit-001", item_ids: ["item-001", "item-002"], submission }]);
+  await writeFile(path.join(directory, "unit-001.json"), 'not-json');
+  url.searchParams.set('view','summary');
+  await handleRuntimeRequest({request:{method:'GET'},requestUrl:url,decodedPath:url.pathname,projectRoot:root,
+    response:{writeHead(status){assert.equal(status,200);},end(body){responseBody=JSON.parse(body);}}});
+  assert.equal(responseBody.task.status,'completed');
+  assert.equal(responseBody.task.snapshot,undefined);assert.equal(responseBody.task.execution_units,undefined);
+  await assert.rejects(readWorkspaceTaskDetail(root,'demo',id));
   await assert.rejects(readWorkspaceTaskDetail(root, "demo", "render-20260828T010203Z-ffffffff"), { status: 404 });
 });
 

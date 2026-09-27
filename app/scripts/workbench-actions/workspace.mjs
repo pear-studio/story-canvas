@@ -3,6 +3,7 @@ import { schema, string, object, pagination, paginate, invalid } from './contrac
 import { project } from './navigation.mjs';
 import { putProject } from './project-settings.mjs';
 import { jsonArtifact } from './http-action.mjs';
+import { waitForTasks } from './task-wait.mjs';
 const get = async path => (await requestWorkbench(path)).value;
 const pick=(value,keys)=>Object.fromEntries(keys.filter(key=>value[key]!==undefined).map(key=>[key,value[key]]));
 const taskIdentity={...project,task_id:string('任务 ID'),purpose:{...string('默认 candidate；全局 comparison 的 project_id 使用 _'),enum:['candidate','comparison','finished']}};
@@ -90,11 +91,18 @@ export const workspaceActions = {
     summary:'查看单个任务状态、进度和失败摘要',parameters:schema(taskIdentity,['project_id','task_id']),
     details:'所有单任务操作均携带 project_id 和 task_id；全局 comparison 的 project_id 使用 _。purpose 默认 candidate。完整冻结输入与执行信息用 task.details，结果图片用 task.results。最多列5项失败，失败总数见 item_counts。',
     example:{project_id:'demo',task_id:'render-example'},
-    execute:async args=>({task:taskSummary((await get(taskPath(args))).task)}),
+    execute:async args=>({task:taskSummary((await get(taskPath(args)+'&view=summary')).task)}),
+  },
+  'task.wait': {
+    summary:'等待单项或整批任务终态并核验结果数量',
+    parameters:schema({targets:{type:'array',minItems:1,maxItems:32,description:'任务身份；整批核验保留全部项，最多32项',items:schema({...taskIdentity,after_cursor:string('上次 wait 返回的 cursor；首次可省略')},['project_id','task_id'])},until:{type:'string',enum:['terminal','all_terminal','change'],description:'默认 terminal：任一项结束；all_terminal：全部结束；change：也在进度变化时返回'},wait_ms:{type:'integer',minimum:0,maximum:60000,description:'默认60000毫秒；0只读取当前快照'}},['targets']),
+    details:'生成、成品与对比任务共用，不支持训练。整批用 until:all_terminal，保留全部任务，不能只等最后一项。返回 summary（各终态、未完成/未知任务、图片总数/可用/失败数）、all_terminal 与 all_succeeded；终态含失败和取消，不等于全部成功。超时或读取错误时按回执 wait.args 续等，不能重提生成。terminal 模式任一项结束即返回；change 模式进度跨10%也返回。cursor 续等时省略未变运行任务正文。停止等待不取消任务；取消须 task.cancel。',
+    example:{targets:[{project_id:'demo',task_id:'render-example'}],wait_ms:60000},
+    execute:(args,execution={})=>waitForTasks(args,{signal:execution.signal,read:async(identity,signal)=>pick(taskSummary((await requestWorkbench(taskPath(identity)+'&view=summary',{signal})).value.task),['status','item_counts','progress','current_page_key','pending_control','error','failures'])}),
   },
   'task.details': {
     summary:'将任务完整冻结输入与执行信息保存为 JSON 文件',parameters:schema(taskIdentity,['project_id','task_id']),
-    details:'身份规则同 task.inspect；返回本机 file 路径，使用 read/grep 按需读取。日常轮询只用 task.inspect。',
+    details:'身份规则同 task.inspect；返回本机 file 路径，使用 read/grep 按需读取。即时查询用 task.inspect，等待用 task.wait。',
     execute:async args=>jsonArtifact(await get(taskPath(args))),
   },
   'runtime.health': {

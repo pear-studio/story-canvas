@@ -134,7 +134,9 @@ export async function handleRuntimeRequest({
   if (request.method === "GET" && taskDetailMatch) {
     const purpose = requestUrl.searchParams.get("purpose") ?? "candidate";
     if (!["candidate", "comparison", "finished"].includes(purpose)) throw new ApiError(400, "invalid_task_purpose");
-    sendJson(response, 200, { task: await readWorkspaceTaskDetail(projectRoot, taskDetailMatch[1], taskDetailMatch[2], purpose) });
+    const view = requestUrl.searchParams.get('view') ?? 'detail';
+    if (!['summary', 'detail'].includes(view)) throw new ApiError(400, 'invalid_task_view');
+    sendJson(response, 200, { task: await readWorkspaceTaskDetail(projectRoot, taskDetailMatch[1], taskDetailMatch[2], purpose, { summary: view === 'summary' }) });
     return true;
   }
   const taskControlMatch = /^\/api\/tasks\/([^/]+)\/([^/]+)\/(cancel)\/?$/.exec(decodedPath);

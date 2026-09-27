@@ -24,18 +24,20 @@ export async function loadWorkbenchConfig(repositoryRoot = path.resolve(appRoot,
   }
 }
 
-export async function requestWorkbench(route, { method = "GET", body, revision, etag } = {}) {
+export async function requestWorkbench(route, { method = "GET", body, revision, etag, signal } = {}) {
   if (!route.startsWith("/api/")) throw new Error("请求路径必须以 /api/ 开头");
   const port = resolveWorkbenchPort(await loadWorkbenchConfig());
   let response;
   try {
     response = await fetch(`http://127.0.0.1:${port}${route}`, {
       method,
+      signal,
       headers: { accept: "application/json", ...(body === undefined ? {} : { "content-type": "application/json" }),
         ...(revision ? { "x-story-canvas-expected-revision": revision } : {}), ...(etag ? { 'if-match': etag } : {}) },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
   } catch (cause) {
+    if (signal?.aborted) throw signal.reason;
     throw Object.assign(new Error("无法连接本地工作台，请先启动 npm --prefix app run dev 或 start"), { code: "workbench_unavailable", cause });
   }
   const value = await response.json();

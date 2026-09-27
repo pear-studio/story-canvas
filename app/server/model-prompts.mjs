@@ -51,6 +51,9 @@ export function validateModelPromptDocument(document, kind) {
     try { adapter=modelAdapter(id); } catch(error) { errors.push(error.message); continue; }
     if (!isRecord(value)) { errors.push(`models.${id} 必须是对象`); continue; }
     const { loras, lora_overrides, trigger_sources, ...prompt }=value;
+    if (kind !== 'page' && ['loras','lora_overrides','trigger_sources'].some(key => Object.hasOwn(value,key))) {
+      errors.push(`models.${id}: 设定顶层不接受页面 LoRA 字段；Anima 使用 identity.lora 和 variants 内的 loras/lora_overrides`);
+    }
     errors.push(...validateLoraOverrides(lora_overrides, `models.${id}.lora_overrides`));
     errors.push(...adapter[kind==='page'?'validatePagePrompt':'validateSettingPrompt']({$schema:schema,...prompt}).map(message=>`models.${id}: ${message}`));
     if (loras!==undefined) {

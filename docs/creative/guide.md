@@ -48,7 +48,7 @@
 
 ## 角色与 Prompt
 
-编辑页面 Prompt 前，优先使用 story_canvas 的 `prompt.context`（无该工具时用 CLI `visual:produce -- context page <project-id> <完整PageKey>`）一次读取全局文字、各引用当前文本与 override、图片选择和有效结果；不能仅凭本页文件或局部 read。只读 context 与可保存 draft 分离，不把展开词复制进本页。同轮未变上下文不重复读取，详见[Agent 接口](../reference/agent-interfaces.md)。
+编辑前用 `page.editor.read` 或对应 CLI read 完整读取本次涉及的页面文件部分，核验本页内容；不要求展开全局、角色和场景后的完整输入。同轮未变内容不重复读取。需要理解引用或排查最终输入时再按需查询 `prompt.context`，不把只读展开内容写回页面；详见[Agent 接口](../reference/agent-interfaces.md)。
 
 新增子设定先与用户讨论，单独生成验证图并由用户验收后才能用于页面；不能用 Agent 自评代替。既有已验收且未变的配置复用，不反复验证。实质改变已验收配置时，也先交用户验证受影响部分；LoRA 变更仍需明确同意。
 

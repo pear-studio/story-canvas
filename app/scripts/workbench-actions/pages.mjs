@@ -7,12 +7,12 @@ const owners = { owner_kind: { ...id('可选归属类型'), enum: ['story', 'cha
 export const pageActions = {
   'page.list': directory('分页查询剧情、角色和场景页面目录', 'page', owners),
   'page.templates': directory('查询可用页面模板摘要', 'template', { owner_kind: owners.owner_kind }),
-  'page.create': action('创建剧情、角色或场景页面，可选模板或文字页', 'create-page', {
+  'page.create': action('创建插画页或纯文字页（字幕、时间过渡）', 'create-page', {
     owner, template_id: id('可选模板 ID，先查 page.templates；只在创建时展开一次'),
     page_kind: { ...id('可选：text 为纯文字剧情页；插画页省略'), enum: ['text'] },
     after_page_id: id('可选：同一归属内插在此页后；省略则追加'),
     character_id: id('可选：模板引用角色 ID'), variant_id: id('可选：模板引用角色的子设定 ID'),
-  }, ['owner'], '先确认分页草案。文字页仅限剧情归属且不能使用模板。owner 与模板适用范围必须一致；不要传旧式顶层 sequence_id。'),
+  }, ['owner'], '先确认分页草案。黑底字幕、时间过渡等纯文字内容使用 page_kind:"text"，无需扩散模型生成背景图。文字页仅限 story 归属且不能使用模板；创建后 page.editor.read section:content 查看正文格式，lettering.page.read/save 管布局，finished.output 直接制作成品。插画页省略 page_kind。owner 与模板范围必须一致；不要传旧式顶层 sequence_id。'),
   'page.copy': action('复制任意归属页面，保留归属与设置', 'duplicate-page', page),
   'page.delete': action('删除任意归属页面并归档', 'delete-page', page, undefined, '有活动生成或成品任务时拒绝删除。'),
   'page.move': action('移动页面到指定归属和位置', 'move-page', { ...page, owner, before_page_id: id('可选：同一目标归属内移到此页前；省略则末尾') }, ['page_id', 'owner'], '支持剧情、角色和场景；文字页不能移到角色或场景。移动只改归属和位置，不重写页面正文。'),

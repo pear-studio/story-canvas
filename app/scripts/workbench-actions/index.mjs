@@ -67,7 +67,7 @@ export async function executeWorkbench(input, execution={}) {
       const group=directory.find(g=>g.id===input.target);if(group)return group;
       const definition=Object.hasOwn(definitions,input.target)?definitions[input.target]:null;
       if(!definition)throw Object.assign(new Error('未知帮助入口，请查分类目录'),{code:'unknown_operation'});
-      const {execute,transport,...help}=definition;
+      const {execute,transport,recover,...help}=definition;
       return {operation:input.target,...help,availability:availability(definition,denied)};
     }
     if(input.target!==undefined)throw invalid('target 仅用于 help');
@@ -76,6 +76,12 @@ export async function executeWorkbench(input, execution={}) {
     if(!definition)throw Object.assign(new Error('未知操作，请先查分类帮助'),{code:'unknown_operation'});
     if(availability(definition,denied)==='disabled')throw Object.assign(new Error(`当前限制插件禁用了 ${definition.capability} 能力，不能执行 ${operation}`),{code:'capability_disabled'});
     const args=input.args??{};validate(definition.parameters,args);
-    return await definition.execute(args);
-  }catch(error){throw new Error(JSON.stringify({error:error.code??'tool_failed',message:error.message,...(error.code==='invalid_arguments'&&actions[operation]?{parameters:actions[operation].parameters,...(actions[operation].example?{example:actions[operation].example}:{})}:{}),...(error.status===undefined?{}:{status:error.status}),...(error.details===undefined?{}:{details:error.details}),help:actions[operation]?{operation:'help',target:operation}:{operation:'help'},recovery:error.code==='capability_disabled'?'请交给具有该能力的其他 Agent，不尝试替代接口。':error.status===409?'重新读取并判断冲突，不换新指纹强行覆盖。':'先查对应帮助；连续失败或缺少工具时说明缺口，请求用户提供工具或交给其他 Agent。写入失败先核实结果，不盲目重放。'}),{cause:error});}
+    return await definition.execute(args, execution);
+  }catch(error){
+    const recovery=error.code==='capability_disabled'?'请交给具有该能力的其他 Agent。'
+      :error.code==='invalid_arguments'?'按参数定义修正；本次未执行。'
+      :actions[operation]?.recover?.(error,input.args??{})
+        ??(error.status===409?'重新读取目标并判断冲突，不直接换新指纹覆盖。':'按本操作帮助处理；写入结果不明先核实，不盲目重放。');
+    throw new Error(JSON.stringify({error:error.code??'tool_failed',message:error.message,...(error.code==='invalid_arguments'&&actions[operation]?{parameters:actions[operation].parameters,...(actions[operation].example?{example:actions[operation].example}:{})}:{}),...(error.status===undefined?{}:{status:error.status}),...(error.details===undefined?{}:{details:error.details}),help:actions[operation]?{operation:'help',target:operation}:{operation:'help'},recovery}),{cause:error});
+  }
 }

@@ -13,6 +13,7 @@
 `operation:status` 检查已加载版本。说明与执行由 `app/scripts/workbench-actions/` 各领域模块共同维护。
 本页保留 CLI 与底层协议说明，不重复维护 DSH 操作清单。
 有 `story_canvas` 时优先使用该工具及其分级 help；CLI 供无该工具的环境或明确未覆盖的操作使用。
+长任务等待从 `help task.wait` 查询，参数、续等及取消语义由工具详细帮助维护。
 
 ## 查询关联项目的 Git
 
@@ -75,7 +76,7 @@ outline.json，并在锁内只更新局部目标，不要求 Agent 回传其他�
 
 ## 编辑页面 Prompt 的完整读取入口
 
-编辑剧情、角色或场景视觉页 Prompt 前，先读完整上下文，不能仅凭本页 JSON 或局部 `prompt read` 判断实际输入：
+普通编辑完整读取并核验相关页面文件即可，使用 `page.editor.read` 或对应 CLI read。以下完整组装入口仅用于按需理解引用、覆盖或诊断最终输入，不作为每次编辑的前置步骤：
 
 ```powershell
 node <仓库根>/app/scripts/visual-production.mjs context page <project-id> v3/<page-id> --out <仓库根>/Saved/Agent/<任务>/prompt-context.json
@@ -122,7 +123,7 @@ save 回执默认打印到 stdout；需要落盘时用与输入不同的文件�
 覆盖草稿或完整上下文。DSH 原生工具不用落盘：`story_canvas` 的 `prompt.context` 读取完整包后，
 仅将返回的 `save.domain`/`save.kind` 与修改后的完整 `draft` 交给 `facts.save`，不回传只读 `context`。
 
-原有局部 read/save 继续用于事实操作和排查，但不能代替编辑前的完整上下文。
+页面文件的 read/save 可直接用于编辑核验；完整组装上下文仅按需查询。
 
 ## read/save 契约
 
@@ -233,7 +234,7 @@ node <仓库根>/app/scripts/workbench-api.mjs PUT /api/projects/<project-id>/pr
 | 候选列表与绝对图片路径 | `POST /api/projects/:id/workbench/page-media`，body 为 `{ page_key }`；候选含 absolute_file |
 | 候选详情、数量、批量删除与按需补图 | 同工作台 API；批量清理仍需遵守当前任务授权范围 |
 | 最终 Prompt 与生成流程预览 | `POST /api/projects/:id/workbench/page-render-inspection`，body 为 `{ page_key, prompt? }` |
-| 任务状态与历史 | `GET /api/tasks`、`GET /api/tasks/history`、`GET /api/tasks/:projectId/:taskId` |
+| 任务状态与历史 | `GET /api/tasks`、`GET /api/tasks/history`、`GET /api/tasks/:projectId/:taskId`（`view=summary` 仅读状态，默认 detail 含冻结输入） |
 | 任务控制 | `POST /api/tasks/:projectId/:taskId/cancel` |
 | 项目设置与生成配置 | `/api/projects/:id/project`、`render-profile`、`render-profile-override` |
 | 材料与创作约定 | `/api/projects/:id/materials`、`materials/item`、`creative-agreement` |
@@ -255,3 +256,9 @@ DSH 适配层只注册 `story_canvas`，不承载领域知识；各领域操作�
 
 失败保持工具失败状态，将错误码、状态、诊断、帮助入口与恢复建议放入异常文本，避免 DSH 丢失异常附加字段。
 媒体、流式下载与 multipart 上传仍走专用路径。具体参数只查工具 help。
+
+### 统一工具的编辑回执
+
+`facts.read` 和 `prompt.context` 返回完整草稿及对应 `save` 描述；`page.editor.read` 则按文件范围返回全文及局部保存回执。
+局部保存只提交变化字段，由服务端在版本校验后合并，成功回包返回更新后的相关文件全文用于核验。
+默认不组装上游引用。CLI 文件式 read/save 契约保持不变；具体参数、删除与数组规则只维护在工具 help 中。

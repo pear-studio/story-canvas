@@ -78,7 +78,7 @@ Agent 临时工作统一位于仓库根 `Saved/Agent/<任务名>/`，同一任�
   `lettering/dialogue-layouts.json` 只保存逐页对白位置与尺寸；旁白使用通栏字幕条（按页选顶部或底部），不保存布局；
 训练也是独立项目：`project.json` 保存素材组织，`assets/` 保存图片与 Caption，`captioning/` 保存审核事实，`settings.json` 保存唯一当前训练设置（Qwen-Image-2.1，version 5）；这些内容进入该项目 Git。`Training/` 保存历史冻结输入、恢复包和结果，`Saved/` 保存缓存及执行副本，均不入 Git。
 
-角色与场景 `*.prompt.json` 形状为 `{$schema,models:{anima:…,qwen:…}}`。Anima 输入保留 identity、分类词条及逐词继承；下列整段规则仅描述 Qwen 输入。
+角色与场景 `*.prompt.json` 形状为 `{$schema,models:{anima:…,qwen:…}}`。Anima 输入保留 identity、分类词条及 Prompt／LoRA 继承；页面也使用模型容器，切换模型保留另一份输入。模型字段与覆盖规则见[模型适配器](../dev/model-adapters.md)；下列整段规则仅描述 Qwen 输入。
 Qwen 输入形状为 `{ prompt_name, variants }`：`prompt_name` 是编译输出的名称，
 创建时复制显示名称、之后独立；每个 `variants.<id>` 自包含一段自由文本 `text` 和有序
 `reference_images`（条目为 `{id, file, title}`），子设定之间互不继承，也没有 identity 层、LoRA

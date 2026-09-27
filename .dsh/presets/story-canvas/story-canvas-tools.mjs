@@ -7,7 +7,7 @@ export function apply(ctx) {
     name: 'story_canvas',
     description: `StoryCanvas 完整工作台（${loadedRevision}）。operation:help 只列分类；target:分类ID 列操作；target:操作名 查详细用法。status 检查版本和会话限制。用 operation 和 args 执行。`,
     parameters: toolParameters,
-    output: { schema: {}, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value, null, 2) }] },
+    output: { schema: {}, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
     execute: executeWorkbench,
   })
 }

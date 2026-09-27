@@ -33,11 +33,12 @@ StoryCanvas 是由多 Agent 协作操作的本地系列图片视觉化工作台�
 
 - outline 只保存 synopsis、chapter 和 sequence 粗骨架，后续走向可以存在但不预先分页；
 - 剧情页面 index、narrative 与 Prompt 分开；角色 profile、visual 与 Prompt 分开；
-- 角色与场景 Prompt 为 `{ prompt_name, variants }`：每个 variant 自包含一段自由文本和有序参考图
-  （至少一个、无默认造型），没有 identity 层、LoRA 或逐词继承；prompt_name 创建时复制显示名、之后独立；
-- 场景在“场景”页维护共享环境描述，剧情页单选引用；页面可整段 override 引用文字，恢复继承即删除对应 key，override 不随上游更新；
+- 角色、场景及页面 Prompt 使用 `{$schema, models:{anima:…,qwen:…}}` 容器，分别保留模型输入；
+  Anima 使用基础设定、分类词条与 Prompt／LoRA 继承；Qwen 使用 prompt_name、子设定自由文本和有序参考图。
+  字段及覆盖规则见[模型适配器](dev/model-adapters.md)，编辑前用 `page.editor.read` 读取相关页面文件；引用展开和最终输入按需查询 `prompt.context`；
+- 场景在“场景”页维护共享环境描述，剧情页单选引用；Qwen 可整段 override 引用文字，Anima 可调整继承词条及 LoRA；
 - 验证图由系统自动编号；角色 visual 只维护子设定名称，具体视觉以 Prompt 为准；
-- 页面 Prompt 保存本页自由文本、场景引用、整段 text_overrides、图片选择和可带用途的附图；
+- 页面 Prompt 按当前模型保存词条或自由文本、引用与覆盖，不把只读展开结果写回；
 - 稳定项目 JSON 可以直接读取，但只能通过 Node.js read/save或语义命令写入；
 - 渲染每次生成一至三张候选，返回任务和图片的完整绝对路径，不携带项目 revision；
 - 普通原型保留全部候选，不替用户筛选、选择或写文字样式；候选删除功能仅在用户明确要求清理时使用；用户可在浏览器编辑并手动保存；

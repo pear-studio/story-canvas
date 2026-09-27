@@ -137,11 +137,9 @@ Prompt 草稿可以带审计错误保存。所有向 ComfyUI 提交新采样的�
 
 ## 编写规则
 
-普通制作交付方便用户精修的原型；完整流程见[创作指南](../creative/guide.md)。编辑页面前先用
-`visual:produce -- context page <project-id> <完整PageKey>` 读取完整编辑上下文（见
-[Agent 接口](agent-interfaces.md#编辑页面-prompt-的完整读取入口)）：先看全局文字、各引用的
-当前文本与 override、图片选择和最终编译结果，再判断本页需要补什么，不把页面文件或局部 read
-单独当作完整 Prompt。
+普通制作交付方便用户精修的原型；完整流程见[创作指南](../creative/guide.md)。
+编辑前完整读取并核验本次涉及的页面文件部分，优先使用 `page.editor.read`；不要求读取组装后的全文。
+需要理解上游引用、覆盖或排查最终输入时再查询 `prompt.context`，具体入口见[Agent 接口](agent-interfaces.md)。
 
 Prompt 只表达目标方向，不增加细节，不拆解动作的身体实现过程。动作名足够时只写动作名，例如
 `looking back`；需要关系时用简短自然语言，例如 `she looks back at the doorway`。不追加身体部位、

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { randomInt } from 'node:crypto';
-import { cp, mkdir, mkdtemp, rm, writeFile, appendFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, rm, writeFile, appendFile, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
@@ -44,6 +44,23 @@ async function failure(tool, input) {
   try { await tool.execute(input); } catch (error) { return JSON.parse(error.message); }
   assert.fail('必须保持工具失败状态');
 }
+test('task.wait 的工具契约限制数量与期限，传递取消信号且只发GET',async t=>{
+  const f=await fixture(t,(_request,response)=>response.end(JSON.stringify({task:{id:'t1',status:'completed',purpose:'candidate',items:[]}})));
+  const help=await f.tool.execute({operation:'help',target:'task.wait'});
+  assert.match(help.details,/停止等待不取消任务/);
+  for(const args of [{targets:[]},{targets:[{task_id:'t1'}]},{targets:[{project_id:'p',task_id:'t1'}],wait_ms:60001}]){
+    assert.equal((await failure(f.tool,{operation:'task.wait',args})).error,'invalid_arguments');
+  }
+  assert.equal(f.requests.length,0);
+  const result=await f.tool.execute({operation:'task.wait',args:{targets:[{project_id:'p',task_id:'t1'}]}});
+  assert.equal(result.reason,'terminal');assert.equal(f.requests[0].method,'GET');
+  assert.equal(f.requests[0].url,'/api/tasks/p/t1?purpose=candidate&view=summary');
+  const blocked=await fixture(t,()=>{}),controller=new AbortController();
+  const pending=blocked.tool.execute({operation:'task.wait',args:{targets:[{project_id:'p',task_id:'t1'}]}},{signal:controller.signal});
+  setTimeout(()=>controller.abort(),30);
+  await assert.rejects(pending,error=>JSON.parse(error.message).error==='wait_cancelled');
+  assert.ok(blocked.requests.every(request=>request.method==='GET'));
+});
 test('统一目录逐项可发现，help 不执行请求，未知入口返回合法目录', async t => {
   const { tool, requests } = await fixture(t);
   const catalog = await tool.execute({ operation: 'help' });
@@ -91,6 +108,26 @@ test('复制项目发送正确生命周期接口、空 body 和编码 ID，不�
   assert.equal(requests[0].headers['x-story-canvas-expected-revision'], undefined);
   assert.deepEqual(JSON.parse(tool.output.render({}, value)[0].text), value);
 });
+
+test('批量生成实际走单页接口，返回可执行整批核验入口；文字页拒绝给出编辑入口',async t=>{
+  const f=await fixture(t,(req,res)=>{
+    if(req.method==='GET')return res.end(JSON.stringify({task:{id:'task-'+req.url,status:'completed',purpose:'candidate',item_counts:{total:3,available:3},items:[]}}));
+    if(req.body.page_key.page_id==='page-002') {
+      res.statusCode=422;return res.end(JSON.stringify({error:'text_page_not_renderable'}));
+    }
+    res.end(JSON.stringify({task:{task_id:`render-${req.body.page_key.page_id}`,status:'queued'}}));
+  });
+  const result=await f.tool.execute({operation:'generation.batch',args:{project_id:'demo',page_keys:[{page_id:'page-001'},{page_id:'page-002'},{page_id:'page-003'}]}});
+  assert.equal(result.counts.submitted,2);assert.equal(result.counts.rejected,1);
+  assert.equal(result.results[1].recovery.next.operation,'page.editor.read');
+  assert.ok(f.requests.every(r=>r.url==='/api/projects/demo/workbench/render' && r.body.count===3));
+  const done=await f.tool.execute(result.wait);assert.equal(done.all_succeeded,true);assert.equal(done.summary.total,2);
+  const failureResult=await failure(f.tool,{operation:'generation.run',args:{project_id:'demo',page_key:{page_id:'page-002'}}});
+  assert.equal(failureResult.recovery.next.operation,'page.editor.read');
+  assert.match(failureResult.recovery.message,/finished.output/);
+  const bad=await failure(f.tool,{operation:'page.delete',args:{project_id:'demo',page_id:'page-001',owner:{}}});
+  assert.equal(bad.error,'invalid_arguments');assert.match(bad.recovery,/本次未执行/);
+});
 test('页面语义操作取得版本后提交，409 保留诊断且不重试', async t => {
   const { tool, requests } = await fixture(t, (request, response) => {
     if (request.url.endsWith('/revision')) return response.end(JSON.stringify({ revision: 'r1' }));
@@ -121,17 +158,22 @@ test('列表分页不带正文和草稿，完整事实读取不截断', async t 
   assert.deepEqual(pages.items, [{ page_id: 'page-002', sequence_id: 'a' }]);
   assert.equal(pages.next_offset, null);
   assert.equal(pages.document, undefined);
-  assert.deepEqual(await tool.execute({ operation: 'facts.read', args: { project_id: 'demo', domain: 'story', kind: 'outline' } }), draft);
+  const pack=await tool.execute({ operation: 'facts.read', args: { project_id: 'demo', domain: 'story', kind: 'outline' } });
+  assert.deepEqual(pack.draft,draft);assert.deepEqual(pack.save,{operation:'facts.save',args:{domain:'story',kind:'outline'},draft_parameter:'draft'});
 });
 test('完整 Prompt 包和保存草稿保持身份与指纹，不提交只读 context', async t => {
   const draft = { project_id: 'demo', target_id: 'page-001', document: { text: '内容' }, expected_sha256: 'a'.repeat(64), expected_context_sha256: 'b'.repeat(64) };
-  const pack = { draft, save: { domain: 'page', kind: 'prompt' }, context: { text: '只读'.repeat(10000) } };
+  const pack = { draft, save: { domain: 'page', kind: 'prompt' }, context: {status:'complete',model_id:'qwen',references:[{source:'character:alice:default',current_text:'只读'.repeat(10000)}],final:{positive:'完整正向',negative:'',parts:{trace:'详细追踪'}}} };
   const { tool, requests } = await fixture(t, (_request, response) => response.end(JSON.stringify(pack)));
-  assert.deepEqual(await tool.execute({ operation: 'prompt.context', args: { project_id: 'demo', page_key: {page_id:'page-001'} } }), pack);
+  const result=await tool.execute({ operation: 'prompt.context', args: { project_id: 'demo', page_key: {page_id:'page-001'} } });
+  assert.equal(result.context.references['character:alice:default'].text,'只读'.repeat(10000));assert.equal(result.context.final.parts,undefined);assert.deepEqual(result.draft,draft);assert.deepEqual(result.save.args,pack.save);
   assert.deepEqual(requests[0].body.page_key, { page_id: 'page-001' });
-  await tool.execute({ operation: 'facts.save', args: { ...pack.save, draft } });
+  await tool.execute({ operation: result.save.operation, args: { ...result.save.args, [result.save.draft_parameter]:result.draft } });
   assert.deepEqual(requests[1].body, draft);
   assert.equal(requests[1].body.context, undefined);
+  const details=await tool.execute({operation:'prompt.context',args:{project_id:'demo',page_key:{page_id:'page-001'},view:'details'}});
+  assert.deepEqual(JSON.parse(await readFile(details.file,'utf8')),pack);
+  assert.equal(tool.output.render({},result)[0].text,JSON.stringify(result));
 });
 test('版本报告反映已加载代码与磁盘差异，help 不把新文件冒充已加载版本', async t => {
   const { tool, root } = await fixture(t);
@@ -213,8 +255,41 @@ test('统一工具经真实 HTTP Adapter 完成结构、设定及三类页面生
   await run('lettering.settings.save',{...lettering,settings:{...lettering.settings,font_size:30}});
   assert.equal((await run('lettering.settings.read')).settings.font_size,30);
   const page_key={page_id:pages[0].page_id};
-  const editor=await run('page.editor.read',{page_key});
-  await run('page.editor.save',editor);
+  const editor=await run('page.editor.read',{page_key,section:'content'});
+  assert.equal(editor.context,undefined);assert.equal(editor.save.operation,'page.editor.save');
+  const updated=await run(editor.save.operation,{...editor.save.args,changes:{title:'局部修改标题'}});
+  assert.equal(updated.saved,true);assert.equal(updated.document.title,'局部修改标题');
+  assert.deepEqual(updated.document.characters,editor.document.characters);
+  const stale=await failure(f.tool,{operation:editor.save.operation,args:{...editor.save.args,changes:{title:'陈旧修改'}}});assert.equal(stale.status,409);
+  const localPrompt=await run('page.editor.read',{page_key});assert.ok(localPrompt.document.models);assert.equal(localPrompt.context,undefined);
+  const branch=localPrompt.document.models.qwen;
+  const changedPrompt=await run(localPrompt.save.operation,{...localPrompt.save.args,changes:{models:{qwen:{text:'局部 Prompt'}}}});
+  assert.equal(changedPrompt.document.models.qwen.text,'局部 Prompt');
+  assert.deepEqual(changedPrompt.document.models.anima,localPrompt.document.models.anima);
+  assert.deepEqual(changedPrompt.document.models.qwen.reference_images,branch.reference_images);
+  const emptyChange=await failure(f.tool,{operation:changedPrompt.save.operation,args:{...changedPrompt.save.args,changes:{}}});assert.equal(emptyChange.status,400);
+  await run(updated.save.operation,{...updated.save.args,changes:{title:'上游内容变化'}});
+  const upstream=await failure(f.tool,{operation:changedPrompt.save.operation,args:{...changedPrompt.save.args,changes:{models:{qwen:{text:'陈旧依赖'}}}}});
+  assert.equal(upstream.status,409);assert.equal(upstream.error,'page_edit_conflict');
+  const checked=await run('page.editor.read',{page_key});assert.equal(checked.document.models.qwen.text,'局部 Prompt');
+  const render=await run('page.editor.read',{page_key,section:'render'});assert.ok(render.document.model_id);
+  const otherRender=await run('page.render.read',{page_key:{page_id:pages[1].page_id}});
+  const projectBefore=await readFile(path.join(root,'workspace/demo/project.json'),'utf8');
+  const renderRead=await run('page.render.read',{page_key});
+  assert.equal(renderRead.save.operation,'page.render.set');assert.ok(renderRead.options.canvases.includes('1:1'));
+  const canvas=await run('page.render.set',{...renderRead.save.args,canvas:'1:1'});
+  assert.equal(canvas.document.canvas,'1:1');assert.equal(canvas.document.model_id,render.document.model_id);assert.equal(canvas.document.profile_id,render.document.profile_id);
+  assert.equal((await failure(f.tool,{operation:'page.render.set',args:{...renderRead.save.args,canvas:'9:16'}})).status,409);
+  const model=await run('page.render.set',{...canvas.save.args,model_id:'anima'});
+  assert.equal(model.document.model_id,'anima');assert.equal(model.document.profile_id,'anima-base-v1');assert.equal(model.document.canvas,'1:1');
+  const mismatch=await failure(f.tool,{operation:'page.render.set',args:{...model.save.args,profile_id:'qwen-image-2-1'}});
+  assert.equal(mismatch.error,'page_profile_model_mismatch');assert.equal(mismatch.recovery.next.operation,'page.render.read');
+  const emptyRender=await failure(f.tool,{operation:'page.render.set',args:model.save.args});assert.equal(emptyRender.error,'empty_render_changes');
+  const restored=await run('page.render.set',{...model.save.args,model_id:'qwen'});assert.equal(restored.document.profile_id,'qwen-image-2-1');
+  assert.equal((await run('page.editor.read',{page_key})).document.models.qwen.text,'局部 Prompt');
+  assert.deepEqual((await run('page.render.read',{page_key:{page_id:pages[1].page_id}})).document,otherRender.document);
+  assert.equal(await readFile(path.join(root,'workspace/demo/project.json'),'utf8'),projectBefore);
+
   const layout=await run('lettering.page.read',{page_key});
   await run('lettering.page.save',{page_key,lettering:{items:layout.lettering.items},expected_sha256:layout.expected_sha256});
   const target={kind:'page',id:pages[0].page_id,model_id:'qwen'};
@@ -363,7 +438,7 @@ test('完整能力只有一份，限制按 Agent 生效且执行前拦截，撤�
       }
     }
   }
-  assert.equal(blocked,13);
+  assert.equal(blocked,14);
   assert.equal(f.requests.length,0);
   assert.equal((await failure(f.tool,{operation:'api.request',args:{method:'POST',path:'/api/projects/demo/workbench/render'}})).error,'unknown_operation');
   await assert.rejects(f.tool.execute({operation:'training.image.crop',args:{dataset_id:'demo',item_id:'x',crop:{},etag:'r',upscale:true}},{agent:lite}),e=>JSON.parse(e.message).error==='invalid_arguments');
@@ -491,7 +566,7 @@ test('真实 HTTP 保存拒绝新增片段自编 ID，返回字段诊断且不�
   handler=createHttpRequestHandler({projectRoot:f.root,config:{},projectOperations:operations});
   await f.tool.execute({operation:'character.create',args:{project_id:'demo',id:'alice',name:'测试角色'}});
   const identity={domain:'character',kind:'prompt'};
-  const read=()=>f.tool.execute({operation:'facts.read',args:{...identity,project_id:'demo',target_id:'alice'}});
+  const read=async()=> (await f.tool.execute({operation:'facts.read',args:{...identity,project_id:'demo',target_id:'alice'}})).draft;
   const draft=await read();const baseline=structuredClone(draft);
   const prompt=draft.document.models.anima.identity.prompt;
   prompt.person.push({id:'token-aaaaaaaaaaaa',tag:'blue_hair'});

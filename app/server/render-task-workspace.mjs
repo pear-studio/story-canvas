@@ -141,7 +141,7 @@ function publicComparisonTask(_projectId, record, _projectTitle, { detail = fals
 }
 
 // 详情只在点击时读取冻结任务和逐单元提交记录，不扫描候选或连接 ComfyUI。
-export async function readWorkspaceTaskDetail(projectRoot, projectId, taskId, purpose = "candidate") {
+export async function readWorkspaceTaskDetail(projectRoot, projectId, taskId, purpose = "candidate", { summary = false } = {}) {
   if (purpose !== "comparison") requireProjectDirectoryName(projectId);
   const projectDirectory = purpose === "comparison" ? projectRoot : registeredProjectPath(projectRoot, projectId);
   if (purpose === "finished") {
@@ -151,6 +151,7 @@ export async function readWorkspaceTaskDetail(projectRoot, projectId, taskId, pu
     return finishedTaskSummary(job, projectId, project?.title ?? projectId);
   }
   if (purpose === "comparison") {
+    if (summary) return publicComparisonTask(null, await readComparisonExperimentView(projectDirectory, taskId), "对比实验", { detail: true });
     const record = await readComparisonExperimentStorage(projectDirectory, taskId);
     const units = await Promise.all((record.execution?.cells ?? []).map(async cell => ({
       id: cell.id, item_ids: [cell.id],
@@ -159,6 +160,11 @@ export async function readWorkspaceTaskDetail(projectRoot, projectId, taskId, pu
     return { ...publicComparisonTask(null, record, "对比实验", { detail: true }), execution_units: units, snapshot: record.execution };
   }
   if (!renderTaskIdPattern.test(taskId)) throw Object.assign(new Error("任务 ID 无效"), { status: 400, code: "invalid_task_id" });
+  if (summary) {
+    const state = await readRenderTaskState(projectDirectory, taskId);
+    if (!state) throw Object.assign(new Error("任务不存在"), { status: 404, code: "task_not_found" });
+    return publicRenderTaskState(projectDirectory, projectId, state, { detail: true });
+  }
   const stored = await readRenderTask(projectDirectory, taskId);
   if (!stored) throw Object.assign(new Error("任务不存在"), { status: 404, code: "task_not_found" });
   const units = await Promise.all((stored.task.snapshot.execution_units ?? []).map(async unit => ({

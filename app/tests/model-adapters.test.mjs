@@ -216,6 +216,12 @@ test('两种模型创建模板页均保留模板文字，默认变化不改已�
 test('容器拒绝错误 schema 与触发词结构',()=>{
   const doc=makeModelPromptDocument(schema('story-page-prompt'),'anima',modelAdapter('anima').emptyPrompt());assert.deepEqual(validateModelPromptDocument(doc,'page'),[]);
   assert.ok(validateModelPromptDocument({...doc,$schema:'bad'},'page').length);
+  for (const id of ['anima','qwen']) {
+    const setting=id==='anima'?{identity:{prompt:modelAdapter('anima').emptyPrompt(),lora:null},variants:{default:{prompt:modelAdapter('anima').emptyPrompt(),loras:[],identity_disabled:[]}}}:{prompt_name:'测试',variants:{default:{text:'测试',reference_images:[]}}};
+    const document=makeModelPromptDocument(schema('character-prompt'),id,setting);
+    assert.deepEqual(validateModelPromptDocument(document,'character'),[]);
+    for(const field of ['loras','lora_overrides'])assert.ok(validateModelPromptDocument({...document,models:{[id]:{...setting,[field]:field==='loras'?[]:{}}}},'character').some(error=>error.includes('设定顶层')));
+  }
   doc.models.anima.trigger_sources={style:[],characters:[],scenes:{}};assert.ok(validateModelPromptDocument(doc,'page').length);
 });
 test('场景改名修复非当前模型的引用和逐词覆盖，删除检查所有模型',async t=>{

@@ -5,12 +5,21 @@ const post = (summary, suffix, fields, options = {}) => endpoint(summary, 'POST'
 const target = { ...schema({ kind: { ...string('归属'), enum: ['character','scene','page'] }, id: string('角色/场景/页面 ID'), variant_id: string('角色和场景需要子设定 ID'), model_id: string('模型分支，默认 qwen') }, ['kind','id']), description: '参考图归属；角色和场景必须给 variant_id' };
 const reference = (summary, action, fields, required, body) => post(summary, 'reference-library', { target, ...fields }, { required: ['target', ...required], details: '先 reference.list 取得 entries 与 sha256；修改传 expected_sha256。参考图最多十张，候选提升后保存到 materials，不依赖临时输出。', body: a => ({ target:a.target, action, ...body(a) }) });
 export const mediaActions = {
-  'page.editor.read': endpoint('读取单页整页编辑草稿','GET',a=>projectPath(a,'workbench'),{page_key:pageKey},{project:true,details:'返回可用于 page.editor.save 的 document；只编辑 content、prompt 和 lettering.items，保留指纹。编辑 Prompt 前仍需 prompt.context 检查引用上下文。',transform:(r,a)=>{
-    const p=r.value.pages.find(p=>p.page_id===a.page_key.page_id);if(!p)throw new Error('页面不存在');
-    const content={title:p.title,scene_description:p.scene_description,characters:p.characters,dialogue:p.dialogue,...(p.page_kind==='text'?{page_kind:'text',body:p.body,display_title:p.display_title,text_layout:p.text_layout}:{})};
-    return {document:{page_key:p.page_key,content,prompt:p.prompt,lettering:{items:p.lettering.items},expected_content_sha256:p.content_sha256,expected_prompt_sha256:p.prompt_sha256,expected_context_sha256:p.prompt_context_sha256,expected_layout_sha256:p.layout_sha256}};
-  }}),
-  'page.editor.save': endpoint('原子保存页面正文、Prompt 和布局','PUT',a=>projectPath(a,'workbench/page-save'),{document:object('page.editor.read 的完整 document')},{project:true,body:a=>a.document,details:'只修改草稿内容，保留四个指纹；整页事务成功或回滚。通常优先使用窄 facts.save；需要同时调整文案与布局时使用整页草稿。'}),
+  'page.render.read': endpoint('读取单页模型、画幅及可选值','POST','/api/agent/page-render/read',{page_key:pageKey},
+    {project:true,body:a=>a,transform:r=>r.value,details:'返回该页完整 render 文件、模型/画幅选项及 page.render.set 保存参数。只影响当前页；项目默认设置用于新页。无需读取组装后的 Prompt。'}),
+  'page.render.set': endpoint('独立设置单页模型或画幅','POST','/api/agent/page-render/set',{
+    page_key:pageKey,expected_sha256:string('page.render.read 返回的版本'),model_id:string('可选模型 ID，见 read.options.models'),
+    canvas:string('可选画幅，见 read.options.canvases'),profile_id:string('可选显式生成配置；通常省略'),
+  },{project:true,required:['page_key','expected_sha256'],body:a=>a,transform:r=>r.value,
+    recover:(error,a)=>({message:error.status===409?'页面设置或 Prompt 已变化；重读并判断，不直接换指纹覆盖。':'重读当前设置和选项；核对模型与配置是否匹配、画幅是否受支持。',next:{operation:'page.render.read',args:{project_id:a.project_id,page_key:a.page_key}}}),
+    details:'先 page.render.read 核验，再带 save.args 和要改的 model_id、canvas 或 profile_id，至少一项。仅改画幅保留模型和配置；切换模型时省略 profile_id 自动配对该模型默认配置，未提供字段保留。配置必须匹配模型并支持画幅。保留已有各模型 Prompt；首次切换按模型规则初始化缺失分支（Anima 转 Qwen 会导入有效文本），之后可用 page.editor.read 核验。只保存，不加载模型、不出图，不改其他页或项目默认值。409 重读判断，不能直接换新指纹覆盖。'}),
+  'page.editor.read': endpoint('读取相关页面文件全文，不展开引用','POST','/api/agent/page-editor',{
+    page_key:pageKey,section:{type:'string',enum:['prompt','content','render'],description:'默认 prompt；content 是页面标题、画面和对白；render 是模型与画幅'},
+  },{project:true,required:['page_key'],body:a=>a,details:'只返回所选文件的完整 document 和 save，不加载组装后的 Prompt。核验该文件后按 save.args 提交 changes；只发修改字段，无需抄回全文。引用展开或最终输入仅在需要时另查 prompt.context。布局使用 lettering.page.read/save。',transform:r=>r.value}),
+  'page.editor.save': endpoint('局部修改页面文件，保留未涉及字段','POST','/api/agent/page-editor/save',{
+    page_key:pageKey,section:{type:'string',enum:['prompt','content','render'],description:'读取回执中的 section'},
+    expected_sha256:string('读取回执中的版本；页面或上游变化时409，必须重读判断'),changes:object('仅修改字段；对象递归合并，数组整项替换，null删除键'),
+  },{project:true,body:a=>a,recover:(error,a)=>({message:error.status===409?'相关文件或上游已变化；重新核验后再决定修改，不直接换指纹覆盖。':'重读本次相关文件核实结果，按该文件格式修改。',next:{operation:'page.editor.read',args:{project_id:a.project_id,page_key:a.page_key,section:a.section}}}),details:'使用 page.editor.read 返回的 save.args，加 changes。对象递归合并；数组整项替换，空数组清空；null 删除对应键以恢复继承，不表示写入空值。保留已有词条 id，新增词条省略 id。成功返回完整更新文件用于核验及新的 save；失败不自动重试，未涉及模型分支保持原样；改变角色引用时沿用领域规则清理失效引用。例：content 的 changes:{title:"新标题"}；Prompt 按读取文件的 models 结构填写 changes。单独设置模型和画幅优先 page.render.read/set。',transform:r=>r.value}),
   'reference.list': reference('读取角色、场景或页面参考图', 'read', {}, [], () => ({})),
   'reference.save': reference('导入/替换本地图片、材料或候选为参考图', 'save', { expected_sha256: string('reference.list 的 sha256'), id: string('替换已有参考图时提供'), title: string('图片标题'), file: string('本机 PNG/JPEG/WebP 绝对路径'), material_file: string('已有材料文件名'), candidate_id: string('已有候选 ID'), page_key: pageKey }, ['expected_sha256'], a => ({ expected_sha256:a.expected_sha256, id:a.id, title:a.title, material_file:a.material_file, candidate_id:a.candidate_id, page_key:a.page_key })),
   'reference.delete': reference('删除指定参考图引用', 'delete', { expected_sha256:string('读取时 sha256'), id:string('参考图 ID') }, ['expected_sha256','id'], a=>({expected_sha256:a.expected_sha256,id:a.id})),
