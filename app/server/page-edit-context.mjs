@@ -1,4 +1,4 @@
-import { readFactDraft, saveFactDraft } from './fact-drafts.mjs';
+import { readFactDraft, saveFactDraft, fingerprintErrors } from './fact-drafts.mjs';
 import { decodePageKey } from './page-key.mjs';
 import { hashCanonicalJson } from './workflow-definition.mjs';
 import { ApiError } from './http-support.mjs';
@@ -32,6 +32,8 @@ export async function readPageEditContext(options) {
 
 // 调用者持有 mutateTargetFacts 边界；先比对读取版本，再合并并复用领域提交校验。
 export async function savePageEditChanges(options) {
+  const errors=fingerprintErrors({expected_sha256:options.expectedSha256},['expected_sha256']);
+  if(errors.length)throw new ApiError(400,'invalid_page_edit_fingerprint',errors);
   if (!record(options.changes) || !Object.keys(options.changes).length) throw new ApiError(400,'invalid_page_changes',['changes 必须是非空对象']);
   const identity = target(options);
   const draft = await readFactDraft(options.projectRoot,identity);

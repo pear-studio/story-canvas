@@ -23,6 +23,7 @@ export const factActions = {
   'facts.save': {
     summary: '提交完整事实草稿并校验指纹', parameters: schema({ ...identity, draft: object('facts.read 或 prompt.context 返回的完整 draft') }),
     example: {domain:'character',kind:'prompt',draft:{project_id:'demo',target_id:'alice',document:{},expected_sha256:'读取值',expected_context_sha256:'读取值'}},
+    recover:(_error,a)=>({message:'按 details 中的字段说明修正；重新读取并核验目标，原样保留指纹，不直接换新指纹覆盖。',next:{operation:'facts.read',args:{domain:a.domain,kind:a.kind,project_id:a.draft?.project_id,target_id:a.draft?.target_id??undefined}}}),
     kinds, details: `${draftRules} ${modelRules} ${loraRules}`, execute: ({ domain, kind, draft }) => saveFactDraft(domain, kind, draft),
   },
   'prompt.context': {

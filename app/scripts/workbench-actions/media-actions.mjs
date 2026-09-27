@@ -16,7 +16,7 @@ export const mediaActions = {
     details:'先 page.render.read 核验，再带 save.args 和要改的 model_id、canvas 或 profile_id，至少一项。仅改画幅保留模型和配置；切换模型时省略 profile_id 自动配对该模型默认配置，未提供字段保留。配置必须匹配模型并支持画幅。保留已有各模型 Prompt；首次切换按模型规则初始化缺失分支（Anima 转 Qwen 会导入有效文本），之后可用 page.editor.read 核验。只保存，不加载模型、不出图，不改其他页或项目默认值。409 重读判断，不能直接换新指纹覆盖。'}),
   'page.editor.read': endpoint('读取相关页面文件全文，不展开引用','POST','/api/agent/page-editor',{
     page_key:pageKey,section:{type:'string',enum:['prompt','content','render'],description:'默认 prompt；content 是页面内容，文字页含正文和排版；render 是模型与画幅'},
-  },{project:true,required:['page_key'],body:a=>a,details:'参数例 {project_id:"demo",page_key:{page_id:"page-001"},section:"content"}。只返回所选文件完整 document 和 save。先改 content，再重读 prompt 后编辑；content 变化会使之前的 Prompt 指纹失效。按 save.args 提交 changes，无需抄回全文或组装上下文。文字页（page_kind:text）的显示标题用 display_title，正文用 body，排版用 text_layout；title 仅为目录标题，scene_description 不替代正文。插画页对白布局才用 lettering.page.read/save。',transform:r=>r.value}),
+  },{project:true,required:['page_key'],body:a=>a,details:'参数例 {project_id:"demo",page_key:{page_id:"page-001"},section:"content"}。只返回所选文件完整 document 和 save。多页同类编辑用 page.editor.batch.read/save（每批最多16页）。先改 content，再重读 prompt 后编辑；content 变化会使之前的 Prompt 指纹失效。按 save.args 提交 changes，无需抄回全文或组装上下文。文字页（page_kind:text）的显示标题用 display_title，正文用 body，排版用 text_layout；title 仅为目录标题，scene_description 不替代正文。插画页对白布局才用 lettering.page.read/save。',transform:r=>r.value}),
   'page.editor.save': endpoint('局部修改页面文件，保留未涉及字段','POST','/api/agent/page-editor/save',{
     page_key:pageKey,section:{type:'string',enum:['prompt','content','render'],description:'读取回执中的 section'},
     expected_sha256:string('读取回执中的版本；页面或上游变化时409，必须重读判断'),changes:object('仅修改字段；对象递归合并，数组整项替换，null删除键'),

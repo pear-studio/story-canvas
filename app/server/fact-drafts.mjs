@@ -6,6 +6,13 @@ import { hashCanonicalJson } from "./workflow-definition.mjs";
 import { ApiError } from "./http-support.mjs";
 import { readPageRenderDraft, commitPageRender } from './page-render-settings.mjs';
 
+export function fingerprintErrors(body, fields) {
+  return fields.filter(field=>typeof body[field] !== 'string' || !/^[a-f0-9]{64}$/.test(body[field])).map(field=>({
+    field, message:`${field} 必须原样使用读取回执中的64位小写十六进制指纹；不能填占位符或自行计算`,
+    ...(typeof body[field]==='string'?{received_length:body[field].length}:{}),
+  }));
+}
+
 function draftOperation(domain, kind) {
   if (domain === "scene" && ["profile", "visual", "prompt"].includes(kind)) return { read: scene.readSceneFactDraft, commit: scene.commitSceneFact, kind };
   if (domain === "page") {

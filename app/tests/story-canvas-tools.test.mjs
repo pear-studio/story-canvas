@@ -27,10 +27,10 @@ async function fixture(t, responder = () => assert.fail('不应发送请求')) {
       response.end(JSON.stringify({ error: error.code, message: error.message, details: error.details }));
     }
   });
-  // Windows 的随机端口可能落入 Fetch 禁止端口（如 6000）；仅测试夹具选用安全区间。
+  // 避开 Fetch 禁止端口，并有界重选 Windows 已占用或保留（EACCES）的端口。
   for (let attempt=0; ; attempt++) {
     try { await new Promise((resolve,reject) => { server.once('error',reject); server.listen(randomInt(20000,40000),'127.0.0.1',()=>{server.off('error',reject);resolve();}); }); break; }
-    catch(error) { if(error.code!=='EADDRINUSE'||attempt>=9) throw error; }
+    catch(error) { if(!['EADDRINUSE','EACCES'].includes(error.code)||attempt>=9) throw error; }
   }
   t.after(async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); });
   await mkdir(path.join(root, 'Config'));
@@ -44,6 +44,51 @@ async function failure(tool, input) {
   try { await tool.execute(input); } catch (error) { return JSON.parse(error.message); }
   assert.fail('必须保持工具失败状态');
 }
+
+test('批量页面编辑预检重复目标，遇到未知保存结果停止，不重放已保存页',async t=>{
+  const f=await fixture(t,(request,response)=>{
+    if(request.body.page_key.page_id==='page-002') {response.statusCode=503;return response.end(JSON.stringify({error:'unavailable'}));}
+    response.end(JSON.stringify({saved:true,save:{operation:'page.editor.save',args:request.body}}));
+  });
+  const items=['page-001','page-002','page-003'].map(page_id=>({page_key:{page_id},expected_sha256:'a'.repeat(64),changes:{title:'修改'}}));
+  const args={project_id:'demo',section:'content',items};
+  const duplicate=await failure(f.tool,{operation:'page.editor.batch.save',args:{...args,items:[items[0],items[0]]}});
+  assert.equal(duplicate.error,'invalid_arguments');assert.equal(f.requests.length,0);
+  const bad=await failure(f.tool,{operation:'page.editor.batch.save',args:{...args,items:[items[0],{...items[1],changes:'错误'}]}});
+  assert.equal(bad.error,'invalid_arguments');assert.equal(f.requests.length,0);
+  const saved=await f.tool.execute({operation:'page.editor.batch.save',args});
+  assert.deepEqual(saved.results.map(r=>r.status),['saved','unknown','not_executed']);
+  assert.deepEqual(f.requests.map(r=>r.body.page_key.page_id),['page-001','page-002']);
+  assert.equal(saved.results[1].next.args.page_key.page_id,'page-002');
+});
+
+test('词库默认输出有界，分页可继续，完整解释由详情文件保留',async t=>{
+  const entry={prompt_text:'quiet',display_text:'安静',matched:true,allowed:true,description:'解释'.repeat(20000),original_description:'完整原文',aliases:['alias'],other_names:['name'],post_count:10};
+  const f=await fixture(t,(request,response)=>response.end(JSON.stringify({available:true,tags_file:'large-source',
+    ...(request.method==='GET'?{suggestions:[entry],has_more:true}:{matches:request.body.prompts.map(prompt_text=>({...entry,prompt_text}))})})));
+  const run=(operation,args)=>f.tool.execute({operation,args});
+  const search=await run('dictionary.search',{scope:'page',q:'quiet',offset:12});
+  assert.equal(search.next_offset,13);assert.equal(search.items[0].description.length,80);assert.equal(search.items[0].description_truncated,true);
+  assert.equal(search.tags_file,undefined);assert.equal(search.items[0].aliases,undefined);
+  assert.ok(f.requests[0].url.includes('limit=12'));
+  const matches=await run('dictionary.matches',{scope:'page',prompts:Array(50).fill('quiet')});
+  assert.equal(matches.items.length,50);assert.ok(JSON.stringify(matches).length<16000);
+  const full=await run('dictionary.inspect',{scope:'page',prompt:'quiet'});
+  const stored=JSON.parse(await readFile(full.file,'utf8'));
+  assert.equal(stored.matches[0].description,entry.description);assert.deepEqual(stored.matches[0].aliases,entry.aliases);
+  const tooMany=await failure(f.tool,{operation:'dictionary.matches',args:{scope:'page',prompts:Array(51).fill('quiet')}});
+  assert.equal(tooMany.error,'invalid_arguments');
+});
+
+test('结构变更回执不返回整份故事骨架，保留目标身份和下游诊断',async t=>{
+  const diagnostics=[{code:'downstream_problem',page_id:'page-001'}];
+  const f=await fixture(t,(request,response)=>response.end(JSON.stringify(request.url.endsWith('/revision')?{revision:'r'}:
+    {value:{synopsis:'长正文'.repeat(10000),chapters:[]},target_file:'outline.json',sequence_id:'unit-1',downstream_diagnostics:diagnostics})));
+  const result=await f.tool.execute({operation:'sequence.move',args:{project_id:'demo',chapter_id:'chapter-1',sequence_id:'unit-1',before_sequence_id:'unit-2'}});
+  assert.equal(result.value,undefined);assert.equal(result.sequence_id,'unit-1');assert.equal(result.chapter_id,'chapter-1');
+  assert.equal(result.before_sequence_id,'unit-2');assert.deepEqual(result.downstream_diagnostics,diagnostics);
+  assert.ok(JSON.stringify(result).length<500);
+});
 test('task.wait 的工具契约限制数量与期限，传递取消信号且只发GET',async t=>{
   const f=await fixture(t,(_request,response)=>response.end(JSON.stringify({task:{id:'t1',status:'completed',purpose:'candidate',items:[]}})));
   const help=await f.tool.execute({operation:'help',target:'task.wait'});
@@ -243,6 +288,7 @@ test('统一工具经真实 HTTP Adapter 完成结构、设定及三类页面生
   const run = (operation, args = {}) => f.tool.execute({ operation, args: { project_id: 'demo', ...args } });
   const chapter = await run('chapter.create', { title: '测试章' });
   const unit = await run('sequence.create', { chapter_id: chapter.chapter_id, title: '测试单元' });
+  assert.equal(unit.saved,true);assert.equal(unit.value,undefined);assert.equal(unit.target_file,undefined);
   for (const [prefix, identity, document] of [
     ['story.synopsis', {}, {synopsis:'已确认的故事梗概'}],
     ['chapter', {chapter_id:chapter.chapter_id}, {title:'测试章',summary:'章节梗概'}],
@@ -281,6 +327,14 @@ test('统一工具经真实 HTTP Adapter 完成结构、设定及三类页面生
     { owner_kind: 'character', character_id: 'alice', variant_id: 'evening' },
     { owner_kind: 'scene', scene_id: 'station', variant_id: 'wet' },
   ];
+  const factPack=await run('facts.read',{domain:'story',kind:'sequence',target_id:unit.sequence_id});
+  for(const [field,value] of [['expected_sha256','PLACEHOLDER'],['expected_sha256','a'.repeat(65)],['expected_context_sha256','bad'],['document',null]]) {
+    const rejected=await failure(f.tool,{operation:'facts.save',args:{domain:'story',kind:'sequence',draft:{...factPack.draft,[field]:value}}});
+    assert.equal(rejected.status,400);assert.equal(rejected.details[0].field,field);
+    assert.equal(rejected.recovery.next.operation,'facts.read');
+    assert.equal(rejected.recovery.next.args.target_id,unit.sequence_id);
+  }
+  assert.deepEqual((await run('sequence.read',{sequence_id:unit.sequence_id})).document,factPack.draft.document);
   const pages = [];
   for (const owner of owners) {
     const page = await run('page.create', { owner }); pages.push(page);
@@ -387,6 +441,25 @@ test('统一工具经真实 HTTP Adapter 完成结构、设定及三类页面生
   assert.equal(textStale.status,409);
   const cleared=await run(textSaved.save.operation,{...textSaved.save.args,changes:{body:'',display_title:''}});
   assert.equal(cleared.document.body,'');assert.equal(cleared.document.display_title,'');
+  // 批量保存遇到冲突仍处理其他页，既不覆盖旧事实也不回滚已成功项。
+  const keys=[...pages.map(p=>({page_id:p.page_id})),textKey];
+  const batchRead=await run('page.editor.batch.read',{section:'content',page_keys:keys});
+  assert.deepEqual(batchRead.counts,{read:4});
+  await run('page.editor.save',{...batchRead.results[0].save.args,changes:{title:'用户的新标题'}});
+  const rows=batchRead.results.map(({page_key,save},i)=>({page_key,expected_sha256:save.args.expected_sha256,changes:{title:`批量标题${i}`}}));
+  const batchSaved=await run('page.editor.batch.save',{section:'content',items:rows});
+  assert.deepEqual(batchSaved.counts,{failed:1,saved:3});
+  assert.equal(batchSaved.results[0].error.code,'page_edit_conflict');
+  assert.equal(batchSaved.results[0].next.operation,'page.editor.read');
+  assert.equal(batchSaved.results[1].document,undefined);
+  const afterBatch=await run('page.editor.batch.read',{section:'content',page_keys:keys});
+  assert.equal(afterBatch.results[0].document.title,'用户的新标题');
+  for(let i=1;i<4;i++) {
+    assert.equal(afterBatch.results[i].document.title,`批量标题${i}`);
+    assert.deepEqual(afterBatch.results[i].document.characters,batchRead.results[i].document.characters);
+  }
+  const malformed=await failure(f.tool,{operation:'page.editor.save',args:{...afterBatch.results[0].save.args,expected_sha256:'PLACEHOLDER',changes:{title:'不应写入'}}});
+  assert.equal(malformed.status,400);assert.equal(malformed.details[0].field,'expected_sha256');
   const blocked = await failure(f.tool, { operation: 'page.move', args: { project_id: 'demo', page_id: textPage.page_id, owner: owners[1] } });
   assert.equal(blocked.error, 'text_page_story_only');
   await run('page.move', { page_id: pages[0].page_id, owner: owners[2], before_page_id: pages[2].page_id });

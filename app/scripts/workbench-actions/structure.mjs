@@ -24,6 +24,7 @@ function outlineEditor(kind, label) {
       summary: kind === 'synopsis' ? '保存故事梗概' : `保存${label}标题与梗概`,
       parameters: schema({ ...identity, expected_sha256: string('读取返回的目标指纹'), expected_context_sha256: string('读取返回的上游指纹'), document: schema(document) }),
       details: '使用 read 返回的 save.args，加完整 document；只修改当前梗概或标题，保留其他章节、单元和页面顺序。冲突先重读判断，不替换指纹强行覆盖。成功回执 value 是已保存正文。',
+      recover:(_error,args)=>({message:'按字段诊断修正；重读并核验正文后再决定保存，不自行替换指纹。',next:{operation:`${prefix}.read`,args:{project_id:args.project_id,...(kind==='synopsis'?{}:{[`${kind}_id`]:args[`${kind}_id`]})}}}),
       execute: args => saveFactDraft('story', kind, { project_id: args.project_id,
         ...(kind === 'synopsis' ? {} : { target_id: args[`${kind}_id`] }), document: args.document,
         expected_sha256: args.expected_sha256, expected_context_sha256: args.expected_context_sha256 }),

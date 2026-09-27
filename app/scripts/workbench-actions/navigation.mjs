@@ -9,8 +9,13 @@ export function directory(summary, kind, filters = {}, required = []) {
 }
 export function navigationAction(summary, route, properties, required = Object.keys(properties), details = '') {
   return { summary, parameters: schema({ ...project, ...properties }, ['project_id', ...required]),
-    details: `${details}工具读取最新 revision 后提交一次，返回服务端操作回执（包含目标 ID；删除可能包含归档信息）。409 后重读并判断，不自动重试。删除须符合用户授权范围；不改索引模拟创建或删除。`,
-    execute: ({ project_id, ...body }) => navigation(project_id, route, body) };
+    details: `${details}工具读取最新 revision 后提交一次，返回操作回执（包含目标 ID；删除可能包含归档信息）。章节/单元操作仅返回变动身份及必要诊断，不重复整份骨架；正文用对应 read，顺序用 list 核验。409 后重读并判断，不自动重试。删除须符合用户授权范围；不改索引模拟创建或删除。`,
+    execute: async ({ project_id, ...body }) => {
+      const result=await navigation(project_id, route, body);
+      if(!/^(create|rename|move|delete)-(chapter|sequence)$/.test(route))return result;
+      const {value,target_file,...receipt}=result;
+      return {saved:true,action:route,...Object.fromEntries(Object.entries(body).filter(([key])=>key.endsWith('_id'))),...receipt};
+    } };
 }
 // 角色子设定改 ID 走已有专用接口；仍使用项目 revision，不误用事实草稿指纹。
 export function revisionAction(summary, suffix, properties, details) {

@@ -1,5 +1,5 @@
 import { ApiError, readJsonBody, sendJson } from "./http-support.mjs";
-import { readFactDraft, saveFactDraft } from "./fact-drafts.mjs";
+import { readFactDraft, saveFactDraft, fingerprintErrors } from "./fact-drafts.mjs";
 import { readStoryContext } from "./story-facts.mjs";
 import { readProjectCreationTemplate, createProject } from "./project-creation.mjs";
 import { readPromptEditContext } from "./prompt-edit-context.mjs";
@@ -65,10 +65,10 @@ export async function handleAgentRequest({ request, response, decodedPath, proje
     return true;
   }
   if (action === "save") {
-    if (!body.document || typeof body.document !== "object" || Array.isArray(body.document)
-      || !/^[a-f0-9]{64}$/.test(body.expected_sha256 ?? "") || !/^[a-f0-9]{64}$/.test(body.expected_context_sha256 ?? "")) {
-      throw new ApiError(400, "invalid_fact_draft");
-    }
+    const errors=fingerprintErrors(body,['expected_sha256','expected_context_sha256']);
+    if (!body.document || typeof body.document !== "object" || Array.isArray(body.document))
+      errors.push({field:'document',message:'document 必须是读取草稿中的完整对象；不要提交整个 {draft,save} 返回包'});
+    if(errors.length)throw new ApiError(400, "invalid_fact_draft",errors);
     sendOperation(200, await mutateTargetFacts(body.project_id, () => saveFactDraft(projectRoot, {
       ...target, document: body.document, expectedSha256: body.expected_sha256, expectedContextSha256: body.expected_context_sha256,
       conflictCode: "fact_target_conflict", contextConflictCode: "fact_upstream_conflict",
