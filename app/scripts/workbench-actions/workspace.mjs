@@ -4,11 +4,29 @@ import { project } from './navigation.mjs';
 import { putProject } from './project-settings.mjs';
 import { jsonArtifact } from './http-action.mjs';
 import { waitForTasks } from './task-wait.mjs';
+import {readOperationRecord} from './operation-records.mjs';
 const get = async path => (await requestWorkbench(path)).value;
 const pick=(value,keys)=>Object.fromEntries(keys.filter(key=>value[key]!==undefined).map(key=>[key,value[key]]));
 const taskIdentity={...project,task_id:string('任务 ID'),purpose:{...string('默认 candidate；全局 comparison 的 project_id 使用 _'),enum:['candidate','comparison','finished']}};
 const taskPath=({project_id,task_id,purpose='candidate'})=>'/api/tasks/'+encodeURIComponent(project_id)+'/'+encodeURIComponent(task_id)+'?purpose='+purpose;
 const projectQuery=id=>id?'?project_id='+encodeURIComponent(id):'';
+const submissionCounts=record=>record.results.reduce((counts,row)=>(counts[row.status]=(counts[row.status]??0)+1,counts),{total:record.results.length});
+async function waitForSelection(args,execution={}) {
+  if(Boolean(args.batch_id)===Boolean(args.targets))throw invalid('batch_id 与 targets 必须且只能提供一项');
+  const record=args.batch_id?await readOperationRecord('generation',args.batch_id):null;
+  if(record && args.until && args.until!=='all_terminal')throw invalid('批次等待只支持 all_terminal');
+  const targets=record?.targets??args.targets;
+  if(new Set(targets.map(t=>JSON.stringify([t.project_id,t.task_id,t.purpose??'candidate']))).size!==targets.length)throw invalid('targets 不能包含重复任务');
+  const result=await waitForTasks({...args,targets,until:record?'all_terminal':args.until},{signal:execution.signal,
+    read:async(identity,signal)=>pick(taskSummary((await requestWorkbench(taskPath(identity)+'&view=summary',{signal})).value.task),['status','item_counts','progress','current_page_key','pending_control','error','failures'])});
+  if(!record)return result;
+  const problems=result.tasks.filter(t=>t.error || ['failed','cancelled','incomplete'].includes(t.task?.status??t.status));
+  return {batch_id:args.batch_id,reason:result.reason,elapsed_ms:result.elapsed_ms,submission:submissionCounts(record),summary:result.summary,
+    all_terminal:result.all_terminal,all_succeeded:result.all_succeeded && record.results.every(r=>r.status==='submitted'),
+    ...(problems.length?{problems:problems.slice(0,5),problems_total:problems.length}:{}),
+    ...(!result.all_terminal?{wait:{operation:'task.wait',args:{batch_id:args.batch_id}}}:{}),
+    inspect:{operation:'task.batch.read',args:{batch_id:args.batch_id}}};
+}
 function taskSummary(task) {
   return {...pick(task,['id','purpose','status','project_id','project_title','created_at','started_at','completed_at','failed_at','error','progress','item_counts','current_page_key','current_page_title','page_count','pending_control']),
     failures:(task.items??[]).filter(item=>item.status==='failed').slice(0,5).map(item=>pick(item,['id','candidate_id','page_key','status','error']))};
@@ -78,9 +96,9 @@ export const workspaceActions = {
     execute: ({ project_id, value, revision }) => putProject(project_id, 'creative-agreement', value, revision),
   },
   'task.list': {
-    summary:'查看当前任务与队列摘要，可按项目筛选',parameters:schema(project,[]),
-    details:'project_id 省略查全局，指定则只查该项目；不返回冻结输入。队列重排需用全局列表。历史用 task.history，单项状态用 task.inspect。',example:{project_id:'demo'},
-    async execute({project_id}) { const value=await get('/api/tasks'+projectQuery(project_id)); return {...value,tasks:value.tasks.map(taskSummary),history:value.history.map(taskSummary)}; },
+    summary:'分页查看当前任务摘要，可按项目筛选',parameters:schema({...project,...pagination},[]),
+    details:'project_id 省略查全局，指定则只查该项目。默认20条、不夹带历史正文；历史用 task.history，单项用 task.inspect。重排需读取全局列表所有分页，并保留同一 queue_revision；中途变化重新读取。',example:{project_id:'demo'},
+    async execute({project_id,...paging}) { const value=await get('/api/tasks'+projectQuery(project_id)); return {...paginate(value.tasks.map(taskSummary),paging),history_count:value.history.length,...(value.queue_revision===undefined?{}:{queue_revision:value.queue_revision})}; },
   },
   'task.history': {
     summary:'分页查看任务历史摘要，可按项目筛选',parameters:schema({...project,before:string('上一页的 next_cursor')},[]),
@@ -95,10 +113,23 @@ export const workspaceActions = {
   },
   'task.wait': {
     summary:'等待单项或整批任务终态并核验结果数量',
-    parameters:schema({targets:{type:'array',minItems:1,maxItems:32,description:'任务身份；整批核验保留全部项，最多32项',items:schema({...taskIdentity,after_cursor:string('上次 wait 返回的 cursor；首次可省略')},['project_id','task_id'])},until:{type:'string',enum:['terminal','all_terminal','change'],description:'默认 terminal：任一项结束；all_terminal：全部结束；change：也在进度变化时返回'},wait_ms:{type:'integer',minimum:0,maximum:60000,description:'默认60000毫秒；0只读取当前快照'}},['targets']),
-    details:'生成、成品与对比任务共用，不支持训练。整批用 until:all_terminal，保留全部任务，不能只等最后一项。返回 summary（各终态、未完成/未知任务、图片总数/可用/失败数）、all_terminal 与 all_succeeded；终态含失败和取消，不等于全部成功。超时或读取错误时按回执 wait.args 续等，不能重提生成。terminal 模式任一项结束即返回；change 模式进度跨10%也返回。cursor 续等时省略未变运行任务正文。停止等待不取消任务；取消须 task.cancel。',
+    parameters:schema({batch_id:string('generation.batch 的批次 ID；与 targets 二选一'),targets:{type:'array',minItems:1,maxItems:32,description:'手动选择任务；最多32项',items:schema({...taskIdentity,after_cursor:string('上次 wait 返回的 cursor；首次可省略')},['project_id','task_id'])},until:{type:'string',enum:['terminal','all_terminal','change'],description:'targets 默认 terminal；batch_id 固定 all_terminal'},wait_ms:{type:'integer',minimum:0,maximum:60000,description:'默认60000毫秒；0只读快照，不能超过60000'}},[]),
+    details:'批量生成后直接传 batch_id，不抄任务列表。一次最多等60秒，超时照 wait.args 续等，不用 Shell sleep、不重提生成。批次仅返回计数和最多5项异常；逐项状态用 task.batch.read。all_terminal 表示任务已结束，all_succeeded 才表示全部提交且成功；失败、取消或未提交不算成功。targets 模式仍支持任一终态或进度变化。停止等待不取消任务；取消须 task.cancel。批次回执保存在 Saved，重启可用，清理 Saved 后按 task.list/history 找原任务。',
     example:{targets:[{project_id:'demo',task_id:'render-example'}],wait_ms:60000},
-    execute:(args,execution={})=>waitForTasks(args,{signal:execution.signal,read:async(identity,signal)=>pick(taskSummary((await requestWorkbench(taskPath(identity)+'&view=summary',{signal})).value.task),['status','item_counts','progress','current_page_key','pending_control','error','failures'])}),
+    execute:waitForSelection,
+  },
+  'task.batch.read': {
+    summary:'分页查看批次各页的提交结果与当前状态',parameters:schema({batch_id:string('生成批次 ID'),...pagination},['batch_id']),
+    details:'返回每页 submitted/rejected/unknown/not_submitted；已提交项带 task_id 和即时状态，失败按具体页处理。unknown 必须核查任务后决定，不能重放整批。等待使用 task.wait batch_id；这里只查询一页明细。',
+    async execute({batch_id,...paging},execution={}) {
+      const record=await readOperationRecord('generation',batch_id),page=paginate(record.results,paging);
+      const items=await Promise.all(page.items.map(async row=>{
+        if(!row.task_id)return row;
+        try{return {...row,task:pick(taskSummary((await requestWorkbench(taskPath({project_id:record.project_id,task_id:row.task_id})+'&view=summary',{signal:execution.signal})).value.task),['status','item_counts','error'])};}
+        catch(error){return {...row,read_error:{code:error.code??'task_read_failed',message:error.message}};}
+      }));
+      return {batch_id,project_id:record.project_id,submission:submissionCounts(record),...page,items};
+    },
   },
   'task.details': {
     summary:'将任务完整冻结输入与执行信息保存为 JSON 文件',parameters:schema(taskIdentity,['project_id','task_id']),

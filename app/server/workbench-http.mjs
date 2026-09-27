@@ -10,6 +10,7 @@ import { hashCanonicalJson } from "./workflow-definition.mjs";
 import { readFactDraft, saveFactDraft } from './fact-drafts.mjs';
 import { inspectStoryCandidates, executeStoryCandidateRefresh } from "./story-candidate-refresh.mjs";
 import { deletePageCandidateById, deletePageCandidates } from "./candidate-delete.mjs";
+import {readCandidateBatches,previewCandidateCleanup,applyCandidateCleanup} from './candidate-batches.mjs';
 import { ApiError, configuredPath, readJsonBody, sendJson } from "./http-support.mjs";
 import { readWritingCorpusContext } from "./writing-corpus.mjs";
 import { primaryComfyUiUrl } from "./comfy-endpoint-selector.mjs";
@@ -80,6 +81,16 @@ export async function handleWorkbenchRequest({
   workbenchRenderLauncher,
   generationScheduler = null,
 }) {
+  const candidateBatchRoute=/^\/api\/projects\/([^/]+)\/workbench\/candidate-batches\/(read|preview|apply)$/.exec(decodedPath);
+  if(request.method==='POST' && candidateBatchRoute) {
+    const [,projectId,action]=candidateBatchRoute,body=await readJsonBody(request);
+    const boundary=action==='apply'?mutateDerived:readFacts;
+    const result=await boundary(projectId,context=>{
+      const options={...context,projectRoot};
+      return action==='read'?readCandidateBatches(options,body.page_key):action==='preview'?previewCandidateCleanup(options,body.selections):applyCandidateCleanup(options,body.plans);
+    });
+    sendOperation(200,result);return true;
+  }
   async function startRender(projectDirectory, safeProjectId, value) {
     if (workbenchRenderLauncher) return workbenchRenderLauncher({
       repositoryRoot: projectRoot,

@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {submitGenerationBatch} from '../scripts/workbench-actions/generation-batch.mjs';
+import {submitGenerationBatch as submit} from '../scripts/workbench-actions/generation-batch.mjs';
+async function submitGenerationBatch(args,options) {
+  let record;
+  const result=await submit(args,{...options,persist:async(_kind,value)=>{record=structuredClone(value);return 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';}});
+  return {...result,record};
+}
 const args={project_id:'demo',page_keys:[1,2,3,4,5].map(n=>({page_id:`page-00${n}`})),count:3};
 const accepted=id=>({value:{task:{task_id:`render-${id}`}}});
 
@@ -17,8 +22,8 @@ test('部分拒绝继续，结果不明停止，保留已提交任务，不自�
   }});
   assert.equal(sent.length,4);assert.equal(new Set(sent).size,4);
   assert.deepEqual(result.counts,{total:5,submitted:2,rejected:1,unknown:1,not_submitted:1});
-  assert.deepEqual(result.results.map(r=>r.status),['submitted','rejected','submitted','unknown','not_submitted']);
-  assert.equal(result.wait.args.until,'all_terminal');assert.equal(result.wait.args.targets.length,2);
+  assert.deepEqual(result.record.results.map(r=>r.status),['submitted','rejected','submitted','unknown','not_submitted']);
+  assert.equal(result.wait.args.batch_id,result.batch_id);assert.equal(result.record.targets.length,2);
 });
 test('取消后保留已受理的任务，不继续发送；缺少任务回执与5xx不作安全拒绝',async()=>{
   const controller=new AbortController();let calls=0;
@@ -28,4 +33,14 @@ test('取消后保留已受理的任务，不继续发送；缺少任务回执�
     const uncertain=await submitGenerationBatch(args,{submit});
     assert.equal(uncertain.counts.unknown,1);assert.equal(uncertain.counts.not_submitted,4);assert.equal(uncertain.wait,undefined);
   }
+});
+
+test('回执落盘失败保留任务 ID，不继续生成；持久化前标为结果不明',async()=>{
+  let calls=0,writes=0;
+  const snapshots=[];
+  const result=await submit(args,{submit:async a=>{calls++;return accepted(a.page_key.page_id);},persist:async(_kind,record)=>{
+    snapshots.push(structuredClone(record));if(++writes===3)throw new Error('disk full');return 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  }});
+  assert.equal(calls,1);assert.equal(result.error,'receipt_write_failed');assert.equal(result.targets.length,1);
+  assert.equal(snapshots[1].results[0].status,'unknown');assert.equal(snapshots[2].results[0].status,'submitted');
 });

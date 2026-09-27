@@ -18,7 +18,7 @@ executionActions['generation.batch']={
   summary:'批量提交多页候选并返回整批等待入口',capability:'generation',
   parameters:schema({...projectId,page_keys:{type:'array',items:pageKey,minItems:1,maxItems:32,description:'明确授权的页面，不可重复，最多32页'},
     ...Object.fromEntries(Object.entries(executionActions['generation.run'].parameters.properties).filter(([key])=>['count','seed','prompt_source'].includes(key)))},['project_id','page_keys']),
-  details:'须已有整批生成授权。每页沿用自己的模型与画幅，每页默认3张；count/seed/prompt_source 对全批适用。顺序提交，每页最多一次，不重试；不要求调用前重复读取全文。返回每页 submitted/rejected/unknown/not_submitted 及 wait。使用 wait.args 等整批终态，不能只等待最后一项。部分失败保留已提交任务；断线或回执不明停止后续提交，先查 task.list/history，不重放整批。黑底字幕、时间过渡用 page.create page_kind:text，再输出成品，不生成候选。极简预设禁用此操作。',
+  details:'须已有整批生成授权。每页沿用自己的模型与画幅，默认3张；count/seed/prompt_source 对全批适用。顺序提交，每页最多一次。返回 batch_id、计数和简短 wait 入口；task.wait 只传 batch_id 即可，不抄任务列表、不用 Shell sleep。逐页提交/运行结果用 task.batch.read。部分失败保留已提交任务；断线或回执不明停止后续提交，不重放整批。Saved 中保留派生回执，重启可继续查询。纯文字页不生成候选。极简预设禁用此操作。',
   execute:(args,execution={})=>submitGenerationBatch(args,{submit:executionActions['generation.run'].execute,recover:executionActions['generation.run'].recover,signal:execution.signal}),
 };
 for (const action of ['start','retry']) executionActions[`comparison.${action}`] = endpoint(`运行对比实验：${action}`,'POST',a=>`/api/comparison-experiments/${encode(a.experiment_id)}/${action}`,{experiment_id:string('已创建实验 ID')},{capability:'generation',details:'需明确授权；先 comparison.inspect 检查预检和状态。会加载生成模型。失败后先查询任务，不能盲目重放。'});

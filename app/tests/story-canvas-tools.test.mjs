@@ -119,9 +119,11 @@ test('批量生成实际走单页接口，返回可执行整批核验入口；�
   });
   const result=await f.tool.execute({operation:'generation.batch',args:{project_id:'demo',page_keys:[{page_id:'page-001'},{page_id:'page-002'},{page_id:'page-003'}]}});
   assert.equal(result.counts.submitted,2);assert.equal(result.counts.rejected,1);
-  assert.equal(result.results[1].recovery.next.operation,'page.editor.read');
+  assert.equal(result.issues[0].recovery.next.operation,'page.editor.read');
   assert.ok(f.requests.every(r=>r.url==='/api/projects/demo/workbench/render' && r.body.count===3));
-  const done=await f.tool.execute(result.wait);assert.equal(done.all_succeeded,true);assert.equal(done.summary.total,2);
+  const done=await f.tool.execute(result.wait);assert.equal(done.all_succeeded,false);assert.equal(done.summary.total,2);
+  assert.equal(done.submission.rejected,1);assert.equal(done.tasks,undefined);
+  const detail=await f.tool.execute(result.inspect);assert.equal(detail.items.length,3);assert.equal(detail.items[1].status,'rejected');
   const failureResult=await failure(f.tool,{operation:'generation.run',args:{project_id:'demo',page_key:{page_id:'page-002'}}});
   assert.equal(failureResult.recovery.next.operation,'page.editor.read');
   assert.match(failureResult.recovery.message,/finished.output/);
@@ -161,6 +163,28 @@ test('列表分页不带正文和草稿，完整事实读取不截断', async t 
   const pack=await tool.execute({ operation: 'facts.read', args: { project_id: 'demo', domain: 'story', kind: 'outline' } });
   assert.deepEqual(pack.draft,draft);assert.deepEqual(pack.save,{operation:'facts.save',args:{domain:'story',kind:'outline'},draft_parameter:'draft'});
 });
+
+test('大项目默认列表有界，完整 Git/成品信息仍可逐页查询',async t=>{
+  const huge='metadata'.repeat(10000);
+  const pages=Array.from({length:150},(_,i)=>({page_id:`page-${i}`,title:'测试',status:'missing',candidate_count:3,batch_skip_reason:'有3张候选',record:{sha256:'hash',extra:huge}}));
+  const f=await fixture(t,(req,res)=>{
+    if(req.url==='/api/project-library')return res.end(JSON.stringify({projects:[{id:'demo',title:'测试',available:true}]}));
+    if(req.url.endsWith('/git'))return res.end(JSON.stringify({branch:'main',dirty:true,changes:Array.from({length:150},(_,i)=>({path:`pages/${i}.json`,status:'M'})),remotes:[],status:'ready'}));
+    if(req.url.startsWith('/api/tasks'))return res.end(JSON.stringify({tasks:pages.map(p=>({id:p.page_id,status:'queued',snapshot:huge})),history:pages,queue_revision:5}));
+    const id=new URL(req.url,'http://test').searchParams.get('page_id');
+    res.end(JSON.stringify({pages:id?pages.filter(p=>p.page_id===id):pages}));
+  });
+  const info=await f.tool.execute({operation:'project.info',args:{project_id:'demo'}});
+  assert.equal(info.changed_files,150);assert.equal(info.git.changes,undefined);assert.ok(JSON.stringify(info).length<500);
+  const changes=await f.tool.execute({operation:'project.git.changes',args:{project_id:'demo',offset:20,limit:5}});
+  assert.equal(changes.items.length,5);assert.equal(changes.total,150);assert.equal(changes.next_offset,25);
+  const finished=await f.tool.execute({operation:'finished.list',args:{project_id:'demo',limit:5}});
+  assert.equal(finished.items.length,5);assert.equal(finished.summary.missing,150);assert.ok(JSON.stringify(finished).length<1500);
+  const detail=await f.tool.execute({operation:'finished.inspect',args:{project_id:'demo',page_id:'page-1'}});
+  assert.equal(detail.pages[0].record.extra,huge);
+  const tasks=await f.tool.execute({operation:'task.list',args:{project_id:'demo',limit:5}});
+  assert.equal(tasks.items.length,5);assert.equal(tasks.total,150);assert.equal(tasks.history,undefined);assert.ok(JSON.stringify(tasks).length<1000);
+});
 test('完整 Prompt 包和保存草稿保持身份与指纹，不提交只读 context', async t => {
   const draft = { project_id: 'demo', target_id: 'page-001', document: { text: '内容' }, expected_sha256: 'a'.repeat(64), expected_context_sha256: 'b'.repeat(64) };
   const pack = { draft, save: { domain: 'page', kind: 'prompt' }, context: {status:'complete',model_id:'qwen',references:[{source:'character:alice:default',current_text:'只读'.repeat(10000)}],final:{positive:'完整正向',negative:'',parts:{trace:'详细追踪'}}} };
@@ -193,6 +217,7 @@ test('统一工具经真实 HTTP Adapter 完成结构、设定及三类页面生
   const { handleWorkbenchRequest } = await import('../server/workbench-http.mjs');
   const { readProjectCreationTemplate } = await import('../server/project-creation.mjs');
   const { createQwenFixtureProject } = await import('./model-fixture.mjs');
+  const {readPageMedia}=await import('../server/page-media.mjs');
   const { readFile } = await import('node:fs/promises');
   let root;
   const f = await fixture(t, async (captured, response) => {
@@ -200,6 +225,7 @@ test('统一工具经真实 HTTP Adapter 完成结构、设定及三类页面生
     const request = Readable.from([captured.rawBody]); request.method = captured.method; request.headers=captured.headers; request.url=captured.url;
     const context = {
       request, response, decodedPath: decodeURIComponent(captured.url), projectRoot: root, config: {},
+      pageMediaReader:{read:async(projectId,value)=>({...await readPageMedia(root,projectId,value),revision:'media-test'})},
       readFacts: async (projectId, fn) => ({ value: await fn({ projectId, projectDirectory: path.join(root, 'workspace', projectId) }) }),
       mutateFacts: async (projectId, fn) => {
         assert.equal(captured.headers['x-story-canvas-expected-revision'], 'r-test');
@@ -208,6 +234,7 @@ test('统一工具经真实 HTTP Adapter 完成结构、设定及三类页面生
       sendOperation: (status, result) => { response.statusCode = status; response.end(JSON.stringify(result.value)); },
     };
     context.mutateTargetFacts = async (projectId, fn) => ({ value: await fn({ projectId, projectDirectory: path.join(root, 'workspace', projectId) }) });
+    context.mutateDerived=context.mutateTargetFacts;
     if (await handleAgentRequest(context)) return;
     assert.equal(await handleWorkbenchRequest(context), true);
   });
@@ -216,6 +243,17 @@ test('统一工具经真实 HTTP Adapter 完成结构、设定及三类页面生
   const run = (operation, args = {}) => f.tool.execute({ operation, args: { project_id: 'demo', ...args } });
   const chapter = await run('chapter.create', { title: '测试章' });
   const unit = await run('sequence.create', { chapter_id: chapter.chapter_id, title: '测试单元' });
+  for (const [prefix, identity, document] of [
+    ['story.synopsis', {}, {synopsis:'已确认的故事梗概'}],
+    ['chapter', {chapter_id:chapter.chapter_id}, {title:'测试章',summary:'章节梗概'}],
+    ['sequence', {sequence_id:unit.sequence_id}, {title:'测试单元',summary:'单元梗概'}],
+  ]) {
+    const pack=await run(`${prefix}.read`,identity);
+    await run(pack.save.operation,{...pack.save.args,document});
+    assert.deepEqual((await run(`${prefix}.read`,identity)).document,document);
+    const conflict=await failure(f.tool,{operation:pack.save.operation,args:{...pack.save.args,document:pack.document}});
+    assert.equal(conflict.status,409);
+  }
   await run('chapter.rename', { chapter_id: chapter.chapter_id, title: '新标题' });
   await run('chapter.move', { chapter_id: chapter.chapter_id, before_chapter_id: 'main' });
   assert.equal((await run('chapter.list')).items[0].title, '新标题');
@@ -290,6 +328,36 @@ test('统一工具经真实 HTTP Adapter 完成结构、设定及三类页面生
   assert.deepEqual((await run('page.render.read',{page_key:{page_id:pages[1].page_id}})).document,otherRender.document);
   assert.equal(await readFile(path.join(root,'workspace/demo/project.json'),'utf8'),projectBefore);
 
+  // 真正发布候选成果而不运行生成模型，验证按任务保留整批及预览过期保护。
+  const {createRenderTask,updateRenderTask}=await import('../server/render-task-storage.mjs');
+  const {createCandidateStorageIdentity,publishCandidateResult}=await import('../server/candidate-storage.mjs');
+  const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aJXkAAAAASUVORK5CYII=','base64');
+  async function publishBatch(n) {
+    const directory=path.join(root,'workspace/demo');
+    const task={version:2,id:`render-20260927T12000${n}Z-a1b2c3d4`,project:'demo',purpose:'candidate',render_profile:'qwen-image-2-1',status:'queued',created_at:`2026-09-27T12:00:0${n}.000Z`,snapshot:{},
+      items:[0,1,2].map(i=>({id:`item-${i}`,page_key,...createCandidateStorageIdentity(page_key),status:'queued'}))};
+    await createRenderTask(directory,task,{project_title:'测试',pages:[]});
+    await updateRenderTask(directory,task.id,t=>{t.status='completed';t.completed_at=task.created_at;for(const i of t.items)i.status='available';});
+    for(const item of task.items)await publishCandidateResult(directory,task,item,png,{warm:false});
+    return task;
+  }
+  await publishBatch(1);const second=await publishBatch(2);
+  const batches=await run('candidate.batches',{page_key});
+  assert.equal(batches.total,2);assert.equal(batches.candidate_count,6);assert.equal(batches.items[0].available_count,3);assert.equal(batches.items[0].complete,true);
+  const listed=await run('candidate.list',{page_key,task_id:second.id,limit:2});
+  assert.equal(listed.total,3);assert.equal(listed.items.length,2);assert.ok(path.isAbsolute(listed.items[0].absolute_file));
+  const preview=await run('candidate.cleanup.preview',{selections:[{page_key}]});
+  assert.equal(preview.pages[0].kept,3);assert.equal(preview.pages[0].delete_count,3);
+  await publishBatch(3);
+  const staleCleanup=await f.tool.execute(preview.apply);
+  assert.equal(staleCleanup.failed,1);assert.equal(staleCleanup.results[0].error.code,'candidate_cleanup_conflict');
+  assert.equal((await run('candidate.batches',{page_key})).candidate_count,9);
+  const currentPreview=await run('candidate.cleanup.preview',{selections:[{page_key}]});
+  const cleaned=await f.tool.execute(currentPreview.apply);
+  assert.equal(cleaned.deleted,6);assert.equal(cleaned.failed,0);assert.equal(cleaned.results[0].kept,3);
+  assert.equal((await run('candidate.list',{page_key})).total,3);
+  assert.equal((await f.tool.execute(currentPreview.apply)).failed,1);
+
   const layout=await run('lettering.page.read',{page_key});
   await run('lettering.page.save',{page_key,lettering:{items:layout.lettering.items},expected_sha256:layout.expected_sha256});
   const target={kind:'page',id:pages[0].page_id,model_id:'qwen'};
@@ -306,6 +374,19 @@ test('统一工具经真实 HTTP Adapter 完成结构、设定及三类页面生
   const templatePage = await run('page.create', { owner: owners[1], template_id: templates.items[0].id });
   await run('page.delete', { page_id: templatePage.page_id });
   const textPage = await run('page.create', { owner: owners[0], page_kind: 'text' });
+  const textKey={page_id:textPage.page_id};
+  const textEdit=await run('page.editor.read',{page_key:textKey,section:'content'});
+  const textSaved=await run(textEdit.save.operation,{...textEdit.save.args,changes:{display_title:'次日',body:'第一行\n第二行',text_layout:{body_font_size:48,position:'lower'}}});
+  assert.equal(textSaved.document.body,'第一行\n第二行');
+  assert.equal(textSaved.document.display_title,'次日');
+  assert.equal(textSaved.document.page_kind,'text');
+  assert.equal(textSaved.document.text_layout.body_font_size,48);
+  assert.equal(textSaved.document.text_layout.title_align,textEdit.document.text_layout.title_align);
+  assert.deepEqual((await run('page.editor.read',{page_key:textKey,section:'content'})).document,textSaved.document);
+  const textStale=await failure(f.tool,{operation:textEdit.save.operation,args:{...textEdit.save.args,changes:{body:'陈旧正文'}}});
+  assert.equal(textStale.status,409);
+  const cleared=await run(textSaved.save.operation,{...textSaved.save.args,changes:{body:'',display_title:''}});
+  assert.equal(cleared.document.body,'');assert.equal(cleared.document.display_title,'');
   const blocked = await failure(f.tool, { operation: 'page.move', args: { project_id: 'demo', page_id: textPage.page_id, owner: owners[1] } });
   assert.equal(blocked.error, 'text_page_story_only');
   await run('page.move', { page_id: pages[0].page_id, owner: owners[2], before_page_id: pages[2].page_id });

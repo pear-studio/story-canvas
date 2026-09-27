@@ -36,10 +36,10 @@ export function toolStatus(denied=new Set()) { const diskRevision=revision(); re
 export const toolParameters=schema({operation:string('help 查询分类；status 查询当前能力；操作名从分类帮助取得'),target:string('仅 help：分类ID或操作名'),args:object('执行参数，先查该操作 help')},['operation']);
 const groups=[
   {id:'project',title:'项目与基本设置',prefixes:['project.']},
-  {id:'structure',title:'章节与单元',prefixes:['chapter.','sequence.']},
+  {id:'structure',title:'故事梗概、章节与单元',prefixes:['chapter.','sequence.','story.synopsis.']},
   {id:'settings',title:'角色、场景与子设定',prefixes:['character.','scene.']},
   {id:'page',title:'页面与模板',prefixes:['page.']},
-  {id:'facts',title:'正文、Prompt 与语料',prefixes:['facts.','prompt.','corpus.','story.']},
+  {id:'facts',title:'正文、Prompt 与语料',prefixes:['facts.','prompt.','corpus.','story.context']},
   {id:'generation',title:'生成配置、LoRA 与出图',prefixes:['generation.']},
   {id:'resources',title:'资源目录与词库',prefixes:['resource.','dictionary.']},
   {id:'materials',title:'材料、参考图与创作约定',prefixes:['material.','reference.','agreement.','media.']},

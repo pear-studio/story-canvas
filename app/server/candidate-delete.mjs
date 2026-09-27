@@ -1,6 +1,6 @@
 import { inspectionGenerationSignature } from "./generation-signature.mjs";
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdir, realpath, rename, rm } from "node:fs/promises";
+import { lstat, mkdir, realpath, rm } from "node:fs/promises";
 import path from "node:path";
 
 import { candidateFilePath, readGenerationCandidateRecords } from "./candidate-storage.mjs";
@@ -10,6 +10,7 @@ import { resolveProjectLocation } from "./project-operations.mjs";
 import { PageRenderError, compilePageRenderInspectionContext, resolveExactPageIdentity, resolvePageIdentity } from "./page-render-resolver.mjs";
 import { listActiveProjectTaskIds, updateRenderTask } from "./render-task-storage.mjs";
 import { factStorage as storage } from "./story-facts.mjs";
+import {replaceFileWithRetry} from './file-replace.mjs';
 
 function fail(code, details = [], status = 422) {
   throw new PageRenderError(code, details, status);
@@ -66,7 +67,8 @@ export async function deletePageCandidate(projectRoot, projectId, pageId, absolu
         if ((await listActiveProjectTaskIds(project.projectDirectory)).includes(record.task_id)) fail("candidate_task_active", [record.task_id], 409);
         const staged = path.join(project.projectDirectory, "Saved", "staging", "deleted-" + randomUUID());
         await mkdir(path.dirname(staged), { recursive: true });
-        await rename(path.dirname(requested), staged);
+        try{await replaceFileWithRetry(path.dirname(requested),staged);}
+        catch(error){if(['EPERM','EACCES','EBUSY'].includes(error.code))fail('candidate_file_busy',['候选文件被占用；关闭正在读取它的图片窗口后，重新核对本页候选再清理。'],409);throw error;}
         // 成果删除已经生效；历史标记失败不能复活它。
         await updateRenderTask(project.projectDirectory, current.task_id, (task) => {
           const item = task.items.find(entry => entry.candidate_id === current.candidate_id);

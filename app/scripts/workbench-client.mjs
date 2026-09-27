@@ -24,7 +24,7 @@ export async function loadWorkbenchConfig(repositoryRoot = path.resolve(appRoot,
   }
 }
 
-export async function requestWorkbench(route, { method = "GET", body, revision, etag, signal } = {}) {
+export async function requestWorkbench(route, { method = "GET", body, revision, etag, signal, mediaFresh = false } = {}) {
   if (!route.startsWith("/api/")) throw new Error("请求路径必须以 /api/ 开头");
   const port = resolveWorkbenchPort(await loadWorkbenchConfig());
   let response;
@@ -33,6 +33,7 @@ export async function requestWorkbench(route, { method = "GET", body, revision, 
       method,
       signal,
       headers: { accept: "application/json", ...(body === undefined ? {} : { "content-type": "application/json" }),
+        ...(mediaFresh ? {'x-story-canvas-media-fresh':'1'} : {}),
         ...(revision ? { "x-story-canvas-expected-revision": revision } : {}), ...(etag ? { 'if-match': etag } : {}) },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });

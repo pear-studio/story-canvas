@@ -15,13 +15,19 @@ export const projectActions = {
   },
   'project.info': {
     summary: '查看项目登记详情和只读 Git 状态', parameters: schema(projectId),
-    details: '不初始化 Git，不提交、同步或扫描未登记目录。',
+    details: 'Git 只返回分支、提交、是否有改动及改动数量；文件明细另查 project.git.changes。不会初始化或提交 Git。用户要求提交时可用 Shell git commit --quiet，避免数百行文件清单灌入上下文。',
     async execute({ project_id }) {
       const { value } = await requestWorkbench('/api/project-library');
       const entry = value.projects.find(item => item.id === project_id);
       if (!entry) throw Object.assign(new Error('项目未登记'), { code: 'project_not_registered', status: 404 });
-      return { ...entry, git: (await requestWorkbench(`${route(project_id)}/git`)).value };
+      const git=(await requestWorkbench(`${route(project_id)}/git`)).value;
+      return { ...entry, git:Object.fromEntries(['status','branch','commit','upstream','ahead','behind','dirty'].filter(k=>git[k]!==undefined).map(k=>[k,git[k]])),changed_files:git.changes?.length??0 };
     },
+  },
+  'project.git.changes': {
+    summary:'分页查看项目 Git 文件变更',parameters:schema({...projectId,...pagination},['project_id']),
+    details:'只读指定项目的 Git 文件状态，默认20项；不读取文件正文或差异，不提交。概览用 project.info。',
+    async execute({project_id,...paging}) {const git=(await requestWorkbench(`${route(project_id)}/git`)).value;return {project_id,status:git.status,...paginate(git.changes??[],paging)};},
   },
   'project.copy': {
     summary: '将现有项目复制为临时项目', parameters: schema(projectId),
