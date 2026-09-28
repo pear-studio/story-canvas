@@ -44,6 +44,7 @@ export type CandidateWorkspaceDetail = {
 type ContextMenuTrigger = { clientX: number; clientY: number; preventDefault?: () => void; stopPropagation?: () => void };
 
 export type WorkbenchCandidateWorkspaceProps = {
+  onDesktopActionsTarget?: (element:HTMLDivElement|null)=>void;
   finishedOutput?: { projectId: string; pageId: string; onOutput: (candidateId?: string) => Promise<FinishedJob | null> };
   pageIdentity: string;
   pageTitle: string;
@@ -332,7 +333,7 @@ function CandidatePaneResizeHandle({ value, onChange }: { value: number; onChang
 }
 
 export function WorkbenchCandidateWorkspace({
-  finishedOutput,
+  finishedOutput, onDesktopActionsTarget,
   pageIdentity, pageTitle, canvas, onPreviewCanvasChange, ownerLabel, media, mediaStatus = "ready", mediaError, onReloadMedia, candidateWidth, factReady, currentGenerationSignature = null, mediaReady = true, generationReady, busy = false, busyReason, generationDisabledReason, generationProblems = [], onLetteringTarget, onFullscreenLetteringTarget, onCandidateWidthChange, onGenerate, onSaveAndGenerate, generationCount = 3, onGenerationCountChange, pageDirty = false, onSaveAll, onDiscardAll, onDeleteCandidates, onLoadCandidateDetail }: WorkbenchCandidateWorkspaceProps) {
   const { confirm } = useFeedback();
   const candidates = media.candidates as WorkbenchCandidate[];
@@ -499,7 +500,7 @@ export function WorkbenchCandidateWorkspace({
           </span>
         </div>
         : <div className="current-image"><div><span>{mediaStatus === "loading" ? "正在读取候选…" : "暂无候选图"}</span></div></div>}
-    {finishedOutput && <FinishedOutputButton key={pageIdentity} {...finishedOutput} candidateId={visibleCandidate?.candidate_id} dirty={pageDirty} disabled={mutationBusy || !visibleCandidate} />}
+    <div className="page-output-toolbar"><div className="desktop-page-actions" ref={onDesktopActionsTarget}/>{finishedOutput && <FinishedOutputButton key={pageIdentity} {...finishedOutput} candidateId={visibleCandidate?.candidate_id} dirty={pageDirty} disabled={mutationBusy || !visibleCandidate} />}</div>
     </div>
     <CandidatePaneResizeHandle value={candidateWidth} onChange={onCandidateWidthChange} />
     <div className="candidate-rail">

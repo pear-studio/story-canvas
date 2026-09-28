@@ -118,6 +118,7 @@ export type WorkbenchPageEditorProps = {
   canvas?: string;
   letteringStyle?: LetteringStyle | null;
   letteringItems?: LetteringItem[];
+  desktopActionsTarget?: HTMLDivElement|null;
   letteringTarget?: HTMLSpanElement | null;
   fullscreenLetteringTarget?: ImageOverlayTarget | null;
   flowPreview?: PageRenderInspection | null;
@@ -612,7 +613,7 @@ export default function WorkbenchPageEditor({
   canvas = "3:4",
   letteringStyle,
   letteringItems = [],
-  letteringTarget,
+  letteringTarget, desktopActionsTarget,
   fullscreenLetteringTarget,
   flowPreview,
   flowPreviewError = "",
@@ -789,19 +790,26 @@ export default function WorkbenchPageEditor({
     setContentDraft(current => ({ ...current, characters: value }));
   }
 
+  const [generationSettingsTarget,setGenerationSettingsTarget]=useState<HTMLDivElement|null>(null);
+  const [desktopSettings,setDesktopSettings]=useState(()=>window.matchMedia('(min-width: 1161px)').matches);
+  useEffect(()=>{const query=window.matchMedia('(min-width: 1161px)');const update=()=>setDesktopSettings(query.matches);query.addEventListener('change',update);return ()=>query.removeEventListener('change',update);},[]);
+  const generationSettings=<PageGenerationSettings compact={desktopSettings} projectId={projectId} page={page} disabled={busy||saving} beforeChange={saveAll} onSaved={()=>onReloadPrompt?.()}/>;
+  const pageActions=<span className="workbench-page-editor__dock-actions">
+          <button type="button" className="button button--quiet" disabled={busy || saving || !saveNeeded} title="放弃本页全部未保存修改" onClick={discardAll}>放弃修改</button>
+          <button type="button" className="button button--primary" disabled={busy || saving || !saveNeeded} title="保存本页全部修改（Ctrl+S）" onClick={() => void saveAll()}>{saving ? "保存中…" : "保存"}</button>
+          {generationProblems.length > 0 && <button type="button" className="issue-indicator issue-indicator--error" aria-label={`查看 ${generationProblems.length} 个生成问题`} title="查看生成问题" onClick={() => setGenerationProblemsOpen(true)}>!</button>}
+          {onGenerate && <GenerateSplitButton dirty={anyDirty} count={generationCount} disabled={generationDisabled || saving} reason={generationDisabledReason} menuDirection="down" onSubmit={() => void onGenerate({ count: generationCount })} onCountChange={onGenerationCountChange} />}
+        </span>;
   return <section className="document-editor workbench-page-editor" data-page-content-dirty={contentDirty ? "true" : undefined} data-page-prompt-dirty={promptDirty ? "true" : undefined} data-lettering-dirty={layoutDirty ? "true" : undefined}>
+    {desktopActionsTarget&&createPortal(pageActions,desktopActionsTarget)}
     <fieldset className="page-save-fields" inert={contentPhase === "saving"} disabled={contentPhase === "saving"}>
     <WorkspaceHeader breadcrumb={breadcrumb} className="story-toolbar" title={<span className="page-title-editor">
         {pageOrder !== undefined && <span className="page-order" aria-label={`第 ${pageOrder} 页`}>{String(pageOrder).padStart(2, "0")}</span>}
         <><InlineTitleEditor label="重命名页面" value={contentDraft.title} disabled={busy} onChange={(title) => setContentDraft(current => ({ ...current, title }))} /></>
       </span>} actions={<div className="workbench-page-editor__actions">
         {contentPhase === "error" && <button type="button" className="button button--quiet" onClick={() => void reloadAll()}>放弃本页草稿并重新载入</button>}
-        <span className="workbench-page-editor__dock-actions">
-          <button type="button" className="button button--quiet" disabled={busy || saving || !saveNeeded} title="放弃本页全部未保存修改" onClick={discardAll}>放弃修改</button>
-          <button type="button" className="button button--primary" disabled={busy || saving || !saveNeeded} title="保存本页全部修改（Ctrl+S）" onClick={() => void saveAll()}>{saving ? "保存中…" : "保存"}</button>
-          {generationProblems.length > 0 && <button type="button" className="issue-indicator issue-indicator--error" aria-label={`查看 ${generationProblems.length} 个生成问题`} title="查看生成问题" onClick={() => setGenerationProblemsOpen(true)}>!</button>}
-          {onGenerate && <GenerateSplitButton dirty={anyDirty} count={generationCount} disabled={generationDisabled || saving} reason={generationDisabledReason} menuDirection="down" onSubmit={() => void onGenerate({ count: generationCount })} onCountChange={onGenerationCountChange} />}
-        </span>
+        <div ref={setGenerationSettingsTarget} className="page-title-generation-settings"/>
+        {!desktopActionsTarget&&pageActions}
       </div>} />
     {externalConflict && <p role="alert">页面事实已变化，当前草稿已保留。<button type="button" className="button button--quiet" onClick={discardAll}>放弃草稿并载入最新</button></p>}
     {contentError && <p className="prompt-save-error" role="alert">{contentError}</p>}
@@ -814,7 +822,7 @@ export default function WorkbenchPageEditor({
       </>}
     </div>
 
-    <PageGenerationSettings projectId={projectId} page={page} disabled={busy||saving} beforeChange={saveAll} onSaved={()=>onReloadPrompt?.()}/>
+    {desktopSettings&&generationSettingsTarget?createPortal(generationSettings,generationSettingsTarget):generationSettings}
     {!isTextPage && <div className="editor-mode-tabs" role="tablist" aria-label="页面编辑内容">
       <button role="tab" aria-selected={visibleTab === "visual"} className={visibleTab === "visual" ? "is-active" : ""} onClick={() => setActiveTab("visual")}>视觉描述 / Prompt{promptDirty && <i />}</button>
       {<button role="tab" aria-selected={visibleTab === "lettering"} className={visibleTab === "lettering" ? "is-active" : ""} onClick={() => setActiveTab("lettering")}>嵌字{layoutDirty && <i />}</button>}

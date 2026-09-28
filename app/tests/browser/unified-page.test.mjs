@@ -188,7 +188,7 @@ test('引用文字默认生效，缩略图切换颜色，底部只读汇总随�
  const files=await images.locator('img').evaluateAll(imgs=>imgs.map(img=>new URL(img.src).searchParams.get('file')));
  assert.deepEqual(files,['reference-22222222.png','reference-11111111.png','reference-extra.png']);
  const root=page.locator('.current-workbench-prompts');
- assert.equal(await root.locator(':scope > :last-child').getAttribute('aria-label'),'最终启用的参考图');
+ assert.equal(await root.getByLabel('最终启用的参考图').isVisible(),true);
  await page.getByRole('button',{name:'保存',exact:true}).click();
  await page.waitForFunction(()=>localStorage.getItem('saved-page'));
  const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('saved-page')));
@@ -237,7 +237,7 @@ for (const outcome of ['success','save-failure','missing-saved-image']) test('�
  await page.getByRole('dialog').waitFor({state:'hidden'});
  await page.waitForTimeout(400);
  assert.deepEqual(requests.at(-1).prompt.reference_images.map(entry=>entry.file),['reference-extra.png'],'检查只跳过待保存附图，保留真实附图');
- const generate=page.locator('.workbench-page-editor .generate-split__action');
+ const generate=page.locator('.desktop-page-actions .generate-split__action');
  assert.equal(await generate.isDisabled(),false);
  await generate.click();
  if(outcome==='success'){

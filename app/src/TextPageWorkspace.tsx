@@ -3,7 +3,8 @@ import { FinishedOutputButton } from "./FinishedOutputButton";
 import type { FinishedJob } from "./finished-client";
 
 /** 文字页右侧工作区：黑底预览（文字由编辑器经 letteringTarget 门户渲染进来）+ 成品输出。 */
-export function TextPageWorkspace({ projectId, pageId, canvas, dimensionError, dirty, disabled, onLetteringTarget, onOutput }: {
+export function TextPageWorkspace({ projectId, pageId, canvas, dimensionError, dirty, disabled, onLetteringTarget, onOutput, onDesktopActionsTarget }: {
+  onDesktopActionsTarget?: (element:HTMLDivElement|null)=>void;
   projectId: string;
   pageId: string;
   canvas: string;
@@ -22,7 +23,7 @@ export function TextPageWorkspace({ projectId, pageId, canvas, dimensionError, d
         </span>
       </div>
       {dimensionError && <p className="prompt-save-error" role="alert">{dimensionError}（当前仅显示排版草稿）</p>}
-      <FinishedOutputButton projectId={projectId} pageId={pageId} dirty={dirty} disabled={disabled || Boolean(dimensionError)} onOutput={onOutput} />
+      <div className="page-output-toolbar"><div className="desktop-page-actions" ref={onDesktopActionsTarget}/><FinishedOutputButton projectId={projectId} pageId={pageId} dirty={dirty} disabled={disabled || Boolean(dimensionError)} onOutput={onOutput} /></div>
     </div>
   </aside>;
 }
