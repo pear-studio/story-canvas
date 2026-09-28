@@ -12,7 +12,7 @@ async function fixture(t, responder = () => assert.fail('不应发送请求')) {
   const root = await mkdtemp(path.join(testsRoot, 'dsh-tools-'));
   assert.equal(path.dirname(root), path.resolve(testsRoot));
   t.after(() => rm(root, { recursive: true, force: true }));
-  for (const file of ['.dsh/presets/story-canvas/story-canvas-tools.mjs', 'app/scripts/workbench-actions', 'app/scripts/workbench-client.mjs', 'app/server/page-key.mjs']) {
+  for (const file of ['.dsh/presets/story-canvas/story-canvas-tools.mjs', 'app/scripts/workbench-actions', 'app/scripts/workbench-client.mjs', 'app/scripts/story-canvas.mjs', 'app/server/page-key.mjs']) {
     await mkdir(path.dirname(path.join(root, file)), { recursive: true });
     await cp(path.join(repositoryRoot, file), path.join(root, file), { recursive: true });
   }
@@ -44,6 +44,49 @@ async function failure(tool, input) {
   try { await tool.execute(input); } catch (error) { return JSON.parse(error.message); }
   assert.fail('必须保持工具失败状态');
 }
+
+test('字段帮助按需展开，分类与默认操作帮助不注入完整细则',async t=>{
+  const f=await fixture(t);
+  const overview=await f.tool.execute({operation:'help',target:'page'});
+  assert.equal(JSON.stringify(overview).includes('negative:'),false);
+  const help=await f.tool.execute({operation:'help',target:'page.editor.save'});
+  assert.ok(help.topics.dialogue);assert.equal(help.helpTopics,undefined);
+  const topic=await f.tool.execute({operation:'help',target:'page.editor.save',topic:'dialogue'});
+  assert.match(topic.details,/不按数组索引/);
+  const batch=await f.tool.execute({operation:'help',target:'page.editor.batch.save',topic:'inheritance'});
+  assert.equal(batch.example.changes.models.anima.inheritance['scene:study:default'].day.enabled,false);
+  assert.equal((await failure(f.tool,{operation:'help',target:'page',topic:'dialogue'})).error,'invalid_arguments');
+  assert.equal((await failure(f.tool,{operation:'page.editor.save',topic:'dialogue'})).error,'invalid_arguments');
+  assert.equal(f.requests.length,0);
+});
+
+test('语义 CLI 共用操作与字段帮助，失败覆盖旧回执、部分失败非零且保护输入',async t=>{
+  const {execFile}=await import('node:child_process');
+  const {promisify}=await import('node:util');
+  const f=await fixture(t,(request,response)=>{
+    if(request.url==='/api/agent/page-editor/save'){
+      if(request.body.page_key.page_id==='page-002'){response.statusCode=409;return response.end(JSON.stringify({error:'page_edit_conflict'}));}
+      return response.end(JSON.stringify({saved:true,save:{operation:'page.editor.save',args:request.body}}));
+    }
+    response.end(JSON.stringify({total:1,offset:0,items:[{page_id:'page-001'}],next_offset:null}));
+  });
+  const input=path.join(f.root,'args.json'),output=path.join(f.root,'receipt.json'),cli=path.join(f.root,'app/scripts/story-canvas.mjs');
+  const run=async args=>{try{return {code:0,...await promisify(execFile)(process.execPath,[cli,...args])};}catch(error){return {code:error.code,stdout:error.stdout,stderr:error.stderr};}};
+  const native=await f.tool.execute({operation:'help',target:'page.editor.save',topic:'dialogue'});
+  const help=await run(['help','page.editor.save','dialogue']);assert.equal(help.code,0);assert.deepEqual(JSON.parse(help.stdout),native);
+  await writeFile(input,JSON.stringify({project_id:'demo'}));
+  assert.equal((await run(['page.list','--args',input,'--out',output])).code,0);
+  assert.equal(JSON.parse(await readFile(output,'utf8')).items[0].page_id,'page-001');
+  assert.equal((await run(['not.an.operation','--out',output])).code,1);
+  assert.equal(JSON.parse(await readFile(output,'utf8')).error,'unknown_operation');
+  const before=await readFile(input,'utf8');
+  assert.equal((await run(['page.list','--args',input,'--out',input])).code,1);assert.equal(await readFile(input,'utf8'),before);
+  const blocked=await run(['generation.run','--lite','--out',output]);assert.equal(blocked.code,1);
+  assert.equal(JSON.parse(await readFile(output,'utf8')).error,'capability_disabled');
+  await writeFile(input,JSON.stringify({project_id:'demo',section:'content',items:['page-001','page-002'].map(page_id=>({page_key:{page_id},expected_sha256:'a'.repeat(64),changes:{title:'更新'}}))}));
+  assert.equal((await run(['page.editor.batch.save','--args',input,'--out',output])).code,1);
+  assert.deepEqual(JSON.parse(await readFile(output,'utf8')).counts,{saved:1,failed:1});
+});
 
 test('批量页面编辑预检重复目标，遇到未知保存结果停止，不重放已保存页',async t=>{
   const f=await fixture(t,(request,response)=>{

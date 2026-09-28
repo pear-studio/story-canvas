@@ -24,7 +24,7 @@ for (const catalog of [projectActions,structureActions,settingActionsCatalog,pag
   }
 }
 const utilityHelp = {
-  help: {summary:'查询分类、分类中的操作、单项用法',parameters:schema({target:string('省略查分类；分类 ID 查操作目录；操作名查完整用法')},[]),details:'总览不返回操作清单；分类目录只含摘要；操作详情才含参数、规则和示例。直接指定已知操作名可跳过分类。'},
+  help: {summary:'查询分类、操作及字段主题用法',parameters:schema({target:string('省略查分类；分类 ID 查操作目录；操作名查完整用法'),topic:string('操作帮助中 topics 的主题 ID')},[]),details:'总览不返回操作清单；分类目录只含摘要；操作详情才含参数、规则和示例。字段细则用 target:操作名 + topic:主题ID 按需读取。直接指定已知操作名可跳过分类。'},
   status: {summary:'工具版本与当前会话能力限制',parameters:schema(),details:'报告已加载/磁盘版本及当前限制；不代表后端版本。reload_required 为 true 时重载 DSH。'},
 };
 function revision() {
@@ -35,7 +35,7 @@ function revision() {
 }
 export const loadedRevision=revision();
 export function toolStatus(denied=new Set()) { const diskRevision=revision(); return {loaded_revision:loadedRevision,disk_revision:diskRevision,reload_required:diskRevision!==loadedRevision,disabled_capabilities:[...denied]}; }
-export const toolParameters=schema({operation:string('help 查询分类；status 查询当前能力；操作名从分类帮助取得'),target:string('仅 help：分类ID或操作名'),args:object('执行参数，先查该操作 help')},['operation']);
+export const toolParameters=schema({operation:string('help 查询分类；status 查询当前能力；操作名从分类帮助取得'),target:string('仅 help：分类ID或操作名'),topic:string('仅 help：操作帮助返回的字段主题 ID'),args:object('执行参数，先查该操作 help')},['operation']);
 const groups=[
   {id:'project',title:'项目与基本设置',prefixes:['project.']},
   {id:'structure',title:'故事梗概、章节与单元',prefixes:['chapter.','sequence.','story.synopsis.']},
@@ -64,15 +64,21 @@ export async function executeWorkbench(input, execution={}) {
     validate(toolParameters,input);
     if(operation==='help') {
       if(input.args!==undefined) throw invalid('help 使用 target，不接受 args');
+      if(input.topic&&!input.target)throw invalid('topic 需要操作名 target');
       const directory=catalog(denied);
       if(!input.target) return {groups:directory.map(({operations,...group})=>({...group,operations_count:operations.length,disabled_count:operations.filter(o=>o.availability==='disabled').length})),usage:'help + target分类ID 查看该类操作；target操作名 查看参数。disabled 操作被当前限制插件禁用，请交给具备该能力的 Agent。'};
-      const group=directory.find(g=>g.id===input.target);if(group)return group;
+      const group=directory.find(g=>g.id===input.target);if(group){if(input.topic)throw invalid('topic 需要操作名，不能是分类');return group;}
       const definition=Object.hasOwn(definitions,input.target)?definitions[input.target]:null;
       if(!definition)throw Object.assign(new Error('未知帮助入口，请查分类目录'),{code:'unknown_operation'});
-      const {execute,transport,recover,...help}=definition;
-      return {operation:input.target,...help,availability:availability(definition,denied)};
+      const {execute,transport,recover,helpTopics,...help}=definition;
+      const topics=helpTopics?Object.fromEntries(Object.entries(helpTopics).map(([key,value])=>[key,value.summary])):undefined;
+      if(input.topic){
+        if(!helpTopics||!Object.hasOwn(helpTopics,input.topic))throw invalid(`未知字段主题；可选：${Object.keys(helpTopics??{}).join(', ')}`);
+        return {operation:input.target,topic:input.topic,...helpTopics[input.topic]};
+      }
+      return {operation:input.target,...help,...(topics?{topics,topic_usage:'help + target:本操作名 + topic:主题ID 查看字段用法'}:{}),availability:availability(definition,denied)};
     }
-    if(input.target!==undefined)throw invalid('target 仅用于 help');
+    if(input.target!==undefined||input.topic!==undefined)throw invalid('target/topic 仅用于 help');
     if(operation==='status'){if(input.args!==undefined)throw invalid('status 不接受 args');return toolStatus(denied);}
     const definition=Object.hasOwn(actions,operation)?actions[operation]:null;
     if(!definition)throw Object.assign(new Error('未知操作，请先查分类帮助'),{code:'unknown_operation'});

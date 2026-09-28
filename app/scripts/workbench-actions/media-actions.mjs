@@ -1,4 +1,5 @@
 import { requestWorkbench } from '../workbench-client.mjs';
+import { pageEditHelp } from './page-edit-help.mjs';
 import { schema, string, object, array, boolean, pagination, paginate } from './contract.mjs';
 import {saveOperationRecord,readOperationRecord} from './operation-records.mjs';
 import { endpoint, projectId, pageKey, projectPath, encode, localImage, downloadArtifact } from './http-action.mjs';
@@ -67,6 +68,7 @@ export const mediaActions = {
   'finished.export': {summary:'导出已有成品 ZIP 或 HTML 阅读页',parameters:schema({...projectId,variant:{...string('导出版本'),enum:['lettered','clean','both']},chapter_id:string('可选章节'),preview:boolean('true 导出HTML，否则ZIP')},['project_id','variant']),details:'只导出已完成的成品，不生成或超分。文件放 Saved/Agent/workbench-artifacts，返回绝对路径。',execute:a=>downloadArtifact(projectPath(a,'finished/export'),{method:'POST',body:{variant:a.variant,chapter_id:a.chapter_id,preview:a.preview},extension:a.preview?'html':'zip'})},
   'media.download': {summary:'将项目媒体下载为本地审阅文件',parameters:schema({...projectId,relative_path:string('工作台媒体返回的项目相对路径，不猜测') }),details:'下载现有图片到 Saved/Agent/workbench-artifacts 后可用 read_image 查看；不改项目文件。',execute:a=>downloadArtifact(projectPath(a,`media/${a.relative_path.split('/').map(encode).join('/')}`))},
 };
+for(const name of ['page.editor.read','page.editor.save'])mediaActions[name].helpTopics=pageEditHelp;
 mediaActions['reference.save'].execute = async a => {
   if ([a.file,a.material_file,a.candidate_id].filter(Boolean).length !== 1) throw new Error('file、material_file、candidate_id 必须且只能提供一项');
   if (a.candidate_id && !a.page_key) throw new Error('候选来源必须提供 page_key');

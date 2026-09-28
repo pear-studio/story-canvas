@@ -12,7 +12,11 @@
 工具使用 `operation:help` 一次返回分组总目录，加 `target` 可直接查询操作详情或查看指定分组；
 `operation:status` 检查已加载版本。说明与执行由 `app/scripts/workbench-actions/` 各领域模块共同维护。
 本页保留 CLI 与底层协议说明，不重复维护 DSH 操作清单。
-有 `story_canvas` 时优先使用该工具及其分级 help；CLI 供无该工具的环境或明确未覆盖的操作使用。
+有 `story_canvas` 时优先使用该工具及其分级 help；脚本通过
+`node C:/Workspace/story-canvas/app/scripts/story-canvas.mjs -h` 进入同一套语义操作。
+使用 `<操作名> --args <参数JSON> --out <回执JSON>` 执行；参数与工具 args 相同，输入输出分开。
+这个语义 CLI 成功和失败均写回执，错误或批量部分失败退出码为1；脚本必须检查退出码和逐项结果。
+操作名、字段主题、示例与限制以工具或 CLI 的分级 help 为准，不在本页重复维护。
 长任务等待从 `help task.wait` 查询，参数、续等及取消语义由工具详细帮助维护。
 
 ## 查询关联项目的 Git

@@ -18,6 +18,8 @@ persona 是规则摘要，未覆盖任务按需读取仓库 `AGENTS.md`；两个
 `story_canvas` 的 `operation:help` 只返回分类；`target:分类ID` 返回该类简短操作目录，
 `target:操作名` 返回详细参数与规则。已知操作名可直接查询详情。
 领域操作在 `app/scripts/workbench-actions/` 各自维护参数、帮助与执行，总入口自动汇总。
+页面字段用法通过操作帮助返回的 `topics` 按需查询，不在预设中重复维护。
+脚本使用 `node C:/Workspace/story-canvas/app/scripts/story-canvas.mjs -h`；与工具共用操作注册表。
 目录查询通过服务端只读分页入口，仅载入索引和必要显示名，不展开 Prompt 或媒体。
 `story-canvas-tools` 是唯一完整能力插件；两个预设加载同一份实现。
 极简预设额外加载 `lite-tools` 限制插件，在 Agent 作用域禁用 `generation` 和 `training` 执行能力，
