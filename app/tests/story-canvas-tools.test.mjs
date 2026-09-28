@@ -647,7 +647,7 @@ test('完整能力只有一份，限制按 Agent 生效且执行前拦截，撤�
       }
     }
   }
-  assert.equal(blocked,14);
+  assert.equal(blocked,15);
   assert.equal(f.requests.length,0);
   assert.equal((await failure(f.tool,{operation:'api.request',args:{method:'POST',path:'/api/projects/demo/workbench/render'}})).error,'unknown_operation');
   await assert.rejects(f.tool.execute({operation:'training.image.crop',args:{dataset_id:'demo',item_id:'x',crop:{},etag:'r',upscale:true}},{agent:lite}),e=>JSON.parse(e.message).error==='invalid_arguments');

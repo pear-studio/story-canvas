@@ -1,6 +1,7 @@
 import { endpoint, projectPath, pageKey, encode, projectId } from './http-action.mjs';
 import { string, object, boolean, schema } from './contract.mjs';
 import { submitGenerationBatch } from './generation-batch.mjs';
+import {regeneratePage} from './regenerate-page.mjs';
 const gen = (summary, suffix, fields, options={}) => endpoint(summary,'POST',a=>projectPath(a,suffix),fields,{project:true,capability:'generation',...options});
 export const executionActions = {
   'generation.run': gen('为一页生成候选图','workbench/render',{page_key:pageKey,count:{type:'integer',minimum:1,maximum:3,description:'候选数量，默认3'},seed:{type:'integer',minimum:0,description:'可选随机种子'},prompt_source:{...string('默认 original'),enum:['original','rewritten']}},{required:['page_key'],details:'须已有用户生成授权。使用该页模型与画幅，调整用 page.render.read/set。默认三张且全部保留；多页用 generation.batch。返回任务，task.wait 等待终态，task.inspect 即时查询。超时先查任务，不重复提交。纯字幕或时间过渡用文字页 page.create page_kind:text，finished.output 输出，不生成候选。',body:a=>({page_key:a.page_key,count:a.count??3,seed:a.seed,prompt_source:a.prompt_source})}),
@@ -20,6 +21,13 @@ executionActions['generation.batch']={
     ...Object.fromEntries(Object.entries(executionActions['generation.run'].parameters.properties).filter(([key])=>['count','seed','prompt_source'].includes(key)))},['project_id','page_keys']),
   details:'须已有整批生成授权。每页沿用自己的模型与画幅，默认3张；count/seed/prompt_source 对全批适用。顺序提交，每页最多一次。返回 batch_id、计数和简短 wait 入口；task.wait 只传 batch_id 即可，不抄任务列表、不用 Shell sleep。逐页提交/运行结果用 task.batch.read。部分失败保留已提交任务；断线或回执不明停止后续提交，不重放整批。Saved 中保留派生回执，重启可继续查询。纯文字页不生成候选。极简预设禁用此操作。',
   execute:(args,execution={})=>submitGenerationBatch(args,{submit:executionActions['generation.run'].execute,recover:executionActions['generation.run'].recover,signal:execution.signal}),
+};
+executionActions['generation.regenerate']={
+  summary:'清空单页旧候选并重新生成，返回精简回执',capability:'generation',
+  parameters:executionActions['generation.run'].parameters,
+  details:'须已有清空该页全部旧候选及生成的明确授权。参数同 generation.run，默认3张。记录调用时全部候选，成功提交新任务后删除这份旧快照；不删除新任务候选，不选择优胜图。提交失败不清理；提交结果不明先查任务，不能重试。删除不可恢复，清理失败可能已部分删除，但返回的新任务 ID 仍有效，只等待原任务并核验剩余旧候选。只返回清理计数、task_id 和 task.wait 入口。需要 generation 能力，极简预设禁用。',
+  recover:executionActions['generation.run'].recover,
+  execute:(args,execution={})=>regeneratePage(args,{submit:executionActions['generation.run'].execute,signal:execution.signal}),
 };
 for (const action of ['start','retry']) executionActions[`comparison.${action}`] = endpoint(`运行对比实验：${action}`,'POST',a=>`/api/comparison-experiments/${encode(a.experiment_id)}/${action}`,{experiment_id:string('已创建实验 ID')},{capability:'generation',details:'需明确授权；先 comparison.inspect 检查预检和状态。会加载生成模型。失败后先查询任务，不能盲目重放。'});
 
