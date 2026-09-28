@@ -28,12 +28,21 @@ export const factActions = {
   },
   'prompt.context': {
     summary: '按需展开页面引用与最终 Prompt',
-    parameters: schema({ project_id: string('项目 ID'), page_key: pageKey, view:{type:'string',enum:['edit','details'],description:'默认 edit：精简编辑上下文；details：完整编译追踪写入文件，返回路径'} },['project_id','page_key']),
-    details: `仅在需要理解上游引用或诊断最终输入时调用；普通编辑用 page.editor.read/save，不要求组装后全文核验，不用于遍历全项目。检查 context 中的当前模型、上游引用、整段覆盖、参考图与编译结果；只改 draft.document，再按返回的 save.operation 和 save.args 提交完整 draft。不回写只读 context，不覆盖无关模型数据。默认 edit 保留完整草稿、上游原文/词条、参考图选择、最终正负向输入和异常；不重复本页正文与编译追踪。references 按来源键索引，inherited 按分类列原文或 {text,weight,enabled}；本页覆盖与继承调整见 draft.document。view:details 返回完整追踪文件，按需 read/grep，不提交为草稿。${modelRules} ${loraRules}`,
+    parameters: schema({ project_id: string('项目 ID'), page_key: pageKey, view:{type:'string',enum:['edit','details','final','render','sources'],description:'默认 edit 编辑；final 最终输入；render 有效配置与 LoRA；sources 来源与覆盖；details 完整追踪文件'}, source:string('仅 sources：精确来源键，省略只列来源索引') },['project_id','page_key']),
+    details: `窄读优先 view:final/render/sources；这些只读视图不含保存草稿。render 返回实际有效 LoRA 及各层来源/覆盖，null 表示无法确认，不能当成空列表。sources 返回来源键和继承/覆盖，可用 source 精确筛选；不匹配时报错。仅在需要理解上游引用或诊断最终输入时调用；普通编辑用 page.editor.read/save，不要求组装后全文核验，不用于遍历全项目。检查 context 中的当前模型、上游引用、整段覆盖、参考图与编译结果；只改 draft.document，再按返回的 save.operation 和 save.args 提交完整 draft。不回写只读 context，不覆盖无关模型数据。默认 edit 保留完整草稿、上游原文/词条、参考图选择、最终正负向输入和异常；不重复本页正文与编译追踪。references 按来源键索引，inherited 按分类列原文或 {text,weight,enabled}；本页覆盖与继承调整见 draft.document。view:details 返回完整追踪文件，按需 read/grep，不提交为草稿。${modelRules} ${loraRules}`,
     example: { project_id: 'demo', page_key: { page_id: 'page-001' } },
-    execute: async ({ project_id, page_key, view='edit' }) => {
+    execute: async ({ project_id, page_key, view='edit', source }) => {
+      if(source && view!=='sources')throw Object.assign(new Error('source 仅用于 sources 视图'),{code:'invalid_arguments'});
       const pack=await readPromptContext(project_id,page_key);
-      if(view==='details')return jsonArtifact(pack);
+      if(view==='details')return {...await jsonArtifact(pack),fields:['context.final','context.configuration','context.references','draft.document'],read:'优先使用 final/render/sources 窄视图；文件仅作完整诊断。'};
+      const status={page_key:pack.page_key,status:pack.context.status,diagnostics:pack.context.diagnostics};
+      if(view==='final')return {...status,final:editingContext(pack.context).final};
+      if(view==='render')return {...status,...pack.context.configuration};
+      if(view==='sources') {
+        const references=pack.context.references.filter(ref=>!source||ref.source===source);
+        if(source&&!references.length)throw Object.assign(new Error('未知来源键，可用：'+pack.context.references.map(r=>r.source).join(', ')),{code:'invalid_arguments'});
+        return {...status,references:source ? references : references.map(ref=>({source:ref.source,name:ref.prompt_name,kind:ref.kind,overridden:ref.override!==null || Object.keys(ref.adjustments??{}).length>0,images:ref.reference_images?.length??0}))};
+      }
       return {...pack,context:editingContext(pack.context),save:{operation:'facts.save',args:pack.save,draft_parameter:'draft'}};
     },
   },

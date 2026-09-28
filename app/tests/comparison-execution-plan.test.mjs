@@ -513,7 +513,7 @@ for (const failures of [1, 2]) test(`最终成果已保存后队列释放失败 
   const reference = generationReference(null, manifest.id, 'comparison', manifest.created_at);
   await enqueueGenerationTask(target.root, reference);
   const rename = fs.rename;
-  const failure = Object.assign(new Error('simulated release persistence failure'), { code: 'EPERM' });
+  const failure = Object.assign(new Error('simulated non-retryable release persistence failure'), { code: 'EIO' });
   let attempts = 0;
   let mocked;
   const adapter = {

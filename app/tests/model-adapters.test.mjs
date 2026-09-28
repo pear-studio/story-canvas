@@ -280,6 +280,14 @@ test('角色 LoRA 随引用与子设定实时继承，页面仅保存覆盖，�
   document.models.anima.lora_overrides={[lora.filename]:{weight:.3},[outfit.filename]:{enabled:false}};await f.put(`pages/${id}.prompt.json`,document);
   character.identity.lora={...lora,sha256:'e'.repeat(64),weight:1.2,trigger:'updated_trigger'};await f.put('characters/person.prompt.json',makeModelPromptDocument(schema('character-prompt'),'anima',character));
   compiled=await inspect();assert.equal(compiled.loras.find(v=>v.filename===lora.filename).weight,.3);assert.equal(compiled.loras.find(v=>v.filename===lora.filename).sha256,'e'.repeat(64));assert.match(compiled.positive_prompt,/updated_trigger/);assert.doesNotMatch(compiled.positive_prompt,/outfit_trigger|character_trigger/);assert.ok(!compiled.loras.some(v=>v.filename===outfit.filename));
+  const {readPromptEditContext}=await import('../server/prompt-edit-context.mjs');
+  const context=await readPromptEditContext({projectRoot:f.root,projectDirectory:f.directory,projectId:'demo',pageKey:{page_id:id}});
+  assert.deepEqual(context.context.configuration.effective_loras,compiled.loras);
+  const layers=context.context.configuration.lora_sources;
+  assert.equal(layers.settings['character:person:default'].identity.weight,1.2);
+  assert.equal(layers.settings['character:person:default'].local[0].filename,outfit.filename);
+  assert.equal(layers.settings['character:person:default'].overrides[lora.filename].weight,.8);
+  assert.equal(layers.page.overrides[outfit.filename].enabled,false);
   delete document.models.anima.lora_overrides;await f.put(`pages/${id}.prompt.json`,document);assert.equal((await inspect()).loras.find(v=>v.filename===lora.filename).weight,.8);
   content.characters=[];await f.put(`pages/${id}.content.json`,content);compiled=await inspect();assert.ok(!compiled.loras.some(v=>v.filename===lora.filename||v.filename===outfit.filename));assert.doesNotMatch(compiled.positive_prompt,/updated_trigger|outfit_trigger/);
   document.models.anima.lora_overrides={bad:{weight:3}};assert.ok(validateModelPromptDocument(document,'page').some(message=>message.includes('weight')));

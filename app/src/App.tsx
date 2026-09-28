@@ -1359,14 +1359,14 @@ export default function StoryWorkbench({ initialImagesHidden, imagePrivacyStorag
       });
   }
 
-  async function createVisualPage(template: VisualPageTemplate | null, subject: VisualPageTemplateSubject | null) {
+  async function createVisualPage(template: VisualPageTemplate | null, population: VisualPageTemplateSubject | null) {
     const target = visualTemplateTarget;
     if (!target) return false;
     const owner = target.ownerKind === 'story' ? { owner_kind: 'story', sequence_id: target.sequenceId }
       : target.ownerKind === 'character' ? { owner_kind: 'character', character_id: target.characterId, variant_id: target.variantId }
       : { owner_kind: 'scene', scene_id: target.sceneId, variant_id: target.variantId };
     return Boolean(await performNavigationAction('create-page', { owner, template_id: template?.id ?? null, after_page_id: target.afterPageId,
-      ...(subject ? { character_id: subject.characterId, variant_id: subject.variantId } : {}) }, '页面已创建'));
+      ...(population ? { character_id: population.characterId, variant_id: population.variantId } : {}) }, '页面已创建'));
   }
 
   async function chooseScene(id: string, settingId = 'profile') {

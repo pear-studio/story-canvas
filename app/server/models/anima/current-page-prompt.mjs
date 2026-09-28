@@ -164,7 +164,7 @@ export function formatPromptParagraphs(parts, separator, profileId) {
   for (const part of parts) {
     const owner = part.role ?? (part.origin === "lora_trigger" && part.origin_id !== profileId ? part.origin_id : null);
     const group = owner ? `${part.origin_detail?.kind ?? "character"}:${owner}`
-      : part.origin === "page" || part.origin === "scene" ? (part.category === "subject" && isPromptPopulationControl(part.prompt_text) ? "population" : `page:${part.category}`)
+      : part.origin === "page" || part.origin === "scene" ? (part.category === "population" && isPromptPopulationControl(part.prompt_text) ? "population" : `page:${part.category}`)
       : part.category === "positive_suffix" ? "suffix" : "prefix";
     if (group !== previousGroup) paragraphs.push([]);
     paragraphs.at(-1).push(part.text);
@@ -323,11 +323,11 @@ export function compileCurrentPagePrompt({
   }
   if (!["anima", "qwen-image-2-1"].includes(rules.family)) errors.push(`${profile?.id ?? "当前生成配置"} 使用了未知 Prompt 家族：${rules.family}`);
 
-  const populationParts = (categoryParts.subject ?? [])
+  const populationParts = (categoryParts.population ?? [])
     .filter((part) => part.role === null && isPromptPopulationControl(part.prompt_text));
   positiveBodyParts.push(...rules.categoryOrder.flatMap((category) => [
     ...(category === "setting" ? sceneSettingParts : []),
-    ...(categoryParts[category] ?? []).filter((part) => part.role === null && !(category === "subject" && isPromptPopulationControl(part.prompt_text))),
+    ...(categoryParts[category] ?? []).filter((part) => part.role === null && !(category === "population" && isPromptPopulationControl(part.prompt_text))),
   ]));
   const positiveAuditParts = [
     ...rules.positivePrefix.map((entry) => profileFragmentPart(profile, entry, "positive", profilePromptFragmentSources)),

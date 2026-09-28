@@ -1,6 +1,6 @@
 export const PROMPT_TYPES = Object.freeze(["danbooru", "custom_description"]);
 
-export const PAGE_PROMPT_CATEGORIES = Object.freeze(["subject","person","setting","camera","avoid"]);
+export const PAGE_PROMPT_CATEGORIES = Object.freeze(["population","person","setting","camera","avoid"]);
 
 export const PAGE_POSITIVE_PROMPT_CATEGORIES = Object.freeze(PAGE_PROMPT_CATEGORIES.filter((category) => category !== "avoid"));
 
@@ -14,17 +14,7 @@ export const CHARACTER_PROMPT_CATEGORIES = Object.freeze([
   "equipment",
 ]);
 
-export const PROMPT_POPULATION_TAGS = Object.freeze([
-  ...["1girl", "2girls", "3girls", "4girls", "5girls"].map((prompt_text, index) => Object.freeze({ prompt_text, kind: "girls", minimum: index + 1 })),
-  Object.freeze({ prompt_text: "6+girls", kind: "girls", minimum: 6 }),
-  Object.freeze({ prompt_text: "multiple girls", kind: "girls", minimum: 2 }),
-  ...["1boy", "2boys", "3boys", "4boys", "5boys"].map((prompt_text, index) => Object.freeze({ prompt_text, kind: "boys", minimum: index + 1 })),
-  Object.freeze({ prompt_text: "6+boys", kind: "boys", minimum: 6 }),
-  Object.freeze({ prompt_text: "multiple boys", kind: "boys", minimum: 2 }),
-  ...["1other", "2others", "3others"].map((prompt_text, index) => Object.freeze({ prompt_text, kind: "others", minimum: index + 1 })),
-  Object.freeze({ prompt_text: "multiple others", kind: "others", minimum: 2 }),
-]);
-
+export {populationTags as PROMPT_POPULATION_TAGS} from '../../../shared/prompt-population.mjs';
 export const DANBOORU_CATEGORY_BY_PROVIDER_TYPE = Object.freeze({
   "0": "general",
   "1": "artist",
@@ -63,15 +53,7 @@ export function normalizePromptText(value) {
   return String(value ?? "").trim().toLowerCase().replaceAll("_", " ").replace(/\s+/g, " ");
 }
 
-const populationTagByText = new Map(PROMPT_POPULATION_TAGS.map((tag) => [normalizePromptText(tag.prompt_text), tag]));
-
-export function promptPopulationTag(value) {
-  return populationTagByText.get(normalizePromptText(value)) ?? null;
-}
-
-export function isPromptPopulationControl(value) {
-  return normalizePromptText(value) === "solo" || promptPopulationTag(value) !== null;
-}
+export {populationTag as promptPopulationTag,isPopulationControl as isPromptPopulationControl} from '../../../shared/prompt-population.mjs';
 
 export function promptFragmentWeight(fragment) {
   return fragment?.weight === undefined ? 1 : fragment.weight;

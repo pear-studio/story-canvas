@@ -53,7 +53,7 @@ test("模板直接创建完整项目，重复创建拒绝覆盖", async (context
     pages: [],
   });
   const characterPrompt = await readJson(path.join(directory, "characters", "ellen.prompt.json"));
-  assert.deepEqual(characterPrompt.models.anima.identity.prompt, {subject:[],person:[],setting:[],camera:[],avoid:[]});
+  assert.deepEqual(characterPrompt.models.anima.identity.prompt, {population:[],person:[],setting:[],camera:[],avoid:[]});
   assert.deepEqual(characterPrompt.models.anima.variants.uniform.loras, []);
   const projectManifest = await readJson(path.join(directory, "project.json"));
   assert.equal(projectManifest.format, "story-models-v1");

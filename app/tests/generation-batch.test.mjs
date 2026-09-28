@@ -43,4 +43,43 @@ test('回执落盘失败保留任务 ID，不继续生成；持久化前标为�
   }});
   assert.equal(calls,1);assert.equal(result.error,'receipt_write_failed');assert.equal(result.targets.length,1);
   assert.equal(snapshots[1].results[0].status,'unknown');assert.equal(snapshots[2].results[0].status,'submitted');
+  assert.equal(result.phase,'after_submit');assert.equal(result.counts.submitted,1);
+  assert.deepEqual(result.wait.args.targets,result.targets);assert.equal(result.wait.args.batch_id,undefined);
+});
+
+test('初始化或发送前落盘失败明确未提交，已受理的前页仍保留',async()=>{
+  for(const failAt of [1,2,4]) {
+    let calls=0,writes=0;
+    const result=await submit(args,{submit:async a=>{calls++;return accepted(a.page_key.page_id);},persist:async()=>{
+      if(++writes===failAt)throw Object.assign(new Error('busy'),{code:'EPERM'});
+      return 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    }});
+    const submitted=failAt===4?1:0;
+    assert.equal(calls,submitted);assert.equal(result.counts.submitted,submitted);
+    assert.equal(result.counts.unknown,0);assert.equal(result.counts.not_submitted,5-submitted);
+    assert.equal(result.phase,failAt===1?'initialize':'before_submit');
+    assert.equal(result.error,'receipt_write_failed');
+  }
+});
+
+test('最后一页已受理但回执失败仍报告错误并保留任务；断线后落盘失败保持 unknown',async()=>{
+  for(const uncertain of [false,true]) {
+    let writes=0,calls=0;
+    const result=await submit({...args,page_keys:[args.page_keys[0]]},{submit:async a=>{calls++;if(uncertain)throw new Error('connection lost');return accepted(a.page_key.page_id);},persist:async()=>{
+      if(++writes===3)throw new Error('disk full');return 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    }});
+    assert.equal(calls,1);assert.equal(result.error,'receipt_write_failed');
+    assert.equal(result.results[0].status,uncertain?'unknown':'submitted');
+    assert.equal(result.targets.length,uncertain?0:1);
+    assert.equal(result.phase,'after_submit');
+  }
+});
+
+test('预写期间取消不发送请求，回执恢复为未提交',async()=>{
+  const controller=new AbortController();let writes=0,last;
+  const result=await submit(args,{signal:controller.signal,submit:()=>assert.fail('不能提交'),persist:async(_kind,record)=>{
+    last=structuredClone(record);if(++writes===2)controller.abort();return 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  }});
+  assert.equal(result.counts.not_submitted,5);assert.equal(result.counts.unknown,0);
+  assert.ok(last.results.every(row=>row.status==='not_submitted'));
 });

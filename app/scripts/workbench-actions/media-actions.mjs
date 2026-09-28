@@ -7,6 +7,10 @@ const post = (summary, suffix, fields, options = {}) => endpoint(summary, 'POST'
 const target = { ...schema({ kind: { ...string('归属'), enum: ['character','scene','page'] }, id: string('角色/场景/页面 ID'), variant_id: string('角色和场景需要子设定 ID'), model_id: string('模型分支，默认 qwen') }, ['kind','id']), description: '参考图归属；角色和场景必须给 variant_id' };
 const reference = (summary, action, fields, required, body) => post(summary, 'reference-library', { target, ...fields }, { required: ['target', ...required], details: '先 reference.list 取得 entries 与 sha256；修改传 expected_sha256。参考图最多十张，候选提升后保存到 materials，不依赖临时输出。', body: a => ({ target:a.target, action, ...body(a) }) });
 export const mediaActions = {
+  'candidate.sheet': endpoint('按单元或章节顺序查看最新批次的全部画面','POST','/api/agent/candidate-sheet',{
+    sequence_id:string('单元 ID；与 chapter_id 恰好提供一个'),chapter_id:string('章节 ID；与 sequence_id 恰好提供一个'),
+  },{project:true,required:[],body:a=>a,transform:r=>r.value,
+    details:'按正式章节/单元/页面顺序，展示每页最新创建生成任务的全部候选；候选按任务内顺序。不按目录时间挑图，不回退旧批次，不删除或生成图片。失败、未出图、已删除图片原位标注；文字页显示文字卡。每张最多12格，自动覆盖整个范围。返回 sheets 的图片绝对路径，依次用 read_image 查看；manifest 保存完整页序、任务和候选身份。结果是读取时快照，生成变化后重新调用。仅生成本机预览，不加载大模型，极简模式可用。'}),
   'page.render.read': endpoint('读取单页模型、画幅及可选值','POST','/api/agent/page-render/read',{page_key:pageKey},
     {project:true,body:a=>a,transform:r=>r.value,details:'返回该页完整 render 文件、模型/画幅选项及 page.render.set 保存参数。只影响当前页；项目默认设置用于新页。无需读取组装后的 Prompt。'}),
   'page.render.set': endpoint('独立设置单页模型或画幅','POST','/api/agent/page-render/set',{
@@ -59,10 +63,10 @@ export const mediaActions = {
   'lettering.settings.save': endpoint('保存项目文字样式','PUT',a=>projectPath(a,'workbench/lettering-settings'),{settings:object('read 返回的完整 settings'),expected_sha256:string('读取时指纹')},{project:true,body:a=>({settings:a.settings,expected_sha256:a.expected_sha256})}),
   'lettering.page.read': endpoint('读取页面文字布局和指纹','GET',a=>projectPath(a,'workbench'),{page_key:pageKey},{project:true,details:'本入口仅用于插画页对白布局；纯文字页正文与排版用 page.editor.read/save section:content。返回 lettering 与整份布局文件的 expected_sha256。items 的字段以读取结果为准；保存仅传 {items}，不把 page 写回。',transform:(r,a)=>{const page=r.value.pages.find(p=>p.page_key.page_id===a.page_key.page_id);if(!page)throw new Error('页面不存在');return {lettering:page.lettering,expected_sha256:page.layout_sha256};}}),
   'lettering.page.save': endpoint('保存一个页面文字布局','PUT',a=>projectPath(a,'workbench/page-lettering'),{page_key:pageKey,lettering:object('仅 {items:[...]}，来自 read，保留每项身份'),expected_sha256:string('读取时布局指纹')},{project:true,body:a=>({page_key:a.page_key,lettering:a.lettering,expected_sha256:a.expected_sha256})}),
-  'finished.list': endpoint('分页查看成品状态及全量计数','GET',a=>projectPath(a,'finished'),{page_id:string('可选页面筛选'),...pagination},{project:true,required:[],query:a=>({page_id:a.page_id}),
+  'finished.list': endpoint('分页查看成品状态及全量计数','GET',a=>projectPath(a,'finished'),{page_key:pageKey,...pagination},{project:true,required:[],query:a=>({page_id:a.page_key?.page_id}),
     transform:(r,a)=>({summary:r.value.pages.reduce((v,p)=>(v[p.status]=(v[p.status]??0)+1,v),{total:r.value.pages.length}),...paginate(r.value.pages.map(p=>({page_id:p.page_id,title:p.title,status:p.status,candidate_count:p.candidate_count,...(p.batch_skip_reason?{batch_skip_reason:p.batch_skip_reason}:{})})),a)}),
     details:'默认20条；summary 是筛选范围内全量成品状态计数，不含正文、图片链接和记录详情。单页输出/删除前用 finished.inspect 取 record.sha256 等细节。'}),
-  'finished.inspect': endpoint('查看单页成品记录、链接与删除指纹','GET',a=>projectPath(a,'finished'),{page_id:string('页面 ID')},{project:true,query:a=>({page_id:a.page_id}),transform:r=>r.value,details:'仅返回指定页面完整成品信息；列表用 finished.list。'}),
+  'finished.inspect': endpoint('查看单页成品记录、链接与删除指纹','GET',a=>projectPath(a,'finished'),{page_key:pageKey},{project:true,query:a=>({page_id:a.page_key?.page_id}),transform:r=>r.value,details:'仅返回指定页面完整成品信息；列表用 finished.list。'}),
   'finished.jobs': endpoint('查看成品输出任务','GET',a=>projectPath(a,'finished/jobs'),{}, {project:true}),
   'finished.delete': endpoint('删除一个成品记录','DELETE',a=>projectPath(a,'finished'),{page_key:pageKey,expected_sha256:string('finished.inspect 返回的 record.sha256')},{project:true,body:a=>({page_key:a.page_key,expected_sha256:a.expected_sha256}),details:'删除成品需用户授权，不删除源候选。'}),
   'finished.export': {summary:'导出已有成品 ZIP 或 HTML 阅读页',parameters:schema({...projectId,variant:{...string('导出版本'),enum:['lettered','clean','both']},chapter_id:string('可选章节'),preview:boolean('true 导出HTML，否则ZIP')},['project_id','variant']),details:'只导出已完成的成品，不生成或超分。文件放 Saved/Agent/workbench-artifacts，返回绝对路径。',execute:a=>downloadArtifact(projectPath(a,'finished/export'),{method:'POST',body:{variant:a.variant,chapter_id:a.chapter_id,preview:a.preview},extension:a.preview?'html':'zip'})},

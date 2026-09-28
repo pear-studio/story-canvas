@@ -11,9 +11,10 @@ export function ReferenceRow({ title, editor, children }: { title: string; edito
 export function ReferenceLabel({ name, variant, color }: { name: string; variant?: string; color?: string }) {
   return <span className="character-setting-chip reference-summary-chip" style={{ '--role-color': color ?? '#89938e' } as CSSProperties}><i aria-hidden="true" /><b>{name}</b>{variant && <small>{variant}</small>}</span>;
 }
-export function ParticipantEditor({ characters, ownerCharacterId, value, onChange }: {
+export function ParticipantEditor({ characters, ownerCharacterId, value, onChange, enabledCounts }: {
   characters: WorkbenchCharacter[];
   ownerCharacterId?: string;
+  enabledCounts?: Record<string, {enabled: number; total: number}>;
   value: Array<{ character_id: string; variant_id: string }>;
   onChange: (value: Array<{ character_id: string; variant_id: string }>) => void;
 }) {
@@ -84,6 +85,7 @@ export function ParticipantEditor({ characters, ownerCharacterId, value, onChang
     {value.length > 0 && <div className="reference-chips" ref={chipsRef} onPointerMove={(event) => moveDrag(event.clientX, event.clientY, event.pointerId)} onPointerUp={(event) => finishDrag(event.pointerId)} onPointerCancel={(event) => finishDrag(event.pointerId, true)}>
       {value.map((entry, index) => {
         const character = characterById.get(entry.character_id);
+        const count = enabledCounts?.[entry.character_id];
         const variant = character?.visual.variants.find((candidate) => candidate.id === entry.variant_id) ?? null;
         const dragPosition = drag?.from === index ? "source" : drag && drag.to !== drag.from && drag.to === index ? (drag.to < drag.from ? "before" : "after") : undefined;
         return <span className={`character-setting-chip${dragPosition ? ` is-drag-${dragPosition}` : ""}`} key={entry.character_id} style={{ "--role-color": character?.style?.display_color ?? "#89938e" } as CSSProperties}>
@@ -93,6 +95,7 @@ export function ParticipantEditor({ characters, ownerCharacterId, value, onChang
             {!variant && <option value={entry.variant_id}>缺失：{entry.character_id} · {entry.variant_id}</option>}{(character?.visual.variants ?? []).map((candidate) => <option value={candidate.id} key={candidate.id}>{character?.name ?? entry.character_id} · {candidate.name}</option>)}
           </select>
           <b>{character?.name ?? entry.character_id}</b>{variant && <small>{variant.name}</small>}
+          {count && <small className="reference-enabled-count" title={`Prompt 启用 ${count.enabled} / ${count.total} 条（当前启用 / 总词条）`} aria-label={`${character?.name ?? entry.character_id} Prompt 启用 ${count.enabled}/${count.total}`}>{count.enabled}/{count.total}</small>}
           <button type="button" onClick={() => onChange(value.filter((item) => item.character_id !== entry.character_id))} aria-label={`移除${character?.name ?? entry.character_id}`}>×</button>
         </span>;
       })}
@@ -115,4 +118,3 @@ export function ParticipantEditor({ characters, ownerCharacterId, value, onChang
     </details>
   </div>;
 }
-

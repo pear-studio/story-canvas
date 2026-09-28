@@ -112,7 +112,7 @@ function auditFragment(record, dictionaryEntries) {
   }
 
   if (text && isPromptPopulationControl(text)) {
-    const expectedCategory = record.polarity === "negative" ? "avoid" : "subject";
+    const expectedCategory = record.polarity === "negative" ? "avoid" : "population";
     if (fragment.prompt_type !== "danbooru") {
       errors.push(issue(record, PROMPT_AUDIT_CODES.POPULATION_TAG_TYPE_INVALID, "人数与 solo 控制标签必须使用 Danbooru 类型"));
     }
@@ -146,7 +146,7 @@ function auditFragment(record, dictionaryEntries) {
 function auditPopulationSemantics(records, errors, warnings) {
   const pages = new Map();
   for (const record of records) {
-    if (record.source_kind !== "page" || record.category !== "subject" || record.polarity === "negative") continue;
+    if (record.source_kind !== "page" || record.category !== "population" || record.polarity === "negative") continue;
     if (!isPromptPopulationControl(record.fragment?.prompt_text)) continue;
     const group = pages.get(record.source_id) ?? [];
     group.push(record);

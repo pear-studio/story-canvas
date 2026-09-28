@@ -1,3 +1,4 @@
+import { validatePopulation } from '../../../shared/prompt-population.mjs';
 import {validateLoraOverrides} from '../../../shared/lora-inheritance.mjs';
 import { validateReferenceEntries } from "../../../shared/reference-images.mjs";
 import { validateCameraSettings } from "../../../shared/camera-prompt.mjs";
@@ -49,11 +50,12 @@ function validatePromptFragment(fragment, valuePath, errors) {
   if (fragment.enabled !== undefined && typeof fragment.enabled !== "boolean") errors.push(`${valuePath}.enabled 必须是布尔值`);
 }
 
-const promptCategories = ["subject","person","setting","camera","avoid"];
+const promptCategories = ["population","person","setting","camera","avoid"];
 
 function validatePrompt(value, valuePath, errors) {
   if (!isRecord(value)) { errors.push(`${valuePath} 必须是对象`); return; }
   checkExactKeys(value, promptCategories, valuePath, errors);
+  errors.push(...validatePopulation(value,{setting:true}).map(error=>valuePath+"."+error));
   for (const category of promptCategories) {
     if (!Array.isArray(value[category])) errors.push(`${valuePath}.${category} 必须是数组`);
     else value[category].forEach((fragment, index) => validatePromptFragment(fragment, `${valuePath}.${category}[${index}]`, errors));

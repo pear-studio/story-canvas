@@ -13,7 +13,7 @@ const translations = ["rain,雨", "sword,剑", "blonde_hair,金色头发"].join(
 test("overlay 叠加翻译、分类与关键词，并保持未覆盖词条结构", () => {
   const overlay = {
     rain: { translation: "下雨", categories: ["setting", "camera"], keywords: ["雨", "雨天", "雨夜", "天气"] },
-    sword: { translation: "剑", categories: ["subject", "equipment"], keywords: ["剑", "刀剑", "武器"] },
+    sword: { translation: "剑", categories: ["population", "equipment"], keywords: ["剑", "刀剑", "武器"] },
   };
   const entries = buildPromptDictionary(tags, translations, JSON.stringify(overlay));
   const rain = entries.find((entry) => entry.source_text === "rain");
@@ -21,7 +21,7 @@ test("overlay 叠加翻译、分类与关键词，并保持未覆盖词条结构
   assert.deepEqual(rain.categories, ["setting", "camera"]);
   assert.deepEqual(rain.keywords, ["雨", "雨天", "雨夜", "天气"]);
   const sword = entries.find((entry) => entry.source_text === "sword");
-  assert.deepEqual(sword.categories, ["subject", "equipment"]);
+  assert.deepEqual(sword.categories, ["population", "equipment"]);
   const hair = entries.find((entry) => entry.source_text === "blonde_hair");
   assert.equal(hair.display_text, "金色头发", "未覆盖词条保持 zh.csv 翻译");
   assert.equal(hair.categories, undefined, "未覆盖词条不携带分类字段");
@@ -56,7 +56,7 @@ test("中文关键词可命中词库搜索", () => {
 test("overlay 校验拒绝未知分类、缺失标签、大写关键词与空分类", () => {
   const errors = validatePromptDictionaryOverlay({
     "rain": { translation: "雨", categories: ["weather"], keywords: [] },
-    "missing_word": { translation: "不存在", categories: ["subject"], keywords: [] },
+    "missing_word": { translation: "不存在", categories: ["population"], keywords: [] },
     "sword": { translation: "剑", categories: [], keywords: [] },
     "blonde_hair": { translation: "金色头发", categories: ["hair"], keywords: ["Golden", "金色"] },
   }, ["rain", "sword", "blonde_hair"]);
@@ -75,10 +75,10 @@ test("overlay 非法 JSON 与校验失败给出明确错误", () => {
 test("匹配档优先于语义分类，同档内再让命中分类置顶", () => {
   const overlay = {
     rain: { translation: "雨", categories: ["setting"], keywords: ["雨"] },
-    sword: { translation: "剑", categories: ["subject"], keywords: ["剑", "rainy"] },
+    sword: { translation: "剑", categories: ["population"], keywords: ["剑", "rainy"] },
   };
   const entries = buildPromptDictionary(tags, translations, JSON.stringify(overlay));
-  const exactFirst = searchPromptDictionary(entries, "rain", { scope: "page", limit: 10, category: "subject" }).map((entry) => entry.source_text);
+  const exactFirst = searchPromptDictionary(entries, "rain", { scope: "page", limit: 10, category: "population" }).map((entry) => entry.source_text);
   assert.deepEqual(exactFirst.slice(0, 2), ["rain", "sword"], "主标签精确命中不能被语义分类加权压过");
 
   const sameRank = searchPromptDictionary(entries, "ai", { scope: "page", limit: 10, category: "setting" }).map((entry) => entry.source_text);
@@ -98,7 +98,7 @@ test("当前展示翻译精确命中优先于别名和关键词精确命中", ()
     JSON.stringify({
       moon: { translation: "月亮", categories: ["setting"], keywords: ["月光"] },
       moonlight: { translation: "月光", categories: ["setting"], keywords: [] },
-      cat: { translation: "猫", categories: ["subject"], keywords: ["猫耳"] },
+      cat: { translation: "猫", categories: ["population"], keywords: ["猫耳"] },
       cat_ears: { translation: "猫耳", categories: ["appearance"], keywords: [] },
     }),
   );
@@ -119,7 +119,7 @@ test("多词中的完整词命中优先于普通前缀", () => {
     ].join("\n"),
     "",
     JSON.stringify({
-      shota: { translation: "正太", categories: ["subject"], keywords: [] },
+      shota: { translation: "正太", categories: ["population"], keywords: [] },
       shotgun: { translation: "霰弹枪", categories: ["equipment"], keywords: [] },
       pantyshot: { translation: "内裤走光", categories: ["camera"], keywords: [] },
       selfie: { translation: "自拍", categories: ["camera"], keywords: [] },

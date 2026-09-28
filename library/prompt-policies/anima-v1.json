@@ -6,7 +6,7 @@
   "separator": ", ",
   "avoidance_strategy": "negative_prompt",
   "category_order": [
-    "subject",
+    "population",
     "person",
     "setting",
     "camera"

@@ -1,7 +1,8 @@
 import type { Scene } from './project-workbench-client';
 import { useState, type CSSProperties } from 'react';
 
-export function SceneReferenceEditor({ scenes, value, variantId, onChange }: {
+export function SceneReferenceEditor({ scenes, value, variantId, onChange, enabledCount }: {
+  enabledCount?: {enabled:number;total:number};
   scenes: Scene[]; value?: string; variantId?: string;
   onChange: (id?: string, variantId?: string) => void;
 }) {
@@ -22,6 +23,7 @@ export function SceneReferenceEditor({ scenes, value, variantId, onChange }: {
       {selected?.visual.variants.map(variant => <option key={variant.id} value={`${selected.id}:${variant.id}`}>{selected.name} · {variant.name}</option>)}
     </select>
     <b>{selected?.name ?? value}</b>{variant && <small>{variant.name}</small>}
+    {enabledCount&&<small title={`Prompt 启用 ${enabledCount.enabled} / ${enabledCount.total} 条（当前启用 / 总词条）`} aria-label={`场景 Prompt 启用 ${enabledCount.enabled}/${enabledCount.total}`}>{enabledCount.enabled}/{enabledCount.total}</small>}
     <button type="button" aria-label="移除场景引用" onClick={() => onChange()}>×</button>
     </span></div>}
     <details>

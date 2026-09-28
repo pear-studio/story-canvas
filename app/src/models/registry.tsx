@@ -20,7 +20,7 @@ export function ModelSettingEditor(props:ModelSettingEditorProps) {
   const character={...props.character,model_id:modelId,prompt:input} as WorkbenchCharacter;
   async function enable() {
     setSaving(true);setError('');
-    const empty=()=>({subject:[],person:[],setting:[],camera:[],avoid:[]});
+    const empty=()=>({population:[],person:[],setting:[],camera:[],avoid:[]});
     const prompt=modelId==='anima'?{identity:{prompt:empty(),lora:null},variants:Object.fromEntries(props.character.visual.variants.map(v=>[v.id,{prompt:empty(),loras:[],identity_disabled:[]}]))}:{prompt_name:props.character.name,variants:Object.fromEntries(props.character.visual.variants.map(v=>[v.id,{text:'',reference_images:[]}]))};
     try {const result=await saveSettingPrompt(props.kind??'character',props.projectId,{...character,prompt},prompt);props.onSaved({...result,model_id:modelId} as Partial<WorkbenchCharacter>);}
     catch(cause){setError(cause instanceof Error?cause.message:String(cause));}finally{setSaving(false);}
@@ -36,5 +36,5 @@ export function ModelPromptEditor(props:ModelPageEditorProps) {
   const adapter=models[props.page.model_id??'qwen'];
   const projectSetting=(value:WorkbenchCharacter)=>({...value,prompt:value.model_prompts?.models?.[props.page.model_id??'qwen']??value.prompt}) as WorkbenchCharacter;
   const inheritedNames=props.page.model_id==='anima'?[...props.references.flatMap(ref=>{const input=props.characters.find(c=>c.id===ref.character_id)?.model_prompts?.models?.anima;return input?settingLoras(input.identity,input.variants[ref.variant_id]).map(lora=>lora.filename):[];}),...props.scenes.filter(c=>c.id===props.prompt.scene_id).flatMap(c=>{const input=c.model_prompts?.models?.anima;return input?settingLoras(input.identity,input.variants[props.prompt.scene_variant_id??'']).map(lora=>lora.filename):[];})]:[];
-  return <><PageLoraEditor settingFilenames={inheritedNames} projectId={props.projectId} page={props.page} prompt={props.prompt} onChange={props.onChange} disabled={props.disabled}/><adapter.PageEditor {...props} characters={props.characters.map(projectSetting)} scenes={props.scenes.map(projectSetting)}/></>;
+  return <div className="compact-prompt-editor">{props.page.model_id!=='anima'&&props.header}<adapter.PageEditor {...props} characters={props.characters.map(projectSetting)} scenes={props.scenes.map(projectSetting)}/><PageLoraEditor settingFilenames={inheritedNames} projectId={props.projectId} page={props.page} prompt={props.prompt} onChange={props.onChange} disabled={props.disabled}/></div>;
 }

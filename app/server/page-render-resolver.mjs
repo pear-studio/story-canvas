@@ -154,7 +154,7 @@ async function readCharacter(projectDirectory, characterIndex, reference, modelI
     configuration_path: `variants.${reference.variant_id}`,
     text: configuration.text ?? "",
     reference_images: structuredClone(configuration.reference_images ?? []),
-    ...(modelId === 'anima' ? { ...structuredClone(configuration), identity: structuredClone(promptDocument.identity), loras: settingLoras(promptDocument.identity, configuration) } : {}),
+    ...(modelId === 'anima' ? { ...structuredClone(configuration), identity: structuredClone(promptDocument.identity), local_loras: structuredClone(configuration.loras ?? []), loras: settingLoras(promptDocument.identity, configuration) } : {}),
   };
   return {
     character,

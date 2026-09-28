@@ -10,7 +10,7 @@ const adapters = Object.freeze({
   anima: Object.freeze({
     id: 'anima', architecture: 'anima', label: 'Anima Basic', defaultProfile: 'anima-base-v1',
     capabilities: Object.freeze({ references: false, rewrite: false }),
-    emptyPrompt: () => ({ subject: [], person: [], setting: [], camera: [], avoid: [] }),
+    emptyPrompt: () => ({ population: [], person: [], setting: [], camera: [], avoid: [] }),
     compilePrompt: compileAnima,
     validatePagePrompt: animaPage.validateStoryPagePromptDocument,
     preparePagePrompt: animaPage.preparePromptForPersistence,

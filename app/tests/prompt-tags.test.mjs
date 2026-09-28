@@ -26,7 +26,7 @@ test("展示用花括号不进入最终 Prompt；未知或无效圈选由审计�
   assert.equal(fragment.prompt_text, text);
   assert.equal(encodePromptFragment({ ...fragment, weight: 1 }, null), "a person with (blue eyes:0.8), unknown, {(blue eyes:0.8)}");
   const compiled = compileCurrentPagePrompt({ pageId: "page-001", pageKey: { page_id: "page-001" }, pagePrompt: { setting: [{ description: text }] }, participantIds: [], dictionaryEntries: dictionary,
-    profile: { id: "example", prompt: { family: "anima", category_order: ["subject", "person", "setting", "camera"], avoidance_strategy: "negative_prompt", fragments: {} } } });
+    profile: { id: "example", prompt: { family: "anima", category_order: ["population", "person", "setting", "camera"], avoidance_strategy: "negative_prompt", fragments: {} } } });
   assert.equal(compiled.positive_prompt, "a person with (blue eyes:0.8), unknown, {(blue eyes:0.8)}");
   assert.equal(compiled.audit.valid, false);
   assert.match(JSON.stringify(compiled.audit.errors), /unknown/);

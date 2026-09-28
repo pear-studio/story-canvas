@@ -15,14 +15,15 @@ export function PromptPopulationEditor({ fragments, disabled, onChange }: {
     }
   };
   const result = fragments.filter(fragment => fragment.enabled !== false && isPopulationFragment(fragment)).map(fragment => fragment.prompt_text).join(", ");
-  return <div className="prompt-population" role="group" aria-label="画面人数">
+  return <div className="prompt-population" role="group" aria-label="画面人数" title={`人数 Prompt：${result || "—"}；6 表示 6 人及以上`}>
     <span className="prompt-population-title" title="人数词固定放在角色描述之前；单人自动添加 solo，多人自动移除。6 表示 6 人及以上。">画面人数</span>
-    {([['girls', 'girl'], ['boys', 'boy']] as const).map(([kind, label]) => <div className="prompt-population-counter" key={kind}>
+    {([['girls', 'girl'], ['boys', 'boy'], ['others', 'other']] as const).map(([kind, label]) => <div className="prompt-population-counter" key={kind}>
       <button type="button" aria-label={"减少 " + label + " 人数"} disabled={disabled || counts[kind] <= 0} onClick={() => update(kind, counts[kind] - 1)}>−</button>
       <span className="prompt-population-count" aria-label={label + " 人数"}>{counts[kind]}</span>
       <button type="button" aria-label={"增加 " + label + " 人数"} disabled={disabled || counts[kind] >= 6} onClick={() => update(kind, counts[kind] + 1)}>+</button>
-      <span>{label}</span>
+      <span>{{girl:"女",boy:"男",other:"其他"}[label]}</span>
     </div>)}
+    <label><input type="checkbox" checked={fragments.some(f=>f.enabled!==false && f.prompt_text.replaceAll('_',' ')==='no humans')} disabled={disabled} onChange={event=>onChange(event.target.checked ? [{...createPromptDraftFragment(),prompt_type:'danbooru',prompt_text:'no_humans'}] : fragments.filter(f=>f.prompt_text.replaceAll('_',' ')!=='no humans'))}/>无人物</label>
     <output className="prompt-population-result" aria-label="生成的人数 Prompt" aria-live="polite">{result || "—"}</output>
   </div>;
 }

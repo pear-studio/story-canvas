@@ -58,7 +58,7 @@ async function setup(t, { character = false, mobile = false, visualPages = false
   const errors = [], renders = [];
   page.on("pageerror", error => errors.push(error.message));
   t.after(async () => { await page.close(); assert.deepEqual(errors, []); });
-  const prompt = Object.fromEntries(["subject", "person", "setting", "camera", "avoid"].map(key => [key, []]));
+  const prompt = Object.fromEntries(["population", "person", "setting", "camera", "avoid"].map(key => [key, []]));
   const pages = ["a", "b", "c"].map(id => ({ kind: "story", page_id: id, page_key: { page_id: id }, title: `页面${id}`, scene_description: "窗台", characters: [], dialogue: [], prompt, content_sha256: "a".repeat(64), prompt_sha256: "b".repeat(64), prompt_context_sha256: "c".repeat(64), lettering: { page: id, items: [] } }));
   const views = Object.fromEntries(["alpha", "beta"].map(id => [id, { version: 4, project: { id, title: id, canvas: "2:3", default_render_profile: "anima", lettering_settings: defaultLetteringSettings(), lettering_settings_sha256: "e".repeat(64) }, outline: { synopsis: "", chapters: [{ id: "chapter", title: "第一章", summary: "", sequences: [{ id: "sequence", title: "单元", summary: "", pages: structuredClone(pages) }] }] }, characters: [], render_capabilities: { candidates: { available: true, counts: [1, 3] } }, diagnostics: [] }]));
   if(generationSettings) for(const view of Object.values(views)) for(const page of view.outline.chapters[0].sequences[0].pages) Object.assign(page,{model_id:'qwen',prompt:{text:'quiet garden'},render:{version:1,model_id:'qwen',profile_id:'qwen-image-2-1',canvas:'3:4'},render_sha256:'initial-render'});

@@ -17,8 +17,8 @@ function characterSettings(characters: WorkbenchCharacter[]): VisualPageTemplate
   })));
 }
 
-function subjectKey(subject: VisualPageTemplateSubject) {
-  return `${subject.characterId}/${subject.variantId}`;
+function subjectKey(population: VisualPageTemplateSubject) {
+  return `${population.characterId}/${population.variantId}`;
 }
 
 export function VisualPageTemplateDialog({ resource, target, characters, onClose, onCreate }: {
@@ -26,18 +26,18 @@ export function VisualPageTemplateDialog({ resource, target, characters, onClose
   target: VisualPageTemplateTarget;
   characters: WorkbenchCharacter[];
   onClose: () => void;
-  onCreate: (template: VisualPageTemplate | null, subject: VisualPageTemplateSubject | null) => Promise<boolean>;
+  onCreate: (template: VisualPageTemplate | null, population: VisualPageTemplateSubject | null) => Promise<boolean>;
 }) {
   const templates = resource?.templates.filter((template) => template.applies_to.includes(target.ownerKind)) ?? [];
   const subjects = useMemo(() => characterSettings(characters), [characters]);
   const fixedSubject = target.ownerKind === "character"
-    ? subjects.find((subject) => subject.characterId === target.characterId && subject.variantId === target.variantId)
+    ? subjects.find((population) => population.characterId === target.characterId && population.variantId === target.variantId)
     : null;
   const [selectedTemplateId, setSelectedTemplateId] = useState("blank");
   const [selectedSubjectKey, setSelectedSubjectKey] = useState(() => fixedSubject ? subjectKey(fixedSubject) : subjects.length === 1 ? subjectKey(subjects[0]) : "");
   const [busy, setBusy] = useState(false);
   const selectedTemplate = templates.find((template) => template.id === selectedTemplateId) ?? null;
-  const selectedSubject = fixedSubject ?? subjects.find((subject) => subjectKey(subject) === selectedSubjectKey) ?? null;
+  const selectedSubject = fixedSubject ?? subjects.find((population) => subjectKey(population) === selectedSubjectKey) ?? null;
   const unavailableReason = selectedTemplate && (!resource
     ? "正在读取模板资源，请稍候。"
     : resource.errors?.length
@@ -65,7 +65,7 @@ export function VisualPageTemplateDialog({ resource, target, characters, onClose
       </section>
       {selectedTemplate && <section className="visual-template-dialog__subject">
         <header><b>主体角色设定</b><span>{target.ownerKind === "character" ? "由当前设定固定" : "模板片段将绑定到该角色"}</span></header>
-        {target.ownerKind === "character" ? <div className={`visual-template-dialog__fixed-subject ${fixedSubject ? "" : "is-disabled"}`}>{fixedSubject?.label ?? "当前角色设定已不存在"}</div> : subjects.length ? <select aria-label="选择主体角色设定" value={selectedSubjectKey} onChange={(event) => setSelectedSubjectKey(event.target.value)}><option value="">请选择角色设定</option>{subjects.map((subject) => <option key={subjectKey(subject)} value={subjectKey(subject)}>{subject.label}</option>)}</select> : <div className="visual-template-dialog__fixed-subject is-disabled">当前项目没有角色，无法创建模板页。</div>}
+        {target.ownerKind === "character" ? <div className={`visual-template-dialog__fixed-population ${fixedSubject ? "" : "is-disabled"}`}>{fixedSubject?.label ?? "当前角色设定已不存在"}</div> : subjects.length ? <select aria-label="选择主体角色设定" value={selectedSubjectKey} onChange={(event) => setSelectedSubjectKey(event.target.value)}><option value="">请选择角色设定</option>{subjects.map((population) => <option key={subjectKey(population)} value={subjectKey(population)}>{population.label}</option>)}</select> : <div className="visual-template-dialog__fixed-population is-disabled">当前项目没有角色，无法创建模板页。</div>}
         {unavailableReason && <p className="visual-template-dialog__message" role="alert">{unavailableReason}</p>}
         <p className="visual-template-dialog__note">模板只负责建立普通页面事实；创建后仍可继续编辑页面内容与 Prompt。</p>
       </section>}

@@ -83,7 +83,7 @@ Anima 恢复来源固定为 `64db906`（`73d9c66` 的父提交）。该版本已
 ```json
 {
   "models": {
-    "anima": { "subject": [], "person": [], "setting": [], "camera": [], "avoid": [] },
+    "anima": { "population": [], "person": [], "setting": [], "camera": [], "avoid": [] },
     "qwen": { "text": "从有效 Anima Prompt 一次带入的文字" }
   }
 }

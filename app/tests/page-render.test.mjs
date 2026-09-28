@@ -1017,6 +1017,7 @@ test("编辑上下文返回引用、整段覆盖与最终文本", async t => {
   assert.deepEqual(result.draft, await readFactDraft(fixture.repositoryRoot, { domain: "story", kind: "prompt", projectId: fixture.projectId, targetId: "page-001" }));
   const compiled = await compilePageRenderInspectionContext({ repositoryRoot: fixture.repositoryRoot, projectDirectory: fixture.projectDirectory, pageKey: options.pageKey });
   assert.equal(result.context.final.positive, compiled.compiled_page.positive_prompt);
+  assert.deepEqual(result.context.configuration.effective_loras,compiled.compiled_page.loras);
   const save = draft => saveFactDraft(fixture.repositoryRoot, { domain: "story", kind: "prompt", projectId: fixture.projectId, targetId: "page-001", document: draft.document, expectedSha256: draft.expected_sha256, expectedContextSha256: draft.expected_context_sha256, conflictCode: "fact_target_conflict", contextConflictCode: "fact_upstream_conflict" });
   await save(result.draft);
   const fresh = await readPromptEditContext(options);
@@ -1043,6 +1044,7 @@ test("编辑上下文覆盖角色页实际来源，配置缺失明确返回不�
   }] } } });
   const conflict = await readPromptEditContext(options);
   assert.equal(conflict.context.status, "incomplete");
+  assert.equal(conflict.context.configuration.effective_loras,null);
   assert.equal(conflict.context.final, null, "配置冲突时不能把基础预览冒充实际输出");
   assert.equal(conflict.context.diagnostics.filter((item) => item.code === "render_profile_override_conflict").length > 0, true);
   await writeJson(path.join(fixture.projectDirectory, "project.json"), { format: "story-free-text-v1", title: "测试", canvas: "2:3", default_render_profile: "missing-profile" });

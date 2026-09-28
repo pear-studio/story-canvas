@@ -6,5 +6,5 @@ export type ModelPageEditorProps = {
   characters:WorkbenchCharacter[];scenes:WorkbenchCharacter[];
   references:Array<{character_id:string;variant_id:string}>;
   onReferencesChange:(value:Array<{character_id:string;variant_id:string}>)=>void;
-  disabled:boolean;rewrite?:ReactNode;onOpenOverview?:()=>void;
+  header?:ReactNode;disabled:boolean;rewrite?:ReactNode;onOpenOverview?:()=>void;
 };

@@ -1,6 +1,6 @@
 // Anima 词条编辑契约；恢复自 64db906，公共工作台不解释词条结构。
 import type { ReferenceEntry } from '../../ReferenceLibrary';
-export const promptCategories = ["subject","person","setting","camera","avoid"] as const;
+export const promptCategories = ["population","person","setting","camera","avoid"] as const;
 
 export type PromptCategory = typeof promptCategories[number];
 export type PromptFragment = {

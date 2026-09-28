@@ -138,7 +138,7 @@ test("角色 Prompt 契约要求 prompt_name 与自包含子设定，拒绝旧 i
 
   const legacy = validPrompt();
   legacy.identity = { prompt: {}, lora: null };
-  legacy.variants.default = { prompt: { subject: [] }, loras: [], identity_disabled: [] };
+  legacy.variants.default = { prompt: { population: [] }, loras: [], identity_disabled: [] };
   const legacyErrors = validateCharacterPromptDocument(legacy);
   assert.ok(legacyErrors.some((error) => error.includes("未知字段：identity")), "旧 identity 层被拒绝");
   assert.ok(legacyErrors.some((error) => error.includes("未知字段")), "旧分类/loras 字段被拒绝");

@@ -1,9 +1,9 @@
 import { PromptFragmentEditor } from './PromptFragmentEditor';
 import { displayPromptDraft, createPromptDraftFragment } from './prompt-fragment-draft';
 import { promptCategories, type PagePrompt, type InheritedAdjustments } from './models/anima/types';
-import { applyInheritedPrompt, adjustmentKey } from '../shared/prompt-inheritance.mjs';
+import { applyInheritedPrompt, adjustmentKey, inheritedOverrideCount } from '../shared/prompt-inheritance.mjs';
 
-const labels = { subject: '人数', person: "人物",  setting: '场景', camera: '镜头', avoid: '避免' };
+const labels = { population: '人数', person: "人物",  setting: '场景', camera: '镜头', avoid: '避免' };
 
 export function InheritedPromptEditor({ title, source, prompt, adjustments = {}, disabled = [], defaultOpen = false, collapsible = true, onChange }: {
   title: string; source: string; prompt: PagePrompt; adjustments?: InheritedAdjustments; disabled?: string[]; defaultOpen?: boolean; collapsible?: boolean;
@@ -13,7 +13,7 @@ export function InheritedPromptEditor({ title, source, prompt, adjustments = {},
   const effective = displayPromptDraft(applyInheritedPrompt(prompt, adjustments, disabled) as PagePrompt);
   const upstreamWeights = Object.fromEntries(Object.values(base).flat().map(f => [f.id, f.weight ?? 1]));
   const upstreamEnabled = Object.fromEntries(Object.values(base).flat().map(f => [f.id, f.enabled !== false]));
-  const adjusted = Object.values(effective).flat().filter(f => (f.weight ?? 1) !== upstreamWeights[f.id] || (f.enabled !== false) !== upstreamEnabled[f.id]).length;
+  const adjusted = inheritedOverrideCount(prompt, adjustments, disabled).overridden;
   const body = <div className="character-identity-preview-body"><PromptFragmentEditor scope="character" categories={promptCategories.map(id => ({ id, label: labels[id] }))} fragments={effective} createFragment={createPromptDraftFragment} toggleOnly upstreamWeights={upstreamWeights} upstreamEnabled={upstreamEnabled} historyScopeKey={source} onChange={next => {
       const result: InheritedAdjustments = {};
       const originals = Object.values(base).flat();

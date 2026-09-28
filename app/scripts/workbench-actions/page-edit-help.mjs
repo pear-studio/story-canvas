@@ -7,7 +7,7 @@ export const pageEditHelp = {
   },
   fragments: {
     summary:'Anima 本页片段字段和 ID 的增删改',
-    details:'section:prompt 的 models.anima 按 subject/person/setting/camera/avoid 分组。片段使用 tag 或 description 二选一，不能把两个字段留在同一片段中；可带 weight、enabled，人物片段按读取结构保留 character_id/role。已有片段保留自身 id，新增省略 id 由服务端生成；换顺序时 ID 跟随片段，不能按索引转给另一词条。数组整项替换，保留未修改条目。Prompt 不是字符串数组，不把词库返回的说明对象直接保存。不要把重复的继承词拷成本页片段；改继承词用 inheritance。切换 tag/description 时数组中的新对象只留所需字段。',
+    details:'section:prompt 的 models.anima 按 population/person/setting/camera/avoid 分组。population 仅用于人数 tag 和 solo/no_humans；普通词严禁写入。person 是人物外观、姿态、身体、动作和关系，可不带 character_id，表示未绑定词条，不需要创建其他分类。setting 为环境物体光线，camera 为镜头，avoid 为负向。片段使用 tag 或 description 二选一，不能把两个字段留在同一片段中；可带 weight、enabled，人物片段按读取结构保留 character_id/role。已有片段保留自身 id，新增省略 id 由服务端生成；换顺序时 ID 跟随片段，不能按索引转给另一词条。数组整项替换，保留未修改条目。Prompt 不是字符串数组，不把词库返回的说明对象直接保存。不要把重复的继承词拷成本页片段；改继承词用 inheritance。切换 tag/description 时数组中的新对象只留所需字段。',
     example:{section:'prompt',changes:{models:{anima:{camera:[{description:'wide shot'}]}}}},
   },
   inheritance: {

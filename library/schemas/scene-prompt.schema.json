@@ -152,15 +152,16 @@
         "prompt": {
           "type": "object",
           "required": [
-            "subject",
+            "population",
             "person",
             "setting",
             "camera",
             "avoid"
           ],
           "properties": {
-            "subject": {
-              "$ref": "#/$defs/anima/$defs/fragments"
+            "population": {
+              "type": "array",
+              "maxItems": 0
             },
             "person": {
               "$ref": "#/$defs/anima/$defs/fragments"

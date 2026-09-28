@@ -99,7 +99,7 @@ overlay 是面向中文搜索和分类建议的语义增强层，不追求把每
 
 | 分类 | 判定标准 | 示例 |
 |---|---|---|
-| `subject` | 画面主体：人物、生物、物体本身 | 1girl、sword、cat、fire |
+| `entity` | 画面主体：人物、生物、物体本身 | sword、cat、fire |
 | `appearance` | 主体外观与表情：身体特征、面部状态 | blonde_hair、blue_eyes、blush、smile |
 | `action` | 动作与互动 | running、hug、holding、sitting |
 | `setting` | 场景与环境：地点、天气、时间背景 | rain、classroom、forest、night |
@@ -123,7 +123,7 @@ overlay 是面向中文搜索和分类建议的语义增强层，不追求把每
 | `accessories` | 配饰 | hair_ornament、earrings、glasses |
 | `equipment` | 装备与道具 | sword、gun、shield |
 
-同一词在页面与角色语境下可以分属不同分类（sword 在页面是 `subject`，在角色页是 `equipment`），
+同一词在页面与角色语境下可以分属不同分类（sword 在页面是 `entity`，在角色页是 `equipment`），
 多分类即为此而设。判定有歧义时优先放语义更具体的分类，可用多分类表达重叠。
 
 ## 加载合并顺序
@@ -205,3 +205,5 @@ node app/scripts/dictionary-lookup.mjs --words Saved/Agent/dictionary-reference/
 
 译名、分类、关键词和正文一起审核；已有合理译名可以保留。独立审核关联草稿文件的准确
 SHA256，改稿后重新审核。结构验证同时核对链接及图例引用，语义完整性仍由审核者逐条确认。
+
+人数标签使用 `population`；`entity` 仅为词库检索分类，不是页面可写字段。页面中人物/生物相关词按语义放 person，环境物体放 setting。

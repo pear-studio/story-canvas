@@ -481,9 +481,9 @@ body.is-pane-resizing, body.is-pane-resizing * { cursor: col-resize !important; 
 .visual-template-dialog__cards > button:hover { border-color: #9eb6a9; background: var(--green-soft); }
 .visual-template-dialog__cards > button.is-active { border-color: var(--green); background: var(--green-soft); box-shadow: 0 0 0 2px rgba(45,104,74,.12); }
 .visual-template-dialog__cards small { color: var(--muted); font-size: var(--text-meta); line-height: 1.45; }
-.visual-template-dialog__subject select, .visual-template-dialog__fixed-subject { width: 100%; min-height: 36px; padding: 7px 9px; border: 1px solid #cfd7d1; border-radius: 8px; background: #fbfcfa; font-size: var(--text-body); }
-.visual-template-dialog__fixed-subject { display: flex; align-items: center; color: var(--green); font-weight: 700; }
-.visual-template-dialog__fixed-subject.is-disabled { color: var(--muted); }
+.visual-template-dialog__subject select, .visual-template-dialog__fixed-population { width: 100%; min-height: 36px; padding: 7px 9px; border: 1px solid #cfd7d1; border-radius: 8px; background: #fbfcfa; font-size: var(--text-body); }
+.visual-template-dialog__fixed-population { display: flex; align-items: center; color: var(--green); font-weight: 700; }
+.visual-template-dialog__fixed-population.is-disabled { color: var(--muted); }
 .visual-template-dialog__message { margin: 0; padding: 9px 11px; color: var(--red); border: 1px solid #e5c4bf; border-radius: 8px; background: var(--red-soft); font-size: var(--text-label); }
 .visual-template-dialog__note { margin: 0; color: var(--muted); font-size: var(--text-meta); }
 .visual-template-dialog__empty { min-height: 100px; padding: 18px; display: grid; place-content: center; gap: 6px; text-align: center; color: var(--muted); background: #f4f6f3; border-radius: 8px; }
@@ -2680,3 +2680,29 @@ label:has(> input:is([type="checkbox"], [type="radio"]):disabled) { cursor: not-
 .project-git-status { margin-block: 0.75rem; overflow-wrap: anywhere; }
 .project-git-status summary { cursor: pointer; }
 .project-git-changes { max-height: 16rem; overflow: auto; white-space: pre-wrap; }
+/* 页面 Prompt：常用词条优先，低频 LoRA 设置收起置底。 */
+.compact-prompt-editor { --text-meta: 12px; --text-label: 13px; --text-body: 14px; --text-section-title: 15px; display: grid; gap: 8px; min-width: 0; font-family: "Noto Sans SC", system-ui, sans-serif; font-size: var(--text-body); }
+.prompt-heading-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px 12px; }
+.prompt-heading-row > header { display: flex; align-items: center; gap: 8px; margin: 0; }
+.prompt-heading-row h3, .prompt-heading-row h4 { margin: 0; font-size: var(--text-section-title); font-weight: 600; }
+.prompt-heading-row .prompt-population { margin: 0; padding: 0; gap: 6px 10px; border: 0; background: transparent; }
+.prompt-heading-row .prompt-population-title, .prompt-heading-row .prompt-population-result { display: none; }
+.prompt-heading-row .prompt-population-counter { gap: 2px; }
+.prompt-heading-row .prompt-population-counter span { margin: 0; }
+.prompt-heading-row .prompt-population-count { min-width: 16px; font-variant-numeric: tabular-nums; }
+.prompt-heading-row .prompt-population > label { display: inline-flex; align-items: center; white-space: nowrap; }
+.compact-prompt-editor .page-reference-rows { margin: 0; }
+.compact-prompt-editor .reference-disclosure, .compact-prompt-editor .page-reference-rows .character-setting-chip > b, .compact-prompt-editor .page-reference-rows .character-setting-chip > small { font-size: var(--text-label); }
+.compact-prompt-editor .page-reference-setting { margin-top: 6px; padding: 8px; }
+.compact-prompt-editor .page-loras { gap: 4px; margin: 0; }
+.lora-fold-row { display: flex; align-items: flex-start; gap: 8px; font-size: var(--text-label); }
+.lora-fold-row > details { flex: 1; min-width: 0; }
+.lora-fold-row summary { min-height: 32px; padding: 7px 0; cursor: pointer; color: var(--muted); }
+.lora-fold-row > button { min-height: 30px; padding: 4px 8px; font-size: var(--text-label); }
+.compact-prompt-editor > .page-loras { border-top: 1px solid var(--line); padding-top: 6px; }
+.compact-prompt-editor .prompt-camera-actions { margin: 0; gap: 6px; }
+@media (pointer: coarse) {
+  .prompt-heading-row .prompt-population-counter button { min-width: 44px; min-height: 44px; }
+  .prompt-heading-row .prompt-population > label { min-height: 44px; }
+  .lora-fold-row summary, .lora-fold-row > button { min-height: 44px; }
+}

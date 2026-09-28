@@ -63,7 +63,7 @@ export async function executeWorkbench(input, execution={}) {
   try {
     validate(toolParameters,input);
     if(operation==='help') {
-      if(input.args!==undefined) throw invalid('help 使用 target，不接受 args');
+      if(input.args!==undefined && Object.keys(input.args).length) throw invalid('help 使用 target，不接受非空 args');
       if(input.topic&&!input.target)throw invalid('topic 需要操作名 target');
       const directory=catalog(denied);
       if(!input.target) return {groups:directory.map(({operations,...group})=>({...group,operations_count:operations.length,disabled_count:operations.filter(o=>o.availability==='disabled').length})),usage:'help + target分类ID 查看该类操作；target操作名 查看参数。disabled 操作被当前限制插件禁用，请交给具备该能力的 Agent。'};

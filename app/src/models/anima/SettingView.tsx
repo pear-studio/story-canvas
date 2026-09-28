@@ -12,7 +12,7 @@ import { useFeedback } from '../../feedback';
 import {saveSettingProfile, saveSettingVisual, saveSettingPrompt, renameSettingVariant, type SettingKind, type CharacterProfileDraft, type CharacterVisualDraft, type WorkbenchCharacter as SharedCharacter} from '../../project-workbench-client';
 import {promptCategories, type CharacterLora, type CharacterPromptDocument, type CharacterPromptSetting, type InheritedAdjustments} from './types';
 type WorkbenchCharacter = SharedCharacter<CharacterPromptDocument>;
-const promptLabels = { subject: '人数', person: '人物', setting: '场景', camera: '镜头', avoid: '避免' };
+const promptLabels = { population: '其他', person: '人物', setting: '场景', camera: '镜头', avoid: '避免' };
 const characterVariantIdPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const sameJson = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
 
@@ -83,7 +83,7 @@ function persistedCharacterPrompt(prompt: EditableCharacterPrompt): CharacterPro
 export function AnimaSettingView({ kind = 'character', projectId, character, initialSettingId, busy, onSaved, onSettingChange, onDirtyChange }: { kind?: SettingKind; projectId: string; character: WorkbenchCharacter; initialSettingId: string; busy: boolean; onSaved: (replacement: Partial<WorkbenchCharacter>) => void; onSettingChange?: (settingId: string) => void; onDirtyChange?: (dirty: boolean) => void }) {
   const { notify } = useFeedback();
   const label = kind === 'scene' ? '场景' : '角色';
-  const categories = kind === 'scene' ? promptCategories.filter(c => c === 'setting' || c === 'avoid') : promptCategories.filter(c => c !== 'subject');
+  const categories = kind === 'scene' ? promptCategories.filter(c => c === 'setting' || c === 'avoid') : promptCategories.filter(c=>c!=='population');
   const characterViewRef = useRef<HTMLElement>(null);
   const [settingId, setSettingId] = useState(initialSettingId);
   const sourceProfile = useMemo<CharacterProfileDraft>(() => ({ name: character.name, description: character.description }), [character.id, character.profile_sha256]);
@@ -203,7 +203,6 @@ export function AnimaSettingView({ kind = 'character', projectId, character, ini
           </div>
           <section className="resource-form--wide character-fact-section character-generation-section">
             <SectionHeader title="基础设定" description="所有子设定共享的 Prompt" actions={<button type="button" aria-label="保存基础设定" className="button button--quiet character-section-save" disabled={busy || savingSection !== null || !promptDirty} onClick={() => void savePrompt()}>{savingSection === "prompt" ? "保存中…" : "保存"}</button>} />
-            {kind === "character" && <PromptPopulationEditor fragments={promptDraft.identity.prompt.subject} disabled={busy || savingSection !== null} onChange={subject => updateIdentity(identity => ({ ...identity, prompt: { ...identity.prompt, subject } }))} />}
           <LoraListEditor projectId={projectId} profileId="anima-base-v1" title="基础 LoRA" single value={promptDraft.identity.lora?[persistedLora(promptDraft.identity.lora)]:[]} disabled={busy||savingSection!==null} onChange={value=>updateIdentity(identity=>({...identity,lora:value[0]?editableLora(value[0]):null}))}/>
           <PromptFragmentEditor categories={categories.map((category) => ({ id: category, label: promptLabels[category] }))} scope="character" fragments={promptDraft.identity.prompt} createFragment={createPromptDraftFragment} onChange={(prompt) => updateIdentity((identity) => ({ ...identity, prompt }))} historyScopeKey={`${character.id}:identity:${character.prompt_sha256}`} />
 
@@ -215,7 +214,6 @@ export function AnimaSettingView({ kind = 'character', projectId, character, ini
           <SectionHeader title="生成配置" description="子设定 Prompt" actions={<button type="button" aria-label="保存 Prompt" className="button button--quiet character-section-save" disabled={busy || savingSection !== null || !promptDirty} onClick={() => void savePrompt()}>{savingSection === "prompt" ? "保存中…" : "保存"}</button>} />
           <LoraListEditor projectId={projectId} profileId="anima-base-v1" title="子设定 LoRA" inherited={promptDraft.identity.lora?[persistedLora(promptDraft.identity.lora)]:[]} value={selectedSetting.loras.map(persistedLora)} overrides={selectedSetting.loraOverrides} disabled={busy||savingSection!==null} onChange={(value,loraOverrides)=>updateSelectedSetting(setting=>({...setting,loras:value.map(editableLora),loraOverrides}))}/>
           <InheritedPromptEditor title="基础 Prompt" source={character.id + ':' + settingId + ':' + character.prompt_sha256} prompt={persistPromptDraft(promptDraft.identity.prompt)} adjustments={selectedSetting.identityOverrides} disabled={selectedSetting.identityDisabled} defaultOpen onChange={value => updateSelectedSetting(setting => ({ ...setting, identityDisabled: [], identityOverrides: value }))} />
-          {kind === "character" && <PromptPopulationEditor fragments={selectedSetting.prompt.subject} disabled={busy || savingSection !== null} onChange={subject => updateSelectedSetting(setting => ({ ...setting, prompt: { ...setting.prompt, subject } }))} />}
           <PromptFragmentEditor categories={categories.map((category) => ({ id: category, label: promptLabels[category] }))} scope="character" fragments={selectedSetting.prompt} createFragment={createPromptDraftFragment} onChange={(prompt) => updateSelectedSetting((setting) => ({ ...setting, prompt }))} historyScopeKey={`${character.id}:${settingId}:${character.prompt_sha256}`} />
 
         </section>}

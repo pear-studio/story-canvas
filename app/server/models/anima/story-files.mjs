@@ -1,10 +1,11 @@
+import { validatePopulation } from '../../../shared/prompt-population.mjs';
 import { validateReferenceEntries, validateReferenceOverrides } from "../../../shared/reference-images.mjs";
 import { validateCameraSettings } from "../../../shared/camera-prompt.mjs";
 import { validateAdjustments } from '../../../shared/prompt-inheritance.mjs';
 import { NARRATION_CHARACTER_LIMIT } from "../../../shared/story-content-guidance.mjs";
 export const STORY_PAGE_PROMPT_SCHEMA_ID = "https://storyvisualizer.local/schemas/story-page-prompt.schema.json";
 export const storyIdPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-export const storyPromptCategories = Object.freeze(["subject","person","setting","camera","avoid"]);
+export const storyPromptCategories = Object.freeze(["population","person","setting","camera","avoid"]);
 function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -90,6 +91,7 @@ export function validateStoryPagePromptDocument(prompt) {
     if (!Array.isArray(prompt[category])) errors.push(`prompt.${category} 必须是数组`);
     else prompt[category].forEach((fragment, index) => validatePromptFragment(fragment, `prompt.${category}[${index}]`, errors));
   }
+  errors.push(...validatePopulation(prompt));
   return errors;
 }
 

@@ -173,7 +173,7 @@ test("数据集允许不设置激活标签，并拒绝空值和重复标签", as
 test("逐图 Caption 更新只写同名 txt，生成结果记录单独保存", async (context) => {
   const { project } = await fixture(context);
   const created = await createLoraTrainingDataset(project, { name: "角色" });
-  const imported = await importLoraTrainingAssets(project, created.id, { group_id: created.dataset.groups[0].id, files: [{ filename: "subject.png", buffer: await imageBuffer(), caption: "ellen joe" }] });
+  const imported = await importLoraTrainingAssets(project, created.id, { group_id: created.dataset.groups[0].id, files: [{ filename: "population.png", buffer: await imageBuffer(), caption: "ellen joe" }] });
   const item = imported.items[0];
   await updateLoraCaptioningItem(project, created.id, item.id, "ellen joe, maid outfit");
   const projection = await readLoraCaptioning(project, created.id);
@@ -186,8 +186,8 @@ test("Caption 汇总的待确认数量已包含未打标图片且不重复计算
   const { project } = await fixture(context);
   const created = await createLoraTrainingDataset(project, { name: "Caption 汇总" });
   await importLoraTrainingAssets(project, created.id, { group_id: created.dataset.groups[0].id, files: [
-    { filename: "subject-a.png", buffer: await imageBuffer(), caption: "" },
-    { filename: "subject-b.png", buffer: await imageBuffer(800, 900), caption: "" },
+    { filename: "population-a.png", buffer: await imageBuffer(), caption: "" },
+    { filename: "population-b.png", buffer: await imageBuffer(800, 900), caption: "" },
   ] });
   const projection = await readLoraCaptioning(project, created.id);
   assert.deepEqual(projection.summary, { total: 2, with_base: 0, confirmed: 0, unconfirmed: 2 });
@@ -196,7 +196,7 @@ test("Caption 汇总的待确认数量已包含未打标图片且不重复计算
 test("Caption 确认绑定当前图片和文本哈希，并在修改或后处理后失效", async (context) => {
   const { root, project } = await fixture(context);
   const created = await createLoraTrainingDataset(project, { name: "角色" });
-  const imported = await importLoraTrainingAssets(project, created.id, { group_id: created.dataset.groups[0].id, files: [{ filename: "subject.png", buffer: await imageBuffer(), caption: "" }] });
+  const imported = await importLoraTrainingAssets(project, created.id, { group_id: created.dataset.groups[0].id, files: [{ filename: "population.png", buffer: await imageBuffer(), caption: "" }] });
   const item = imported.items[0];
   const captioner = (prompt) => ({ lora_training: { captioning: { id: "fixture", version: "1", command: process.execPath, args: ["-e", "const fs=require('fs'); const p=process.argv[1]; const x=JSON.parse(fs.readFileSync(process.env.LORA_CAPTION_INPUT,'utf8')); process.stdout.write(JSON.stringify({items:x.items.map(i=>({item_id:i.item_id,prompt:p,raw_tags:[p]}))}));", prompt] } } });
   const generated = await runLoraCaptioning(root, project, created.id, "missing", captioner("ellen joe, maid outfit"));
@@ -224,8 +224,8 @@ test("单图重新打标覆盖当前 Caption 必须显式确认且不触碰其�
   const { root, project } = await fixture(context);
   const created = await createLoraTrainingDataset(project, { name: "单图打标" });
   const imported = await importLoraTrainingAssets(project, created.id, { group_id: created.dataset.groups[0].id, files: [
-    { filename: "subject-a.png", buffer: await imageBuffer(), caption: "old caption" },
-    { filename: "subject-b.png", buffer: await imageBuffer(800, 900), caption: "keep caption" },
+    { filename: "population-a.png", buffer: await imageBuffer(), caption: "old caption" },
+    { filename: "population-b.png", buffer: await imageBuffer(800, 900), caption: "keep caption" },
   ] });
   const target = imported.items[0];
   const untouched = imported.items[1];
@@ -248,8 +248,8 @@ test("删除数据集图片时同步清理最新基础 Prompt 记录", async (co
   const imported = await importLoraTrainingAssets(project, created.id, {
     group_id: created.dataset.groups[0].id,
     files: [
-      { filename: "subject-a.png", buffer: await imageBuffer(), caption: "" },
-      { filename: "subject-b.png", buffer: await imageBuffer(800, 900), caption: "" },
+      { filename: "population-a.png", buffer: await imageBuffer(), caption: "" },
+      { filename: "population-b.png", buffer: await imageBuffer(800, 900), caption: "" },
     ],
   });
   const captioner = { lora_training: { captioning: { id: "fixture", version: "1", command: process.execPath, args: ["-e", "const fs=require('fs'); const x=JSON.parse(fs.readFileSync(process.env.LORA_CAPTION_INPUT,'utf8')); process.stdout.write(JSON.stringify({items:x.items.map(i=>({item_id:i.item_id,prompt:'ellen joe, standing',raw_tags:[]}))}));"] } } };
@@ -409,7 +409,7 @@ test("数据集拒绝旧版分组图片数量字段", async (context) => {
 test("数据集不再接受图片项 crop 或父子关系", async (context) => {
   const { project } = await fixture(context);
   const created = await createLoraTrainingDataset(project, { name: "裁剪关系" });
-  const imported = await importLoraTrainingAssets(project, created.id, { group_id: created.dataset.groups[0].id, files: [{ filename: "subject.png", buffer: await imageBuffer(), caption: "ellen joe" }] });
+  const imported = await importLoraTrainingAssets(project, created.id, { group_id: created.dataset.groups[0].id, files: [{ filename: "population.png", buffer: await imageBuffer(), caption: "ellen joe" }] });
   const invalid = structuredClone((await readLoraTrainingDataset(project, created.id)).dataset);
   invalid.items[0].crop = { source_item_id: imported.items[0].id, x: 0, y: 0, width: 0.5, height: 0.5 };
   await assert.rejects(() => updateLoraTrainingDataset(project, created.id, invalid), (error) => error.code === "invalid_lora_training_dataset" && error.status === 422 && error.details.some((detail) => detail.includes("不再保存 crop")));
@@ -552,7 +552,7 @@ test("服务恢复会把遗留的 Anima running run 终结为中断", async (con
 test("保存接口拒绝旧的裁剪父子字段", async (context) => {
   const { project } = await fixture(context);
   const created = await createLoraTrainingDataset(project, { name: "旧裁剪结构" });
-  const imported = await importLoraTrainingAssets(project, created.id, { group_id: created.dataset.groups[0].id, files: [{ filename: "subject.png", buffer: await imageBuffer(), caption: "ellen joe" }] });
+  const imported = await importLoraTrainingAssets(project, created.id, { group_id: created.dataset.groups[0].id, files: [{ filename: "population.png", buffer: await imageBuffer(), caption: "ellen joe" }] });
   const legacy = structuredClone((await readLoraTrainingDataset(project, created.id)).dataset);
   legacy.items[0].crop = { source_item_id: imported.items[0].id, x: 0, y: 0, width: 0.5, height: 0.5 };
   await assert.rejects(() => updateLoraTrainingDataset(project, created.id, legacy), (error) => error.code === "invalid_lora_training_dataset" && error.details.some((detail) => detail.includes("不再保存 crop")));
@@ -561,7 +561,7 @@ test("保存接口拒绝旧的裁剪父子字段", async (context) => {
 test("数据集与训练任务保存拒绝 schema 之外的字段", async (context) => {
   const { root, project } = await fixture(context);
   const created = await createLoraTrainingDataset(project, { name: "严格字段" });
-  const imported = await importLoraTrainingAssets(project, created.id, { group_id: created.dataset.groups[0].id, files: [{ filename: "subject.png", buffer: await imageBuffer(), caption: "ellen joe" }] });
+  const imported = await importLoraTrainingAssets(project, created.id, { group_id: created.dataset.groups[0].id, files: [{ filename: "population.png", buffer: await imageBuffer(), caption: "ellen joe" }] });
   const invalidDataset = structuredClone((await readLoraTrainingDataset(project, created.id)).dataset);
   invalidDataset.items[0].unexpected = true;
   await assert.rejects(() => updateLoraTrainingDataset(project, created.id, invalidDataset), (error) => error.code === "invalid_lora_training_dataset" && error.details.some((detail) => detail.includes("包含未支持字段：unexpected")));
@@ -581,7 +581,7 @@ test("数据集与训练任务保存拒绝 schema 之外的字段", async (conte
 test("图片后处理保留不可变原图并可恢复", async (context) => {
   const { root, project } = await fixture(context);
   const created = await createLoraTrainingDataset(project, { name: "角色" });
-  const imported = await importLoraTrainingAssets(project, created.id, { group_id: created.dataset.groups[0].id, files: [{ filename: "subject.png", buffer: await imageBuffer(), caption: "ellen joe" }] });
+  const imported = await importLoraTrainingAssets(project, created.id, { group_id: created.dataset.groups[0].id, files: [{ filename: "population.png", buffer: await imageBuffer(), caption: "ellen joe" }] });
   const original = imported.items[0];
   const datasetDirectory = path.join(datasetRoot(project, created.id));
   const originalPath = path.join(datasetDirectory, ...original.file.split("/"));
@@ -617,7 +617,7 @@ test("图片后处理保留不可变原图并可恢复", async (context) => {
 test("图片后处理拒绝未裁剪且未超分的无操作请求", async (context) => {
   const { root, project } = await fixture(context);
   const created = await createLoraTrainingDataset(project, { name: "角色" });
-  const imported = await importLoraTrainingAssets(project, created.id, { group_id: created.dataset.groups[0].id, files: [{ filename: "subject.png", buffer: await imageBuffer(), caption: "ellen joe" }] });
+  const imported = await importLoraTrainingAssets(project, created.id, { group_id: created.dataset.groups[0].id, files: [{ filename: "population.png", buffer: await imageBuffer(), caption: "ellen joe" }] });
   const item = imported.items[0];
   await assert.rejects(
     () => previewLoraTrainingPostprocess(root, project, created.id, { item_id: item.id, crop: { x: 0, y: 0, width: 1, height: 1 }, upscale: false, output_scale: null }, {}),
@@ -822,7 +822,7 @@ test("LoRA 图片超分拒绝远程 ComfyUI 且不会上传素材", async (conte
 test("复制素材创建独立 asset，复制项可以单独裁剪", async (context) => {
   const { project } = await fixture(context);
   const created = await createLoraTrainingDataset(project, { name: "独立版本" });
-  const imported = await importLoraTrainingAssets(project, created.id, { group_id: created.dataset.groups[0].id, files: [{ filename: "subject.png", buffer: await imageBuffer(), caption: "ellen joe" }] });
+  const imported = await importLoraTrainingAssets(project, created.id, { group_id: created.dataset.groups[0].id, files: [{ filename: "population.png", buffer: await imageBuffer(), caption: "ellen joe" }] });
   const source = imported.items[0];
   const copied = await copyLoraTrainingItem(project, created.id, { source_item_id: source.id });
   assert.equal(copied.items.length, 2);
@@ -841,7 +841,7 @@ test("复制素材创建独立 asset，复制项可以单独裁剪", async (cont
 test("复制素材同时复制当前图片对应的基础 Prompt", async (context) => {
   const { project } = await fixture(context);
   const created = await createLoraTrainingDataset(project, { name: "复制打标结果" });
-  const imported = await importLoraTrainingAssets(project, created.id, { group_id: created.dataset.groups[0].id, files: [{ filename: "subject.png", buffer: await imageBuffer(), caption: "ellen joe" }] });
+  const imported = await importLoraTrainingAssets(project, created.id, { group_id: created.dataset.groups[0].id, files: [{ filename: "population.png", buffer: await imageBuffer(), caption: "ellen joe" }] });
   const source = imported.items[0];
   const captioningDirectory = path.join(datasetRoot(project, created.id), "captioning");
   await mkdir(captioningDirectory, { recursive: true });
@@ -857,7 +857,7 @@ test("复制素材同时复制当前图片对应的基础 Prompt", async (contex
 test("数据集拒绝跨 asset 的 meta 指针", async (context) => {
   const { project } = await fixture(context);
   const created = await createLoraTrainingDataset(project, { name: "路径保护" });
-  const imported = await importLoraTrainingAssets(project, created.id, { group_id: created.dataset.groups[0].id, files: [{ filename: "subject.png", buffer: await imageBuffer(), caption: "ellen joe", asset_id: "safe-001" }] });
+  const imported = await importLoraTrainingAssets(project, created.id, { group_id: created.dataset.groups[0].id, files: [{ filename: "population.png", buffer: await imageBuffer(), caption: "ellen joe", asset_id: "safe-001" }] });
   const item = imported.items[0];
   const metaPath = path.join(datasetRoot(project, created.id), "assets", item.asset_id, "meta.json");
   const meta = JSON.parse(await readFile(metaPath, "utf8"));
@@ -904,7 +904,7 @@ test("归一化裁剪按边界取整，不会让奇数尺寸的合法选区越�
 test("上传素材保留可选来源并拒绝非法编号，任务拒绝 Caption 第二事实来源", async (context) => {
   const { project } = await fixture(context);
   const created = await createLoraTrainingDataset(project, { name: "风格" });
-  const imported = await importLoraTrainingAssets(project, created.id, { group_id: created.dataset.groups[0].id, files: [{ filename: "subject.png", buffer: await imageBuffer(), source: "游戏内自截：角色展示界面", asset_id: "screenshot-001" }] });
+  const imported = await importLoraTrainingAssets(project, created.id, { group_id: created.dataset.groups[0].id, files: [{ filename: "population.png", buffer: await imageBuffer(), source: "游戏内自截：角色展示界面", asset_id: "screenshot-001" }] });
   assert.equal(imported.items[0].asset_id, "screenshot-001");
   assert.equal(imported.items[0].source, "游戏内自截：角色展示界面");
   const unsafeBuffer = await imageBuffer();
@@ -921,7 +921,7 @@ test("训练预检不按分组图片数量产生警告", async (context) => {
   const dataset = await createLoraTrainingDataset(project, { name: "分组预检" });
   await importLoraTrainingAssets(project, dataset.id, {
     group_id: dataset.dataset.groups[0].id,
-    files: [{ filename: "subject.png", buffer: await imageBuffer(), caption: "subject", asset_id: "subject-001" }],
+    files: [{ filename: "population.png", buffer: await imageBuffer(), caption: "population", asset_id: "population-001" }],
   });
   const task = await createLoraTrainingTask(root, project, { name: "分组预检任务", dataset_id: dataset.id });
 
@@ -938,7 +938,7 @@ test("模型清单按 base 目录前缀归属，前缀不匹配时明确阻断",
   const dataset = await createLoraTrainingDataset(project, { name: "模型归属" });
   await importLoraTrainingAssets(project, dataset.id, {
     group_id: dataset.dataset.groups[0].id,
-    files: [{ filename: "subject.png", buffer: await imageBuffer(), caption: "subject", asset_id: "subject-001" }],
+    files: [{ filename: "population.png", buffer: await imageBuffer(), caption: "population", asset_id: "population-001" }],
   });
   const task = await createLoraTrainingTask(root, project, { name: "模型归属任务", dataset_id: dataset.id });
   const edited = structuredClone(task.task);

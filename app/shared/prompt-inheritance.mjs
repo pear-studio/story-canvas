@@ -1,4 +1,4 @@
-export const inheritanceCategories = ['subject', "person", 'setting', 'camera', 'avoid'];
+export const inheritanceCategories = ['population', "person", 'setting', 'camera', 'avoid'];
 export const promptText = fragment => fragment.tag ?? fragment.description ?? fragment.prompt_text ?? '';
 export const promptWord = text => String(text).toLowerCase().replaceAll('_', ' ').replace(/\s+/g, ' ').trim();
 export const adjustmentKey = (fragment, category = fragment.category) => (category === 'avoid' ? 'negative:' : '') + promptWord(promptText(fragment));
@@ -12,6 +12,18 @@ export function applyInheritedPrompt(prompt, adjustments = {}, disabled = []) {
     const key = adjustmentKey(fragment, category);
     return { ...fragment, ...(off.has(promptWord(promptText(fragment))) ? { enabled: false } : {}), ...adjustments[key] };
   })]));
+}
+
+// 统计实际改变的继承行，忽略已失效或与上游相同的调整键。
+export function inheritedOverrideCount(prompt, adjustments = {}, disabled = []) {
+  const effective = applyInheritedPrompt(prompt, adjustments, disabled);
+  let overridden = 0, total = 0;
+  for (const category of inheritanceCategories) (prompt?.[category] ?? []).forEach((base, index) => {
+    total++;
+    const next = effective[category][index];
+    if ((base.weight ?? 1) !== (next.weight ?? 1) || (base.enabled !== false) !== (next.enabled !== false)) overridden++;
+  });
+  return { overridden, total };
 }
 
 // 检查与编译共用：先应用本层调整，再只取生效项；索引始终指向原数组。

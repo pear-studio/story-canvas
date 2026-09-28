@@ -12,7 +12,7 @@ test("用户 Prompt 精确匹配词库时使用标签类型", () => {
 test("未匹配词库的自由输入统一成为描述，不限制作用域或分类", () => {
   assert.equal(inferUserPromptType("quiet night hallway", { dictionaryMatched: false, dictionaryAllowed: false, scope: "page", category: "setting" }), "custom_description");
   assert.equal(inferUserPromptType("quiet hallway under dim lights", { dictionaryMatched: false, dictionaryAllowed: false, scope: "page", category: "layout" }), "custom_description");
-  assert.equal(inferUserPromptType("quiet hallway under dim lights", { dictionaryMatched: false, dictionaryAllowed: false, scope: "page", category: "subject" }), "custom_description");
+  assert.equal(inferUserPromptType("quiet hallway under dim lights", { dictionaryMatched: false, dictionaryAllowed: false, scope: "page", category: "population" }), "custom_description");
   assert.equal(inferUserPromptType("quiet hallway under dim lights", { dictionaryMatched: false, dictionaryAllowed: false, scope: "character", category: "identity" }), "custom_description");
   assert.equal(inferUserPromptType("quiet hallway under dim lights", { dictionaryMatched: false, dictionaryAllowed: false, scope: "render_profile", category: "positive_prefix" }), "custom_description");
 });

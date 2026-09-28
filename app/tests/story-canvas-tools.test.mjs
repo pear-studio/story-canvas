@@ -12,7 +12,7 @@ async function fixture(t, responder = () => assert.fail('不应发送请求')) {
   const root = await mkdtemp(path.join(testsRoot, 'dsh-tools-'));
   assert.equal(path.dirname(root), path.resolve(testsRoot));
   t.after(() => rm(root, { recursive: true, force: true }));
-  for (const file of ['.dsh/presets/story-canvas/story-canvas-tools.mjs', 'app/scripts/workbench-actions', 'app/scripts/workbench-client.mjs', 'app/scripts/story-canvas.mjs', 'app/server/page-key.mjs']) {
+  for (const file of ['.dsh/presets/story-canvas/story-canvas-tools.mjs', 'app/scripts/workbench-actions', 'app/scripts/workbench-client.mjs', 'app/scripts/story-canvas.mjs', 'app/server/page-key.mjs', 'app/server/file-replace.mjs']) {
     await mkdir(path.dirname(path.join(root, file)), { recursive: true });
     await cp(path.join(repositoryRoot, file), path.join(root, file), { recursive: true });
   }
@@ -47,6 +47,8 @@ async function failure(tool, input) {
 
 test('字段帮助按需展开，分类与默认操作帮助不注入完整细则',async t=>{
   const f=await fixture(t);
+  assert.ok((await f.tool.execute({operation:'help',args:{}})).groups);
+  assert.equal((await failure(f.tool,{operation:'help',args:{wrong:true}})).error,'invalid_arguments');
   const overview=await f.tool.execute({operation:'help',target:'page'});
   assert.equal(JSON.stringify(overview).includes('negative:'),false);
   const help=await f.tool.execute({operation:'help',target:'page.editor.save'});
@@ -215,7 +217,7 @@ test('批量生成实际走单页接口，返回可执行整批核验入口；�
   const failureResult=await failure(f.tool,{operation:'generation.run',args:{project_id:'demo',page_key:{page_id:'page-002'}}});
   assert.equal(failureResult.recovery.next.operation,'page.editor.read');
   assert.match(failureResult.recovery.message,/finished.output/);
-  const bad=await failure(f.tool,{operation:'page.delete',args:{project_id:'demo',page_id:'page-001',owner:{}}});
+  const bad=await failure(f.tool,{operation:'page.delete',args:{project_id:'demo',page_key:{page_id:'page-001'},owner:{}}});
   assert.equal(bad.error,'invalid_arguments');assert.match(bad.recovery,/本次未执行/);
 });
 test('页面语义操作取得版本后提交，409 保留诊断且不重试', async t => {
@@ -224,7 +226,7 @@ test('页面语义操作取得版本后提交，409 保留诊断且不重试', a
     response.statusCode = 409;
     response.end(JSON.stringify({ error: 'revision_conflict', message: '项目已变化', details: { changed: ['page-001'] } }));
   });
-  const result = await failure(tool, { operation: 'page.copy', args: { project_id: 'demo', page_id: 'page-001' } });
+  const result = await failure(tool, { operation: 'page.copy', args: { project_id: 'demo', page_key: {page_id: 'page-001'} } });
   assert.equal(requests.length, 2);
   assert.equal(requests[1].url, '/api/projects/demo/workbench/navigation/duplicate-page');
   assert.equal(requests[1].headers['x-story-canvas-expected-revision'], 'r1');
@@ -268,7 +270,7 @@ test('大项目默认列表有界，完整 Git/成品信息仍可逐页查询',a
   assert.equal(changes.items.length,5);assert.equal(changes.total,150);assert.equal(changes.next_offset,25);
   const finished=await f.tool.execute({operation:'finished.list',args:{project_id:'demo',limit:5}});
   assert.equal(finished.items.length,5);assert.equal(finished.summary.missing,150);assert.ok(JSON.stringify(finished).length<1500);
-  const detail=await f.tool.execute({operation:'finished.inspect',args:{project_id:'demo',page_id:'page-1'}});
+  const detail=await f.tool.execute({operation:'finished.inspect',args:{project_id:'demo',page_key:{page_id:'page-1'}}});
   assert.equal(detail.pages[0].record.extra,huge);
   const tasks=await f.tool.execute({operation:'task.list',args:{project_id:'demo',limit:5}});
   assert.equal(tasks.items.length,5);assert.equal(tasks.total,150);assert.equal(tasks.history,undefined);assert.ok(JSON.stringify(tasks).length<1000);
@@ -285,6 +287,11 @@ test('完整 Prompt 包和保存草稿保持身份与指纹，不提交只读 co
   assert.equal(requests[1].body.context, undefined);
   const details=await tool.execute({operation:'prompt.context',args:{project_id:'demo',page_key:{page_id:'page-001'},view:'details'}});
   assert.deepEqual(JSON.parse(await readFile(details.file,'utf8')),pack);
+  const narrow=await tool.execute({operation:'prompt.context',args:{project_id:'demo',page_key:{page_id:'page-001'},view:'final'}});
+  assert.equal(narrow.final.positive,'完整正向');assert.equal(narrow.draft,undefined);assert.equal(narrow.references,undefined);
+  const sources=await tool.execute({operation:'prompt.context',args:{project_id:'demo',page_key:{page_id:'page-001'},view:'sources',source:'character:alice:default'}});
+  assert.equal(sources.references.length,1);assert.equal(sources.draft,undefined);
+  assert.equal((await failure(tool,{operation:'prompt.context',args:{project_id:'demo',page_key:{page_id:'page-001'},view:'sources',source:'invalid'}})).error,'invalid_arguments');
   assert.equal(tool.output.render({},result)[0].text,JSON.stringify(result));
 });
 test('版本报告反映已加载代码与磁盘差异，help 不把新文件冒充已加载版本', async t => {
@@ -469,7 +476,7 @@ test('统一工具经真实 HTTP Adapter 完成结构、设定及三类页面生
   const templates = await run('page.templates', { owner_kind: 'character' });
   assert.ok(templates.items.length); assert.equal(templates.items[0].page, undefined);
   const templatePage = await run('page.create', { owner: owners[1], template_id: templates.items[0].id });
-  await run('page.delete', { page_id: templatePage.page_id });
+  await run('page.delete', { page_key:{page_id: templatePage.page_id} });
   const textPage = await run('page.create', { owner: owners[0], page_kind: 'text' });
   const textKey={page_id:textPage.page_id};
   const textEdit=await run('page.editor.read',{page_key:textKey,section:'content'});
@@ -503,12 +510,17 @@ test('统一工具经真实 HTTP Adapter 完成结构、设定及三类页面生
   }
   const malformed=await failure(f.tool,{operation:'page.editor.save',args:{...afterBatch.results[0].save.args,expected_sha256:'PLACEHOLDER',changes:{title:'不应写入'}}});
   assert.equal(malformed.status,400);assert.equal(malformed.details[0].field,'expected_sha256');
-  const blocked = await failure(f.tool, { operation: 'page.move', args: { project_id: 'demo', page_id: textPage.page_id, owner: owners[1] } });
+  const sheet = await run('candidate.sheet',{sequence_id:owners[0].sequence_id});
+  assert.ok(sheet.pages >= 2); assert.ok(sheet.sheets.length); assert.equal(sheet.images,3);
+  const sheetManifest=JSON.parse(await readFile(sheet.manifest,'utf8'));
+  assert.ok(sheetManifest.cells.some(c=>c.page_kind==='text'));
+  assert.ok(sheetManifest.cells.some(c=>c.status==='available' && c.task_id && c.candidate_id));
+  const blocked = await failure(f.tool, { operation: 'page.move', args: { project_id: 'demo', page_key:{page_id: textPage.page_id}, owner: owners[1] } });
   assert.equal(blocked.error, 'text_page_story_only');
-  await run('page.move', { page_id: pages[0].page_id, owner: owners[2], before_page_id: pages[2].page_id });
+  await run('page.move', { page_key:{page_id: pages[0].page_id}, owner: owners[2], before_page_key:{page_id: pages[2].page_id} });
   assert.equal((await run('page.list', owners[2])).items[0].page_id, pages[0].page_id);
-  const copy = await run('page.copy', { page_id: pages[2].page_id });
-  await run('page.delete', { page_id: copy.page_id });
+  const copy = await run('page.copy', { page_key:{page_id: pages[2].page_id} });
+  await run('page.delete', { page_key:{page_id: copy.page_id} });
   // 目录只需索引，不会因不相关 Prompt 损坏而失败，也不返回其内容。
   const promptPath = path.join(root, 'workspace/demo/pages', pages[1].page_id + '.prompt.json');
   const original = await readFile(promptPath, 'utf8'); await writeFile(promptPath, 'invalid json');
@@ -516,7 +528,7 @@ test('统一工具经真实 HTTP Adapter 完成结构、设定及三类页面生
   await writeFile(promptPath, original);
   const { requestWorkbench } = await import(pathToFileURL(path.join(root,'app/scripts/workbench-client.mjs')));
   await assert.rejects(requestWorkbench('/api/agent/directory',{method:'POST',body:{project_id:'demo',kind:'character',sequence_id:'wrong'}}), error=>error.code==='unknown_directory_filter');
-  for (const p of [...pages, textPage]) await run('page.delete', { page_id: p.page_id });
+  for (const p of [...pages, textPage]) await run('page.delete', { page_key:{page_id: p.page_id} });
   await run('character.variant.delete', { character_id: 'alice', variant_id: 'evening' });
   await run('scene.variant.delete', { scene_id: 'station', variant_id: 'wet' });
   await run('character.delete', { character_id: 'alice' });

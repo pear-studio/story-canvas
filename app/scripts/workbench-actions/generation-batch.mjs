@@ -1,12 +1,26 @@
 import { invalid } from './contract.mjs';
 import {saveOperationRecord} from './operation-records.mjs';
 
+function countsFor(results) {
+  const counts={total:results.length,submitted:0,rejected:0,unknown:0,not_submitted:0};
+  for(const result of results)counts[result.status]++;
+  return counts;
+}
+function receiptFailure(error,batch_id,record,phase) {
+  const {results,targets}=record;
+  return {batch_id,error:'receipt_write_failed',phase,message:error.message,counts:countsFor(results),results,targets,
+    ...(targets.length?{wait:{operation:'task.wait',args:{targets}}}:{}),
+    recovery:'以本次返回的 results/targets 为准，磁盘批次回执可能过期。submitted 只等待原任务；unknown 核对后再决定；not_submitted 确认未发送。不要重放整批。'};
+}
+
 // 顺序提交，每页最多一次；先验证整批身份，部分失败不丢已收到的任务 ID。
 export async function submitGenerationBatch({project_id,page_keys,...settings},{submit,signal,recover,persist=saveOperationRecord}) {
   if(new Set(page_keys.map(page=>page.page_id)).size!==page_keys.length)throw invalid('page_keys 不能包含重复页面');
   const results=page_keys.map(page_key=>({page_key,status:'not_submitted'})),targets=[];
   const record={project_id,created_at:new Date().toISOString(),results,targets};
-  const batch_id=await persist('generation',record);
+  let batch_id;
+  try{batch_id=await persist('generation',record);}
+  catch(error){return receiptFailure(error,undefined,record,'initialize');}
   let stopped=false;
   for(const [index,page_key] of page_keys.entries()) {
     if(stopped || signal?.aborted) {
@@ -15,7 +29,17 @@ export async function submitGenerationBatch({project_id,page_keys,...settings},{
     // 发出请求前先记录不确定状态，进程中断后也不会将已发出的请求误判为未提交。
     results[index]={page_key,status:'unknown'};
     try{await persist('generation',record,batch_id);}
-    catch(error){return {batch_id,error:'receipt_write_failed',message:error.message,results,targets,recovery:'未继续发送；已受理任务按回执查询，不重放。'};}
+    catch(error){
+      // 请求还没有发出；只有磁盘预写状态需要保守，当前调用可以确定未提交。
+      results[index]={page_key,status:'not_submitted'};
+      return receiptFailure(error,batch_id,record,'before_submit');
+    }
+    if(signal?.aborted){
+      results[index]={page_key,status:'not_submitted'};
+      try{await persist('generation',record,batch_id);}
+      catch(error){return receiptFailure(error,batch_id,record,'before_submit');}
+      break;
+    }
     try {
       const response=await submit({project_id,page_key,...settings},{signal});
       const task=response.value?.task;
@@ -30,10 +54,9 @@ export async function submitGenerationBatch({project_id,page_keys,...settings},{
       if(!rejected)stopped=true;
     }
     try{await persist('generation',record,batch_id);}
-    catch(error){return {batch_id,error:'receipt_write_failed',message:error.message,results,targets,recovery:'已受理任务见回执，不重放；按任务 ID 查询。'};}
+    catch(error){return receiptFailure(error,batch_id,record,'after_submit');}
   }
-  const counts={total:results.length,submitted:0,rejected:0,unknown:0,not_submitted:0};
-  for(const result of results)counts[result.status]++;
+  const counts=countsFor(results);
   return {batch_id,counts,inspect:{operation:'task.batch.read',args:{batch_id}},...(targets.length?{wait:{operation:'task.wait',args:{batch_id}}}:{}),
     ...(counts.rejected||counts.unknown?{issues:results.filter(r=>['rejected','unknown'].includes(r.status)).slice(0,5)}:{}),
     ...(counts.rejected||counts.unknown||counts.not_submitted?{recovery:'已提交项只等待原任务；rejected 修正后仅重提该页；unknown 先用 task.list / task.history 核对，不能直接重提；not_submitted 尚未发送。不要重放整批。'}:{})};

@@ -67,11 +67,11 @@ async function exists(target) {
 }
 
 function pagePrompt(characterId) {
-  return { $schema: STORY_PAGE_PROMPT_SCHEMA_ID, subject: [{ tag: "1girl", character_id: characterId }], person: [],  setting: [], camera: [], avoid: [] };
+  return { $schema: STORY_PAGE_PROMPT_SCHEMA_ID, population: [{ tag: "1girl", character_id: characterId }], person: [],  setting: [], camera: [], avoid: [] };
 }
 
 function characterPrompt() {
-  const prompt = { subject: [], person: [],  setting: [], camera: [], avoid: [] };
+  const prompt = { population: [], person: [],  setting: [], camera: [], avoid: [] };
   return {
     $schema: CHARACTER_PROMPT_SCHEMA_ID,
     identity: { prompt: structuredClone(prompt), lora: null },

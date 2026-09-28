@@ -60,6 +60,19 @@ function ref(project, task, purpose = "candidate", createdAt = "2026-08-28T01:02
   return generationReference(purpose === "comparison" ? null : project, task, purpose, createdAt);
 }
 
+test('Windows 短暂队列替换占用在同次写入内恢复，不重复入队', {skip:process.platform!=='win32'}, async context => {
+  const root=await fixture(context);await ensureGenerationQueue(root);
+  const original=fs.rename;let attempts=0;
+  const mocked=context.mock.method(fs,'rename',async(from,to)=>{
+    if(to===generationQueueFile(root) && ++attempts<3)throw Object.assign(new Error('temporary busy'),{code:'EPERM'});
+    return original(from,to);
+  });
+  syncBuiltinESMExports();
+  try { await enqueueGenerationTask(root,ref(null,'retry-once','comparison')); }
+  finally { mocked.mock.restore();syncBuiltinESMExports(); }
+  assert.equal(attempts,3);assert.equal((await readGenerationQueue(root)).items.length,1);
+});
+
 test("统一队列按提交顺序保持候选和 comparison 的 FIFO，并在用户重排后保留顺序", async (context) => {
   const root = await fixture(context);
   const candidate = ref("story", "render-20260828T010203Z-11111111");

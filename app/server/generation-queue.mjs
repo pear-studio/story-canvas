@@ -1,4 +1,5 @@
-import { mkdir, open, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { replaceFileWithRetry } from "./file-replace.mjs";
+import { mkdir, open, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 
@@ -119,11 +120,11 @@ async function writeQueueFile(repositoryRoot, value, { bumpRevision = true } = {
     revision: bumpRevision ? (Number.isSafeInteger(value.revision) ? value.revision : 0) + 1 : value.revision,
     updated_at: new Date().toISOString(),
   };
-  value.revision = next.revision;
-  value.updated_at = next.updated_at;
   try {
     await writeFile(temporary, `${JSON.stringify(next, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
-    await rename(temporary, target);
+    await replaceFileWithRetry(temporary, target);
+    value.revision = next.revision;
+    value.updated_at = next.updated_at;
   } finally {
     await unlink(temporary).catch(() => undefined);
   }

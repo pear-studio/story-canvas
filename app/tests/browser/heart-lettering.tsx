@@ -4,7 +4,7 @@ import {createRoot} from 'react-dom/client';
 import WorkbenchPageEditor from '../../src/WorkbenchPageEditor';
 import '../../src/styles.css';
 const style={font_family:'Microsoft YaHei',font_size:28,character_speech:{direction:'horizontal',kind:'balloon'},character_thought:{direction:'horizontal',kind:'plain'},npc_speech:{direction:'horizontal',kind:'balloon'}};
-const initial={kind:'story',page_id:'page-001',page_key:{page_id:'page-001'},title:'爱心嵌字',scene_description:'',characters:[],content_sha256:'a',prompt_sha256:'b',prompt:{subject:[],person: [],setting:[],camera:[],avoid:[]},dialogue:[{id:'dialogue-111111111111',mode:'heart',text:'呜呜呜'},{id:'dialogue-222222222222',mode:'heart',text:'嗯嗯'},{id:'dialogue-333333333333',mode:'speech',speaker:'npc',text:'普通对白'}]};
+const initial={kind:'story',page_id:'page-001',page_key:{page_id:'page-001'},title:'爱心嵌字',scene_description:'',characters:[],content_sha256:'a',prompt_sha256:'b',prompt:{population:[],person: [],setting:[],camera:[],avoid:[]},dialogue:[{id:'dialogue-111111111111',mode:'heart',text:'呜呜呜'},{id:'dialogue-222222222222',mode:'heart',text:'嗯嗯'},{id:'dialogue-333333333333',mode:'speech',speaker:'npc',text:'普通对白'}]};
 function Harness(){
  const [page,setPage]=useState(()=>JSON.parse(localStorage.getItem('heart-page')||'null')||initial);
  const [items,setItems]=useState(()=>JSON.parse(localStorage.getItem('heart-items')||'null')||initial.dialogue.map((d,i)=>({dialogue_id:d.id,box:{x:.15,y:.12+i*.23,w:.4,h:.1},...(i<2?{heart:{font_size:48,rotation:-8,seed:703+i}}:{})})));

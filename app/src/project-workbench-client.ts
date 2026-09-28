@@ -24,7 +24,7 @@ export type PagePrompt = {
   trigger_sources?: {style:string[];characters:Record<string,string[]>;scenes:Record<string,string[]>};
   text?: string;
   composition?: 'settings' | 'standalone';
-  subject?: import('./models/anima/types').PromptFragment[];
+  population?: import('./models/anima/types').PromptFragment[];
   person?: import('./models/anima/types').PromptFragment[];
   setting?: import('./models/anima/types').PromptFragment[];
   camera?: import('./models/anima/types').PromptFragment[];

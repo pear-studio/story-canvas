@@ -92,7 +92,7 @@
       "uniqueItems": true,
       "items": {
         "enum": [
-          "subject",
+          "population",
           "person",
           "setting",
           "camera"

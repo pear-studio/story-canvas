@@ -9,7 +9,7 @@ import { displayPromptDraft, createPromptDraftFragment } from '../../src/prompt-
 import type { InheritedAdjustments, PagePrompt } from '../../src/models/anima/types';
 import '../../src/styles.css';
 import { FeedbackProvider, useFeedback } from '../../src/feedback';
-const prompt: PagePrompt = { subject: [], person: [{ id: 'token-111111111111', description: 'long blue hair', weight: 1.2 }],  setting: [], camera: [], avoid: [] };
+const prompt: PagePrompt = { population: [], person: [{ id: 'token-111111111111', description: 'long blue hair', weight: 1.2 }],  setting: [], camera: [], avoid: [] };
 function Harness() {
  const [adjustments, setAdjustments] = useState<InheritedAdjustments>({ 'long blue hair': { enabled: false } });
  const [scene, setScene] = useState<string | undefined>('steel');

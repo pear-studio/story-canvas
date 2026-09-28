@@ -68,6 +68,17 @@ export async function readPromptEditContext({ projectRoot, repositoryRoot = proj
       status: complete ? "complete" : "incomplete",
       model_id: snapshot.model_id,
       render: snapshot.render,
+      configuration: {
+        model_id:snapshot.model_id, render:snapshot.render,
+        profile_id:activeProfile?.id ?? null,
+        effective_loras:activeProfile && compiled && !compiled.errors.length ? structuredClone(compiled.loras ?? []) : null,
+        lora_sources: {
+          profile:activeProfile ? structuredClone(activeProfile.style_loras ?? {}) : null,
+          settings:Object.fromEntries([...snapshot.characters.map(c=>[characterSource(c.id,c.configuration_id),c]),
+            ...snapshot.scenes.map(c=>[sceneSource(c.id,c.configuration_id),c])].map(([key,c])=>[key,{identity:structuredClone(c.identity?.lora??null),local:structuredClone(c.local_loras??[]),resolved:structuredClone(c.loras??[]),overrides:structuredClone(c.lora_overrides??{})}])),
+          page:{loras:structuredClone(pagePrompt.loras??[]),overrides:structuredClone(pagePrompt.lora_overrides??{})},
+        },
+      },
       title: snapshot.title,
       global_text: {
         text: globalText,

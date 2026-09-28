@@ -11,10 +11,23 @@ test('项目 LoRA 默认收起，角色 LoRA 归入引用 Prompt，覆盖与恢�
  await page.route('**/api/projects/demo/render-profile',route=>route.fulfill({json:{current_profile_id:'anima-base-v1',render_profiles:[{id:'anima-base-v1',architecture_family:'anima'}]}}));
  await page.route('**/api/prompt-dictionary**',route=>route.fulfill({json:{available:true,matches:[],suggestions:[]}}));
  await page.goto('http://127.0.0.1:'+server.httpServer.address().port+'/tests/browser/lora-inheritance.html');
- const project=page.getByRole('region',{name:'本页 LoRA',exact:true});await project.locator('summary').waitFor();assert.equal(await project.locator('details').evaluate(e=>e.open),false);
+ const other=page.getByRole('combobox',{name:'人物·未绑定第 1 项 Prompt'});await other.waitFor();
+ assert.match(await other.textContent(),/on.stomach/);
+ assert.equal(await page.getByRole('combobox',{name:'人物·未绑定第 2 项 Prompt'}).count(),1);
+ assert.equal(await page.getByRole('combobox',{name:'人物·未绑定第 3 项 Prompt'}).count(),1);
+ await other.fill('standing');await other.press('Tab');
+ let population=JSON.parse(await page.locator('#draft').textContent()).person;
+ assert.equal((population.find(f=>f.id==='token-222222222222').tag ?? population.find(f=>f.id==='token-222222222222').description),'standing');
+ assert.equal(JSON.parse(await page.locator('#draft').textContent()).population[0].tag,'1girl');
+ await page.getByRole('button',{name:'增加 boy 人数',exact:true}).click();
+ population=JSON.parse(await page.locator('#draft').textContent()).person;
+ assert.ok(population.some(f=>(f.tag??f.description)==='standing'));assert.ok(population.some(f=>f.tag==='couch'));
+ assert.equal(population.find(f=>f.id==='token-444444444444').enabled,false);
+ const project=page.getByRole('region',{name:'本页 LoRA',exact:true});await project.locator('summary').first().waitFor();assert.equal(await project.locator('details').first().evaluate(e=>e.open),false);
  assert.equal(await project.getByText('character.safetensors',{exact:true}).count(),0);
  await page.getByTitle('展开角色引用').click();
  const role=page.locator('[data-reference-source="character:alice:default"]').getByRole('region',{name:'继承 LoRA'});
+ assert.equal(await role.locator('details').evaluate(e=>e.open),false);await role.locator('summary').click();
  assert.equal(await role.getByRole('spinbutton').inputValue(),'0.7');
  await page.getByRole('button',{name:'修改上游权重'}).click();assert.equal(await role.getByRole('spinbutton').inputValue(),'1.1');
  await role.getByRole('spinbutton').fill('0.4');let draft=JSON.parse(await page.locator('#draft').textContent());assert.deepEqual(draft.loras,[]);assert.deepEqual(draft.lora_overrides,{'character.safetensors':{weight:.4}});
@@ -22,7 +35,11 @@ test('项目 LoRA 默认收起，角色 LoRA 归入引用 Prompt，覆盖与恢�
  await role.getByRole('button',{name:'恢复继承'}).click();assert.equal(await role.getByRole('spinbutton').inputValue(),'1.1');assert.deepEqual(JSON.parse(await page.locator('#draft').textContent()).lora_overrides,{});
  await page.getByTitle('展开场景引用').click();
  const scene=page.locator('[data-reference-source="scene:room:default"]').getByRole('region',{name:'继承 LoRA'});
+ assert.equal(await scene.locator('details').evaluate(e=>e.open),false);await scene.locator('summary').click();
  assert.equal(await scene.getByRole('spinbutton').inputValue(),'1.1');await scene.getByRole('checkbox').uncheck();
  assert.equal(JSON.parse(await page.locator('#draft').textContent()).lora_overrides['room.safetensors'].enabled,false);
  await mkdir('C:/Workspace/story-canvas/Saved/Tests/lora-inheritance',{recursive:true});await page.screenshot({path:'C:/Workspace/story-canvas/Saved/Tests/lora-inheritance/page.png',fullPage:true});assert.deepEqual(errors,[]);
+ await page.getByTitle('展开角色引用').click();await page.getByTitle('展开场景引用').click();
+ await page.locator('#draft').evaluate(e=>{e.style.display='none';});
+ for(const width of [700,390]){await page.setViewportSize({width,height:900});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));await page.screenshot({path:`C:/Workspace/story-canvas/Saved/Tests/lora-inheritance/compact-${width}.png`,fullPage:true});}
 });

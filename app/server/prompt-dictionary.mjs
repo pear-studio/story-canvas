@@ -1,5 +1,5 @@
 // 独立查询词库自有的分类常量；渲染路径已不再消费词库。
-export const PAGE_PROMPT_CATEGORIES = Object.freeze(["subject", "person", "setting", "camera", "avoid"]);
+export const PAGE_PROMPT_CATEGORIES = Object.freeze(["population", "entity", "person", "setting", "camera", "avoid"]);
 
 export const CHARACTER_PROMPT_CATEGORIES = Object.freeze([
   "identity",

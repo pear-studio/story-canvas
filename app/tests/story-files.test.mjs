@@ -86,7 +86,7 @@ test("故事文件接受完整契约并拒绝旧分类形状与非法 override",
   assert.equal(validate[STORY_PAGE_PROMPT_SCHEMA_ID](prompt), true);
   assert.equal(storyIdPattern.test("night--arrival"), false);
 
-  const legacy = { $schema: STORY_PAGE_PROMPT_SCHEMA_ID, subject: [{ tag: "1girl" }], person: [], setting: [], camera: [], avoid: [] };
+  const legacy = { $schema: STORY_PAGE_PROMPT_SCHEMA_ID, population: [{ tag: "1girl" }], person: [], setting: [], camera: [], avoid: [] };
   assert.equal(validate[STORY_PAGE_PROMPT_SCHEMA_ID](legacy), false, "旧五分类形状不再是合法页面 Prompt");
   assert.equal(validate[STORY_PAGE_PROMPT_SCHEMA_ID]({ ...prompt, text: 42 }), false, "text 必须是字符串");
   assert.equal(validate[STORY_PAGE_PROMPT_SCHEMA_ID]({ ...prompt, text_overrides: { "character:ellen-joe:school-uniform": 1 } }), false);

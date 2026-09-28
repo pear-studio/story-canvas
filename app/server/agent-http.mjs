@@ -1,3 +1,5 @@
+import {migrateProjectPopulation} from './population-migration.mjs';
+import { captureCandidateSheet, exportCandidateSheet } from './candidate-sheet.mjs';
 import { ApiError, readJsonBody, sendJson } from "./http-support.mjs";
 import { readFactDraft, saveFactDraft, fingerprintErrors } from "./fact-drafts.mjs";
 import { readStoryContext } from "./story-facts.mjs";
@@ -15,10 +17,24 @@ export async function handleAgentRequest({ request, response, decodedPath, proje
   const pageEditorRead = decodedPath === '/api/agent/page-editor';
   const pageEditorSave = decodedPath === '/api/agent/page-editor/save';
   const pageRender = /^\/api\/agent\/page-render\/(read|set)$/.exec(decodedPath);
+  const populationMigration = decodedPath === '/api/agent/population-migration';
+  const candidateSheet = decodedPath === '/api/agent/candidate-sheet';
   const directoryRead = decodedPath === '/api/agent/directory';
-  if (request.method !== "POST" || (!match && !creation && !contextRead && !promptContextRead && !directoryRead && !pageEditorRead && !pageEditorSave && !pageRender)) return false;
+  if (request.method !== "POST" || (!populationMigration && !candidateSheet && !match && !creation && !contextRead && !promptContextRead && !directoryRead && !pageEditorRead && !pageEditorSave && !pageRender)) return false;
   const body = await readJsonBody(request);
   if (!body || typeof body !== "object" || Array.isArray(body)) throw new ApiError(400, "invalid_edit_request");
+  if (populationMigration) {
+    sendOperation(200,await (body.apply?mutateTargetFacts:readFacts)(body.project_id,({projectDirectory})=>migrateProjectPopulation(projectDirectory,body)));
+    return true;
+  }
+  if (candidateSheet) {
+    let directory;
+    const captured=await readFacts(body.project_id, async ({projectDirectory}) => {
+      directory=projectDirectory; return captureCandidateSheet(projectDirectory,body);
+    });
+    sendOperation(200,{...captured,value:await exportCandidateSheet(projectRoot,directory,captured.value)});
+    return true;
+  }
   if (pageRender) {
     const options={projectRoot,projectId:body.project_id,pageKey:body.page_key,expectedSha256:body.expected_sha256,settings:body};
     const reading=pageRender[1]==='read';

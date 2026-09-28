@@ -156,15 +156,65 @@
       },
       "type": "object",
       "required": [
-        "subject",
+        "population",
         "person",
         "setting",
         "camera",
         "avoid"
       ],
       "properties": {
-        "subject": {
-          "$ref": "#/$defs/anima/$defs/fragments"
+        "population": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^token-[0-9a-f]{12}$"
+              },
+              "tag": {
+                "type": "string",
+                "enum": [
+                  "solo",
+                  "no_humans",
+                  "1girl",
+                  "2girls",
+                  "3girls",
+                  "4girls",
+                  "5girls",
+                  "6+girls",
+                  "1boy",
+                  "2boys",
+                  "3boys",
+                  "4boys",
+                  "5boys",
+                  "6+boys",
+                  "1other",
+                  "2others",
+                  "3others",
+                  "4others",
+                  "5others",
+                  "6+others",
+                  "multiple_girls",
+                  "multiple_boys",
+                  "multiple_others",
+                  "multiple girls",
+                  "multiple boys",
+                  "multiple others"
+                ]
+              },
+              "weight": {
+                "type": "number"
+              },
+              "enabled": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "tag"
+            ]
+          }
         },
         "person": {
           "$ref": "#/$defs/anima/$defs/fragments"
