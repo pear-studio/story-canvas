@@ -163,8 +163,8 @@ export async function runNavigationAction(projectId: string, action: string, val
   }));
 }
 
-export async function loadProjectWorkbench(projectId: string, signal?: AbortSignal, scope: WorkbenchScope = { kind: 'directory' }) {
-  const response = await readFacts(`${base(projectId)}?scope=${encodeURIComponent(JSON.stringify(scope))}`, { headers: { accept: "application/json" }, signal });
+export async function loadProjectWorkbench(projectId: string, signal?: AbortSignal, scope: WorkbenchScope = { kind: 'directory' }, requestId?: string) {
+  const response = await readFacts(`${base(projectId)}?scope=${encodeURIComponent(JSON.stringify(scope))}`, { headers: { accept: "application/json", ...(requestId ? {'x-story-canvas-request-id': requestId} : {}) }, signal });
   const view = await workbenchResponseJson<ProjectWorkbenchView>(response);
   const revision = response.headers.get(PROJECT_REVISION_HEADER);
   if (!revision) throw new Error("工作台响应缺少项目 revision");

@@ -1,4 +1,6 @@
 import { CandidateStorageError } from "./candidate-storage.mjs";
+import { randomUUID } from 'node:crypto';
+import { createPerformanceLog, browserPerformanceRecord } from './performance-log.mjs';
 import { ComfyRuntimeError } from "./comfy-runtime.mjs";
 import { LoraResourceError } from "./lora-resources.mjs";
 import { PageRenderError } from "./page-render-resolver.mjs";
@@ -66,9 +68,31 @@ export function createHttpRequestHandler({
   distRoot,
 }) {
   const trainingOperations = createLoraTrainingOperations(projectRoot);
+  const logPerformance = createPerformanceLog(projectRoot);
   return async (request, response) => {
     try {
       const requestUrl = new URL(request.url ?? "/", "http://127.0.0.1");
+      if (request.method === 'POST' && requestUrl.pathname === '/api/performance') {
+        const record = browserPerformanceRecord(await readJsonBody(request, 4096));
+        if (!record) throw new ApiError(400, 'invalid_performance_record');
+        void logPerformance(record);
+        sendJson(response, 200, { ok: true });
+        return;
+      }
+      if (requestUrl.pathname.startsWith('/api/') && requestUrl.pathname !== '/api/performance') {
+        const started = performance.now();
+        const requestId = String(request.headers['x-story-canvas-request-id'] ?? randomUUID()).slice(0, 80);
+        response.setHeader('x-story-canvas-request-id', requestId);
+        response.once('close', () => {
+          const duration = Math.round(performance.now() - started);
+          // 快速成功的后台轮询不刷日志；慢请求及错误仍保留。
+          const polling = request.method === 'GET' && /^\/api\/(?:health|hardware|tasks|lora-training\/runs)(?:\/|$)/.test(requestUrl.pathname);
+          if (polling && duration < 500 && response.statusCode < 400 && response.writableFinished) return;
+          void logPerformance({ kind: 'http', request_id: requestId, method: request.method,
+            path: requestUrl.pathname, status: response.statusCode, duration_ms: duration,
+            bytes: Number(response.getHeader('content-length')) || null, aborted: !response.writableFinished });
+        });
+      }
       if (request.method === "POST" && requestUrl.pathname === "/api/workbench/shutdown") {
         if (!shutdownToken || request.headers["x-workbench-token"] !== shutdownToken) throw new ApiError(403, "invalid_workbench_token");
         await shutdown();

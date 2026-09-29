@@ -26,8 +26,8 @@ function setup(context) {
   const previousWindow = globalThis.window;
   globalThis.window = { location: { origin: "http://test.local" } };
   const requests = [];
-  globalThis.fetch = (url) => {
-    const request = { url, ...deferred() };
+  globalThis.fetch = (url, init) => {
+    const request = { url, init, ...deferred() };
     requests.push(request);
     return request.promise;
   };
@@ -191,4 +191,28 @@ test("关联视图版本不一致时保留原事实与凭据，并允许下一�
   assert.equal(await retry, true);
   assert.deepEqual(views, [{ title: "重读成功" }]);
   assert.equal(client.getProjectWriteRevision("demo"), "r2");
+});
+
+test('前台计时关联请求，后台载入不上报，日志失败不影响载入', async context => {
+  const {requests,sync} = setup(context);
+  const previous = Object.getOwnPropertyDescriptor(globalThis,'navigator');
+  const reports=[];
+  Object.defineProperty(globalThis,'navigator',{configurable:true,value:{sendBeacon:(url,body)=>{reports.push({url,body});return true;}}});
+  context.after(()=>{if(previous)Object.defineProperty(globalThis,'navigator',previous);else delete globalThis.navigator;});
+  const pending=sync.load('demo');
+  requests[0].resolve(response({title:'ready'},'new'));
+  assert.equal(await pending,true);
+  const record=JSON.parse(await reports[0].body.text());
+  assert.equal(reports[0].url,'/api/performance');
+  assert.equal(record.request_id,new Headers(requests[0].init.headers).get('x-story-canvas-request-id'));
+  assert.equal(record.outcome,'applied');
+  assert.ok(record.duration_ms>=0);
+  const background=sync.load('demo',{background:true});
+  requests[1].resolve(response({title:'ready'},'new'));
+  await background;
+  assert.equal(reports.length,1);
+  globalThis.navigator.sendBeacon=()=>{throw new Error('offline');};
+  const final=sync.load('demo');
+  requests[2].resolve(response({title:'ready'},'new'));
+  assert.equal(await final,true);
 });
