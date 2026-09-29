@@ -5,7 +5,7 @@ export const id = description => string(description);
 export function directory(summary, kind, filters = {}, required = []) {
   return { summary, parameters: schema({ ...project, ...filters, ...pagination }, ['project_id', ...required]),
     details: '返回 {total,offset,items,next_offset}，默认20条、最多50条。只读目录摘要，不是可写草稿；不含正文、Prompt 或图片。next_offset 非空时继续翻页。',
-    execute: async args => (await requestWorkbench('/api/agent/directory', { method: 'POST', body: { ...args, kind } })).value };
+    execute: async args => {const value=(await requestWorkbench('/api/agent/directory', { method: 'POST', body: { ...args, kind } })).value;return kind==='page'?{...value,image_tools:{page:'candidate.list(project_id, page_key)',sequence:'candidate.sheet(project_id, sequence_id)',chapter:'candidate.sheet(project_id, chapter_id)'},image_hint:'用目录中的页面/单元/章节身份查询图片，不用 glob 扫描 Outputs；生成任务的图片用 task.results。'}:value;} };
 }
 export function navigationAction(summary, route, properties, required = Object.keys(properties), details = '') {
   return { summary, parameters: schema({ ...project, ...properties }, ['project_id', ...required]),

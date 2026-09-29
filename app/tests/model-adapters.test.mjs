@@ -169,7 +169,7 @@ test('新页设置是创建时副本，读取实际页配置，新格式缺失�
 });
 test('切模型只首次带入全文，往返、复制和整页保存保留另一份 Prompt',async t=>{
   const f=await fixture(t),{page_id:id}=await f.create();
-  const original=await f.get(`pages/${id}.prompt.json`);original.models.anima.person=[{id:'token-123456abcdef',description:'a person in garden'}];
+  const original=await f.get(`pages/${id}.prompt.json`);original.models.anima.person=[{description:'a person in garden'}];
   await f.put(`pages/${id}.prompt.json`,original);
   await f.switchModel(id,'qwen');
   const imported=await f.get(`pages/${id}.prompt.json`);assert.equal(imported.models.qwen.composition,'standalone');assert.match(imported.models.qwen.text,/a person in garden/);
@@ -217,7 +217,7 @@ test('容器拒绝错误 schema 与触发词结构',()=>{
   const doc=makeModelPromptDocument(schema('story-page-prompt'),'anima',modelAdapter('anima').emptyPrompt());assert.deepEqual(validateModelPromptDocument(doc,'page'),[]);
   assert.ok(validateModelPromptDocument({...doc,$schema:'bad'},'page').length);
   for (const id of ['anima','qwen']) {
-    const setting=id==='anima'?{identity:{prompt:modelAdapter('anima').emptyPrompt(),lora:null},variants:{default:{prompt:modelAdapter('anima').emptyPrompt(),loras:[],identity_disabled:[]}}}:{prompt_name:'测试',variants:{default:{text:'测试',reference_images:[]}}};
+    const setting=id==='anima'?{identity:{prompt:modelAdapter('anima').emptyPrompt(),lora:null},variants:{default:{prompt:modelAdapter('anima').emptyPrompt(),loras:[],identity_overrides:{}}}}:{prompt_name:'测试',variants:{default:{text:'测试',reference_images:[]}}};
     const document=makeModelPromptDocument(schema('character-prompt'),id,setting);
     assert.deepEqual(validateModelPromptDocument(document,'character'),[]);
     for(const field of ['loras','lora_overrides'])assert.ok(validateModelPromptDocument({...document,models:{[id]:{...setting,[field]:field==='loras'?[]:{}}}},'character').some(error=>error.includes('设定顶层')));
@@ -228,7 +228,7 @@ test('场景改名修复非当前模型的引用和逐词覆盖，删除检查�
   const f=await fixture(t),{page_id:id}=await f.create();
   await f.put('scenes/index.json',{$schema:schema('scene-index'),scenes:['room']});
   await f.put('scenes/room.visual.json',{$schema:schema('scene-visual'),variants:[{id:'day',name:'白天'},{id:'night',name:'夜晚'}]});
-  const native={identity:{prompt:modelAdapter('anima').emptyPrompt(),lora:null},variants:Object.fromEntries(['day','night'].map(id=>[id,{prompt:modelAdapter('anima').emptyPrompt(),loras:[],identity_disabled:[]}]))};
+  const native={identity:{prompt:modelAdapter('anima').emptyPrompt(),lora:null},variants:Object.fromEntries(['day','night'].map(id=>[id,{prompt:modelAdapter('anima').emptyPrompt(),loras:[],identity_overrides:{}}]))};
   await f.put('scenes/room.prompt.json',makeModelPromptDocument(schema('scene-prompt'),'anima',native));
   const doc=await f.get(`pages/${id}.prompt.json`);doc.models.anima={...doc.models.anima,scene_id:'room',scene_variant_id:'day',inheritance:{'scene:room:day':{}}};doc.models.qwen={text:'standalone',composition:'standalone'};
   await f.put(`pages/${id}.prompt.json`,doc);await f.switchModel(id,'qwen');
@@ -241,8 +241,8 @@ test('旧 Anima 一次迁移逐页保留 Prompt、LoRA 顺序、触发词并备�
   const f=await fixture(t),{page_id:id}=await f.create();
   const project=await f.get('project.json');delete project.format;await f.put('project.json',project);
   await f.put('characters/index.json',{$schema:schema('character-index'),characters:['person']});
-  const character={identity:{prompt:modelAdapter('anima').emptyPrompt(),lora:{filename:'identity.safetensors',sha256:'a'.repeat(64),weight:.7,trigger:'my_character'}},variants:{default:{prompt:modelAdapter('anima').emptyPrompt(),loras:[{filename:'outfit.safetensors',sha256:'b'.repeat(64),weight:.4,trigger:'my_outfit'}],identity_disabled:[]}}};
-  character.identity.prompt.person=[{tag:'blue_eyes'}];
+  const character={identity:{prompt:modelAdapter('anima').emptyPrompt(),lora:{filename:'identity.safetensors',sha256:'a'.repeat(64),weight:.7,trigger:'my_character'}},variants:{default:{prompt:modelAdapter('anima').emptyPrompt(),loras:[{filename:'outfit.safetensors',sha256:'b'.repeat(64),weight:.4,trigger:'my_outfit'}],identity_overrides:{}}}};
+  character.identity.prompt.person=[{id:'token-111111111111',tag:'blue_eyes'}];
   await f.put('characters/person.prompt.json',{$schema:schema('character-prompt'),...character});
   await f.put('characters/person.profile.json',{$schema:schema('character-profile'),name:'角色',description:'测试'});
   await f.put('characters/person.visual.json',{$schema:schema('character-visual'),variants:[{id:'default',name:'默认'}]});
@@ -267,8 +267,8 @@ test('角色 LoRA 随引用与子设定实时继承，页面仅保存覆盖，�
   const f=await fixture(t),{page_id:id}=await f.create();
   const lora={filename:'character.safetensors',sha256:'c'.repeat(64),weight:.7,trigger:'character_trigger'};
   const outfit={filename:'outfit.safetensors',sha256:'d'.repeat(64),weight:.5,trigger:'outfit_trigger'};
-  const character={identity:{prompt:modelAdapter('anima').emptyPrompt(),lora},variants:{default:{prompt:modelAdapter('anima').emptyPrompt(),loras:[outfit],identity_disabled:[],lora_overrides:{'character.safetensors':{weight:.8}}}}};
-  character.identity.prompt.person=[{tag:'blue_eyes'}];
+  const character={identity:{prompt:modelAdapter('anima').emptyPrompt(),lora},variants:{default:{prompt:modelAdapter('anima').emptyPrompt(),loras:[outfit],identity_overrides:{},lora_overrides:{'character.safetensors':{weight:.8}}}}};
+  character.identity.prompt.person=[{id:'token-111111111111',tag:'blue_eyes'}];
   await f.put('characters/index.json',{$schema:schema('character-index'),characters:['person']});
   await f.put('characters/person.prompt.json',makeModelPromptDocument(schema('character-prompt'),'anima',character));
   await f.put('characters/person.profile.json',{$schema:schema('character-profile'),name:'角色',description:'测试'});

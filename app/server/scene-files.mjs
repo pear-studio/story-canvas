@@ -23,8 +23,8 @@ export function validateSceneIndexDocument(document) {
     || Object.keys(document).some(key => !['$schema', 'scenes'].includes(key))) return ['场景索引格式无效'];
   return document.scenes.every(id => typeof id === 'string' && sceneIdPattern.test(id)) && new Set(document.scenes).size === document.scenes.length ? [] : ['场景 ID 无效或重复'];
 }
-export function validateScenePromptDocument(document) {
-  return validateSetting(document, SCENE_PROMPT_SCHEMA_ID, CHARACTER_PROMPT_SCHEMA_ID, validateCharacterPromptDocument);
+export function validateScenePromptDocument(document, options = {}) {
+  return validateSetting(document, SCENE_PROMPT_SCHEMA_ID, CHARACTER_PROMPT_SCHEMA_ID, value => validateCharacterPromptDocument(value, options));
 }
 export function defaultSceneFacts(id, name) {
   const displayName = name?.trim() || id;

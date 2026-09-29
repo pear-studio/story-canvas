@@ -3,7 +3,7 @@
 Agent 日常操作需要本地工作台服务在线；命令与 API 统一说明见[直接操作入口](agent-interfaces.md)。
 
 当前支持 Anima Basic 和 Qwen-Image-2.1，每页可切换模型与画幅，分别保留模型专用 Prompt。
-Anima 沿用分类词条、片段 ID、逐词权重与继承、机位、人数及负向编辑器；Qwen 使用自由文本。
+Anima 使用分类词条、逐词权重与继承、机位、人数及负向编辑器；本页词条不保存 ID，只有共享设定词条保留稳定 ID。Qwen 使用自由文本。
 首次 Anima → Qwen 复制完整有效正向 Prompt，此后独立编辑，可明确重新带入。
 两种输入和页面 LoRA 的持久契约见[模型适配器](../dev/model-adapters.md)。
 下文整段 override、图片编号与自由文本编译规则描述 Qwen 的 `settings` 模式；
@@ -31,6 +31,16 @@ Anima 设定页在基础／子设定 Prompt 内编辑 LoRA；页面引用自动�
 单页可选运行最终 Prompt 优化：保存本页修改后点击「优化」，工作台把当前编译后的正向文本交给本机 ComfyUI 的 Qwen-Image-2.1 PE-T2I INT8 `TextGenerate` 节点，使用官方 t2i 系统提示词。参考图文件不发送给优化器；生成时仍按原顺序传给出图模型。优化正文单独保存在 `pages/<page_id>.rewrite.json`；使用时，工作台按实际传图顺序在正文前无条件拼接 `<imageN>` 与每张图的用途说明，不要求 PE 保留这些标签。工作台展示的优化文本是最终拼接结果，只读且默认收起；原文在其下方并默认收起。优化文本上方的开关默认使用原文，状态紧邻开关。改动源文本、画幅或参考图后，旧结果显示为过期，仍允许选择它出图，状态仅作提示。已有 DSH 结果也显示为过期，重新运行即可替换。优化器返回的 `wh_ratio` 仅供查看，生成仍使用本页画幅。
 
 ## 数据契约
+
+Anima 的共享词条与本页词条分开管理：
+
+- 角色／场景基础和子设定新增词保留服务端生成的稳定 ID。改正文、分类或排序不改变身份。
+- 子设定 `identity_overrides` 使用 `identity:<token-id>`；页面 `inheritance` 先按角色／场景来源分组，再使用 `identity:<token-id>` 或 `variant:<token-id>` 定位。
+- 覆盖字段仅有 `enabled` 和 `weight`。字段缺省才跟随上游；显式值即使与上游相同也保留。恢复继承删除该字段，不再使用 `identity_disabled`。
+- 上游关闭的词仍可在下游重新开启；共享词被删除后，旧覆盖显示失效，可保留原样或清理，不能按相似文字重新绑定。
+- 本页词条按分类数组保存正文、绑定、权重和开关，无持久 ID；网页的临时行标识只用于拖动和撤销。
+
+以下示例为 Qwen 模型内的文档；实际文件用 `models` 容器保存各模型输入，Agent 按范围读写，不回传整个容器。
 
 角色／场景 `*.prompt.json`：
 
@@ -138,7 +148,7 @@ Prompt 草稿可以带审计错误保存。所有向 ComfyUI 提交新采样的�
 ## 编写规则
 
 普通制作交付方便用户精修的原型；完整流程见[创作指南](../creative/guide.md)。
-编辑前完整读取并核验本次涉及的页面文件部分，优先使用 `page.editor.read`；不要求读取组装后的全文。
+编辑前用 `prompt.read` 完整读取并核验本次涉及的模型范围；不要求读取组装后的全文。
 需要理解上游引用、覆盖或排查最终输入时再查询 `prompt.context`，具体入口见[Agent 接口](agent-interfaces.md)。
 
 Prompt 只表达目标方向，不增加细节，不拆解动作的身体实现过程。动作名足够时只写动作名，例如
@@ -162,29 +172,20 @@ Prompt 只表达目标方向，不增加细节，不拆解动作的身体实现�
 
 ## 写入流程
 
-先直接读取当前 narrative/goal、角色 visual 和实际生效的完整角色 Prompt，判断现有机制已经
-承担的内容。准备修改时 read 当前正文和指纹：
+先理解本次涉及的页面内容和引用，准备修改时用 `prompt.read` 读取当前范围的正文和指纹。
+具体目标、保存参数与批量操作由工具帮助统一维护：
 
 ```powershell
-npm --prefix <仓库根>/app run story:page -- prompt read <project-id> <page-id>
-npm --prefix <仓库根>/app run story:page -- prompt save <完整草稿JSON文件|->
-
-npm --prefix <仓库根>/app run character:fact -- prompt read <project-id> <character-id>
-npm --prefix <仓库根>/app run character:fact -- prompt save <完整草稿JSON文件|->
-
-npm --prefix <仓库根>/app run character:fact -- page-prompt read <project-id> <page-id>
-npm --prefix <仓库根>/app run character:fact -- page-prompt save <完整草稿JSON文件|->
+node C:/Workspace/story-canvas/app/scripts/story-canvas.mjs help prompt
 ```
 
-场景 Prompt 使用同一协议的 `POST /api/agent/facts/scene/prompt/read|save`。
+角色、场景与页面都使用 `prompt.read/save`，需要查看继承词时按需查 `prompt.sources`，
+排查完整生成输入时再查 `prompt.context`。不要把只读展开内容写回页面，也不再使用旧完整 Prompt 草稿入口。
 
-`save` 校验拆分文档和必要上游内容指纹。busy 可以短暂退避后有界重提；目标、上游或依赖指纹
-冲突必须重新读取和重新判断，不能用旧编辑文件自动覆盖。上游 visual 新增或删除 variant 后，
-角色 Prompt read 会把返回正文归一化到当前 variant 集合；由 Prompt Agent检查并写回完整配置。
-
-三个 Prompt `save` 成功后统一输出格式化 JSON，包含 `target_file` 和 `audit`。页面审计使用刚保存的
-页面、捕获的角色上下文和本次解析的有效生成配置；角色审计按 `variants` 中各造型分别返回结果，
-不代表所有引用页面已经通过。
+保存校验当前范围及必要上游版本，在最新文件中更新该范围。busy 可以短暂退避后有界重提；
+目标或依赖版本冲突必须重新读取和判断，不能只换新指纹重放旧修改。
+成功返回更新后的范围及新保存参数。附带的审计不代表全部下游页面已经通过；
+编辑非活动模型时不冒充已按该模型完成生成审计。
 
 `audit.status: "complete"` 表示审计已经执行，`valid`、`errors`、`warnings` 是实际审计结果；
 编译自身的缺件或配置问题另见 `diagnostics`。`status: "unavailable"` 表示有效配置或必要上下文

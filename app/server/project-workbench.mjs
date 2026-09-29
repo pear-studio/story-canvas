@@ -1,6 +1,8 @@
 import { readPageIndex, pageRelativePath } from './pages-store.mjs';
 import { readPageRenderSettings, pageProjectSettings } from './page-render-settings.mjs';
 import { modelPrompt, isModelPromptDocument, promptModelEntries, replaceModelPrompt } from './model-prompts.mjs';
+import { settingPromptSourceVersions } from './prompt-source-context.mjs';
+import { settingPromptScopeVersions } from './prompt-scope-version.mjs';
 import { resolveRenderRecipe } from "./render-task-contract.mjs";
 import { defaultTextPageLayout } from "../shared/text-page-layout.mjs";
 import { readScenes } from './scene-facts.mjs';
@@ -178,6 +180,13 @@ export async function readProjectWorkbenchView(projectRoot, projectId) {
     scene.model_id=promptModelEntries(scene.prompt)[0][0];
     scene.model_prompts=structuredClone(scene.prompt);
     scene.prompt=modelPrompt(scene.prompt,scene.model_id);
+  }
+  for (const [kind, settings] of [['character', characters], ['scene', scenes.scenes]]) {
+    for (const setting of settings) {
+      const options = { projectId: project.projectId, kind, id: setting.id, document: setting.model_prompts, visual: setting.visual };
+      setting.prompt_source_versions = settingPromptSourceVersions(options);
+      setting.prompt_scope_versions = settingPromptScopeVersions(options);
+    }
   }
   const letteringSha256 = hashCanonicalJson(lettering);
   const letteringByPage = new Map(lettering.pages.map((page) => [page.page, page]));
@@ -397,7 +406,7 @@ export async function deletePageTextSource(projectRoot, projectId, value) {
 }
 
 export async function savePagePrompt(projectRoot, projectId, value) {
-  requireExactObject(value, ["kind", "page_id", "prompt", "expected_sha256", "expected_context_sha256"], "invalid_page_prompt_update");
+  requireExactObject(value, ["kind", "page_id", "prompt", "expected_sha256", "expected_context_sha256", ...(Object.hasOwn(value ?? {}, 'source_versions') ? ['source_versions'] : [])], "invalid_page_prompt_update");
   const { kind, page_id: pageId, prompt, expected_sha256: expectedSha256 } = value;
   if (!promptKinds.has(kind) || typeof pageId !== "string" || !isRecord(prompt) || !/^[a-f0-9]{64}$/.test(expectedSha256 ?? "")) fail("invalid_page_prompt_update", [], 400);
   if (!/^[a-f0-9]{64}$/.test(value.expected_context_sha256 ?? "")) fail("invalid_page_prompt_update", [], 400);
@@ -407,6 +416,7 @@ export async function savePagePrompt(projectRoot, projectId, value) {
   const document = replaceModelPrompt(current,render.model_id ?? 'qwen',{$schema:STORY_PAGE_PROMPT_SCHEMA_ID,...structuredClone(prompt)});
   const saved = await saveFactDraft(projectRoot, {
     expectedContextSha256: value.expected_context_sha256,
+    sourceVersions: { [render.model_id ?? 'qwen']: value.source_versions ?? {} },
     domain: "page", kind: "prompt",
     projectId, targetId: pageId, document,
     expectedSha256, conflictCode: "prompt_target_conflict",

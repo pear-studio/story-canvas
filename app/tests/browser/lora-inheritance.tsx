@@ -7,7 +7,7 @@ const empty=()=>({population:[],person:[],setting:[],camera:[],avoid:[]});
 function App(){
  const [prompt,setPrompt]=useState<PagePrompt>({...empty(),population:[{id:'token-111111111111',tag:'1girl'}],person:[{id:'token-222222222222',tag:'on_stomach'},{id:'token-333333333333',tag:'couch'},{id:'token-444444444444',tag:'thighs',enabled:false}],loras:[],scene_id:'room',scene_variant_id:'default'}),[weight,setWeight]=useState(.7);
  const lora={filename:'character.safetensors',sha256:'a'.repeat(64),weight,trigger:'character_trigger'};
- const native={identity:{prompt:empty(),lora},variants:{default:{prompt:empty(),loras:[],identity_disabled:[]}}};
+ const native={identity:{prompt:empty(),lora},variants:{default:{prompt:empty(),loras:[]}}};
  const character={id:'alice',name:'测试角色',model_id:'anima',description:'',profile_sha256:'p',prompt_sha256:String(weight),visual_sha256:'v',visual:{variants:[{id:'default',name:'默认'}]},prompt:native,model_prompts:{models:{anima:native}},pages:[]} as unknown as WorkbenchCharacter;
  const page={page_id:'page-001',model_id:'anima',prompt_sha256:'p',render:{profile_id:'anima-base-v1'},project_loras:[{...lora,filename:'project.safetensors',sha256:'b'.repeat(64),weight:.9}]} as WorkbenchPage;
  const sceneNative={...native,identity:{...native.identity,lora:{...lora,filename:'room.safetensors'}}};

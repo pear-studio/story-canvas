@@ -7,7 +7,7 @@ import {InheritedPromptEditor} from '../../InheritedPromptEditor';
 import {CameraControlDialog} from '../../CameraControlDialog';
 import {SceneReferenceEditor} from '../../SceneReferenceEditor';
 import {ReferenceRow,ReferenceLabel,ParticipantEditor} from '../../PromptReferences';
-import {displayPromptDraft,persistPromptDraft,createPromptDraftFragment} from '../../prompt-fragment-draft';
+import {displayPromptDraft,persistPromptDraft,createPromptDraftFragment,matchesLocalPromptDraft} from '../../prompt-fragment-draft';
 import {applyCameraDraft} from '../../camera-prompt-draft';
 import {cameraFragmentIndex} from '../../../shared/camera-prompt.mjs';
 import {variantPrompt,applyInheritedPrompt} from '../../../shared/prompt-inheritance.mjs';
@@ -22,7 +22,7 @@ export function AnimaPageEditor({projectId,page,prompt,onChange,characters,scene
   const [draft,setDraft]=useState(()=>displayPromptDraft(native));
   const [cameraOpen,setCameraOpen]=useState(false);
   const emitted=useRef(JSON.stringify(prompt));
-  useEffect(()=>{const incoming=JSON.stringify(prompt);if(incoming!==emitted.current){setDraft(displayPromptDraft({population:[],person:[],setting:[],camera:[],avoid:[],...prompt} as PagePrompt));emitted.current=incoming;}},[prompt]);
+  useEffect(()=>{const incoming=JSON.stringify(prompt);if(incoming!==emitted.current){if(!matchesLocalPromptDraft(draft,native))setDraft(displayPromptDraft(native));emitted.current=incoming;}},[prompt]);
   function changeDraft(next:ReturnType<typeof displayPromptDraft>){setDraft(next);const value={...prompt,...persistPromptDraft(next)};emitted.current=JSON.stringify(value);onChange(value);}
   const roles=references.flatMap(ref=>{const c=characters.find(c=>c.id===ref.character_id);return c?[{id:c.id,label:c.name,color:c.style?.display_color}]:[];});
   const setting=(c:typeof characters[number])=>c.model_prompts?.models?.anima??(c.model_id==='anima'?c.prompt as unknown as CharacterPromptDocument:undefined);

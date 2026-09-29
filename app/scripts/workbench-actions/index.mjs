@@ -3,6 +3,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { projectActions } from './projects.mjs';
 import { pageActions } from './pages.mjs';
 import { factActions } from './facts.mjs';
+import { promptActions } from './prompt.mjs';
 import { structureActions } from './structure.mjs';
 import { settingActionsCatalog } from './settings.mjs';
 import { projectSettingsActions } from './project-settings.mjs';
@@ -17,14 +18,14 @@ import { executionActions } from './execution.mjs';
 import { workbenchRestrictions } from './access-policy.mjs';
 import { invalid, validate, schema, string, object } from './contract.mjs';
 const actions = {};
-for (const catalog of [projectActions,structureActions,settingActionsCatalog,pageActions,factActions,projectSettingsActions,workspaceActions,mediaActions,pageBatchActions,dictionaryActions,managementActions,comparisonActions,trainingActions,executionActions]) {
+for (const catalog of [projectActions,structureActions,settingActionsCatalog,pageActions,factActions,promptActions,projectSettingsActions,workspaceActions,mediaActions,pageBatchActions,dictionaryActions,managementActions,comparisonActions,trainingActions,executionActions]) {
   for (const [name, definition] of Object.entries(catalog)) {
     if (Object.hasOwn(actions,name)) throw new Error(`重复工具操作 ${name}`);
     actions[name]=definition;
   }
 }
 const utilityHelp = {
-  help: {summary:'查询分类、操作及字段主题用法',parameters:schema({target:string('省略查分类；分类 ID 查操作目录；操作名查完整用法'),topic:string('操作帮助中 topics 的主题 ID')},[]),details:'总览不返回操作清单；分类目录只含摘要；操作详情才含参数、规则和示例。字段细则用 target:操作名 + topic:主题ID 按需读取。直接指定已知操作名可跳过分类。'},
+  help: {summary:'查询分类、操作及字段主题用法',parameters:schema({target:string('省略查分类；分类 ID 查操作目录；操作名查完整用法'),topic:string('操作帮助中 topics 的主题 ID')},[]),details:'总览不返回操作清单；分类目录只含摘要与必填参数签名；操作详情才含参数、规则和示例。字段细则用 target:操作名 + topic:主题ID 按需读取。直接指定已知操作名可跳过分类。'},
   status: {summary:'工具版本与当前会话能力限制',parameters:schema(),details:'报告已加载/磁盘版本及当前限制；不代表后端版本。reload_required 为 true 时重载 DSH。'},
 };
 function revision() {
@@ -57,7 +58,7 @@ const groups=[
 ];
 const definitions={...actions,...utilityHelp};
 function availability(definition,denied) {return definition.capability && denied.has(definition.capability)?'disabled':'enabled';}
-function catalog(denied) {return groups.map(({prefixes,...group})=>({...group,operations:Object.entries(definitions).filter(([name])=>prefixes.some(prefix=>name.startsWith(prefix))).map(([operation,definition])=>({operation,summary:definition.summary,...(availability(definition,denied)==='disabled'?{availability:'disabled',capability:definition.capability}:{})}))}));}
+function catalog(denied) {return groups.map(({prefixes,...group})=>({...group,operations:Object.entries(definitions).filter(([name])=>prefixes.some(prefix=>name.startsWith(prefix))).map(([operation,definition])=>({operation,summary:definition.summary,signature:`${operation}(${(definition.parameters.required??[]).join(", ")})`,...(availability(definition,denied)==='disabled'?{availability:'disabled',capability:definition.capability}:{})}))}));}
 export async function executeWorkbench(input, execution={}) {
   const denied=workbenchRestrictions(execution.agent),operation=input?.operation;
   try {
@@ -66,7 +67,7 @@ export async function executeWorkbench(input, execution={}) {
       if(input.args!==undefined && Object.keys(input.args).length) throw invalid('help 使用 target，不接受非空 args');
       if(input.topic&&!input.target)throw invalid('topic 需要操作名 target');
       const directory=catalog(denied);
-      if(!input.target) return {groups:directory.map(({operations,...group})=>({...group,operations_count:operations.length,disabled_count:operations.filter(o=>o.availability==='disabled').length})),usage:'help + target分类ID 查看该类操作；target操作名 查看参数。disabled 操作被当前限制插件禁用，请交给具备该能力的 Agent。'};
+      if(!input.target) return {groups:directory.map(({operations,...group})=>({...group,operations_count:operations.length,disabled_count:operations.filter(o=>o.availability==='disabled').length})),usage:'help + target分类ID 查看该类操作和必填参数签名；target操作名 查看参数。disabled 操作被当前限制插件禁用，请交给具备该能力的 Agent。'};
       const group=directory.find(g=>g.id===input.target);if(group){if(input.topic)throw invalid('topic 需要操作名，不能是分类');return group;}
       const definition=Object.hasOwn(definitions,input.target)?definitions[input.target]:null;
       if(!definition)throw Object.assign(new Error('未知帮助入口，请查分类目录'),{code:'unknown_operation'});

@@ -1,6 +1,36 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+test('Agent Prompt 路由显式带项目身份后参与网页写入协调', async () => {
+  const oldFetch = globalThis.fetch, oldWindow = globalThis.window;
+  globalThis.window = {location: {origin: 'http://story-canvas.local'}};
+  const client = await import(`../src/project-write-client.ts?scope=${Date.now()}`);
+  let release, requests = 0;
+  globalThis.fetch = async () => {
+    requests++;
+    if (requests === 1) return new Promise(resolve => { release = resolve; });
+    return new Response('{}', {headers: {'x-story-canvas-revision': 'revision:3'}});
+  };
+  try {
+    client.setProjectWriteRevision('scope-demo', 'revision:1');
+    const first = client.mutateTargetFacts('/api/agent/prompt/save', {method: 'POST', body: '{}'}, 'scope-demo');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(client.isProjectWritePending('scope-demo'), true);
+    assert.equal(client.getProjectWriteGeneration('scope-demo'), 1);
+    const next = client.mutateTargetFacts('/api/projects/scope-demo/workbench/page-save', {method: 'PUT', body: '{}'});
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(requests, 1, '同一项目的后续保存需等待');
+    release(new Response('{}', {headers: {'x-story-canvas-revision': 'revision:2'}}));
+    assert.equal((await first).status, 200);
+    assert.equal((await next).status, 200);
+    assert.equal(client.getProjectWriteRevision('scope-demo'), 'revision:3');
+    assert.equal(client.isProjectWritePending('scope-demo'), false);
+  } finally {
+    globalThis.fetch = oldFetch;
+    if (oldWindow === undefined) delete globalThis.window; else globalThis.window = oldWindow;
+  }
+});
+
 test("项目事实替换会作废在途和尚未发出的旧工作台写入", async () => {
   const originalFetch = globalThis.fetch;
   const originalWindow = globalThis.window;

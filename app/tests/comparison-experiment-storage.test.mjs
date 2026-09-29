@@ -46,7 +46,7 @@ test("任务历史和图片清单不读取对比执行计划及逐格结果文�
   assert.equal(history.history[0].id, manifest.id);
   assert.equal(history.history[0].item_counts.available, 2);
   const images = await readWorkspaceTaskResults(root, "project", manifest.id, "comparison");
-  assert.deepEqual(images, [{ id: first.id, url: `/api/comparison-experiments/${manifest.id}/results/${first.id}.png` }]);
+  assert.deepEqual(images, [{ id: first.id, url: `/api/comparison-experiments/${manifest.id}/results/${first.id}.png`, absolute_file:path.join(directory,"results",first.id,"image.png") }]);
 });
 
 function manifestWithCells() {

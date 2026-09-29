@@ -3,7 +3,7 @@ import { schema, string, object, invalid } from './contract.mjs';
 import { pageKey } from './http-action.mjs';
 import { pageEditHelp } from './page-edit-help.mjs';
 
-const section = {type:'string',enum:['content','prompt','render'],description:'本批统一编辑的文件部分'};
+const section = {type:'string',enum:['content','render','prompt'],description:'本批统一编辑content/render；旧prompt分支返回指引，改用prompt.batch.read/save'};
 const items = item => ({type:'array',minItems:1,maxItems:16,items:item});
 function unique(rows) {
   if(new Set(rows.map(row=>row.page_key.page_id)).size!==rows.length)throw invalid('同一批页面不能重复');
@@ -39,14 +39,14 @@ export const pageBatchActions={
     helpTopics:pageEditHelp,
     summary:'读取最多16页的同一文件部分及逐页保存凭据',
     parameters:schema({project_id:string('项目 ID'),section,page_keys:items(pageKey)}),
-    details:'每页返回相关文件完整 document 和 save.args，不展开组装后的 Prompt。先批量编辑 content；成功后再批量读取 prompt，避免上游变化使旧指纹失效。失败页单独处理。',
+    details:'每页返回content/render完整document与save.args。Prompt批量编辑已统一为prompt.batch.read/save，旧section:prompt只给迁移指引。先完成content，再读取有关Prompt，避免指纹过期。失败页单独处理。',
     execute:(args,execution)=>executeBatch(args,execution,false),
   },
   'page.editor.batch.save':{
     helpTopics:pageEditHelp,
     summary:'带逐页指纹批量修改，返回简短逐页回执',
     parameters:schema({project_id:string('项目 ID'),section,items:items(schema({page_key:pageKey,expected_sha256:string('该页 read 返回的指纹'),changes:object('该页修改；语义同 page.editor.save')}))}),
-    details:'每项由读取回执取 page_key、expected_sha256，再加 changes；不可自编指纹。逐页复用单页保存：对象合并、数组替换、null 删除；新增片段省略 id。不是整批事务，失败不回滚已保存页。冲突继续处理其他页；网络或服务异常标记 unknown 并停止后续页，先核验 unknown，不重放整批。回执不重复正文，需要核验时只读有关页面文件。',
+    details:'每项取读取回执的page_key、expected_sha256，加changes；不可自编指纹。content/render逐页保存：对象合并、数组替换、null删除。Prompt统一用prompt.batch.save。不是整批事务，失败不回滚成功页。冲突继续其他页；网络或服务异常标unknown并停止后续，先核实unknown，不重放整批。回执不重复正文。',
     execute:(args,execution)=>executeBatch(args,execution,true),
   },
 };

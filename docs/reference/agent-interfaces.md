@@ -51,12 +51,12 @@ node <仓库根>/app/scripts/workbench-api.mjs GET /api/project-library/<project
 | story:page | chapter | chapter-id | 仅 title、summary，不包含下属 sequence |
 | story:page | sequence | sequence-id | 仅 title、summary |
 | story:page | index | 不传 | 剧情页顺序与归属 |
-| story:page | narrative、prompt | page-id | 对应页面事实 |
-| character:fact | profile、visual、prompt | character-id | 对应角色事实 |
+| story:page | narrative | page-id | 对应页面内容 |
+| character:fact | profile、visual | character-id | 对应角色事实 |
 | character:fact | page-index | 不传 | 角色视觉页顺序与归属 |
-| character:fact | page-goal、page-prompt | page-id | 对应角色视觉页事实 |
-| fact:edit | scene 的 profile、visual、prompt | scene-id | 对应场景事实 |
-| fact:edit | page 的 content、prompt、render、text-sources | page-id | 统一页面事实 |
+| character:fact | page-goal | page-id | 对应角色视觉页内容 |
+| fact:edit | scene 的 profile、visual | scene-id | 对应场景事实 |
+| fact:edit | page 的 content、render、text-sources | page-id | 统一页面事实 |
 
 `fact:edit`（`node <仓库根>/app/scripts/agent-fact.mjs`）是通用事实 CLI，覆盖服务端支持的全部
 domain/kind：`read <domain> <kind> <project-id> [target-id]`、`save <domain> <kind> <JSON文件|->`。
@@ -64,7 +64,11 @@ story:page、character:fact 的 read/save 是它的薄转发；领域与 kind �
 不支持的组合返回 400 `fact_draft_not_supported`。场景当前没有 scene/index 事实，场景列表顺序由
 工作台接口维护。
 
-新格式 Prompt 草稿保存完整 `models` 容器，只修改目标模型，保留其他输入。
+Prompt 使用统一语义操作 `prompt.read`／`prompt.save`，按页面模型、设定基础或单个子设定读写。
+read 返回该范围的完整 `document` 和可带回的保存参数；不返回或要求回传整个 `models` 容器。
+`changes` 合并对象、替换数组，`null` 删除字段；恢复继承须删除覆盖字段。需要继承词及来源版本时按需查 `prompt.sources`。
+修改引用或组合模式引入新来源，必须携带实际读取的来源版本。参数、批量入口及示例由 `help prompt` 维护。
+旧 Agent Prompt 写入口返回升级指引；其他事实仍使用下表 read/save 契约。
 页面 `render` 草稿包含 `version/model_id/profile_id/canvas`；更换模型或画幅使用同一 read/save 契约，
 不要直接写文件。首次 Anima→Qwen 会复制有效全文，已有输入不会被重新初始化。
 完整编辑上下文返回 `model_id`、`render`、`page.model_input`，Anima 还提供生效分类词和逐词调整；
@@ -80,7 +84,8 @@ outline.json，并在锁内只更新局部目标，不要求 Agent 回传其他�
 
 ## 编辑页面 Prompt 的完整读取入口
 
-普通编辑完整读取并核验相关页面文件即可，使用 `page.editor.read` 或对应 CLI read。以下完整组装入口仅用于按需理解引用、覆盖或诊断最终输入，不作为每次编辑的前置步骤：
+普通 Prompt 编辑用 `prompt.read` 完整读取本次涉及的页面模型范围；页面内容用 `page.editor.read`。
+以下完整组装入口仅用于按需理解引用、覆盖或诊断最终输入，不作为每次编辑的前置步骤：
 
 ```powershell
 node <仓库根>/app/scripts/visual-production.mjs context page <project-id> v3/<page-id> --out <仓库根>/Saved/Agent/<任务>/prompt-context.json
@@ -89,9 +94,9 @@ node <仓库根>/app/scripts/visual-production.mjs context page <project-id> v3/
 
 对应 `POST /api/agent/prompt-context`，body 为 `{ project_id, page_key }`。CLI 接受 v3 PageKey 或项目内唯一页面 ID，不扫描归属来猜页面身份。
 
-返回 `{ page_key, save, draft, context }`：
+返回只读页面标识与 `context`：
 
-- `save` 给出原有保存接口的 domain/kind；`draft` 是可直接提交的原有 read/save 草稿。只修改 `draft.document`。
+- 本入口只用于诊断；编辑范围及保存参数另从 `prompt.read` 获取。
 - `context` 只读，不能写回本页：
   - `global_text: { text, source: "profile" | "project_override" }`：有效全局文字及其来源，已经应用 render-profile.override.json；
   - `references`：按页面引用顺序列出角色与场景，每项含 `source`、`kind`、`id`、`variant_id`、
@@ -114,20 +119,7 @@ node <仓库根>/app/scripts/workbench-api.mjs POST /api/projects/<project-id>/w
 
 也可用 `GET /api/projects/<project-id>/workbench/page-rewrite?page_key=%7B%22page_id%22%3A%22page-001%22%7D` 读取状态。返回 `original_prompt`、独立的 `rewrite` 和 `status`（`missing`、`current`、`stale`）。优化调用本机 ComfyUI 的 Qwen-Image-2.1 PE-T2I INT8 模型，不向优化器发送图片；模型正文写入 `pages/<page_id>.rewrite.json`，读取与出图时由工作台固定补上图片编号及用途。生成前检查与单页候选生成可在请求中选 `prompt_source: "rewrite"`；默认 `original`，过期结果仍可显式选择用于生成，stale 仅作提示。Agent 不直接写优化文件。
 
-落盘后编辑并用 `save-context` 提交同一文件：它只从文件取 `save.domain`/`save.kind` 和 `draft` 调用
-read/save 契约（当前为 page/prompt），只读 `context`、`page_key` 不进入请求体，且校验
-`page_key.page_id` 与 `draft.target_id` 一致：
-
-```powershell
-# 阅读文件中的 context；仅修改 draft.document 正文，保留 save、身份与指纹。
-node <仓库根>/app/scripts/agent-fact.mjs save-context <仓库根>/Saved/Agent/<任务>/prompt-context.json --out <仓库根>/Saved/Agent/<任务>/save-result.json
-```
-
-save 回执默认打印到 stdout；需要落盘时用与输入不同的文件（如上例的 save-result.json），不要用回执
-覆盖草稿或完整上下文。DSH 原生工具不用落盘：`story_canvas` 的 `prompt.context` 读取完整包后，
-仅将返回的 `save.domain`/`save.kind` 与修改后的完整 `draft` 交给 `facts.save`，不回传只读 `context`。
-
-页面文件的 read/save 可直接用于编辑核验；完整组装上下文仅按需查询。
+完整上下文仅用于阅读，不再通过旧 `save-context` 或 `facts.save` 保存 Prompt。修改前用 `prompt.read` 获取对应范围和保存参数。
 
 ## read/save 契约
 
@@ -263,6 +255,6 @@ DSH 适配层只注册 `story_canvas`，不承载领域知识；各领域操作�
 
 ### 统一工具的编辑回执
 
-`facts.read` 和 `prompt.context` 返回完整草稿及对应 `save` 描述；`page.editor.read` 则按文件范围返回全文及局部保存回执。
+`facts.read` 返回非 Prompt 事实草稿；`page.editor.read` 按页面内容或生成设置返回全文及保存回执。`prompt.read` 返回单模型范围，`prompt.context` 只读。
 局部保存只提交变化字段，由服务端在版本校验后合并，成功回包返回更新后的相关文件全文用于核验。
-默认不组装上游引用。CLI 文件式 read/save 契约保持不变；具体参数、删除与数组规则只维护在工具 help 中。
+默认不组装上游引用。非 Prompt 的 CLI 文件式 read/save 契约保持不变；具体参数、删除与数组规则只维护在工具 help 中。

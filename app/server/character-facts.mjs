@@ -35,6 +35,7 @@ import {
 } from "./story-files.mjs";
 import { hashCanonicalJson } from "./workflow-definition.mjs";
 import { auditSavedCharacterPrompt, capturePromptAuditInput, preparePromptWriteAudit } from "./prompt-write-audit.mjs";
+import { settingPromptRemovalDiagnostics } from './prompt-source-context.mjs';
 
 export const DELETED_CHARACTER_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -256,7 +257,7 @@ async function prepareCharacterPersistence(kind, baseline, edited, currentVisual
   const persisted = mapModelPrompts(edited, (input, modelId) => modelAdapter(modelId).prepareSettingPrompt(input, {baselinePrompt:baselineModels.get(modelId),createFragmentId:()=>`token-${randomBytes(6).toString('hex')}`}));
   const unknownVariants = promptVariantIds(persisted).filter(id => !variantIds(currentVisual).includes(id));
   if (unknownVariants.length) fail("character_prompt_visual_mismatch", unknownVariants);
-  assertDocument(validateCharacterPromptDocument(persisted));
+  assertDocument(validateCharacterPromptDocument(persisted, { baselinePrompt: baseline }));
   return {
     persisted,
   };
@@ -280,6 +281,8 @@ export async function commitCharacterFact(projectRoot, context, readDocument, ki
       visual: kind === "visual" ? prepared.persisted : visual,
       prompt: kind === "prompt" ? prepared.persisted : await readCharacterPrompt(project.projectDirectory, characterId),
     })).diagnostics : [];
+  if (kind === 'prompt') downstreamDiagnostics.push(...await settingPromptRemovalDiagnostics(project.projectDirectory,
+    { kind: 'character', id: characterId, before: baseline, after: prepared.persisted }));
   if (beforeCommit !== undefined) {
     if (typeof beforeCommit !== "function") fail("invalid_character_edit_option", ["beforeCommit 必须是函数"]);
     await beforeCommit();

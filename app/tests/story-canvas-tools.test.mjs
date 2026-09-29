@@ -55,8 +55,8 @@ test('字段帮助按需展开，分类与默认操作帮助不注入完整细�
   assert.ok(help.topics.dialogue);assert.equal(help.helpTopics,undefined);
   const topic=await f.tool.execute({operation:'help',target:'page.editor.save',topic:'dialogue'});
   assert.match(topic.details,/不按数组索引/);
-  const batch=await f.tool.execute({operation:'help',target:'page.editor.batch.save',topic:'inheritance'});
-  assert.equal(batch.example.changes.models.anima.inheritance['scene:study:default'].day.enabled,false);
+  const batch=await f.tool.execute({operation:'help',target:'prompt.batch.save',topic:'inheritance'});
+  assert.equal(batch.example.changes.inheritance['scene:study:default']['identity:token-012345abcdef'].enabled,false);
   assert.equal((await failure(f.tool,{operation:'help',target:'page',topic:'dialogue'})).error,'invalid_arguments');
   assert.equal((await failure(f.tool,{operation:'page.editor.save',topic:'dialogue'})).error,'invalid_arguments');
   assert.equal(f.requests.length,0);
@@ -133,6 +133,21 @@ test('结构变更回执不返回整份故事骨架，保留目标身份和下�
   assert.equal(result.value,undefined);assert.equal(result.sequence_id,'unit-1');assert.equal(result.chapter_id,'chapter-1');
   assert.equal(result.before_sequence_id,'unit-2');assert.deepEqual(result.downstream_diagnostics,diagnostics);
   assert.ok(JSON.stringify(result).length<500);
+});
+test('分类帮助给出必填参数签名，不展开完整参数表',async t=>{
+  const f=await fixture(t,(_req,res)=>res.end('{}'));
+  const help=await f.tool.execute({operation:'help',target:'structure'});
+  const item=help.operations.find(item=>item.operation==='sequence.read');
+  assert.equal(item.signature,'sequence.read(project_id, sequence_id)');
+  assert.equal(item.parameters,undefined);
+});
+test('等待终态直接带本任务图片路径，结果入口支持分页',async t=>{
+  const images=Array.from({length:15},(_,i)=>({candidate_id:`c${i}`,absolute_file:`C:/images/${i}.png`}));
+  const f=await fixture(t,(req,res)=>res.end(JSON.stringify(req.url.includes('/results')?{images}:{task:{id:'t1',status:'completed',purpose:'candidate',item_counts:{total:15,available:15}}})));
+  const done=await f.tool.execute({operation:'task.wait',args:{targets:[{project_id:'p',task_id:'t1'}]}});
+  assert.equal(done.images.length,12);assert.equal(done.images[0].absolute_file,'C:/images/0.png');
+  const next=await f.tool.execute(done.more_images[0]);
+  assert.equal(next.items.length,3);assert.equal(next.items[0].candidate_id,'c12');assert.equal(next.next_offset,null);
 });
 test('task.wait 的工具契约限制数量与期限，传递取消信号且只发GET',async t=>{
   const f=await fixture(t,(_request,response)=>response.end(JSON.stringify({task:{id:'t1',status:'completed',purpose:'candidate',items:[]}})));
@@ -275,18 +290,21 @@ test('大项目默认列表有界，完整 Git/成品信息仍可逐页查询',a
   const tasks=await f.tool.execute({operation:'task.list',args:{project_id:'demo',limit:5}});
   assert.equal(tasks.items.length,5);assert.equal(tasks.total,150);assert.equal(tasks.history,undefined);assert.ok(JSON.stringify(tasks).length<1000);
 });
-test('完整 Prompt 包和保存草稿保持身份与指纹，不提交只读 context', async t => {
+test('Prompt 上下文只读且默认窄视图，编辑入口指向独立范围读取', async t => {
   const draft = { project_id: 'demo', target_id: 'page-001', document: { text: '内容' }, expected_sha256: 'a'.repeat(64), expected_context_sha256: 'b'.repeat(64) };
   const pack = { draft, save: { domain: 'page', kind: 'prompt' }, context: {status:'complete',model_id:'qwen',references:[{source:'character:alice:default',current_text:'只读'.repeat(10000)}],final:{positive:'完整正向',negative:'',parts:{trace:'详细追踪'}}} };
   const { tool, requests } = await fixture(t, (_request, response) => response.end(JSON.stringify(pack)));
   const result=await tool.execute({ operation: 'prompt.context', args: { project_id: 'demo', page_key: {page_id:'page-001'} } });
-  assert.equal(result.context.references['character:alice:default'].text,'只读'.repeat(10000));assert.equal(result.context.final.parts,undefined);assert.deepEqual(result.draft,draft);assert.deepEqual(result.save.args,pack.save);
+  assert.equal(result.final.positive,'完整正向');assert.equal(result.final.parts,undefined);assert.equal(result.draft,undefined);assert.equal(result.save,undefined);assert.equal(result.references,undefined);
   assert.deepEqual(requests[0].body.page_key, { page_id: 'page-001' });
-  await tool.execute({ operation: result.save.operation, args: { ...result.save.args, [result.save.draft_parameter]:result.draft } });
-  assert.deepEqual(requests[1].body, draft);
-  assert.equal(requests[1].body.context, undefined);
+  const edit=await tool.execute({operation:'prompt.context',args:{project_id:'demo',page_key:{page_id:'page-001'},view:'edit'}});
+  assert.equal(edit.context.references['character:alice:default'].text,'只读'.repeat(10000));
+  assert.equal(edit.draft,undefined);assert.equal(edit.save,undefined);
+  assert.equal(edit.edit.operation,'prompt.read');
+  assert.deepEqual(edit.edit.args,{project_id:'demo',target:{kind:'page',id:'page-001'}});
   const details=await tool.execute({operation:'prompt.context',args:{project_id:'demo',page_key:{page_id:'page-001'},view:'details'}});
-  assert.deepEqual(JSON.parse(await readFile(details.file,'utf8')),pack);
+  const complete=JSON.parse(await readFile(details.file,'utf8'));
+  assert.equal(complete.draft,undefined);assert.equal(complete.save,undefined);assert.deepEqual(complete.context,pack.context);
   const narrow=await tool.execute({operation:'prompt.context',args:{project_id:'demo',page_key:{page_id:'page-001'},view:'final'}});
   assert.equal(narrow.final.positive,'完整正向');assert.equal(narrow.draft,undefined);assert.equal(narrow.references,undefined);
   const sources=await tool.execute({operation:'prompt.context',args:{project_id:'demo',page_key:{page_id:'page-001'},view:'sources',source:'character:alice:default'}});
@@ -403,17 +421,21 @@ test('统一工具经真实 HTTP Adapter 完成结构、设定及三类页面生
   assert.equal(updated.saved,true);assert.equal(updated.document.title,'局部修改标题');
   assert.deepEqual(updated.document.characters,editor.document.characters);
   const stale=await failure(f.tool,{operation:editor.save.operation,args:{...editor.save.args,changes:{title:'陈旧修改'}}});assert.equal(stale.status,409);
-  const localPrompt=await run('page.editor.read',{page_key});assert.ok(localPrompt.document.models);assert.equal(localPrompt.context,undefined);
-  const branch=localPrompt.document.models.qwen;
-  const changedPrompt=await run(localPrompt.save.operation,{...localPrompt.save.args,changes:{models:{qwen:{text:'局部 Prompt'}}}});
-  assert.equal(changedPrompt.document.models.qwen.text,'局部 Prompt');
-  assert.deepEqual(changedPrompt.document.models.anima,localPrompt.document.models.anima);
-  assert.deepEqual(changedPrompt.document.models.qwen.reference_images,branch.reference_images);
+  const promptTarget={kind:'page',id:page_key.page_id,model_id:'qwen'};
+  const localPrompt=await run('prompt.read',{target:promptTarget});assert.equal(localPrompt.document.models,undefined);assert.equal(localPrompt.context,undefined);
+  const promptFile=path.join(root,`workspace/demo/pages/${page_key.page_id}.prompt.json`);
+  const otherPrompt=JSON.parse(await readFile(promptFile,'utf8')).models.anima;
+  assert.equal((await failure(f.tool,{operation:'prompt.read',args:{project_id:'demo',target:{...promptTarget,model_id:'anima'}}})).error,'prompt_model_missing');
+  const branch=localPrompt.document;
+  const changedPrompt=await run(localPrompt.save.operation,{...localPrompt.save.args,changes:{text:'局部 Prompt'}});
+  assert.equal(changedPrompt.document.text,'局部 Prompt');
+  assert.deepEqual(JSON.parse(await readFile(promptFile,'utf8')).models.anima,otherPrompt);
+  assert.deepEqual(changedPrompt.document.reference_images,branch.reference_images);
   const emptyChange=await failure(f.tool,{operation:changedPrompt.save.operation,args:{...changedPrompt.save.args,changes:{}}});assert.equal(emptyChange.status,400);
   await run(updated.save.operation,{...updated.save.args,changes:{title:'上游内容变化'}});
-  const upstream=await failure(f.tool,{operation:changedPrompt.save.operation,args:{...changedPrompt.save.args,changes:{models:{qwen:{text:'陈旧依赖'}}}}});
-  assert.equal(upstream.status,409);assert.equal(upstream.error,'page_edit_conflict');
-  const checked=await run('page.editor.read',{page_key});assert.equal(checked.document.models.qwen.text,'局部 Prompt');
+  const upstream=await failure(f.tool,{operation:changedPrompt.save.operation,args:{...changedPrompt.save.args,changes:{text:'陈旧依赖'}}});
+  assert.equal(upstream.status,409);assert.equal(upstream.error,'prompt_scope_conflict');
+  const checked=await run('prompt.read',{target:promptTarget});assert.equal(checked.document.text,'局部 Prompt');
   const render=await run('page.editor.read',{page_key,section:'render'});assert.ok(render.document.model_id);
   const otherRender=await run('page.render.read',{page_key:{page_id:pages[1].page_id}});
   const projectBefore=await readFile(path.join(root,'workspace/demo/project.json'),'utf8');
@@ -428,7 +450,7 @@ test('统一工具经真实 HTTP Adapter 完成结构、设定及三类页面生
   assert.equal(mismatch.error,'page_profile_model_mismatch');assert.equal(mismatch.recovery.next.operation,'page.render.read');
   const emptyRender=await failure(f.tool,{operation:'page.render.set',args:model.save.args});assert.equal(emptyRender.error,'empty_render_changes');
   const restored=await run('page.render.set',{...model.save.args,model_id:'qwen'});assert.equal(restored.document.profile_id,'qwen-image-2-1');
-  assert.equal((await run('page.editor.read',{page_key})).document.models.qwen.text,'局部 Prompt');
+  assert.equal((await run('prompt.read',{target:promptTarget})).document.text,'局部 Prompt');
   assert.deepEqual((await run('page.render.read',{page_key:{page_id:pages[1].page_id}})).document,otherRender.document);
   assert.equal(await readFile(path.join(root,'workspace/demo/project.json'),'utf8'),projectBefore);
 
@@ -774,18 +796,18 @@ test('真实 HTTP 保存拒绝新增片段自编 ID，返回字段诊断且不�
   const operations=createProjectOperations({projectRoot:f.root});t.after(()=>operations.close());
   handler=createHttpRequestHandler({projectRoot:f.root,config:{},projectOperations:operations});
   await f.tool.execute({operation:'character.create',args:{project_id:'demo',id:'alice',name:'测试角色'}});
-  const identity={domain:'character',kind:'prompt'};
-  const read=async()=> (await f.tool.execute({operation:'facts.read',args:{...identity,project_id:'demo',target_id:'alice'}})).draft;
+  const target={kind:'character',id:'alice',model_id:'anima',scope:'base'};
+  const read=()=> f.tool.execute({operation:'prompt.read',args:{project_id:'demo',target}});
   const draft=await read();const baseline=structuredClone(draft);
-  const prompt=draft.document.models.anima.identity.prompt;
+  const prompt=draft.document.identity.prompt;
   prompt.person.push({id:'token-aaaaaaaaaaaa',tag:'blue_hair'});
-  const error=await failure(f.tool,{operation:'facts.save',args:{...identity,draft}});
+  const error=await failure(f.tool,{operation:'prompt.save',args:{...draft.save.args,changes:draft.document}});
   assert.equal(error.status,400);assert.equal(error.error,'invalid_prompt_fragment');assert.match(error.message,/省略 id/);assert.equal(error.details[0].field,'person[0].id');
   assert.deepEqual(await read(),baseline);
   delete prompt.person[0].id;
-  await f.tool.execute({operation:'facts.save',args:{...identity,draft}});
-  const saved=await read();assert.match(saved.document.models.anima.identity.prompt.person[0].id,/^token-[a-f0-9]{12}$/);
-  saved.document.models.anima.identity.prompt.person.push({...saved.document.models.anima.identity.prompt.person[0]});
-  const duplicate=await failure(f.tool,{operation:'facts.save',args:{...identity,draft:saved}});
+  await f.tool.execute({operation:'prompt.save',args:{...draft.save.args,changes:draft.document}});
+  const saved=await read();assert.match(saved.document.identity.prompt.person[0].id,/^token-[a-f0-9]{12}$/);
+  saved.document.identity.prompt.person.push({...saved.document.identity.prompt.person[0]});
+  const duplicate=await failure(f.tool,{operation:'prompt.save',args:{...saved.save.args,changes:saved.document}});
   assert.equal(duplicate.status,400);assert.match(duplicate.message,/重复/);
 });

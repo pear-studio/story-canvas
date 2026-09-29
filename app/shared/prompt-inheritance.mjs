@@ -1,27 +1,28 @@
 export const inheritanceCategories = ['population', "person", 'setting', 'camera', 'avoid'];
 export const promptText = fragment => fragment.tag ?? fragment.description ?? fragment.prompt_text ?? '';
 export const promptWord = text => String(text).toLowerCase().replaceAll('_', ' ').replace(/\s+/g, ' ').trim();
-export const adjustmentKey = (fragment, category = fragment.category) => (category === 'avoid' ? 'negative:' : '') + promptWord(promptText(fragment));
+export const adjustmentKey = fragment => fragment.inheritance_key ?? `identity:${fragment.id}`;
 export const characterSource = (id, variant) => `character:${id}:${variant}`;
 export const sceneSource = (id, variant) => `scene:${id}:${variant}`;
 export const emptyCategories = () => Object.fromEntries(inheritanceCategories.map(c => [c, []]));
 
-export function applyInheritedPrompt(prompt, adjustments = {}, disabled = []) {
-  const off = new Set(disabled.map(promptWord));
+export function applyInheritedPrompt(prompt, adjustments = {}) {
   return Object.fromEntries(inheritanceCategories.map(category => [category, (prompt?.[category] ?? []).map(fragment => {
-    const key = adjustmentKey(fragment, category);
-    return { ...fragment, ...(off.has(promptWord(promptText(fragment))) ? { enabled: false } : {}), ...adjustments[key] };
+    const adjustment = adjustments?.[adjustmentKey(fragment)];
+    return { ...fragment,
+      ...(Object.hasOwn(adjustment ?? {}, 'weight') ? { weight: adjustment.weight } : {}),
+      ...(Object.hasOwn(adjustment ?? {}, 'enabled') ? { enabled: adjustment.enabled } : {}),
+    };
   })]));
 }
 
-// 统计实际改变的继承行，忽略已失效或与上游相同的调整键。
-export function inheritedOverrideCount(prompt, adjustments = {}, disabled = []) {
-  const effective = applyInheritedPrompt(prompt, adjustments, disabled);
+// 显式覆盖与有效值不同是两件事；与上游相等的固定值仍是覆盖。
+export function inheritedOverrideCount(prompt, adjustments = {}) {
   let overridden = 0, total = 0;
-  for (const category of inheritanceCategories) (prompt?.[category] ?? []).forEach((base, index) => {
+  for (const category of inheritanceCategories) (prompt?.[category] ?? []).forEach(base => {
     total++;
-    const next = effective[category][index];
-    if ((base.weight ?? 1) !== (next.weight ?? 1) || (base.enabled !== false) !== (next.enabled !== false)) overridden++;
+    const item = adjustments?.[adjustmentKey(base)];
+    if (Object.hasOwn(item ?? {}, 'weight') || Object.hasOwn(item ?? {}, 'enabled')) overridden++;
   });
   return { overridden, total };
 }
@@ -34,48 +35,32 @@ export function effectivePromptEntries(prompt, category, adjustments = {}) {
 }
 
 export function variantPrompt(identity, variant) {
-  const inherited = applyInheritedPrompt(identity.prompt, variant.identity_overrides, variant.identity_disabled);
-  return Object.fromEntries(inheritanceCategories.map(c => [c, [...inherited[c].map(f => ({ ...f, inheritance_source: '基础身份' })), ...(variant.prompt[c] ?? []).map(f => ({ ...f, inheritance_source: '子设定' }))]]));
+  const inherited = applyInheritedPrompt(identity.prompt, variant.identity_overrides);
+  return Object.fromEntries(inheritanceCategories.map(c => [c, [
+    ...inherited[c].map(f => ({ ...f, inheritance_key: `identity:${f.id}`, inheritance_source: '基础身份' })),
+    ...(variant.prompt?.[c] ?? []).map(f => ({ ...f, inheritance_key: `variant:${f.id}`, inheritance_source: '子设定' })),
+  ]]));
 }
 
-export function validateAdjustments(value, label = '继承调整') {
+export function validateAdjustments(value, label = '继承调整', { availableKeys, baselineAdjustments, layers = ['identity', 'variant'] } = {}) {
   if (value === undefined) return [];
   if (!value || typeof value !== 'object' || Array.isArray(value)) return [`${label} 必须是对象`];
+  const available = availableKeys === undefined ? null : new Set(availableKeys);
   return Object.entries(value).flatMap(([key, item]) => {
-    if (!key || key !== promptWord(key) || !item || typeof item !== 'object' || Array.isArray(item)) return [`${label}.${key} 无效`];
+    if (!/^(identity|variant):token-[a-f0-9]{12}$/.test(key) || !layers.includes(key.split(':')[0])) return [`${label}.${key} 必须使用有效的共享词来源 ID`];
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return [`${label}.${key} 必须是对象`];
     const errors = [];
     if (Object.keys(item).some(k => !['weight', 'enabled'].includes(k))) errors.push(`${label}.${key} 只允许调整权重和开关`);
     if (item.weight !== undefined && (typeof item.weight !== 'number' || !Number.isFinite(item.weight) || item.weight < 0.2 || item.weight > 10)) errors.push(`${label}.${key}.weight 必须在 0.2～10 之间`);
     if (item.enabled !== undefined && typeof item.enabled !== 'boolean') errors.push(`${label}.${key}.enabled 必须是布尔值`);
+    if (available && !available.has(key)) {
+      const baseline = baselineAdjustments?.[key];
+      const unchanged = baseline && Object.keys(item).length === Object.keys(baseline).length
+        && Object.entries(item).every(([field, entry]) => Object.hasOwn(baseline, field) && baseline[field] === entry);
+      if (!unchanged) errors.push(`${label}.${key} 的继承词不存在；只能原样保留已有失效调整或删除它`);
+    }
     return errors;
   });
-}
-
-// 追踪已有词条的正文修改；无 ID 的历史词条只能按原文匹配，不猜测替换关系。
-export function promptChanges(before, after) {
-  const flatten = prompt => inheritanceCategories.flatMap(category => (prompt?.[category] ?? []).map(fragment => ({ category, ...fragment })));
-  const old = flatten(before), next = flatten(after);
-  const changes = [];
-  for (const a of old) {
-    const b = next.find(b => a.id ? b.id === a.id : adjustmentKey(b) === adjustmentKey(a));
-    if (!b || promptText(a) !== promptText(b) || (a.weight ?? 1) !== (b.weight ?? 1) || (a.enabled !== false) !== (b.enabled !== false) || a.category !== b.category) changes.push({ before: a, after: b ?? null });
-  }
-  for (const b of next) if (!old.some(a => b.id && a.id ? a.id === b.id : adjustmentKey(a) === adjustmentKey(b))) changes.push({ before: null, after: b });
-  return changes;
-}
-
-export function updateAdjustments(adjustments = {}, changes) {
-  const next = structuredClone(adjustments);
-  // 先移除旧键再写入新键，避免交换两个词时覆盖旧值。
-  for (const { before } of changes) if (before) delete next[adjustmentKey(before)];
-  for (const { before, after, resetWeight, resetEnabled } of changes) {
-    if (!before || !after) continue;
-    const item = { ...adjustments[adjustmentKey(before)] };
-    if (resetWeight || (before.weight ?? 1) !== (after.weight ?? 1)) delete item.weight;
-    if (resetEnabled || (before.enabled !== false) !== (after.enabled !== false)) delete item.enabled;
-    if (Object.keys(item).length) next[adjustmentKey(after)] = item;
-  }
-  return next;
 }
 
 export function duplicatePromptWords(groups) {

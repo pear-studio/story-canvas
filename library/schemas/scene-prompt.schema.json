@@ -141,7 +141,10 @@
               ]
             }
           ],
-          "additionalProperties": false
+          "additionalProperties": false,
+          "required": [
+            "id"
+          ]
         },
         "fragments": {
           "type": "array",
@@ -233,8 +236,7 @@
           "type": "object",
           "required": [
             "prompt",
-            "loras",
-            "identity_disabled"
+            "loras"
           ],
           "properties": {
             "prompt": {
@@ -245,14 +247,6 @@
               "items": {
                 "$ref": "#/$defs/anima/$defs/lora"
               }
-            },
-            "identity_disabled": {
-              "type": "array",
-              "items": {
-                "type": "string",
-                "pattern": "\\S"
-              },
-              "description": "本造型关闭的 identity.prompt 文本键（trim+小写比较）；每个键必须存在于 identity.prompt。"
             },
             "identity_overrides": {
               "type": "object",
@@ -269,6 +263,9 @@
                   }
                 },
                 "additionalProperties": false
+              },
+              "propertyNames": {
+                "pattern": "^identity:token-[a-f0-9]{12}$"
               }
             },
             "reference_images": {

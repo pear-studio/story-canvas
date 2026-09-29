@@ -82,6 +82,7 @@ import {
   type PageRenderInspection,
   type PageRewriteValue,
   type PromptSourceChoice,
+  type PromptSourceVersions,
   type PageMedia,
   type PagePrompt,
   type ProjectWorkbenchView,
@@ -788,10 +789,10 @@ export function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSet
     return () => { poller.stop(); mediaRequestGuard.current.cancel(); };
   }, [refreshPageMedia]);
 
-  async function saveWhole(draft: WorkbenchPageContentDraft, prompt: PagePrompt, items: LetteringItem[], baseline: WorkbenchPage) {
+  async function saveWhole(draft: WorkbenchPageContentDraft, prompt: PagePrompt, items: LetteringItem[], baseline: WorkbenchPage, sourceVersions: PromptSourceVersions) {
     const content = { title: draft.title, scene_description: draft.scene_description, characters: draft.characters ?? [], dialogue: draft.dialogue ?? [],
       ...(draft.page_kind === 'text' ? { page_kind: 'text' as const, body: draft.body ?? '', display_title: draft.display_title ?? '', text_layout: draft.text_layout } : {}) };
-    const result = await saveWholePage(projectId, baseline, content, prompt, items);
+    const result = await saveWholePage(projectId, baseline, content, prompt, items, sourceVersions);
     latestPage.current = { ...latestPage.current, ...result.content, content_sha256: result.content_sha256, prompt: result.prompt, prompt_sha256: result.prompt_sha256,
       prompt_context_sha256: result.prompt_context_sha256, lettering: result.lettering, layout_sha256: result.layout_sha256 };
     if (isCurrentWorkspace()) onPageChanged(page, latestPage.current);

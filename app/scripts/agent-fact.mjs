@@ -14,9 +14,9 @@ runCommand(async args => {
   if (action === "prompt-context" && rest.length === 2) {
     return readPromptContext(rest[0], decodePageKey(rest[1]));
   }
-  // save-context 是明确的文件提交入口：从完整上下文文件取保存目标与草稿，不按形状猜测。
+  // 旧入口明确给升级指引；诊断上下文不再是可写草稿。
   if (action === "save-context" && rest.length === 1) {
     return savePromptContextDraft(await readJsonInput(rest[0]));
   }
-  throw new Error("用法：fact:edit -- read <domain> <kind> <project-id> [target-id] [--out 文件]；save <domain> <kind> <JSON文件|-> [--out 回执文件]；prompt-context <project-id> <PageKey> [--out 文件]；save-context <完整上下文JSON文件> [--out 回执文件]。直接 node 调用本脚本时不带 --");
+  throw new Error("用法：fact:edit -- read <domain> <kind> <project-id> [target-id] [--out 文件]；save <domain> <kind> <JSON文件|-> [--out 回执文件]；prompt-context <project-id> <PageKey> [--out 文件]。Prompt 编辑改用 story-canvas.mjs 的 prompt.read/save，prompt-context 只读。直接 node 调用本脚本时不带 --");
 });

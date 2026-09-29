@@ -559,7 +559,7 @@ const createStoryPage = fixtureMutation(createStoryPageDirect);
 const deleteStoryPage = fixtureMutation(deleteStoryPageDirect);
 
 
-test("公共页面草稿不依赖归属存在，缺失引用与人物绑定可保留并修复", async context => {
+test("公共页面不依赖归属存在，缺失 Prompt 来源需要先修复引用", async context => {
   const fixture = await createFixture(context);
   const { repositoryRoot: root, projectId: id, projectDirectory, pagesDirectory } = fixture;
   const index = await readPageIndex(projectDirectory);
@@ -576,7 +576,13 @@ test("公共页面草稿不依赖归属存在，缺失引用与人物绑定可�
   promptDraft.document.text = "仍然可以编辑本页描述。";
   await assert.rejects(saveStoryPromptDraft(root, promptDraft), { code: "invalid_story_edit_document" });
   delete promptDraft.document.text_overrides;
-  const saved = await saveStoryPromptDraft(root, promptDraft);
+  await assert.rejects(saveStoryPromptDraft(root, promptDraft), { code: "prompt_source_missing" });
+  const repairedContent = await readStoryNarrativeDraft(root, id, "page-001");
+  repairedContent.document.characters = [];
+  await saveStoryNarrativeDraft(root, repairedContent);
+  const repairedPrompt = await readStoryPromptDraft(root, id, "page-001");
+  repairedPrompt.document.text = "仍然可以编辑本页描述。";
+  const saved = await saveStoryPromptDraft(root, repairedPrompt);
   assert.equal(saved.value.text, "仍然可以编辑本页描述。");
   assert.equal((await readStoryNarrativeDraft(root, id, "page-001")).document.title, "归属失效但仍能编辑");
 });
@@ -621,10 +627,13 @@ test("页面 Prompt 只依赖所引场景子设定，场景缺失与恢复会使
   await assert.rejects(saveStoryPromptDraft(root, stale), { code: "fact_upstream_conflict" });
   const missing = await readStoryPromptDraft(root, id, "page-001");
   missing.document.text = "从上方拍摄。";
-  await saveStoryPromptDraft(root, missing);
+  await assert.rejects(saveStoryPromptDraft(root, missing), { code: "prompt_source_missing" });
   const restored = await readStoryPromptDraft(root, id, "page-001");
   await writeJson(sceneIndexPath, { $schema: SCENE_INDEX_SCHEMA_ID, scenes: ["station", "street"] });
   await assert.rejects(saveStoryPromptDraft(root, restored), { code: "fact_upstream_conflict" });
+  const refreshed = await readStoryPromptDraft(root, id, "page-001");
+  refreshed.document.text = "从上方拍摄。";
+  await saveStoryPromptDraft(root, refreshed);
 });
 
 test("外部登记项目可保存 Prompt 和 outline，仍拒绝越界 pages junction", async context => {

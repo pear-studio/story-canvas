@@ -29,8 +29,7 @@ function invalidFragmentId(field, message) {
 
 function validatePromptFragment(fragment, valuePath, errors) {
   if (!isRecord(fragment)) { errors.push(`${valuePath} 必须是对象`); return; }
-  checkExactKeys(fragment, ["id", "tag", "description", "camera_settings", "character_id", "weight", "enabled"], valuePath, errors);
-  if (fragment.id !== undefined && !storyPromptFragmentIdPattern.test(fragment.id)) errors.push(`${valuePath}.id 不是有效 Prompt 片段 ID`);
+  checkExactKeys(fragment, ["tag", "description", "camera_settings", "character_id", "weight", "enabled"], valuePath, errors);
   const textKeys = ["tag", "description"].filter((key) => Object.hasOwn(fragment, key));
   if (textKeys.length !== 1) errors.push(`${valuePath} 必须且只能包含 tag、description 之一`);
   else checkNonemptyText(fragment[textKeys[0]], `${valuePath}.${textKeys[0]}`, errors);
@@ -40,7 +39,21 @@ function validatePromptFragment(fragment, valuePath, errors) {
   if (fragment.enabled !== undefined && typeof fragment.enabled !== "boolean") errors.push(`${valuePath}.enabled 必须是布尔值`);
 }
 
-export function preparePromptForPersistence(prompt, { baselinePrompt, createFragmentId } = {}) {
+export function preparePromptForPersistence(prompt) {
+  const prepared = structuredClone(prompt);
+  for (const category of storyPromptCategories) {
+    for (const [index, fragment] of (Array.isArray(prepared?.[category]) ? prepared[category] : []).entries()) {
+      if (isRecord(fragment) && Object.hasOwn(fragment, 'id')) {
+        const field = `${category}[${index}].id`;
+        throw invalidFragmentId(field, `${field}：本页词条不保存 id，请重新读取当前 Prompt`);
+      }
+    }
+  }
+  return prepared;
+}
+
+// 只有会被下层引用的共享词条拥有持久身份；身份只在当前所属层内有效。
+export function prepareSharedPromptForPersistence(prompt, { baselinePrompt, createFragmentId } = {}) {
   const prepared = structuredClone(prompt);
   const baselineIds = new Set(storyPromptCategories.flatMap((category) => (
     Array.isArray(baselinePrompt?.[category]) ? baselinePrompt[category] : []

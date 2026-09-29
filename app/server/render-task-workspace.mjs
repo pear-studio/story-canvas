@@ -196,12 +196,13 @@ export async function readWorkspaceTaskResults(projectRoot, projectId, taskId, p
     const state = await readRenderTaskState(projectDirectory, taskId);
     if (!state) throw Object.assign(new Error("任务不存在"), { status: 404, code: "task_not_found" });
     items = state.items.filter(item => item.status === "available" && item.file).map(item => ({
-      id: item.id, file: item.file, url: mediaUrl(projectId, item.file),
+      id: item.id, candidate_id:item.candidate_id, page_key:item.page_key, file: item.file, url: mediaUrl(projectId, item.file),
     }));
   }
-  const images = await Promise.all(items.map(async item => (
-    await resolveExistingProjectMedia(projectDirectory, item.file) ? { id: item.id, url: item.url } : null
-  )));
+  const images = await Promise.all(items.map(async item => {
+    const media=await resolveExistingProjectMedia(projectDirectory,item.file);
+    return media?{id:item.id,url:item.url,absolute_file:media.target,...(item.candidate_id?{candidate_id:item.candidate_id}:{}),...(item.page_key?{page_key:item.page_key}:{})}:null;
+  }));
   return images.filter(Boolean);
 }
 

@@ -21,7 +21,7 @@ export function ModelSettingEditor(props:ModelSettingEditorProps) {
   async function enable() {
     setSaving(true);setError('');
     const empty=()=>({population:[],person:[],setting:[],camera:[],avoid:[]});
-    const prompt=modelId==='anima'?{identity:{prompt:empty(),lora:null},variants:Object.fromEntries(props.character.visual.variants.map(v=>[v.id,{prompt:empty(),loras:[],identity_disabled:[]}]))}:{prompt_name:props.character.name,variants:Object.fromEntries(props.character.visual.variants.map(v=>[v.id,{text:'',reference_images:[]}]))};
+    const prompt=modelId==='anima'?{identity:{prompt:empty(),lora:null},variants:Object.fromEntries(props.character.visual.variants.map(v=>[v.id,{prompt:empty(),loras:[]}]))}:{prompt_name:props.character.name,variants:Object.fromEntries(props.character.visual.variants.map(v=>[v.id,{text:'',reference_images:[]}]))};
     try {const result=await saveSettingPrompt(props.kind??'character',props.projectId,{...character,prompt},prompt);props.onSaved({...result,model_id:modelId} as Partial<WorkbenchCharacter>);}
     catch(cause){setError(cause instanceof Error?cause.message:String(cause));}finally{setSaving(false);}
   }

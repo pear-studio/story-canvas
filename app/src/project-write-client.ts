@@ -81,9 +81,9 @@ async function explicitProjectFetch(input: RequestInfo | URL, init: RequestInit)
   return globalThis.fetch(input, { ...init, headers });
 }
 
-async function coordinatedProjectFetch(input: RequestInfo | URL, init: RequestInit, requireRevision = true): Promise<Response> {
+async function coordinatedProjectFetch(input: RequestInfo | URL, init: RequestInit, requireRevision = true, projectId?: string): Promise<Response> {
   const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, window.location.origin);
-  const project = projectRequest(url);
+  const project = projectId ? {projectId} : projectRequest(url);
   if (!project) return globalThis.fetch(input, init);
 
   const previous = queues.get(project.projectId) ?? Promise.resolve();
@@ -145,8 +145,8 @@ export function mutateFacts(input: RequestInfo | URL, init: RequestInit = {}) {
   return coordinatedProjectFetch(input, init);
 }
 
-export function mutateTargetFacts(input: RequestInfo | URL, init: RequestInit = {}) {
-  return coordinatedProjectFetch(input, init, false);
+export function mutateTargetFacts(input: RequestInfo | URL, init: RequestInit = {}, projectId?: string) {
+  return coordinatedProjectFetch(input, init, false, projectId);
 }
 
 export function deriveFromFacts(input: RequestInfo | URL, init: RequestInit = {}) {

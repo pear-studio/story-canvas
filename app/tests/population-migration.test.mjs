@@ -6,13 +6,25 @@ import {migratePopulationDocument,migrateProjectPopulation} from '../server/popu
 const document=()=>({$schema:'https://storyvisualizer.local/schemas/story-page-prompt.schema.json',models:{
   anima:{subject:[{id:'token-111111111111',tag:'1girl'},{id:'token-222222222222',tag:'couch',weight:1.2,enabled:false},{id:'token-333333333333',tag:'on_stomach'}],person:[],setting:[],camera:[],avoid:[]},qwen:{text:'unchanged'}
 }});
-test('一次性迁移保留全部片段属性及未绑定身份，不改其他模型',()=>{
+test('一次性迁移保留词条属性及未绑定身份，移除全部本页 ID，不改其他模型',()=>{
  const before=document(),after=migratePopulationDocument(before,{couch:'setting',on_stomach:'person'});
  assert.equal(after.models.anima.subject,undefined);assert.equal(before.models.anima.subject.length,3);
- assert.deepEqual(after.models.anima.setting,[before.models.anima.subject[1]]);
- assert.deepEqual(after.models.anima.person,[before.models.anima.subject[2]]);
+ assert.deepEqual(after.models.anima.setting,[{tag:'couch',weight:1.2,enabled:false}]);
+ assert.deepEqual(after.models.anima.person,[{tag:'on_stomach'}]);
+ assert.deepEqual(after.models.anima.population,[{tag:'1girl'}]);
  assert.equal(after.models.anima.person[0].character_id,undefined);assert.deepEqual(after.models.qwen,before.models.qwen);
  assert.throws(()=>migratePopulationDocument(before,{}),/未审核分类/);
+ const current=structuredClone(after);current.models.anima.camera=[{id:'token-444444444444',description:'side view'}];
+ assert.deepEqual(migratePopulationDocument(current,{}).models.anima.camera,[{description:'side view'}]);
+ assert.equal(current.models.anima.camera[0].id,'token-444444444444','不修改传入文档');
+});
+test('角色和场景的共享词分类迁移保留持久 ID',()=>{
+ const row={id:'token-111111111111',description:'quiet visitor'};
+ const empty=()=>({subject:[],person:[],setting:[],camera:[],avoid:[]});
+ const before={models:{anima:{identity:{prompt:{...empty(),subject:[row]},lora:null},variants:{default:{prompt:empty(),loras:[]}}}}};
+ const after=migratePopulationDocument(before,{'quiet visitor':'person'},'character');
+ assert.deepEqual(after.models.anima.identity.prompt.person,[row]);
+ assert.deepEqual(after.models.anima.variants.default.prompt.population,[]);
 });
 test('预览不写文件，过期指纹拒绝，应用前备份，重复执行无写入',async t=>{
  const base=path.resolve(import.meta.dirname,'../../Saved/Tests');await mkdir(base,{recursive:true});

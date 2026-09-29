@@ -15,7 +15,7 @@ function outlineEditor(kind, label) {
       details: '只读取此目标，不展开全故事；返回 document 和 save。编辑 document 后按 save.args 保存，不需要 facts 或文件写工具。',
       execute: async args => {
         const draft = await readFactDraft('story', kind, args.project_id, args[`${kind}_id`]);
-        return { document: draft.document, save: { operation: `${prefix}.save`, args: {
+        return { document: draft.document,...(kind==='sequence'||kind==='chapter'?{images:{operation:'candidate.sheet',args:{project_id:args.project_id,[`${kind}_id`]:args[`${kind}_id`]}}}:{}), save: { operation: `${prefix}.save`, args: {
           ...args, expected_sha256: draft.expected_sha256, expected_context_sha256: draft.expected_context_sha256,
         }, document_parameter: 'document' } };
       },

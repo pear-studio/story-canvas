@@ -6,18 +6,18 @@ export const pageEditHelp = {
     example:{section:'content',changes:{dialogue:[{id:'dialogue-012345abcdef',mode:'speech',speaker:'alice',text:'原对白的新文字'},{mode:'narration',text:'次日',position:'top'}]}},
   },
   fragments: {
-    summary:'Anima 本页片段字段和 ID 的增删改',
-    details:'section:prompt 的 models.anima 按 population/person/setting/camera/avoid 分组。population 仅用于人数 tag 和 solo/no_humans；普通词严禁写入。person 是人物外观、姿态、身体、动作和关系，可不带 character_id，表示未绑定词条，不需要创建其他分类。setting 为环境物体光线，camera 为镜头，avoid 为负向。片段使用 tag 或 description 二选一，不能把两个字段留在同一片段中；可带 weight、enabled，人物片段按读取结构保留 character_id/role。已有片段保留自身 id，新增省略 id 由服务端生成；换顺序时 ID 跟随片段，不能按索引转给另一词条。数组整项替换，保留未修改条目。Prompt 不是字符串数组，不把词库返回的说明对象直接保存。不要把重复的继承词拷成本页片段；改继承词用 inheritance。切换 tag/description 时数组中的新对象只留所需字段。',
-    example:{section:'prompt',changes:{models:{anima:{camera:[{description:'wide shot'}]}}}},
+    summary:'Anima 本页有序词条与共享词条身份',
+    details:'Prompt 统一用 prompt.read/save。Anima 页面 document 按 population/person/setting/camera/avoid 分组，不含 models 外壳。population 仅人数 tag 和 solo/no_humans；普通词严禁写入。person 是人物外观、姿态、身体、动作和关系，可不带 character_id；setting 是环境物体光线，camera 是镜头，avoid 为负向。词条使用 tag 或 description 二选一，可带 weight、enabled；人物按读取结构保留 character_id/role。本页词条不带 id，数组直接表达增删改排序。角色／场景共享词保留原 id，新增省略，由服务端生成；不得自造或跨基础／子设定复制 id。数组完整替换并保留未修改项，不是字符串数组，不保存词库说明对象。不要重复拷贝继承词；继承调整用 inheritance。',
+    example:{target:{kind:'page',id:'page-001',model_id:'anima'},changes:{camera:[{description:'wide shot'}]}},
   },
   inheritance: {
     summary:'Anima 继承来源、调整键与恢复继承',
-    details:'只用于 models.anima.inheritance。来源键为 character:<角色ID>:<子设定ID> 或 scene:<场景ID>:<子设定ID>，必须是当前页面引用。词条键取原 tag/description：转小写，下划线换空格，合并空白并去首尾空白；avoid 词条加 negative: 前缀。值只允许 enabled（布尔）与 weight（0.2–10）。设定层 identity_overrides/identity_disabled 不是页面字段。局部保存中将某个调整键设为 null 即恢复继承；不删除上游词条，也不复制上游全文。需要确认来源与实际原词时用 prompt.context；不从最终拼接的 Prompt 反推键。',
-    example:{section:'prompt',changes:{models:{anima:{inheritance:{'scene:study:default':{day:{enabled:false},'negative:blurry':{weight:1.2}}}}}}},
-    restore:{section:'prompt',changes:{models:{anima:{inheritance:{'scene:study:default':{day:null}}}}}},
+    details:'先 prompt.sources 查询完整来源和词条 key。页面 inheritance 的来源为 character:<角色ID>:<子设定ID> 或 scene:<场景ID>:<子设定ID>，必须对应最终引用；内部 key 为 identity:token-… 或 variant:token-…，不能从原词或顺序猜。子设定只用 identity_overrides 调整基础，key为identity:token-…。值允许 enabled（布尔）与 weight（0.2–10）。字段缺失才继承；显式设置即使等于上游也保留，上游改字仍关联同一条。null删除一个字段恢复该字段，整个key置null恢复整条；不删除上游词。已有失效覆盖可原样保留或明确清理，不能新增无效key。新增来源先读source_versions，合入原保存参数。',
+    example:{target:{kind:'page',id:'page-001',model_id:'anima'},changes:{inheritance:{'scene:study:default':{'identity:token-012345abcdef':{enabled:false},'variant:token-fedcba543210':{weight:1.2}}}}},
+    restore:{changes:{inheritance:{'scene:study:default':{'identity:token-012345abcdef':{enabled:null}}}}},
   },
   qwen: {
     summary:'Qwen 整段文字覆盖及恢复继承',
-    details:'按读取结果编辑 models.qwen；text_overrides/reference_overrides 使用读取或 prompt.context 返回的来源键。文字是整段覆盖，不能按 Anima 词条格式填写。局部保存中将对应覆盖键设 null 恢复继承；不要回写只读展开结果。保留其他模型分支。',
+    details:'prompt.read 指定 model_id:qwen，document 不含 models 外壳。base范围只含prompt_name；variant为text/reference_images。页面text_overrides/reference_overrides用prompt.sources返回的来源；文字整段覆盖，不用Anima词条格式。覆盖键设null恢复继承，不回写只读展开结果。standalone只用本页全文和附图；改为settings之前先读取所需来源及source_versions。其他模型分支始终保留。',
   },
 };

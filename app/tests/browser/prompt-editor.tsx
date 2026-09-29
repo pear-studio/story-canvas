@@ -15,7 +15,8 @@ function TextHarness() {
 }
 
 const character: WorkbenchCharacter = {
-  id: "alice", name: "艾莲", description: "档案描述", profile_sha256: "profile", visual_sha256: "visual", prompt_sha256: "prompt", style: null, pages: [],
+  id: "alice", name: "艾莲", description: "档案描述", profile_sha256: "profile", visual_sha256: "visual", prompt_sha256: "prompt", style: null, pages: [], model_id: 'qwen',
+  prompt_scope_versions: { qwen: { base: 'base-version', variants: { day: 'day-version', night: 'night-version' } } },
   visual: { variants: [{ id: "day", name: "白天" }, { id: "night", name: "夜晚" }] },
   prompt: {
     prompt_name: "艾莲",
@@ -28,9 +29,17 @@ const character: WorkbenchCharacter = {
 
 function SettingHarness() {
   const [current, setCurrent] = useState(character);
-  const settingId = new URLSearchParams(location.search).get("variant") ?? "profile";
-  return <SettingView kind="character" projectId="test" character={current} initialSettingId={settingId} busy={false}
-    onSaved={(replacement) => setCurrent((value) => ({ ...value, ...replacement }))} />;
+  const [settingId, setSettingId] = useState(new URLSearchParams(location.search).get("variant") ?? "profile");
+  return <><nav>
+    <button onClick={() => setSettingId('profile')}>打开基础</button>
+    <button onClick={() => setSettingId('day')}>打开白天</button>
+    <button onClick={() => setSettingId('night')}>打开夜晚</button>
+    <button onClick={() => setCurrent(value => ({ ...value, prompt_sha256: `${value.prompt_sha256}-external`,
+      prompt: { ...value.prompt, variants: { ...value.prompt.variants, night: { text: '外部更新的夜晚描述' } } },
+      prompt_scope_versions: { qwen: { ...value.prompt_scope_versions!.qwen!, variants: { ...value.prompt_scope_versions!.qwen!.variants, night: 'night-external' } } },
+    }))}>外部更新夜晚</button>
+  </nav><SettingView kind="character" projectId="test" character={current} initialSettingId={settingId} busy={false}
+    onSaved={(replacement) => setCurrent((value) => ({ ...value, ...replacement }))} /></>;
 }
 
 createRoot(document.getElementById("root")!).render(<FeedbackProvider>{location.search.includes("setting") ? <SettingHarness /> : <TextHarness />}</FeedbackProvider>);

@@ -8,6 +8,7 @@ import { readPromptEditContext } from "./prompt-edit-context.mjs";
 import { readPageEditContext, savePageEditChanges } from './page-edit-context.mjs';
 import { readAgentDirectory } from './agent-directory.mjs';
 import { readPageRenderEditor, setPageRenderEditor } from './page-render-editor.mjs';
+import { readPromptScope, savePromptScope, readPromptScopeSources, promptEditorMigration } from './prompt-scope.mjs';
 
 export async function handleAgentRequest({ request, response, decodedPath, projectRoot, config = {}, readFacts, mutateTargetFacts, sendOperation }) {
   const match = /^\/api\/agent\/facts\/(story|character|scene|page)\/([a-z-]+)\/(read|save)$/.exec(decodedPath);
@@ -17,12 +18,20 @@ export async function handleAgentRequest({ request, response, decodedPath, proje
   const pageEditorRead = decodedPath === '/api/agent/page-editor';
   const pageEditorSave = decodedPath === '/api/agent/page-editor/save';
   const pageRender = /^\/api\/agent\/page-render\/(read|set)$/.exec(decodedPath);
+  const promptScope = /^\/api\/agent\/prompt\/(read|save|sources)$/.exec(decodedPath);
   const populationMigration = decodedPath === '/api/agent/population-migration';
   const candidateSheet = decodedPath === '/api/agent/candidate-sheet';
   const directoryRead = decodedPath === '/api/agent/directory';
-  if (request.method !== "POST" || (!populationMigration && !candidateSheet && !match && !creation && !contextRead && !promptContextRead && !directoryRead && !pageEditorRead && !pageEditorSave && !pageRender)) return false;
+  if (request.method !== "POST" || (!promptScope && !populationMigration && !candidateSheet && !match && !creation && !contextRead && !promptContextRead && !directoryRead && !pageEditorRead && !pageEditorSave && !pageRender)) return false;
   const body = await readJsonBody(request);
   if (!body || typeof body !== "object" || Array.isArray(body)) throw new ApiError(400, "invalid_edit_request");
+  if (promptScope) {
+    const action = promptScope[1];
+    const options = {projectRoot,projectId:body.project_id,target:body.target,expectedSha256:body.expected_sha256,changes:body.changes,sourceVersions:body.source_versions,source:body.source};
+    const run = action === 'save' ? savePromptScope : action === 'sources' ? readPromptScopeSources : readPromptScope;
+    sendOperation(200,await (action === 'save' ? mutateTargetFacts : readFacts)(body.project_id,()=>run(options)));
+    return true;
+  }
   if (populationMigration) {
     sendOperation(200,await (body.apply?mutateTargetFacts:readFacts)(body.project_id,({projectDirectory})=>migrateProjectPopulation(projectDirectory,body)));
     return true;
@@ -42,14 +51,16 @@ export async function handleAgentRequest({ request, response, decodedPath, proje
     return true;
   }
   if (pageEditorSave) {
+    if ((body.section ?? 'content') === 'prompt') throw promptEditorMigration('page','prompt',body.page_key?.page_id,body.project_id);
     sendOperation(200, await mutateTargetFacts(body.project_id, () => savePageEditChanges({
-      projectRoot,projectId:body.project_id,pageKey:body.page_key,section:body.section,changes:body.changes,expectedSha256:body.expected_sha256,
+      projectRoot,projectId:body.project_id,pageKey:body.page_key,section:body.section ?? 'content',changes:body.changes,expectedSha256:body.expected_sha256,
     })));
     return true;
   }
   if (pageEditorRead) {
+    if ((body.section ?? 'content') === 'prompt') throw promptEditorMigration('page','prompt',body.page_key?.page_id,body.project_id);
     sendOperation(200, await readFacts(body.project_id, ({ projectDirectory }) => readPageEditContext({
-      projectRoot, projectDirectory, projectId: body.project_id, pageKey: body.page_key, section: body.section, config,
+      projectRoot, projectDirectory, projectId: body.project_id, pageKey: body.page_key, section: body.section ?? 'content', config,
     })));
     return true;
   }
@@ -58,9 +69,10 @@ export async function handleAgentRequest({ request, response, decodedPath, proje
     return true;
   }
   if (promptContextRead) {
-    sendOperation(200, await readFacts(body.project_id, ({ projectDirectory }) => readPromptEditContext({
-      projectRoot, projectDirectory, projectId: body.project_id, pageKey: body.page_key, config,
-    })));
+    sendOperation(200, await readFacts(body.project_id, async ({ projectDirectory }) => {
+      const {page_key,context} = await readPromptEditContext({projectRoot,projectDirectory,projectId:body.project_id,pageKey:body.page_key,config});
+      return {page_key,context,edit:{operation:'prompt.read',args:{project_id:body.project_id,target:{kind:'page',id:page_key.page_id}}}};
+    }));
     return true;
   }
   if (contextRead) {
@@ -75,6 +87,8 @@ export async function handleAgentRequest({ request, response, decodedPath, proje
     return true;
   }
   const [, domain, kind, action] = match;
+  const migration = promptEditorMigration(domain,kind,body.target_id,body.project_id);
+  if (migration) throw migration;
   const target = { domain, kind, projectId: body.project_id, targetId: body.target_id };
   if (action === "read") {
     sendOperation(200, await readFacts(body.project_id, () => readFactDraft(projectRoot, target)));

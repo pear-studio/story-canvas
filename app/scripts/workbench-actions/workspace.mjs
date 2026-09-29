@@ -3,6 +3,7 @@ import { schema, string, object, pagination, paginate, invalid } from './contrac
 import { project } from './navigation.mjs';
 import { putProject } from './project-settings.mjs';
 import { jsonArtifact } from './http-action.mjs';
+import {waitResultImages} from './wait-result-images.mjs';
 import { waitForTasks } from './task-wait.mjs';
 import {readOperationRecord} from './operation-records.mjs';
 const get = async path => (await requestWorkbench(path)).value;
@@ -19,9 +20,10 @@ async function waitForSelection(args,execution={}) {
   if(new Set(targets.map(t=>JSON.stringify([t.project_id,t.task_id,t.purpose??'candidate']))).size!==targets.length)throw invalid('targets 不能包含重复任务');
   const result=await waitForTasks({...args,targets,until:record?'all_terminal':args.until},{signal:execution.signal,
     read:async(identity,signal)=>pick(taskSummary((await requestWorkbench(taskPath(identity)+'&view=summary',{signal})).value.task),['status','item_counts','progress','current_page_key','pending_control','error','failures'])});
-  if(!record)return result;
+  const images=await waitResultImages(result,{request:requestWorkbench,signal:execution.signal});
+  if(!record)return {...result,...images};
   const problems=result.tasks.filter(t=>t.error || ['failed','cancelled','incomplete'].includes(t.task?.status??t.status));
-  return {batch_id:args.batch_id,reason:result.reason,elapsed_ms:result.elapsed_ms,submission:submissionCounts(record),summary:result.summary,
+  return {...images,batch_id:args.batch_id,reason:result.reason,elapsed_ms:result.elapsed_ms,submission:submissionCounts(record),summary:result.summary,
     all_terminal:result.all_terminal,all_succeeded:result.all_succeeded && record.results.every(r=>r.status==='submitted'),
     ...(problems.length?{problems:problems.slice(0,5),problems_total:problems.length}:{}),
     ...(!result.all_terminal?{wait:{operation:'task.wait',args:{batch_id:args.batch_id}}}:{}),
@@ -114,7 +116,7 @@ export const workspaceActions = {
   'task.wait': {
     summary:'等待单项或整批任务终态并核验结果数量',
     parameters:schema({batch_id:string('generation.batch 的批次 ID；与 targets 二选一'),targets:{type:'array',minItems:1,maxItems:32,description:'手动选择任务；最多32项',items:schema({...taskIdentity,after_cursor:string('上次 wait 返回的 cursor；首次可省略')},['project_id','task_id'])},until:{type:'string',enum:['terminal','all_terminal','change'],description:'targets 默认 terminal；batch_id 固定 all_terminal'},wait_ms:{type:'integer',minimum:0,maximum:60000,description:'默认60000毫秒；0只读快照，不能超过60000'}},[]),
-    details:'批量生成后直接传 batch_id，不抄任务列表。一次最多等60秒，超时照 wait.args 续等，不用 Shell sleep、不重提生成。批次仅返回计数和最多5项异常；逐项状态用 task.batch.read。all_terminal 表示任务已结束，all_succeeded 才表示全部提交且成功；失败、取消或未提交不算成功。targets 模式仍支持任一终态或进度变化。停止等待不取消任务；取消须 task.cancel。批次回执保存在 Saved，重启可用，清理 Saved 后按 task.list/history 找原任务。',
+    details:'批量生成后直接传 batch_id，不抄任务列表。一次最多等60秒，超时照 wait.args 续等，不用 Shell sleep、不重提生成。终态结果附带本任务图片绝对路径（总计最多12张、最多读取4个任务），用 read_image 查看；更多图片按返回的 task.results 分页入口查询，无需 candidate.list。图片查询失败不改变任务成功状态。批次返回计数和最多5项异常；逐项状态用 task.batch.read。all_terminal 表示任务已结束，all_succeeded 才表示全部提交且成功；失败、取消或未提交不算成功。targets 模式仍支持任一终态或进度变化。停止等待不取消任务；取消须 task.cancel。批次回执保存在 Saved，重启可用，清理 Saved 后按 task.list/history 找原任务。',
     example:{targets:[{project_id:'demo',task_id:'render-example'}],wait_ms:60000},
     execute:waitForSelection,
   },

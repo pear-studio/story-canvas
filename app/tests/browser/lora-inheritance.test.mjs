@@ -17,12 +17,13 @@ test('项目 LoRA 默认收起，角色 LoRA 归入引用 Prompt，覆盖与恢�
  assert.equal(await page.getByRole('combobox',{name:'人物·未绑定第 3 项 Prompt'}).count(),1);
  await other.fill('standing');await other.press('Tab');
  let population=JSON.parse(await page.locator('#draft').textContent()).person;
- assert.equal((population.find(f=>f.id==='token-222222222222').tag ?? population.find(f=>f.id==='token-222222222222').description),'standing');
+ assert.equal((population[0].tag ?? population[0].description),'standing');
+ assert.ok(population.every(fragment => fragment.id === undefined));
  assert.equal(JSON.parse(await page.locator('#draft').textContent()).population[0].tag,'1girl');
  await page.getByRole('button',{name:'增加 boy 人数',exact:true}).click();
  population=JSON.parse(await page.locator('#draft').textContent()).person;
  assert.ok(population.some(f=>(f.tag??f.description)==='standing'));assert.ok(population.some(f=>f.tag==='couch'));
- assert.equal(population.find(f=>f.id==='token-444444444444').enabled,false);
+ assert.equal(population.find(f=>f.tag==='thighs').enabled,false);
  const project=page.getByRole('region',{name:'本页 LoRA',exact:true});await project.locator('summary').first().waitFor();assert.equal(await project.locator('details').first().evaluate(e=>e.open),false);
  assert.equal(await project.getByText('character.safetensors',{exact:true}).count(),0);
  await page.getByTitle('展开角色引用').click();

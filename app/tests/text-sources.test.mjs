@@ -75,7 +75,7 @@ function characterPrompt() {
   return {
     $schema: CHARACTER_PROMPT_SCHEMA_ID,
     identity: { prompt: structuredClone(prompt), lora: null },
-    variants: { uniform: { prompt, loras: [], identity_disabled: [] } },
+    variants: { uniform: { prompt, loras: [], identity_overrides: {} } },
   };
 }
 

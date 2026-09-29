@@ -12,7 +12,7 @@ export function mapModelPrompts(document, transform) {
   return {...structuredClone(document),models:Object.fromEntries(promptModelEntries(document).map(([id,value])=>[id,transform(structuredClone(value),id)]))};
 }
 export function emptySettingVariant(modelId) {
-  return modelId==='anima'?{prompt:modelAdapter('anima').emptyPrompt(),loras:[],identity_disabled:[]}:{text:'',reference_images:[]};
+  return modelId==='anima'?{prompt:modelAdapter('anima').emptyPrompt(),loras:[]}:{text:'',reference_images:[]};
 }
 export function emptySettingPrompt(modelId, name, variantIds) {
   return {
@@ -40,7 +40,7 @@ export function makeModelPromptDocument(schema, id, prompt) {
   const { $schema: _schema, ...value } = structuredClone(prompt);
   return { $schema: schema, models: { [id]: value } };
 }
-export function validateModelPromptDocument(document, kind) {
+export function validateModelPromptDocument(document, kind, { baselinePrompt } = {}) {
   const schema=kind==='page'?'https://storyvisualizer.local/schemas/story-page-prompt.schema.json':'https://storyvisualizer.local/schemas/character-prompt.schema.json';
   if (document?.$schema !== schema) return ['模型 Prompt 文档 $schema 不匹配'];
   if (!isRecord(document.models) || !Object.keys(document.models).length) return ['models 必须包含至少一个模型输入'];
@@ -55,7 +55,9 @@ export function validateModelPromptDocument(document, kind) {
       errors.push(`models.${id}: 设定顶层不接受页面 LoRA 字段；Anima 使用 identity.lora 和 variants 内的 loras/lora_overrides`);
     }
     errors.push(...validateLoraOverrides(lora_overrides, `models.${id}.lora_overrides`));
-    errors.push(...adapter[kind==='page'?'validatePagePrompt':'validateSettingPrompt']({$schema:schema,...prompt}).map(message=>`models.${id}: ${message}`));
+    errors.push(...adapter[kind==='page'?'validatePagePrompt':'validateSettingPrompt']({$schema:schema,...prompt}, {
+      ...(baselinePrompt === undefined ? {} : { baselinePrompt: modelPrompt(baselinePrompt, id) ?? {} }),
+    }).map(message=>`models.${id}: ${message}`));
     if (loras!==undefined) {
       if (!Array.isArray(loras)) errors.push(`models.${id}.loras 必须是数组`);
       else for(const [index,lora] of loras.entries()) {

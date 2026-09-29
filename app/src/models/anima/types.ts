@@ -5,6 +5,9 @@ export const promptCategories = ["population","person","setting","camera","avoid
 export type PromptCategory = typeof promptCategories[number];
 export type PromptFragment = {
   id?: string;
+  /** 仅继承解析结果携带，不写入本地 Prompt。 */
+  inheritance_key?: string;
+  inheritance_source?: string;
   tag?: string;
   description?: string;
   camera_settings?: import("../../../shared/camera-prompt.mjs").CameraSettings;
@@ -22,8 +25,6 @@ export type CharacterPromptSetting = {
   prompt: PagePrompt;
   loras: CharacterLora[];
   lora_overrides?: import("../../../shared/lora-inheritance.mjs").LoraOverrides;
-  /** 本造型排除的 identity.prompt 文本键（tag/description 文本）；必有，可为空数组。 */
-  identity_disabled: string[];
   identity_overrides?: InheritedAdjustments;
 };
 export type CharacterPromptIdentity = {

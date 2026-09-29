@@ -16,6 +16,12 @@ StoryCanvas 仍是独立的 Node + React 应用。当前内置 Anima Basic 与 Q
   切换不会清空另一份输入；首次 Anima → Qwen 复制有效正向全文，之后只在用户点击重新带入时更新。
 - Anima 原词条组件、词库、分类规则、机位和逐词继承由适配器复用。
   角色/场景缺少 Anima 输入时，可在设定页明确创建；不从 Qwen 自由文本猜测分类词条。
+- Anima 本页词条无持久 ID；共享词保留稳定 ID，继承定位由 `identity:`／`variant:` 加 ID 组成。
+  `identity_overrides` 和页面 `inheritance` 逐字段保存显式覆盖，不再按正文匹配，也不使用 `identity_disabled`。
+  网页临时行 ID 不进入页面文件；共享词的 ID 由服务端分配，修改与排序时保留。
+- Agent Prompt 读写由 `prompt-scope.mjs` 按页面模型、设定基础或单个子设定收窄；版本覆盖该范围与必要依赖。
+  保存先核验读取版本，再在写锁内合并当前文件，其他模型和子设定不被旧草稿覆盖。
+  网页设定页按同样范围保存，整页内容、Prompt、嵌字仍由一个事务提交；新引用必须携带其已读来源版本。
 - Qwen `composition:"standalone"` 直接使用全文及本页附图，不追加全局、角色或场景文字。
   已有 Qwen 的 `settings` 组合方式继续保留；本轮不迁移 Qwen 项目。
 - 项目 LoRA 对使用对应 profile 的全部页面实时生效；Anima 角色／场景的 `identity.lora`
@@ -40,6 +46,8 @@ StoryCanvas 仍是独立的 Node + React 应用。当前内置 Anima Basic 与 Q
 | `app/server/model-adapters.mjs` | 显式注册标识、架构、默认配置、Prompt 校验/准备/编译、profile Prompt 规则 |
 | `app/server/models/<model>/` | 模型原生契约和编译，不读写项目或候选 |
 | `app/server/model-prompts.mjs` | 模型容器、模型投影和保持其他输入的替换操作 |
+| `app/server/prompt-scope.mjs` | Prompt 范围读写、来源查询与窄范围版本检查 |
+| `app/shared/prompt-inheritance.mjs` | 稳定继承定位、显式字段覆盖及共享词条持久化 |
 | `app/server/page-render-settings.mjs` | 本页设置、首次初始化、显式重新带入及并发检查 |
 | `app/src/models/registry.tsx` | 显式注册 PageEditor、SettingEditor、OverviewEditor |
 | `app/src/models/<model>/` | 模型专用交互；宿主传草稿和 onChange，不在编辑器直接写页面文件 |

@@ -3,6 +3,7 @@ import {readFile,readdir,mkdir,copyFile} from 'node:fs/promises';
 import path from 'node:path';
 import {createHash,randomUUID} from 'node:crypto';
 import {isPopulationControl} from '../shared/prompt-population.mjs';
+import {inheritanceCategories} from '../shared/prompt-inheritance.mjs';
 import {validateModelPromptDocument} from './model-prompts.mjs';
 import {factStorage} from './story-facts.mjs';
 import {ApiError} from './http-support.mjs';
@@ -24,7 +25,11 @@ export function migratePopulationDocument(document, assignments, kind='page') {
     delete prompt.subject;prompt.population=moved.population;
     for(const category of ['person','setting','camera','avoid'])prompt[category]=[...moved[category],...(prompt[category]??[])];
   }
-  if(kind==='page')convert(model);
+  if(kind==='page') {
+    convert(model);
+    // 一次性迁移直接产出当前页面契约；持久身份只属于角色/场景共享词。
+    for(const category of inheritanceCategories)for(const fragment of model[category]??[])delete fragment.id;
+  }
   else {convert(model.identity.prompt);for(const v of Object.values(model.variants))convert(v.prompt);}
   return next;
 }

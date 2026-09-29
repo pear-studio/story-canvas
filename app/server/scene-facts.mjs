@@ -10,6 +10,7 @@ import { factStorage as storage, commitFactChanges } from './story-facts.mjs';
 import { ApiError } from './http-support.mjs';
 import { assertNoActivePageRender } from './render-task-storage.mjs';
 import { sceneSource } from './prompt-contract.mjs';
+import { settingPromptRemovalDiagnostics } from './prompt-source-context.mjs';
 import { SCENE_INDEX_SCHEMA_ID, SCENE_PROMPT_SCHEMA_ID, sceneIdPattern, validateSceneIndexDocument, validateSceneProfileDocument, validateSceneVisualDocument, validateScenePromptDocument, defaultSceneFacts } from './scene-files.mjs';
 
 export async function optionalFact(directory, relative, fallback = null) {
@@ -82,7 +83,7 @@ export async function commitSceneFact(root, context, readDocument, kind, { befor
     next = mapModelPrompts(next, (input, modelId) => modelAdapter(modelId).prepareSettingPrompt(input, {baselinePrompt:baselineModels.get(modelId),createFragmentId:()=>`token-${randomBytes(6).toString('hex')}`}));
     const visual = await sceneFact(project.projectDirectory, id, 'visual');
     if (visualIdentity(visual) !== context.upstream.visual.identity_sha256) throw new ApiError(409, 'scene_edit_upstream_conflict');
-    assertValid(validateScenePromptDocument(next));
+    assertValid(validateScenePromptDocument(next, { baselinePrompt: baseline }));
     const expected = visual.variants.map(v => v.id).sort();
     if (promptModelEntries(next).some(([,input]) => JSON.stringify(Object.keys(input.variants).sort()) !== JSON.stringify(expected))) fail('scene_prompt_visual_mismatch');
   } else if (kind === 'visual') {
@@ -95,9 +96,11 @@ export async function commitSceneFact(root, context, readDocument, kind, { befor
     writes.push({ relative: relative(id, 'prompt'), before, after });
   }
   assertValid(validators[kind](next));
+  const downstreamDiagnostics = kind === 'prompt' ? await settingPromptRemovalDiagnostics(project.projectDirectory,
+    { kind: 'scene', id, before: baseline, after: next }) : [];
   if (beforeCommit) await beforeCommit();
   await commitFactChanges(project.projectDirectory, [...writes, { relative: context.target.relative_path, before: baseline, after: next }]);
-  return { value: next, sha256: hashCanonicalJson(next), downstream_diagnostics: [], target_file: path.join(project.projectDirectory, context.target.relative_path) };
+  return { value: next, sha256: hashCanonicalJson(next), downstream_diagnostics: downstreamDiagnostics, target_file: path.join(project.projectDirectory, context.target.relative_path) };
 }
 export async function createScene(root, projectId, sceneId, { name, beforeCommit } = {}) {
   validId(sceneId);

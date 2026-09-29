@@ -22,6 +22,7 @@ import { storyContentWarnings } from '../shared/story-content-guidance.mjs';
 import { preparePromptWriteAudit, capturePromptAuditInput, auditSavedPagePrompt } from './prompt-write-audit.mjs';
 import { capturePagePromptSnapshot } from './page-render-resolver.mjs';
 import { verifyWritingCorpusSentence } from './writing-corpus.mjs';
+import { assertPagePromptSourceVersions, validatePagePromptInheritance } from './prompt-source-context.mjs';
 const fail=(code,details=[])=>{throw new FactError(code,details);};
 const assertValid=errors=>{if(errors.length)fail('invalid_page_document',errors);};
 const clone=value=>structuredClone(value);
@@ -82,7 +83,7 @@ export async function createPage(root,projectId,owner,{templateId=null,afterPage
     const native={...modelAdapter(render.model_id).emptyPrompt(),...(owner.owner_kind==='scene'?{scene_id:owner.scene_id,scene_variant_id:owner.variant_id}:{}),loras:[]};
     if (templateId !== null) {
       if (render.model_id === 'qwen') native.text = prompt.text;
-      else if (prompt.text.trim()) native.person = [{id:`token-${randomBytes(6).toString('hex')}`,description:prompt.text}];
+      else if (prompt.text.trim()) native.person = [{description:prompt.text}];
     }
     prompt=makeModelPromptDocument(STORY_PAGE_PROMPT_SCHEMA_ID,render.model_id,native);
   }
@@ -139,7 +140,7 @@ export async function deletePage(root,projectId,pageId,{beforeCommit}={}) {
 function checkHash(document,expected,code) {if(!/^[a-f0-9]{64}$/.test(expected??'')||hashCanonicalJson(document)!==expected)fail(code);}
 // 所有验证和引用切换确认先完成，再通过同一事实提交一次落盘；失败回滚由 commitFactChanges 负责。
 export async function savePage(root,projectId,value) {
-  const allowed=new Set(['page_key','content','prompt','reference_inputs','expected_content_sha256','expected_prompt_sha256','expected_context_sha256','lettering','expected_layout_sha256','text_sources','expected_text_sources_sha256']);
+  const allowed=new Set(['page_key','content','prompt','reference_inputs','source_versions','expected_content_sha256','expected_prompt_sha256','expected_context_sha256','lettering','expected_layout_sha256','text_sources','expected_text_sources_sha256']);
   if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(key=>!allowed.has(key))||!value.content||typeof value.content!=='object'||Array.isArray(value.content)||!value.prompt||typeof value.prompt!=='object'||Array.isArray(value.prompt))fail('invalid_page_document',['整页保存需要 content 和 prompt 对象']);
   const pageKey=decodePageKey(value.page_key),pageId=pageKey.page_id;
   const {projectDirectory:directory}=await projectAt(root,projectId);await requirePage(directory,pageId);
@@ -163,6 +164,11 @@ export async function savePage(root,projectId,value) {
   }
   assertValid(validateStoryPageNarrativeDocument(content));assertValid(validateStoryPagePromptDocument(persistedPrompt));
   assertValid(checkPagePromptOverrideReferences(persistedPrompt,content.characters));
+  const finalPrompt = modelPrompt(persistedPrompt, modelId);
+  const sources = await assertPagePromptSourceVersions(directory, { projectId, modelId, narrative: content, prompt: finalPrompt,
+    baselineNarrative: beforeContent, baselinePrompt: modelPrompt(beforePrompt, modelId), sourceVersions: value.source_versions });
+  assertValid(await validatePagePromptInheritance(directory, { projectId, modelId, narrative: content, prompt: finalPrompt,
+    baselinePrompt: modelPrompt(beforePrompt, modelId), sources }));
   const writes=[{relative:pageRelativePath(pageId,'content'),before:beforeContent,after:content},{relative:pageRelativePath(pageId,'prompt'),before:beforePrompt,after:persistedPrompt}];
   const dialogueIds=new Set(content.dialogue.map(item=>item.id));
   const dialogueIdMap=new Map(draftIds.map((id,index)=>[id,content.dialogue[index]?.id]));

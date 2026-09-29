@@ -2,6 +2,14 @@ import { registerFixtureProjects } from "./project-registry-fixture.mjs";
 import {SCENE_INDEX_SCHEMA_ID,SCENE_PROFILE_SCHEMA_ID,SCENE_VISUAL_SCHEMA_ID,SCENE_PROMPT_SCHEMA_ID} from '../server/scene-files.mjs';
 import {PAGES_INDEX_SCHEMA_ID} from '../server/pages-store.mjs';
 import { factFixture } from "./fact-fixture.mjs";
+import { settingPromptSourceVersion } from '../server/prompt-source-context.mjs';
+
+function sceneVersions(fixture, id, scene) {
+  return { qwen: { [`scene:${id}:default`]: settingPromptSourceVersion({
+    projectId: fixture.projectId, kind: 'scene', id, modelId: 'qwen', variantId: 'default',
+    document: scene.prompt, visual: scene.visual,
+  }) } };
+}
 const { read: readStoryNarrativeDraft } = factFixture("story", "narrative");
 const { read: readStoryPromptDraft, save: saveStoryPromptDraft } = factFixture("story", "prompt");
 const { read: readCharacterPromptDraft, save: saveCharacterPromptDraft } = factFixture("character", "prompt");
@@ -315,7 +323,7 @@ test("多参考图按角色、场景、本页顺序编号组装，附图无用�
     reference_images: [{ id: refs[3].id, file: refs[3].file, title: refs[3].title }],
     reference_overrides: { "character:ellen:uniform": refs.slice(0, 2).map((entry) => entry.id) },
   });
-  await saveStoryPromptDraft(fixture.repositoryRoot, draft);
+  await saveStoryPromptDraft(fixture.repositoryRoot, draft, { sourceVersions: sceneVersions(fixture, 'station', scene) });
   const resolved = await resolvePageForRender({ repositoryRoot: fixture.repositoryRoot, projectDirectory: fixture.projectDirectory, pageId: "page-001" });
   const positive = resolved.compiled_page.positive_prompt;
   assert.match(positive, /艾莲：\n<image1>、<image2>：艾莲的身份与服装参考。\n艾莲，银发少女，穿深色学校制服。/);
@@ -379,7 +387,7 @@ test("移除引用连带清理覆盖，场景切换删除旧场景覆盖，未�
   const draft = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
   draft.document.scene_id = "station"; draft.document.scene_variant_id = "default";
   draft.document.text_overrides = { "character:ellen:uniform": "覆盖文字", "scene:station:default": "场景覆盖" };
-  await saveStoryPromptDraft(fixture.repositoryRoot, draft);
+  await saveStoryPromptDraft(fixture.repositoryRoot, draft, { sourceVersions: sceneVersions(fixture, 'station', scene) });
   const narrative = await readStoryNarrativeDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
   narrative.document.characters = [];
   const savedNarrative = await mutateSave(fixture, narrative);
@@ -648,30 +656,43 @@ test("override 冲突的基础配置预览不得冒充有效配置审计通过",
   assert.ok(inspection.blockers.some((item) => item.code === "prompt_audit_unavailable"));
 });
 
-test("三个真实 CLI 输出可解析 JSON、退出0并清理会话", async (context) => {
+test("Prompt 语义 CLI 读写三种目标并返回审计，旧 CLI 给出迁移指引", async (context) => {
   const fixture = await createFixture(context);
   await prepareWriteAuditFixture(fixture);
   await mkdir(path.join(fixture.repositoryRoot, "app", "scripts"), { recursive: true });
   await symlink(path.join(sourceRepositoryRoot, "app", "server"), path.join(fixture.repositoryRoot, "app", "server"), "junction");
-  for (const script of ["story-page.mjs", "character-fact.mjs"]) await cp(path.join(sourceRepositoryRoot, "app", "scripts", script), path.join(fixture.repositoryRoot, "app", "scripts", script));
+  for (const script of ["story-page.mjs", "character-fact.mjs", "story-canvas.mjs", "workbench-actions"]) await cp(path.join(sourceRepositoryRoot, "app", "scripts", script), path.join(fixture.repositoryRoot, "app", "scripts", script), { recursive: true });
   await serveCliFixture(context, fixture);
+  const cli = path.join(fixture.repositoryRoot, 'app/scripts/story-canvas.mjs');
+  const inputFile = path.join(fixture.repositoryRoot, 'prompt-input.json'), outputFile = path.join(fixture.repositoryRoot, 'prompt-output.json');
+  const run = async (operation, args) => {
+    await writeJson(inputFile, args);
+    const { stdout, stderr } = await promisify(execFile)(process.execPath, [cli, operation, '--args', inputFile, '--out', outputFile])
+      .catch(async error => { throw new Error(`${operation}: ${await readFile(outputFile, 'utf8')}`, {cause:error}); });
+    assert.equal(stderr, '');
+    assert.ok(JSON.parse(stdout));
+    return readJson(outputFile);
+  };
   for (const [script, kind, id, edit] of [
     ["story-page.mjs", "prompt", "page-001", readStoryPromptDraft],
     ["character-fact.mjs", "page-prompt", "page-101", readCharacterPagePromptDraft],
     ["character-fact.mjs", "prompt", "ellen", readCharacterPromptDraft],
   ]) {
     const session = await edit(fixture.repositoryRoot, fixture.projectId, id);
-    const draft = structuredClone(session.document);
-    if (draft.variants) draft.variants.uniform.text = "斗篷与短裙。";
-    else draft.text = "艾莲转身的瞬间。";
-    session.document = structuredClone(draft);
     const draftFile = path.join(fixture.repositoryRoot, "prompt-draft.json");
     await writeJson(draftFile, session);
-    const { stdout, stderr } = await promisify(execFile)(process.execPath, [path.join(fixture.repositoryRoot, 'app', 'scripts', script), kind, 'save', draftFile]);
-    assert.equal(stderr, "");
-    const output = JSON.parse(stdout);
+    await assert.rejects(promisify(execFile)(process.execPath, [path.join(fixture.repositoryRoot, 'app', 'scripts', script), kind, 'save', draftFile]), error => {
+      const result = JSON.parse(error.stderr);
+      return error.code === 1 && result.error === 'prompt_editor_moved' && result.details[0].next.operation === 'prompt.read';
+    });
+    const target = id === 'ellen'
+      ? {kind:'character',id,model_id:'qwen',scope:'variant',variant_id:'uniform'}
+      : {kind:'page',id,model_id:'qwen'};
+    const editable = await run('prompt.read', {project_id:fixture.projectId,target});
+    const output = await run(editable.save.operation, {...editable.save.args,changes:{text:'斗篷与短裙。'}});
+    assert.equal(output.saved, true);
     assert.equal(output.audit.status, "complete");
-    await access(output.target_file);
+    assert.equal((await run('prompt.read', {project_id:fixture.projectId,target})).document.text, '斗篷与短裙。');
   }
 });
 
@@ -1072,7 +1093,7 @@ test('十张参考图按角色、场景、本页顺序冻结并连接，十一�
   await writeJson(path.join(fixture.projectDirectory, 'scenes/index.json'), { $schema: SCENE_INDEX_SCHEMA_ID, scenes: ['room'] });
   const draft = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, 'page-001');
   Object.assign(draft.document, { scene_id: 'room', scene_variant_id: 'default', reference_images: refs.slice(9).map(({ id, file, title }) => ({ id, file, title })), reference_overrides: { 'character:ellen:uniform': refs.slice(0,5).map(r=>r.id), 'scene:room:default': refs.slice(5,9).map(r=>r.id) } });
-  await saveStoryPromptDraft(fixture.repositoryRoot, draft);
+  await saveStoryPromptDraft(fixture.repositoryRoot, draft, { sourceVersions: sceneVersions(fixture, 'room', scene) });
   const { task, task_directory } = await compileAndPersistPageRenderTask(fixture.repositoryRoot, fixture.projectId, 'page-001', { count: 1, repositoryRoot: fixture.repositoryRoot });
   assert.deepEqual(task.items[0].reference_images.map(r=>r.material_file), refs.map(r=>r.file));
   const workflow = task.snapshot.execution_units[0].workflow.api;

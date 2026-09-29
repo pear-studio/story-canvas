@@ -29,7 +29,7 @@ test("任务图片入口只返回本任务已完成且仍存在的图片，保�
     await mkdir(directory, { recursive: true });
     await writeFile(path.join(directory, "image.png"), "image bytes");
   }
-  const expected = ["first", "last"].map(id => ({ id, url: `/api/projects/demo/media/Outputs/pages/page-001/${id}/image.png` }));
+  const expected = ["first", "last"].map(id => ({ id, url: `/api/projects/demo/media/Outputs/pages/page-001/${id}/image.png`, absolute_file:path.join(projectDirectory,"Outputs","pages","page-001",id,"image.png"),page_key:pageKey }));
   assert.deepEqual(await readWorkspaceTaskResults(root, "demo", id), expected);
   let body;
   const url = new URL(`http://localhost/api/tasks/demo/${id}/results?purpose=candidate`);

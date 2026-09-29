@@ -66,17 +66,9 @@ export async function readPromptContext(projectId, pageKey) {
   })).value;
 }
 
-// 从完整 Prompt 上下文文件取保存目标与草稿提交；只读 context 与 page_key 不进入请求体。
-// 保存目标限于当前上下文契约 page/prompt，身份必须一致，不按 JSON 形状猜测入口。
-export async function savePromptContextDraft(pack) {
-  const fail = message => { throw Object.assign(new Error(message), { code: "invalid_prompt_context_file" }); };
-  if (!pack || typeof pack !== "object" || Array.isArray(pack)) fail("上下文文件不是完整 Prompt 上下文包");
-  const { page_key: pageKey, save, draft } = pack;
-  if (!save || save.domain !== "page" || save.kind !== "prompt") fail("上下文文件缺少 page/prompt 保存目标");
-  if (!pageKey || typeof pageKey.page_id !== "string") fail("上下文文件缺少 page_key.page_id");
-  if (!draft || typeof draft !== "object" || Array.isArray(draft)) fail("上下文文件缺少草稿");
-  if (draft.target_id !== pageKey.page_id) fail(`草稿目标 ${draft.target_id} 与页面 ${pageKey.page_id} 不一致`);
-  return saveFactDraft(save.domain, save.kind, draft);
+// 诊断上下文始终只读；旧文件提交入口给出明确迁移指引。
+export async function savePromptContextDraft() {
+  throw Object.assign(new Error('Prompt 编辑已统一为 prompt.read/save；请用 story-canvas.mjs 重新读取目标模型及 scope，再提交 changes。prompt-context 只读，不能作为保存草稿。'),{code:'prompt_editor_moved'});
 }
 
 export const projectRoute = id => `/api/projects/${encodeURIComponent(id)}`;

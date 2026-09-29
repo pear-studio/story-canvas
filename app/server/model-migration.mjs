@@ -23,11 +23,6 @@ async function read(directory,relative,optional=false) {
     return JSON.parse(await readFile(target,'utf8'));
   } catch(error) {if(optional && error.code==='ENOENT')return null;throw error;}
 }
-function normalizeAnimaSetting(value) {
-  const result=clone(value);
-  for(const variant of Object.values(result.variants))variant.identity_disabled ??= [];
-  return result;
-}
 function settingConfiguration(record,variantId) {
   const prompt=record.prompt,variant=prompt.variants[variantId];
   if(!variant)fail('migration_setting_missing',[record.id,variantId]);
@@ -53,7 +48,7 @@ export async function planModelMigration(root,projectId) {
     const index=await read(directory,`${folder}/index.json`,true);
     for(const id of index?.[folder]??[]) {
       const relative=`${folder}/${id}.prompt.json`,before=await read(directory,relative);
-      const prompt=normalizeAnimaSetting(before);
+      const prompt=clone(before);
       const metadata=await read(directory,`${folder}/${id}.profile.json`);
       records[folder].set(id,{id,name:metadata.name,prompt});
       const native=clone(prompt);

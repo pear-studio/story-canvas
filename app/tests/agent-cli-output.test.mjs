@@ -57,9 +57,8 @@ async function stubServer(testContext) {
     }
     if (fact) return response.end(JSON.stringify({ value: body.document, saved: true }));
     if (request.url === "/api/agent/prompt-context") {
-      return response.end(JSON.stringify({ page_key: body.page_key, save: { domain: "page", kind: "prompt" },
-        draft: { project_id: body.project_id, target_id: body.page_key.page_id, document: { text: "页面提示词。" },
-          expected_sha256: "c".repeat(64), expected_context_sha256: "d".repeat(64) },
+      return response.end(JSON.stringify({ page_key: body.page_key,
+        edit: {operation:'prompt.read',args:{project_id:body.project_id,target:{kind:'page',id:body.page_key.page_id}}},
         context: { status: "complete", note: "只读上下文" } }));
     }
     response.statusCode = 404;
@@ -132,27 +131,23 @@ test("业务已成功而结果落盘失败时：只执行一次，错误保留�
   assert.equal(requests.filter(request => request.url.endsWith("/save")).length, 1, "业务只执行一次");
 });
 
-test("save-context 只提交草稿到声明的 page/prompt 入口；身份不一致拒绝", async t => {
+test("save-context 拒绝只读上下文和旧草稿，不发送保存请求", async t => {
   const { port, requests } = await stubServer(t);
   const { root, scripts } = await fixture(t, { config: JSON.stringify({ port }) });
   const contextFile = path.join(root, "prompt-context.json");
   const pack = JSON.parse((await cli(scripts, "agent-fact.mjs", ["prompt-context", "demo", "v3/page-001"])).stdout);
-  assert.equal(pack.save.domain, "page");
+  assert.equal(pack.edit.operation, 'prompt.read');
+  assert.equal(pack.save, undefined);assert.equal(pack.draft, undefined);
   await writeFile(contextFile, JSON.stringify(pack), "utf8");
-  const saved = JSON.parse((await cli(scripts, "agent-fact.mjs", ["save-context", contextFile])).stdout);
-  assert.equal(saved.saved, true);
-  const submit = requests.find(request => request.url === "/api/agent/facts/page/prompt/save");
-  assert.ok(submit, "提交到 page/prompt save");
-  assert.equal(submit.body.target_id, "page-001");
-  assert.equal(Object.hasOwn(submit.body, "context"), false, "只读上下文不进入请求体");
-  assert.equal(Object.hasOwn(submit.body, "page_key"), false);
-
-  const tampered = { ...pack, draft: { ...pack.draft, target_id: "page-999" } };
-  await writeFile(contextFile, JSON.stringify(tampered), "utf8");
-  await assert.rejects(cli(scripts, "agent-fact.mjs", ["save-context", contextFile]), error => {
-    assert.equal(JSON.parse(error.stderr).error, "invalid_prompt_context_file");
-    return true;
-  });
+  const legacy = { ...pack, save:{domain:'page',kind:'prompt'}, draft:{project_id:'demo',target_id:'page-001',document:{text:'旧草稿'},expected_sha256:'a'.repeat(64),expected_context_sha256:'b'.repeat(64)} };
+  for (const value of [pack, legacy]) {
+    await writeFile(contextFile, JSON.stringify(value), 'utf8');
+    await assert.rejects(cli(scripts, "agent-fact.mjs", ["save-context", contextFile]), error => {
+      assert.equal(JSON.parse(error.stderr).error, "prompt_editor_moved");
+      return true;
+    });
+  }
+  assert.equal(requests.some(request=>request.url.endsWith('/save')),false);
 });
 
 test("revision 请求头透传与错误细节保留", async t => {

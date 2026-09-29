@@ -63,13 +63,13 @@ export async function readFactDraft(root, { domain, kind, projectId, targetId })
 // HTTP 与 CLI 直接调用同一提交逻辑，不托管草稿文件。
 export async function saveFactDraft(root, {
   domain, kind, projectId, targetId, document, expectedSha256, conflictCode,
-  beforeCommit, expectedContextSha256, contextConflictCode = "page_prompt_upstream_conflict",
+  beforeCommit, sourceVersions, expectedContextSha256, contextConflictCode = "page_prompt_upstream_conflict",
 }) {
   const submitted = structuredClone(document);
   const { operation, context } = await currentDraft(root, domain, kind, projectId, targetId);
   if (context.target.sha256 !== expectedSha256) throw new ApiError(409, conflictCode, [targetId]);
   if (expectedContextSha256 !== undefined && hashCanonicalJson(context.upstream) !== expectedContextSha256) throw new ApiError(409, contextConflictCode, [targetId]);
-  return operation.commit(root, context, () => structuredClone(submitted), operation.kind, { beforeCommit });
+  return operation.commit(root, context, () => structuredClone(submitted), operation.kind, { beforeCommit, sourceVersions });
 }
 
 export async function pagePromptContextSha256(projectDirectory, kind, pageId) {

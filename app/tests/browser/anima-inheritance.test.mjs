@@ -26,13 +26,13 @@ test('基础词默认展开且与本地对齐，继承行可开关和改权重�
  assert.equal(await base.locator('.prompt-fragment-reset').isVisible(), true);
  assert.match(await base.locator('summary').innerText(), /调整 1 项/);
  await base.locator('.prompt-fragment-enabled').click();
- assert.deepEqual(JSON.parse(await page.locator('output').textContent()), {});
+ assert.deepEqual(JSON.parse(await page.locator('output').textContent()), { 'identity:token-111111111111': {enabled: true} });
  await base.locator('.prompt-fragment-weight-button').click();
  await base.getByRole('spinbutton').fill('0.8');
  await base.getByRole('button', {name: '确定', exact: true}).click();
- assert.deepEqual(JSON.parse(await page.locator('output').textContent()), { 'long blue hair': {weight: 0.8} });
+ assert.deepEqual(JSON.parse(await page.locator('output').textContent()), { 'identity:token-111111111111': {weight: 0.8, enabled:true} });
  await base.locator('.prompt-fragment-enabled').click();
- assert.deepEqual(JSON.parse(await page.locator('output').textContent()), { 'long blue hair': {weight: 0.8, enabled: false} });
+ assert.deepEqual(JSON.parse(await page.locator('output').textContent()), { 'identity:token-111111111111': {weight: 0.8, enabled: false} });
  assert.match(await base.locator('summary').innerText(), /调整 1 项/);
  await page.screenshot({path: process.env.TEMP + '/story-canvas-inheritance-adjusted.png', fullPage: true});
  await base.locator('.prompt-fragment-reset').click();
@@ -101,5 +101,101 @@ test('生成预览区分无候选与不符候选，二级详情展示实际词�
  assert.equal(await detail.locator('.candidate-prompt-added').innerText(),'stone wall');
  assert.match(await detail.innerText(),/负向 Prompt · 完全一致/);
  await page.screenshot({path:process.env.TEMP+'/story-candidate-difference.png',fullPage:true});
+ assert.deepEqual(errors,[]);
+});
+
+test('显式相等覆盖保留，单字段恢复互不影响，失效项只按明确操作清理', async t => {
+ const {page, errors} = await openHarness(t);
+ const base = page.locator('details.inherited-prompt').first();
+ const receipt = async () => JSON.parse(await page.locator('output').textContent());
+ const key = 'identity:token-111111111111';
+ await base.locator('.prompt-fragment-enabled').click();
+ await base.locator('.prompt-fragment-weight-button').click();
+ await base.getByRole('spinbutton').fill('1.2');
+ await base.getByRole('button', {name:'确定',exact:true}).click();
+ assert.deepEqual(await receipt(), {[key]:{enabled:true,weight:1.2}});
+ await page.getByRole('button',{name:'修改上游',exact:true}).click();
+ assert.match(await base.getByRole('textbox').innerText(),/short green hair/);
+ assert.equal(await base.getByRole('checkbox').isChecked(),true);
+ assert.match(await base.locator('.prompt-fragment-weight-button').innerText(),/1.2/);
+ await base.locator('.prompt-fragment-weight-button').click();
+ await base.getByRole('button',{name:'恢复上游权重',exact:true}).click();
+ assert.deepEqual(await receipt(),{[key]:{enabled:true}});
+ await base.locator('.prompt-fragment-weight-button').click();
+ await base.getByRole('spinbutton').fill('0.8');
+ await base.getByRole('button',{name:'确定',exact:true}).click();
+ await base.locator('.prompt-fragment-weight-button').click();
+ await base.getByRole('button',{name:'恢复开关继承',exact:true}).click();
+ assert.deepEqual(await receipt(),{[key]:{weight:0.8}});
+ assert.equal(await base.getByRole('checkbox').isChecked(),false);
+ await page.getByRole('button',{name:'添加失效调整',exact:true}).click();
+ await base.locator('.prompt-fragment-enabled').click();
+ assert.deepEqual(await receipt(),{[key]:{weight:0.8,enabled:true},'identity:token-999999999999':{enabled:false}});
+ await base.getByRole('button',{name:'清理失效调整',exact:true}).click();
+ assert.deepEqual(await receipt(),{[key]:{weight:0.8,enabled:true}});
+ assert.deepEqual(errors,[]);
+});
+
+test('基础和子设定同 ID 的词保持独立开关，本页草稿行身份稳定且不持久化', async t => {
+ const {page,errors} = await openHarness(t);
+ const base=page.locator('details.inherited-prompt').first();
+ await page.getByRole('button',{name:'加入同 ID 子设定词',exact:true}).click();
+ assert.equal(await base.locator('.prompt-fragment-row').count(),2);
+ await base.locator('.prompt-fragment-enabled').nth(1).click();
+ assert.deepEqual(JSON.parse(await page.locator('output').textContent()),{
+  'identity:token-111111111111':{enabled:false},'variant:token-111111111111':{enabled:false},
+ });
+ const row=page.locator('#local .prompt-fragment-row');
+ const id=await row.getAttribute('data-fragment-id');
+ const input=row.getByRole('combobox');
+ await input.fill('revised local prompt');
+ await input.blur();
+ assert.equal(await row.getAttribute('data-fragment-id'),id);
+ const local=JSON.parse(await page.locator('#persisted-local').textContent());
+ assert.equal(local.person[0].id,undefined);
+ assert.equal(local.person[0].description,'revised local prompt');
+ await input.press('Control+z');
+ assert.equal(await row.getAttribute('data-fragment-id'),id);
+ assert.deepEqual(errors,[]);
+});
+
+test('Anima 设定按当前范围保存，其他范围刷新与保存不丢基础草稿及其原始版本', async t => {
+ const {page,errors}=await openHarness(t,'?scopes');
+ await page.route('**/api/lora-resources',route=>route.fulfill({json:{resources:[],raw:[],errors:[]}}));
+ await page.route('**/api/projects/demo/render-profile',route=>route.fulfill({json:{current_profile_id:'anima-base-v1',render_profiles:[]}}));
+ const saves=[];
+ await page.route('**/api/agent/prompt/save',async route=>{
+  const body=route.request().postDataJSON();saves.push(body);
+  await route.fulfill({json:{document:body.changes,save:{operation:'prompt.save',args:{expected_sha256:body.expected_sha256+'-saved'}}}});
+ });
+ let input=page.getByRole('combobox',{name:'人物第 1 项 Prompt',exact:true});
+ await input.fill('draft base');await input.blur();
+ await page.getByRole('button',{name:'更新未编辑子设定',exact:true}).click();
+ assert.equal(await input.innerText(),'draft base');
+ await page.getByRole('button',{name:'打开日常',exact:true}).click();
+ await page.getByRole('button',{name:'保存 Prompt',exact:true}).waitFor();
+ input=page.getByRole('combobox',{name:'人物第 1 项 Prompt',exact:true});
+ assert.equal(await input.innerText(),'updated variant');
+ await input.fill('saved variant');await input.blur();
+ await page.getByRole('button',{name:'保存 Prompt',exact:true}).click();
+ await page.waitForFunction(()=>document.querySelector('.feedback-toast')?.textContent.includes('已保存'));
+ assert.equal(saves.length,1);
+ assert.deepEqual(saves[0].target,{kind:'character',id:'alice',model_id:'anima',scope:'variant',variant_id:'day'});
+ assert.equal(saves[0].expected_sha256,'day-v2');
+ assert.equal(saves[0].changes.prompt.person[0].description,'saved variant');
+ assert.equal(saves[0].changes.identity,undefined);
+ await page.getByRole('button',{name:'更新基础版本',exact:true}).click();
+ assert.equal(await input.innerText(),'saved variant');
+ await page.getByRole('button',{name:'打开基础',exact:true}).click();
+ await page.getByRole('button',{name:'保存基础设定',exact:true}).waitFor();
+ input=page.getByRole('combobox',{name:'人物第 1 项 Prompt',exact:true});
+ assert.equal(await input.innerText(),'draft base');
+ await page.getByRole('button',{name:'保存基础设定',exact:true}).click();
+ await page.waitForTimeout(150);
+ assert.equal(saves.length,2);
+ assert.equal(saves[1].target.scope,'base');
+ assert.equal(saves[1].expected_sha256,'base-v1');
+ assert.equal(saves[1].changes.identity.prompt.person[0].description,'draft base');
+ assert.equal(saves[1].changes.identity.prompt.person[0].id,'token-111111111111');
  assert.deepEqual(errors,[]);
 });

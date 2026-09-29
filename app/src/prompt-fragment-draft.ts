@@ -8,7 +8,10 @@ export function promptFragmentText(fragment: PromptFragment) {
 function displayPromptFragment(fragment: PromptFragment, category: string, index: number): DisplayPromptFragment {
   const promptType = fragment.tag ? "danbooru" : "custom_description";
   return {
-    id: fragment.id ?? `draft-existing-${category}-${index}`,
+    id: fragment.inheritance_key ?? fragment.id ?? nextDraftId(),
+    ...(fragment.inheritance_key ? { inheritance_key: fragment.inheritance_key } : {}),
+    ...(fragment.inheritance_source ? { inheritance_source: fragment.inheritance_source } : {}),
+    source_index: index,
     prompt_type: promptType,
     prompt_text: promptFragmentText(fragment),
     ...(fragment.camera_settings === undefined ? {} : { camera_settings: fragment.camera_settings }),
@@ -29,9 +32,9 @@ export function displayPromptDraft(prompt: PagePrompt): Record<string, DisplayPr
   ]));
 }
 
-function persistDisplayFragment(fragment: DisplayPromptFragment): PromptFragment {
+function persistDisplayFragment(fragment: DisplayPromptFragment, shared: boolean): PromptFragment {
   return {
-    ...(fragment.id.startsWith("token-") ? { id: fragment.id } : {}),
+    ...(shared && fragment.id.startsWith("token-") ? { id: fragment.id } : {}),
     ...(fragment.prompt_type === "danbooru"
       ? { tag: fragment.prompt_text }
       : { description: fragment.prompt_text }),
@@ -44,17 +47,27 @@ function persistDisplayFragment(fragment: DisplayPromptFragment): PromptFragment
   };
 }
 
-export function persistFragmentList(fragments: DisplayPromptFragment[]): PromptFragment[] {
-  return fragments.map(persistDisplayFragment);
+export function persistFragmentList(fragments: DisplayPromptFragment[], options: { shared?: boolean } = {}): PromptFragment[] {
+  return fragments.map(fragment => persistDisplayFragment(fragment, options.shared === true));
 }
 
-export function persistPromptDraft(prompt: Record<string, DisplayPromptFragment[]>): PagePrompt {
-  return Object.fromEntries(promptCategories.map((category) => [category, (prompt[category] ?? []).map(persistDisplayFragment)])) as unknown as PagePrompt;
+export function persistPromptDraft(prompt: Record<string, DisplayPromptFragment[]>, options: { shared?: boolean } = {}): PagePrompt {
+  return Object.fromEntries(promptCategories.map((category) => [category, persistFragmentList(prompt[category] ?? [], options)])) as unknown as PagePrompt;
+}
+
+/** 引用、LoRA 等旁路字段变化时，保留本地行身份和输入框状态。 */
+export function matchesLocalPromptDraft(draft: Record<string, DisplayPromptFragment[]>, prompt: PagePrompt) {
+  const native = Object.fromEntries(promptCategories.map(category => [category, (prompt[category] ?? []).map(({ id: _id, inheritance_key: _key, ...fragment }) => fragment)]));
+  return JSON.stringify(persistPromptDraft(draft)) === JSON.stringify(native);
 }
 
 let promptDraftSequence = 0;
 
-export function createPromptDraftFragment(): DisplayPromptFragment {
+function nextDraftId() {
   promptDraftSequence += 1;
-  return { id: `draft-new-${promptDraftSequence}`, prompt_type: "danbooru", prompt_text: "" };
+  return `draft-${promptDraftSequence}`;
+}
+
+export function createPromptDraftFragment(): DisplayPromptFragment {
+  return { id: nextDraftId(), prompt_type: "danbooru", prompt_text: "" };
 }

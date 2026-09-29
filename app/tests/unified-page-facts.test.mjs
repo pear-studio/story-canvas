@@ -37,7 +37,10 @@ test('整页保存先验证所有草稿，布局失败不留下内容或Prompt�
 });
 test('整页保存拒绝陈旧Prompt，移除引用时清理对应覆盖',async t=>{
  const f=await fixture(t),request=await f.request();request.content.characters=[{character_id:'missing',variant_id:'default'}];request.prompt.text_overrides={'character:missing:default':'失效角色的覆盖'};
- await savePage(f.root,'test',request);
+ await assert.rejects(savePage(f.root,'test',request),{code:'prompt_source_missing'});
+ assert.deepEqual((await readPageContent(f.directory,'page-001')).characters,[],'新增缺失来源不得产生半次保存');
+ await f.write('pages/page-001.content.json',request.content);
+ await f.write('pages/page-001.prompt.json',request.prompt);
  assert.equal((await readPagePrompt(f.directory,'page-001')).text_overrides['character:missing:default'],'失效角色的覆盖');
  const next=await f.request();next.content.characters=[];next.content.title='修复中';await savePage(f.root,'test',next);
  assert.deepEqual((await readPagePrompt(f.directory,'page-001')).text_overrides,{});

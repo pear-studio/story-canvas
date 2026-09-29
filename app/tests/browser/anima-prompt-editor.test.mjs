@@ -107,7 +107,7 @@ test("独立机位参数带绿色条标识，镜头词识别为标签后保存�
   await page.waitForFunction(() => JSON.parse(document.querySelector("#persisted-camera").textContent)[0].tag === "from above");
   const [fragment] = JSON.parse(await page.locator("#persisted-camera").textContent());
   assert.equal(fragment.camera_settings.direction, "side", "编辑英文不自动改写面板参数");
-  assert.equal(fragment.id, "token-123456789abc");
+  assert.equal(fragment.id, undefined);
   assert.equal(await page.getByLabel("机位控制", { exact: true }).isVisible(), true);
 });
 

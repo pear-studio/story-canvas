@@ -31,10 +31,6 @@
         "fragment": {
           "type": "object",
           "properties": {
-            "id": {
-              "type": "string",
-              "pattern": "^token-[0-9a-f]{12}$"
-            },
             "tag": {
               "type": "string",
               "pattern": "\\S"
@@ -168,10 +164,6 @@
           "items": {
             "type": "object",
             "properties": {
-              "id": {
-                "type": "string",
-                "pattern": "^token-[0-9a-f]{12}$"
-              },
               "tag": {
                 "type": "string",
                 "enum": [
@@ -252,6 +244,9 @@
                 }
               },
               "additionalProperties": false
+            },
+            "propertyNames": {
+              "pattern": "^(identity|variant):token-[a-f0-9]{12}$"
             }
           }
         },

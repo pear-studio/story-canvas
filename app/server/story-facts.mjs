@@ -30,6 +30,7 @@ import { hashCanonicalJson } from "./workflow-definition.mjs";
 import { storyContentWarnings } from "../shared/story-content-guidance.mjs";
 import { capturePagePromptSnapshot } from "./page-render-resolver.mjs";
 import { auditSavedPagePrompt, capturePromptAuditInput, preparePromptWriteAudit } from "./prompt-write-audit.mjs";
+import { assertPagePromptSourceVersions, validatePagePromptInheritance } from './prompt-source-context.mjs';
 
 export const DELETED_STORY_PAGE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -514,7 +515,7 @@ async function planRemovedReferenceCleanup(projectDirectory, pageId, persisted) 
   return { writes: [{ relative, before: prompt, after: next }] };
 }
 
-export async function commitStoryFact(projectRoot, context, readDocument, kind, { beforeCommit } = {}) {
+export async function commitStoryFact(projectRoot, context, readDocument, kind, { beforeCommit, sourceVersions = {} } = {}) {
   const project = await resolveProjectLocation(path.resolve(projectRoot), context.project_id);
   const auditPrepared = kind === "prompt" ? await preparePromptWriteAudit(projectRoot) : null;
   let auditCaptured;
@@ -555,6 +556,18 @@ export async function commitStoryFact(projectRoot, context, readDocument, kind, 
     }
     const overrideErrors = checkPagePromptOverrideReferences(persisted, currentNarrative.characters);
     if (overrideErrors.length) fail('invalid_story_edit_document', overrideErrors);
+    const activeModel = (await readPageRenderSettings(project.projectDirectory, context.page_id)).model_id ?? 'qwen';
+    for (const [modelId, input] of promptModelEntries(persisted)) {
+      const baselinePrompt = baselineModels.get(modelId);
+      if (hashCanonicalJson(input) === hashCanonicalJson(baselinePrompt ?? null)) continue;
+      const sources = await assertPagePromptSourceVersions(project.projectDirectory, {
+        projectId: context.project_id, modelId, narrative: currentNarrative, prompt: input, baselinePrompt,
+        sourceVersions: sourceVersions[modelId], protectBaseline: modelId === activeModel,
+      });
+      assertDocument(await validatePagePromptInheritance(project.projectDirectory, {
+        projectId: context.project_id, modelId, narrative: currentNarrative, prompt: input, baselinePrompt, sources,
+      }));
+    }
   }
   if (beforeCommit !== undefined) {
     if (typeof beforeCommit !== "function") fail("invalid_story_edit_option", ["beforeCommit 必须是函数"]);

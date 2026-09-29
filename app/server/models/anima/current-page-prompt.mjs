@@ -185,16 +185,16 @@ function characterPromptParts(character, adjustments = {}, kind = "character", p
   const parts = [];
   const missing = [];
   // 按基础、子设定、页面依次应用显式调整；重复词已由继承检查阻止生成。
-  const identityPrompt = character.identity?.prompt ? applyInheritedPrompt(character.identity.prompt, character.identity_overrides, character.identity_disabled) : null;
+  const identityPrompt = character.identity?.prompt ? applyInheritedPrompt(character.identity.prompt, character.identity_overrides) : null;
   if (!identityPrompt || typeof identityPrompt !== "object" || Array.isArray(identityPrompt)) missing.push(`${documentRoot}.identity.prompt`);
   for (const category of kind === "scene" ? ["setting", "avoid"] : storyPromptCategories) {
     const identityEntries = Array.isArray(identityPrompt?.[category])
       ? identityPrompt[category]
-        .map((fragment, index) => ({ fragment, path: `${documentRoot}.identity.prompt.${category}[${index}]` }))
+        .map((fragment, index) => ({ fragment: { ...fragment, inheritance_key: `identity:${fragment.id}` }, path: `${documentRoot}.identity.prompt.${category}[${index}]` }))
 
       : null;
     const variantEntries = Array.isArray(character.prompt?.[category])
-      ? character.prompt[category].map((fragment, index) => ({ fragment, path: `${root}.${category}[${index}]` }))
+      ? character.prompt[category].map((fragment, index) => ({ fragment: { ...fragment, inheritance_key: `variant:${fragment.id}` }, path: `${root}.${category}[${index}]` }))
       : null;
     const entries = identityEntries === null || variantEntries === null ? null : [...identityEntries, ...variantEntries];
     if (entries === null) {

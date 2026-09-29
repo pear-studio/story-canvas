@@ -78,8 +78,8 @@ export function validateCharacterVisualDocument(visual) {
   return [...errors, ...validateCharacterVisualSemantics(visual)];
 }
 
-export function validateCharacterPromptDocument(promptDocument) {
-  if (isModelPromptDocument(promptDocument)) return validateModelPromptDocument(promptDocument, 'setting');
+export function validateCharacterPromptDocument(promptDocument, options = {}) {
+  if (isModelPromptDocument(promptDocument)) return validateModelPromptDocument(promptDocument, 'setting', options);
   const errors = [];
   if (!isRecord(promptDocument)) return ["character prompt 必须是对象"];
   checkExactKeys(promptDocument, ["$schema", "prompt_name", "variants"], "character prompt", errors);

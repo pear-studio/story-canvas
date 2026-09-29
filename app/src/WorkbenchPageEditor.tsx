@@ -34,6 +34,7 @@ import {
   loadPageTextSources,
   loadTextSourceContext,
   type PagePrompt,
+  type PromptSourceVersions,
   type PageRewriteValue,
   type PromptSourceChoice,
   type PageRenderInspection,
@@ -131,7 +132,7 @@ export type WorkbenchPageEditorProps = {
   promptSource?: PromptSourceChoice;
   onPromptSourceChange?: (value: PromptSourceChoice) => void;
   onRewrite?: () => void;
-  onSavePage: (draft: WorkbenchPageContentDraft, prompt: PagePrompt, items: LetteringItem[], baseline: WorkbenchPage) => Promise<{ page: WorkbenchPage; content: WorkbenchPageContentDraft & { dialogue: NonNullable<WorkbenchPage["dialogue"]> }; prompt: PagePrompt; items: LetteringItem[] }>;
+  onSavePage: (draft: WorkbenchPageContentDraft, prompt: PagePrompt, items: LetteringItem[], baseline: WorkbenchPage, sourceVersions: PromptSourceVersions) => Promise<{ page: WorkbenchPage; content: WorkbenchPageContentDraft & { dialogue: NonNullable<WorkbenchPage["dialogue"]> }; prompt: PagePrompt; items: LetteringItem[] }>;
   onPageSaved?: () => void;
   onReloadContent?: () => Promise<void> | void;
   onReloadPrompt?: () => Promise<void> | void;
@@ -171,6 +172,13 @@ function contentFromPage(page: WorkbenchPage): WorkbenchPageContentDraft {
         })),
       },
   };
+}
+
+function readPromptSourceVersions(model: 'anima' | 'qwen', characters: WorkbenchCharacter[], scenes: Scene[]): PromptSourceVersions {
+  return Object.fromEntries([
+    ...characters.flatMap(setting => Object.entries(setting.prompt_source_versions?.[model] ?? {}).map(([variant, sha]) => [characterSource(setting.id, variant), sha])),
+    ...scenes.flatMap(setting => Object.entries(setting.prompt_source_versions?.[model] ?? {}).map(([variant, sha]) => [sceneSource(setting.id, variant), sha])),
+  ]);
 }
 
 function editableDialogue(lines: WorkbenchDialogueDraft[] | undefined): EditableDialogueLine[] {
@@ -651,6 +659,8 @@ export default function WorkbenchPageEditor({
   activeIdentity.current = pageIdentity;
   const savingPage = useRef<{ identity: string } | null>(null);
   const editBaseline = useRef(page);
+  const incomingSourceVersions = readPromptSourceVersions(page.model_id ?? 'qwen', characters, scenes);
+  const sourceVersions = useRef(incomingSourceVersions);
   const hasDraft = useRef(false);
   const [externalConflict, setExternalConflict] = useState(false);
   const incomingContent = useMemo(() => contentFromPage(page), [page.characters, page.dialogue, page.kind, page.title, page.visual_goal, page.scene_description, page.page_kind, page.body, page.display_title, page.text_layout]);
@@ -689,12 +699,17 @@ export default function WorkbenchPageEditor({
       return;
     }
     editBaseline.current = page;
+    sourceVersions.current = incomingSourceVersions;
     setExternalConflict(false);
     setContentBaseline(clone(incomingContent)); setContentDraft(clone(incomingContent)); setDialogueDraft(editableDialogue(incomingContent.dialogue));
     setPromptBaseline(clone(incomingPrompt)); setPromptDraft(clone(incomingPrompt));
     setLayoutBaseline(clone(letteringItems)); setLayoutDraft(clone(letteringItems));
     setContentPhase('saved'); setPromptPhase('saved'); setContentError(''); setPromptError('');
   }, [pageIdentity, incomingContentSignature, page.content_sha256, page.prompt_sha256, page.prompt_context_sha256, page.layout_sha256, incomingLayoutSignature]);
+  useEffect(() => {
+    // 脏草稿保留已读来源的版本；新载入的来源才补入，不能在保存时刷新读据。
+    sourceVersions.current = hasDraft.current ? {...incomingSourceVersions, ...sourceVersions.current} : incomingSourceVersions;
+  }, [characters, scenes, pageIdentity]);
   useEffect(() => {
     setSelectedDraftKey("");
     setLetteringDiagnostics({});
@@ -733,10 +748,11 @@ export default function WorkbenchPageEditor({
     setContentPhase('saving'); setPromptPhase('saving'); setContentError(''); setPromptError('');
     const snapshot = { ...clone(contentToSave), dialogue: dialogueDraft.map(line => ({ ...persistedDialogue([line])[0], id: dialogueKey(line) })) };
     try {
-      const saved = await onSavePage(snapshot, persistedPrompt, clone(previewItems), editBaseline.current);
+      const saved = await onSavePage(snapshot, persistedPrompt, clone(previewItems), editBaseline.current, sourceVersions.current);
       if (isActive()) {
         const content = contentFromPage({ ...page, ...saved.content });
         editBaseline.current = saved.page; setExternalConflict(false);
+        sourceVersions.current = incomingSourceVersions;
         setContentBaseline(clone(content)); setContentDraft(clone(content)); setDialogueDraft(editableDialogue(content.dialogue));
         setPromptDraft(clone(saved.prompt)); setPromptBaseline(clone(saved.prompt));
         setLayoutDraft(clone(saved.items)); setLayoutBaseline(clone(saved.items));
@@ -756,6 +772,7 @@ export default function WorkbenchPageEditor({
 
   function discardAll() {
     editBaseline.current = page; setExternalConflict(false);
+    sourceVersions.current = incomingSourceVersions;
     setContentDraft(clone(incomingContent)); setContentBaseline(clone(incomingContent)); setDialogueDraft(editableDialogue(incomingContent.dialogue));
     setPromptDraft(clone(incomingPrompt)); setPromptBaseline(clone(incomingPrompt));
     setLayoutDraft(clone(letteringItems)); setLayoutBaseline(clone(letteringItems));

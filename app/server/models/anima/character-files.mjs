@@ -2,10 +2,10 @@ import { validatePopulation } from '../../../shared/prompt-population.mjs';
 import {validateLoraOverrides} from '../../../shared/lora-inheritance.mjs';
 import { validateReferenceEntries } from "../../../shared/reference-images.mjs";
 import { validateCameraSettings } from "../../../shared/camera-prompt.mjs";
-import { adjustmentKey, validateAdjustments, promptWord } from '../../../shared/prompt-inheritance.mjs';
+import { adjustmentKey, validateAdjustments } from '../../../shared/prompt-inheritance.mjs';
 import {
   STORY_PAGE_PROMPT_SCHEMA_ID,
-  preparePromptForPersistence,
+  prepareSharedPromptForPersistence,
   storyPromptFragmentIdPattern,
   validateStoryPagePromptDocument,
 } from "./story-files.mjs";
@@ -41,7 +41,7 @@ function checkNonemptyText(value, valuePath, errors, maxLength = null) {
 function validatePromptFragment(fragment, valuePath, errors) {
   if (!isRecord(fragment)) { errors.push(`${valuePath} 必须是对象`); return; }
   checkExactKeys(fragment, ["id", "tag", "description", "camera_settings", "weight", "enabled"], valuePath, errors);
-  if (fragment.id !== undefined && !storyPromptFragmentIdPattern.test(fragment.id)) errors.push(`${valuePath}.id 不是有效 Prompt 片段 ID`);
+  if (!storyPromptFragmentIdPattern.test(fragment.id ?? '')) errors.push(`${valuePath}.id 必须是有效共享 Prompt 片段 ID`);
   const textKeys = ["tag", "description"].filter((key) => Object.hasOwn(fragment, key));
   if (textKeys.length !== 1) errors.push(`${valuePath} 必须且只能包含 tag、description 之一`);
   else checkNonemptyText(fragment[textKeys[0]], `${valuePath}.${textKeys[0]}`, errors);
@@ -56,9 +56,16 @@ function validatePrompt(value, valuePath, errors) {
   if (!isRecord(value)) { errors.push(`${valuePath} 必须是对象`); return; }
   checkExactKeys(value, promptCategories, valuePath, errors);
   errors.push(...validatePopulation(value,{setting:true}).map(error=>valuePath+"."+error));
+  const ids = new Set();
   for (const category of promptCategories) {
     if (!Array.isArray(value[category])) errors.push(`${valuePath}.${category} 必须是数组`);
-    else value[category].forEach((fragment, index) => validatePromptFragment(fragment, `${valuePath}.${category}[${index}]`, errors));
+    else value[category].forEach((fragment, index) => {
+      validatePromptFragment(fragment, `${valuePath}.${category}[${index}]`, errors);
+      if (typeof fragment?.id === 'string') {
+        if (ids.has(fragment.id)) errors.push(`${valuePath}.${category}[${index}].id 在同一来源中重复`);
+        ids.add(fragment.id);
+      }
+    });
   }
 }
 
@@ -73,7 +80,7 @@ function validateLora(value, valuePath, errors) {
   if (value.trigger !== undefined) checkNonemptyText(value.trigger, `${valuePath}.trigger`, errors);
 }
 
-export function validateCharacterPromptDocument(promptDocument) {
+export function validateCharacterPromptDocument(promptDocument, { baselinePrompt } = {}) {
   const errors = [];
   if (!isRecord(promptDocument)) return ["character prompt 必须是对象"];
   checkExactKeys(promptDocument, ["$schema", "identity", "variants"], "character prompt", errors);
@@ -91,14 +98,10 @@ export function validateCharacterPromptDocument(promptDocument) {
     for (const variantId of variantIdList) {
       if (!characterVariantIdPattern.test(variantId) || variantId === "main") errors.push(`character prompt.variants 包含无效 variant ID：${variantId}`);
     }
-    // identity_disabled 只允许关闭 identity 中存在的文本键；enabled:false 的自有片段是合法草稿，不做校验。
-    const identityKeys = new Set(Object.values(isRecord(promptDocument.identity?.prompt) ? promptDocument.identity.prompt : {}).flat()
-      .map(promptFragmentTextKey)
-      .filter(Boolean));
     for (const [variantId, configuration] of Object.entries(promptDocument.variants)) {
       const valuePath = `character prompt.variants.${variantId}`;
       if (!isRecord(configuration)) { errors.push(`${valuePath} 必须是对象`); continue; }
-      checkExactKeys(configuration, ["prompt", "loras", "lora_overrides", "identity_disabled", "identity_overrides", "reference_images"], valuePath, errors);
+      checkExactKeys(configuration, ["prompt", "loras", "lora_overrides", "identity_overrides", "reference_images"], valuePath, errors);
       errors.push(...validateReferenceEntries(configuration.reference_images));
       validatePrompt(configuration.prompt, `${valuePath}.prompt`, errors);
       if (!Array.isArray(configuration.loras)) errors.push(`${valuePath}.loras 必须是数组`);
@@ -107,60 +110,26 @@ export function validateCharacterPromptDocument(promptDocument) {
         else validateLora(lora, `${valuePath}.loras[${index}]`, errors);
       });
       errors.push(...validateLoraOverrides(configuration.lora_overrides, `${valuePath}.lora_overrides`));
-      errors.push(...validateAdjustments(configuration.identity_overrides, `${valuePath}.identity_overrides`));
-      const availableWords = new Set(Object.entries(promptDocument.identity?.prompt ?? {}).flatMap(([category, fragments]) => Array.isArray(fragments) ? fragments.map(fragment => adjustmentKey(fragment, category)) : []));
-      for (const key of Object.keys(configuration.identity_overrides ?? {})) if (!availableWords.has(key)) errors.push(valuePath + ' 的继承词不存在：' + key);
-      const disabledPath = valuePath + '.identity_disabled';
-      if (!Array.isArray(configuration.identity_disabled)) errors.push(`${disabledPath} 必须是数组`);
-      else {
-        const seen = new Set();
-        configuration.identity_disabled.forEach((key, index) => {
-          const normalized = typeof key === "string" ? key.trim().toLowerCase() : "";
-          if (!normalized) { errors.push(`${disabledPath}[${index}] 必须是非空字符串`); return; }
-          if (seen.has(normalized)) errors.push(`${disabledPath}[${index}] 重复：${key}`);
-          seen.add(normalized);
-          if (!identityKeys.has(normalized)) errors.push(`${disabledPath}[${index}] 关闭了 identity.prompt 中不存在的片段：${key}`);
-        });
-      }
+      errors.push(...validateAdjustments(configuration.identity_overrides, `${valuePath}.identity_overrides`, {
+        layers: ['identity'],
+        ...(baselinePrompt === undefined ? {} : {
+          availableKeys: sharedKeys(promptDocument.identity?.prompt),
+          baselineAdjustments: baselinePrompt?.variants?.[variantId]?.identity_overrides,
+        }),
+      }));
     }
   }
   return errors;
 }
 
-function promptFragmentTextKey(fragment) {
-  const textKey = ["tag", "description"].find((key) => Object.hasOwn(fragment ?? {}, key));
-  return textKey ? String(fragment[textKey]).trim().toLowerCase() : "";
-}
-
-function effectiveIdentityKeys(prompt) {
-  return new Set(Object.values(isRecord(prompt) ? prompt : {}).flat()
-    .filter((fragment) => fragment?.enabled !== false)
-    .map(promptFragmentTextKey)
-    .filter(Boolean));
-}
-
-// identity.prompt 变化对每个造型的实际影响：被删除且未被 identity_disabled 引用的键失去继承，新增键开始继承。
-export function characterIdentityImpact(baselinePrompt, nextPrompt) {
-  const baselineKeys = effectiveIdentityKeys(baselinePrompt?.identity?.prompt);
-  const nextKeys = effectiveIdentityKeys(nextPrompt?.identity?.prompt);
-  const removed = [...baselineKeys].filter((key) => !nextKeys.has(key)).sort((left, right) => left.localeCompare(right, "en"));
-  const added = [...nextKeys].filter((key) => !baselineKeys.has(key)).sort((left, right) => left.localeCompare(right, "en"));
-  if (!removed.length && !added.length) return null;
-  const perVariant = {};
-  for (const [variantId, configuration] of Object.entries(isRecord(nextPrompt?.variants) ? nextPrompt.variants : {})) {
-    const overridden = new Set((Array.isArray(configuration?.identity_disabled) ? configuration.identity_disabled : [])
-      .map((key) => String(key).trim().toLowerCase())
-      .filter(Boolean));
-    const lost = removed.filter((key) => !overridden.has(key));
-    if (lost.length || added.length) perVariant[variantId] = { lost_inheritance: lost, new_inheritance: added };
-  }
-  return { per_variant: perVariant };
+function sharedKeys(prompt) {
+  return promptCategories.flatMap(category => Array.isArray(prompt?.[category]) ? prompt[category].filter(isRecord).map(adjustmentKey) : []);
 }
 
 export function prepareCharacterPromptForPersistence(promptDocument, { baselinePrompt, createFragmentId } = {}) {
   const prepared = structuredClone(promptDocument);
   if (isRecord(prepared.identity)) {
-    prepared.identity.prompt = preparePromptForPersistence(prepared.identity.prompt, {
+    prepared.identity.prompt = prepareSharedPromptForPersistence(prepared.identity.prompt, {
       baselinePrompt: baselinePrompt?.identity?.prompt,
       createFragmentId,
     });
@@ -173,11 +142,16 @@ export function prepareCharacterPromptForPersistence(promptDocument, { baselineP
   }
   for (const [setting, baselineSetting] of settings) {
     if (!isRecord(setting)) continue;
-    setting.prompt = preparePromptForPersistence(setting.prompt, {
+    setting.prompt = prepareSharedPromptForPersistence(setting.prompt, {
       baselinePrompt: baselineSetting?.prompt,
       createFragmentId,
     });
   }
+  // 读/编译允许保留失效覆盖；写入仅允许沿持久基线原样保留，不能新增或修改失效定位。
+  const errors = validateCharacterPromptDocument({ $schema: CHARACTER_PROMPT_SCHEMA_ID, ...prepared }, { baselinePrompt: baselinePrompt ?? {} });
+  if (errors.length) throw Object.assign(new TypeError(errors.join('；')), {
+    status: 400, code: 'invalid_prompt_fragment', details: errors,
+  });
   return prepared;
 }
 

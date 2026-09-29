@@ -18,6 +18,11 @@ export type PromptType = "danbooru" | "custom_description";
 
 export type PromptFragment = {
   id: string;
+  /** 草稿定位信息；不会随本页内容持久化。 */
+  source_index?: number;
+  inheritance_key?: string;
+  inheritance_source?: string;
+  inheritance?: { weight?: number; enabled?: boolean };
   prompt_type: PromptType;
   prompt_text: string;
   camera_settings?: CameraSettings;
@@ -38,6 +43,7 @@ export type PromptAuditIssue = {
   prompt_text?: string;
   category?: string;
   scope?: string;
+  index?: number;
   path?: string;
 };
 
@@ -253,6 +259,7 @@ function issueBelongsToFragment(issue: PromptAuditIssue, fragment: PromptFragmen
   const issueId = issue.fragment_id ?? issue.token_id ?? issue.source_id;
   if (issueId) return issueId === fragment.id;
   if (issue.category && issue.category !== categoryId) return false;
+  if (issue.index !== undefined) return issue.index === fragment.source_index;
   return Boolean(issue.path?.includes(fragment.id));
 }
 
@@ -509,10 +516,26 @@ function PromptFragmentRow({
       return;
     }
     const next = { ...fragmentRef.current };
-    if (weight === 1) delete next.weight;
+    if (next.inheritance) {
+      next.inheritance = { ...next.inheritance, weight };
+      next.weight = weight;
+    } else if (weight === 1) delete next.weight;
     else next.weight = weight;
     onChange(next, { group: `${next.id}:weight` });
     setWeightMenuOpen(false);
+  }
+
+  function restoreInheritance(field?: 'weight' | 'enabled') {
+    const current = fragmentRef.current;
+    if (!current.inheritance) return;
+    const inheritance = { ...current.inheritance };
+    if (field) delete inheritance[field];
+    else { delete inheritance.weight; delete inheritance.enabled; }
+    const next = { ...current, inheritance };
+    if (!field || field === 'weight') next.weight = upstreamWeight;
+    if (!field || field === 'enabled') next.enabled = upstreamEnabled;
+    onChange(next);
+    if (!field || field === 'weight') setWeightMenuOpen(false);
   }
 
   function loadMoreSuggestions() {
@@ -732,7 +755,7 @@ function PromptFragmentRow({
       : null;
 
   const enabled = promptFragmentEnabled(fragment);
-  return <article className={`prompt-fragment-row ${isCameraFragment ? "is-camera-control" : ""} ${toggleOnly ? "prompt-fragment-row--toggle-only" : ""} ${enabled ? "" : "is-disabled"} ${hasVisibleError ? "has-error" : visibleFragmentIssues.length ? "has-warning" : ""} ${dragPosition ? `is-drag-${dragPosition}` : ""}`.replace(/\s+/g, " ").trim()} data-fragment-id={fragment.id} data-prompt-type={type} aria-label={isCameraFragment ? "机位控制" : undefined} title={isCameraFragment ? "机位控制" : undefined} onBlurCapture={(event) => {
+  return <article className={`prompt-fragment-row ${isCameraFragment ? "is-camera-control" : ""} ${toggleOnly ? "prompt-fragment-row--toggle-only" : ""} ${enabled ? "" : "is-disabled"} ${hasVisibleError ? "has-error" : visibleFragmentIssues.length ? "has-warning" : ""} ${dragPosition ? `is-drag-${dragPosition}` : ""}`.replace(/\s+/g, " ").trim()} data-fragment-id={fragment.id} data-prompt-type={type} aria-label={isCameraFragment ? "机位控制" : undefined} title={fragment.inheritance_source ?? (isCameraFragment ? "机位控制" : undefined)} onBlurCapture={(event) => {
     if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDeferEmptyError(false);
   }}>
     <button type="button" className="prompt-fragment-drag" disabled={toggleOnly} onPointerDown={toggleOnly ? undefined : (event) => { commitQueryDraft(); onDragStart(event); }} title="拖动排序" aria-label={`拖动${categoryLabel}第 ${index + 1} 项排序`}>⋮</button>
@@ -750,21 +773,23 @@ function PromptFragmentRow({
           onCompositionEnd={() => { queryComposingRef.current = false; setQueryComposing(false); }}
           onKeyDown={handleQueryKeyDown} onValueChange={(text, caret) => { setQueryCaret(caret); updateQueryDraft(text); }} />
       </div>
-      <button ref={weightTriggerRef} type="button" className="prompt-fragment-weight-button" disabled={toggleOnly && upstreamWeight === undefined} onPointerDown={(event) => event.stopPropagation()} onClick={toggleOnly && upstreamWeight === undefined ? undefined : toggleWeightMenu} title="点击修改权重" aria-haspopup="dialog" aria-expanded={weightMenuOpen} aria-label={`${categoryLabel}第 ${index + 1} 项权重 ${promptWeightLabel(fragment.weight)}`}>{promptWeightLabel(fragment.weight)}</button>
+      <button ref={weightTriggerRef} type="button" className="prompt-fragment-weight-button" disabled={toggleOnly && upstreamWeight === undefined} onPointerDown={(event) => event.stopPropagation()} onClick={toggleOnly && upstreamWeight === undefined ? undefined : toggleWeightMenu} title={fragment.inheritance ? Object.hasOwn(fragment.inheritance, 'weight') ? '权重已覆盖，点击修改或恢复继承' : '权重随上游，点击设置覆盖' : '点击修改权重'} aria-haspopup="dialog" aria-expanded={weightMenuOpen} aria-label={`${categoryLabel}第 ${index + 1} 项权重 ${promptWeightLabel(fragment.weight)}`}>{promptWeightLabel(fragment.weight)}{fragment.inheritance && Object.hasOwn(fragment.inheritance, 'weight') ? ' •' : ''}</button>
       {weightMenuOpen && <div className="prompt-fragment-weight-menu" ref={weightMenuRef} role="dialog" aria-label={`${categoryLabel}第 ${index + 1} 项权重编辑`} onPointerDown={(event) => event.stopPropagation()}>
-        <strong>修改权重</strong>
+        <strong>{fragment.inheritance ? '权重与继承' : '修改权重'}</strong>
         {upstreamWeight !== undefined && <div className="prompt-fragment-weight-upstream">
           <span>上游 <span className="prompt-fragment-weight-value">{promptWeightLabel(upstreamWeight)}</span></span>
-          <button type="button" onClick={() => commitWeight(upstreamWeight)}>恢复上游权重</button>
+          <button type="button" disabled={fragment.inheritance && !Object.hasOwn(fragment.inheritance, 'weight')} onClick={() => fragment.inheritance ? restoreInheritance('weight') : commitWeight(upstreamWeight)}>恢复上游权重</button>
         </div>}
+        {fragment.inheritance && Object.hasOwn(fragment.inheritance, 'enabled') && <div className="prompt-fragment-weight-upstream"><span>开关已覆盖 · 上游{upstreamEnabled ? '启用' : '关闭'}</span><button type="button" onClick={() => restoreInheritance('enabled')}>恢复开关继承</button></div>}
         <div className="prompt-fragment-weight-input-row"><label><span>{upstreamWeight !== undefined ? '当前权重' : '权重'}</span><input autoFocus={!coarsePointer} type="number" min="0.2" max="10" step="0.1" value={weightDraft} aria-label={`${categoryLabel}第 ${index + 1} 项权重`} onChange={(event) => { setWeightDraft(event.target.value); setWeightError(""); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); commitWeight(); } else if (event.key === "Escape") { event.preventDefault(); setWeightMenuOpen(false); } }} /></label><div className="prompt-fragment-weight-menu-actions"><button type="button" className="is-primary" onClick={() => commitWeight()}>确定</button></div></div>
         {weightError && <small className="prompt-fragment-weight-error" role="alert">{weightError}</small>}
         <div className="prompt-fragment-weight-menu-actions prompt-fragment-weight-presets">{[0.5, 1, 1.5, 2, 3].map(weight => <button key={weight} type="button" onClick={() => commitWeight(weight)}>×{weight}</button>)}</div>
       </div>}
     </div>
-    <label className={`prompt-fragment-enabled ${enabled ? "is-on" : "is-off"}`} title={enabled ? "参与生成" : "已关闭，不参与生成"}>
+    <label className={`prompt-fragment-enabled ${enabled ? "is-on" : "is-off"}`} title={fragment.inheritance ? Object.hasOwn(fragment.inheritance, 'enabled') ? '开关已覆盖' : '开关随上游' : enabled ? "参与生成" : "已关闭，不参与生成"}>
       <input type="checkbox" aria-label={`${categoryLabel}第 ${index + 1} 项参与生成`} checked={enabled} onChange={(event) => {
-        if (event.target.checked) {
+        if (fragment.inheritance) onChange({ ...fragment, enabled: event.target.checked, inheritance: { ...fragment.inheritance, enabled: event.target.checked } });
+        else if (event.target.checked) {
           const next = { ...fragment };
           delete next.enabled;
           onChange(next);
@@ -772,8 +797,8 @@ function PromptFragmentRow({
       }} />
       <span aria-hidden="true"><i /></span>
     </label>
-    {toggleOnly ? (upstreamWeight !== undefined && upstreamEnabled !== undefined && ((fragment.weight ?? 1) !== upstreamWeight || enabled !== upstreamEnabled)
-      ? <button type="button" className="prompt-fragment-delete prompt-fragment-reset" title="恢复继承的权重和开关" aria-label={`恢复${categoryLabel}第 ${index + 1} 项继承值`} onClick={() => onChange({ ...fragment, weight: upstreamWeight, enabled: upstreamEnabled })}>↶</button>
+    {toggleOnly ? (fragment.inheritance && Object.keys(fragment.inheritance).length > 0
+      ? <button type="button" className="prompt-fragment-delete prompt-fragment-reset" title="恢复继承的权重和开关" aria-label={`恢复${categoryLabel}第 ${index + 1} 项继承值`} onClick={() => restoreInheritance()}>↶</button>
       : <span className="prompt-fragment-delete" aria-hidden="true" />)
       : <button type="button" className="prompt-fragment-delete" onClick={onDelete} aria-label={`删除${categoryLabel}第 ${index + 1} 项`}>×</button>}
     {markerErrors.length > 0 && <div className="prompt-fragment-issues" role="alert">{markerErrors.map(message => <p className="is-error" key={message}>{message}</p>)}</div>}
@@ -948,7 +973,7 @@ function CategoryPromptEditor({ categories, scope, fragments, roles, issues = []
     <PromptFragmentTableHeader category deleteLabel={toggleOnly ? "恢复" : true} compact />
     <div className="category-list">
       {populatedCategories.map((category) => {
-        const entries = fragments[category.id] ?? [];
+        const entries = (fragments[category.id] ?? []).map((fragment, index) => ({ ...fragment, source_index: index }));
         return <section data-prompt-category={category.id} className={`category-card ${category.id === "avoid" ? "category-card--avoid" : ""}`} key={category.id}>
           <header>
             <span className="category-label"><b>{category.label}</b></span>

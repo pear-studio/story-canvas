@@ -15,6 +15,8 @@ export const characterSource = (id: string, variant: string) => `character:${id}
 export const sceneSource = (id: string, variant: string) => `scene:${id}:${variant}`;
 
 export type SettingKind = 'character' | 'scene';
+export type PromptModelId = 'anima' | 'qwen';
+export type PromptSourceVersions = Record<string, string>;
 export type Scene = WorkbenchCharacter;
 export type PageOwner = { page_id: string; owner_kind: 'story' | 'character' | 'scene'; sequence_id?: string; character_id?: string; scene_id?: string; variant_id?: string };
 export type PageReferenceEntry = ReferenceEntry & { purpose?: string };
@@ -103,6 +105,8 @@ export type WorkbenchPage = {
 };
 export type WorkbenchCharacter<TPrompt = CharacterPromptDocument> = {
   model_id?: 'anima'|'qwen';
+  prompt_source_versions?: Partial<Record<PromptModelId, Record<string, string>>>;
+  prompt_scope_versions?: Partial<Record<PromptModelId, {base: string; variants: Record<string, string>}>>;
   model_prompts?: {models?: {anima?:import('./models/anima/types').CharacterPromptDocument;qwen?:CharacterPromptDocument}};
   id: string;
   name: string;
@@ -576,14 +580,30 @@ export async function loadCandidateCounts(projectId: string, signal?: AbortSigna
 export const saveSettingProfile = (kind: SettingKind, projectId: string, setting: WorkbenchCharacter<unknown>, draft: CharacterProfileDraft) => saveCharacterProfile(projectId, setting, draft, kind);
 export const saveSettingVisual = (kind: SettingKind, projectId: string, setting: WorkbenchCharacter<unknown>, draft: CharacterVisualDraft) => saveCharacterVisual(projectId, setting, draft, kind);
 export const saveSettingPrompt = <T extends object>(kind: SettingKind, projectId: string, setting: WorkbenchCharacter<T>, draft: T) => saveCharacterPrompt(projectId, setting, draft, kind);
+function promptScopeChanges(previous: unknown, next: unknown): unknown {
+  if (!next || typeof next !== 'object' || Array.isArray(next)) return next;
+  const before = previous && typeof previous === 'object' && !Array.isArray(previous) ? previous as Record<string, unknown> : {};
+  const after = next as Record<string, unknown>;
+  return Object.fromEntries([...new Set([...Object.keys(before), ...Object.keys(after)])].map(key => [key,
+    Object.hasOwn(after, key) ? promptScopeChanges(before[key], after[key]) : null]));
+}
+export async function saveSettingPromptScope<T extends object>(kind: SettingKind, projectId: string, setting: WorkbenchCharacter<unknown>, scope: {model_id: PromptModelId; scope: 'base' | 'variant'; variant_id?: string}, document: T, expected_sha256: string) {
+  const model = (setting.model_prompts?.models?.[scope.model_id] ?? (setting.model_id === scope.model_id ? setting.prompt : {})) as Record<string, unknown>;
+  const prior = scope.scope === 'variant' ? (model.variants as Record<string, unknown> | undefined)?.[scope.variant_id!] :
+    scope.model_id === 'anima' ? {identity: model.identity} : {prompt_name: model.prompt_name};
+  return workbenchResponseJson<{document: T; save: {args: {expected_sha256: string}}}>(await mutateTargetFacts('/api/agent/prompt/save', {
+    method: 'POST', headers: {'content-type': 'application/json'},
+    body: JSON.stringify({project_id: projectId, target: {kind, id: setting.id, ...scope}, changes: promptScopeChanges(prior, document), expected_sha256}),
+  }, projectId));
+}
 export const renameSettingVariant = <T extends object>(kind: SettingKind, projectId: string, setting: WorkbenchCharacter<T>, oldId: string, newId: string) => renameCharacterVariant(projectId, setting, oldId, newId, kind);
 
-export async function saveWholePage(projectId: string, page: WorkbenchPage, content: StoryPageContentDraft, prompt: PagePrompt, items: LetteringItem[]) {
+export async function saveWholePage(projectId: string, page: WorkbenchPage, content: StoryPageContentDraft, prompt: PagePrompt, items: LetteringItem[], source_versions?: PromptSourceVersions) {
   const reference_inputs = (prompt.reference_images ?? []).filter(entry => entry.draft).map(entry => {const {preview_url,...source}=entry.draft!;return {id:entry.id,...source};});
   prompt = { ...prompt, ...(prompt.reference_images ? { reference_images: prompt.reference_images.map(({ draft, ...entry }) => entry) } : {}) };
   return workbenchResponseJson<{ content: StoryPageContentDraft & { dialogue: NonNullable<WorkbenchPage["dialogue"]> }; content_sha256: string; prompt: PagePrompt; prompt_sha256: string; prompt_context_sha256: string; lettering: { page: string; items: LetteringItem[] }; layout_sha256: string }>(await mutateTargetFacts(`${base(projectId)}/page-save`, {
     method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ page_key: page.page_key, content, prompt, reference_inputs,
       expected_content_sha256: page.content_sha256, expected_prompt_sha256: page.prompt_sha256,
-      expected_context_sha256: page.prompt_context_sha256, lettering: { items }, expected_layout_sha256: page.layout_sha256 }),
+      expected_context_sha256: page.prompt_context_sha256, source_versions, lettering: { items }, expected_layout_sha256: page.layout_sha256 }),
   }));
 }
