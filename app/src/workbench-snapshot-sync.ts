@@ -1,5 +1,6 @@
 import type { createProjectRequestGuard } from "./project-request-guard";
 import { loadProjectWorkbench, type ProjectWorkbenchView } from "./project-workbench-client";
+import type { WorkbenchScope } from './project-workbench-client';
 import { prepareProjectSnapshotReaders } from "./project-snapshot-sync";
 import { acceptProjectSnapshot, getProjectWriteGeneration, isProjectWritePending, waitForProjectWrites } from "./project-write-client";
 
@@ -14,6 +15,7 @@ type LoadOptions = {
 export function createWorkbenchSnapshotSync(
   guard: ReturnType<typeof createProjectRequestGuard>,
   applyView: (view: ProjectWorkbenchView) => void,
+  currentScope: () => WorkbenchScope = () => ({kind: 'directory'}),
 ) {
   let loads = 0;
   return {
@@ -25,8 +27,9 @@ export function createWorkbenchSnapshotSync(
         return false;
       }
       const request = guard.beginLoad(projectId);
+      const scope = currentScope();
       let writeGeneration = getProjectWriteGeneration(projectId);
-      const current = () => !signal?.aborted && guard.isLoadCurrent(request);
+      const current = () => !signal?.aborted && guard.isLoadCurrent(request) && JSON.stringify(currentScope()) === JSON.stringify(scope);
       const acceptable = () => current() && !isProjectWritePending(projectId)
         && getProjectWriteGeneration(projectId) === writeGeneration;
       loads += 1;
@@ -34,7 +37,7 @@ export function createWorkbenchSnapshotSync(
         if (isProjectWritePending(projectId)) await waitForProjectWrites(projectId);
         if (!current()) return false;
         writeGeneration = getProjectWriteGeneration(projectId);
-        const snapshot = await loadProjectWorkbench(projectId, signal);
+        const snapshot = await loadProjectWorkbench(projectId, signal, scope);
         if (!acceptable()) return false;
         const applyReaders = await prepareProjectSnapshotReaders(projectId, snapshot.revision, signal);
         if (!acceptable()) return false;

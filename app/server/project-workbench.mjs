@@ -3,9 +3,11 @@ import { readPageRenderSettings, pageProjectSettings } from './page-render-setti
 import { modelPrompt, isModelPromptDocument, promptModelEntries, replaceModelPrompt } from './model-prompts.mjs';
 import { settingPromptSourceVersions } from './prompt-source-context.mjs';
 import { settingPromptScopeVersions } from './prompt-scope-version.mjs';
+import { parseWorkbenchScope } from '../shared/workbench-scope.mjs';
 import { resolveRenderRecipe } from "./render-task-contract.mjs";
 import { defaultTextPageLayout } from "../shared/text-page-layout.mjs";
 import { readScenes } from './scene-facts.mjs';
+import { validateSceneProfileDocument, validateSceneVisualDocument, validateScenePromptDocument } from './scene-files.mjs';
 import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -162,27 +164,66 @@ async function readPageRenderConfiguration(repositoryRoot, projectDirectory, pro
   }
 }
 
-export async function readProjectWorkbenchView(projectRoot, projectId) {
+async function readWorkbenchSettingSummaries(directory, kind) {
+  const folder = kind === 'character' ? 'characters' : 'scenes';
+  const index = await readJson(directory, `${folder}/index.json`, { optional: kind === 'scene' });
+  return Promise.all((index?.[folder] ?? []).map(async id => {
+    const [profile, visual] = await Promise.all(['profile', 'visual'].map(type => readJson(directory, `${folder}/${id}.${type}.json`)));
+    return { id, name: profile.name, visual: { variants: visual.variants.map(({id, name}) => ({id, name})) }, pages: [], style: null };
+  }));
+}
+
+export async function readWorkbenchSettingDetail(directory, projectId, kind, id) {
+  const folder = kind === 'character' ? 'characters' : 'scenes';
+  if (!['character', 'scene'].includes(kind) || !/^[a-z0-9][a-z0-9-]*$/.test(id)) fail('invalid_setting_identity', [], 400);
+  const [profile, visual, document] = await Promise.all(['profile', 'visual', 'prompt'].map(type => readJson(directory, `${folder}/${id}.${type}.json`)));
+  const validators = kind === 'character' ? [validateCharacterProfileDocument, validateCharacterVisualDocument, validateCharacterPromptDocument] : [validateSceneProfileDocument, validateSceneVisualDocument, validateScenePromptDocument];
+  [profile, visual, document].forEach((value, index) => validated(value, validators[index], `${folder}/${id}.${['profile','visual','prompt'][index]}.json`));
+  const modelId = promptModelEntries(document)[0][0];
+  const options = { projectId, kind, id, document, visual };
+  return { id, name: profile.name, description: profile.description, visual: publicCharacterVisual(visual),
+    profile_sha256: hashCanonicalJson(profile), visual_sha256: hashCanonicalJson(visual),
+    model_id: modelId, model_prompts: structuredClone(document), prompt: modelPrompt(document, modelId), prompt_sha256: hashCanonicalJson(document),
+    prompt_source_versions: settingPromptSourceVersions(options), prompt_scope_versions: settingPromptScopeVersions(options) };
+}
+
+export async function readWorkbenchLettering(directory, pageId = null) {
+  if (pageId === null) {
+    const settings = validated(await readJson(directory, 'lettering/settings.json'), validateLetteringSettingsDocument, 'lettering/settings.json');
+    return {settings, expected_sha256:hashCanonicalJson(settings)};
+  }
+  if (!(await readPageIndex(directory)).pages.some(page => page.page_id === pageId)) fail('page_not_found', [pageId], 404);
+  const document = validated(await readJson(directory, 'lettering/dialogue-layouts.json', {optional:true}) ?? emptyLetteringDocument(), validateLetteringDocument, 'lettering/dialogue-layouts.json');
+  return {lettering:document.pages.find(page => page.page === pageId) ?? {page:pageId,items:[]}, expected_sha256:hashCanonicalJson(document)};
+}
+
+// 目录与当前视图共用一次事实快照；all 仅供需要完整事实的内部操作使用。
+export async function readProjectWorkbenchView(projectRoot, projectId, requestedScope = { kind: 'all' }) {
+  const scope = ['all', 'finished'].includes(requestedScope.kind) ? requestedScope : parseWorkbenchScope(requestedScope);
+  const full = scope.kind === 'all';
+  const needsLettering = full || ['page', 'story', 'lettering', 'finished'].includes(scope.kind);
   const project = await resolveProjectLocation(path.resolve(projectRoot), projectId);
   const projectDocument = validated(await readJson(project.projectDirectory, "project.json"), validateProjectManifest, "project.json");
   const [outline, pagesIndex, characters, letteringSettings, letteringDocument, scenes] = await Promise.all([
     readJson(project.projectDirectory, "story/outline.json").then((value) => validated(value, validateStoryOutlineDocument, "story/outline.json")),
     readPageIndex(project.projectDirectory),
-    readCharacters(project.projectDirectory),
-    readJson(project.projectDirectory, "lettering/settings.json").then((value) => validated(value, validateLetteringSettingsDocument, "lettering/settings.json")),
-    readJson(project.projectDirectory, "lettering/dialogue-layouts.json", { optional: true }),
-    readScenes(project.projectDirectory),
+    full ? readCharacters(project.projectDirectory) : readWorkbenchSettingSummaries(project.projectDirectory, 'character'),
+    needsLettering ? readJson(project.projectDirectory, "lettering/settings.json").then((value) => validated(value, validateLetteringSettingsDocument, "lettering/settings.json")) : null,
+    full || ['page','finished'].includes(scope.kind) ? readJson(project.projectDirectory, "lettering/dialogue-layouts.json", { optional: true }) : null,
+    full ? readScenes(project.projectDirectory) : readWorkbenchSettingSummaries(project.projectDirectory, 'scene').then(scenes => ({ scenes })),
   ]);
   const lettering = letteringDocument === null
     ? emptyLetteringDocument()
     : validated(letteringDocument, validateLetteringDocument, "lettering/dialogue-layouts.json");
   for (const scene of scenes.scenes) {
+    if (!scene.prompt) continue;
     scene.model_id=promptModelEntries(scene.prompt)[0][0];
     scene.model_prompts=structuredClone(scene.prompt);
     scene.prompt=modelPrompt(scene.prompt,scene.model_id);
   }
   for (const [kind, settings] of [['character', characters], ['scene', scenes.scenes]]) {
     for (const setting of settings) {
+      if (!setting.model_prompts) continue;
       const options = { projectId: project.projectId, kind, id: setting.id, document: setting.model_prompts, visual: setting.visual };
       setting.prompt_source_versions = settingPromptSourceVersions(options);
       setting.prompt_scope_versions = settingPromptScopeVersions(options);
@@ -195,42 +236,55 @@ export async function readProjectWorkbenchView(projectRoot, projectId) {
   const characterMap = new Map(characters.map(character => [character.id, character]));
   const sceneMap = new Map(scenes.scenes.map(scene => [scene.id, scene]));
   const pages = [], orphanPages = [];
+  const chapterSequences = new Set(outline.chapters.find(chapter => chapter.id === scope.chapter_id)?.sequences.map(sequence => sequence.id) ?? []);
+  const requiredSettings = { character: new Set(), scene: new Set() };
+  if (scope.kind === 'setting') requiredSettings[scope.setting_kind].add(scope.setting_id);
   for (const membership of pagesIndex.pages) {
     const pageId = membership.page_id;
+    const output = scope.kind === 'finished' && (!scope.page_id || scope.page_id === pageId);
+    const edit = full || scope.kind === 'page' && scope.page_id === pageId || scope.kind === 'prompts' && membership.owner_kind === 'story';
+    const story = scope.kind === 'story' && membership.owner_kind === 'story' && (!scope.sequence_id || membership.sequence_id === scope.sequence_id) && (!scope.chapter_id || chapterSequences.has(membership.sequence_id));
     const [narrative, prompt] = await Promise.all([
       readJson(project.projectDirectory, pageRelativePath(pageId, 'content')),
-      readJson(project.projectDirectory, pageRelativePath(pageId, 'prompt')),
+      edit ? readJson(project.projectDirectory, pageRelativePath(pageId, 'prompt')) : null,
     ]);
     const content = validated(narrative, validateStoryPageNarrativeDocument, pageRelativePath(pageId, 'content'));
-    const promptDocument = validated(prompt, validateStoryPagePromptDocument, pageRelativePath(pageId, 'prompt'));
-    const render = await readPageRenderSettings(project.projectDirectory, pageId, projectDocument);
-    const promptValue = modelPrompt(promptDocument,render.model_id ?? 'qwen');
-    if (!promptValue) fail('page_model_input_missing',[pageId,render.model_id]);
-    for (const reference of content.characters) {
+    const promptDocument = edit ? validated(prompt, validateStoryPagePromptDocument, pageRelativePath(pageId, 'prompt')) : null;
+    const render = edit || output && content.page_kind === 'text' ? await readPageRenderSettings(project.projectDirectory, pageId, projectDocument) : null;
+    const promptValue = edit ? modelPrompt(promptDocument,render.model_id ?? 'qwen') : null;
+    if (edit && !promptValue) fail('page_model_input_missing',[pageId,render.model_id]);
+    if ((full || scope.kind === 'page') && edit && promptValue.composition !== 'standalone') {
+      for (const reference of content.characters) requiredSettings.character.add(reference.character_id);
+      if (promptValue.scene_id) requiredSettings.scene.add(promptValue.scene_id);
+    }
+    for (const reference of edit || story ? content.characters : []) {
       const character = characterMap.get(reference.character_id);
       if (!character) diagnostics.push({ code: "dangling_story_character_reference", page_id: pageId, character_id: reference.character_id });
       else if (!character.visual.variants.some(variant => variant.id === reference.variant_id)) diagnostics.push({ code: "dangling_story_variant_reference", page_id: pageId, ...reference });
     }
-    for (const speaker of storyNarrativeSpeakerIds(content)) if (!characterMap.has(speaker)) diagnostics.push({code:"dangling_story_dialogue_speaker",page_id:pageId,character_id:speaker});
-    if (promptValue.scene_id) {
+    for (const speaker of edit || story ? storyNarrativeSpeakerIds(content) : []) if (!characterMap.has(speaker)) diagnostics.push({code:"dangling_story_dialogue_speaker",page_id:pageId,character_id:speaker});
+    if (promptValue?.scene_id) {
       const scene = sceneMap.get(promptValue.scene_id);
       if (!scene) diagnostics.push({code:"dangling_scene_reference",page_id:pageId,scene_id:promptValue.scene_id});
       else if (!scene.visual.variants.some(variant => variant.id === promptValue.scene_variant_id)) diagnostics.push({code:"dangling_scene_variant_reference",page_id:pageId,scene_id:promptValue.scene_id,variant_id:promptValue.scene_variant_id});
     }
     const page = {
-      model_id: render.model_id ?? 'qwen', model_prompts: structuredClone(promptDocument),
+      ...(edit ? { model_id: render.model_id ?? 'qwen', ...(full ? {model_prompts: structuredClone(promptDocument)} : {}),
       render, render_sha256: hashCanonicalJson(render),
-      ...await readPageRenderConfiguration(path.resolve(projectRoot), project.projectDirectory, pageProjectSettings(projectDocument, render)),
+      ...(full || scope.kind === 'page' ? await readPageRenderConfiguration(path.resolve(projectRoot), project.projectDirectory, pageProjectSettings(projectDocument, render)) : {}),
+      prompt:publicPrompt(promptValue),prompt_sha256:hashCanonicalJson(promptDocument),
+      prompt_context_sha256:await pagePromptContextSha256(project.projectDirectory, membership.owner_kind,pageId),
+      } : {}),
+      ...(output && render ? {render, ...await readPageRenderConfiguration(path.resolve(projectRoot), project.projectDirectory, pageProjectSettings(projectDocument, render))} : {}),
       ...membership, kind: membership.owner_kind, owner: structuredClone(membership),
       owner_id: membership.character_id ?? membership.scene_id,
-      page_key: createPageKey(pageId), title: content.title, scene_description: content.scene_description,
-      page_kind: content.page_kind ?? null, body: content.body ?? '',
+      page_key: createPageKey(pageId), title: content.title, page_kind: content.page_kind ?? null,
+      ...(edit || story || output ? { scene_description: content.scene_description, body: content.body ?? '',
       ...(content.page_kind === 'text' ? {display_title:content.display_title ?? '',text_layout:structuredClone(content.text_layout ?? defaultTextPageLayout)} : {}),
       characters: structuredClone(content.characters), dialogue: structuredClone(content.dialogue),
       content_sha256: hashCanonicalJson(content),
-      lettering: structuredClone(letteringByPage.get(pageId) ?? {page:pageId,items:[]}), layout_sha256:letteringSha256,
-      prompt:publicPrompt(promptValue),prompt_sha256:hashCanonicalJson(promptDocument),
-      prompt_context_sha256:await pagePromptContextSha256(project.projectDirectory, membership.owner_kind,pageId).catch(()=>null),
+      ...(full || scope.kind === 'page' || output ? {lettering: structuredClone(letteringByPage.get(pageId) ?? {page:pageId,items:[]}), layout_sha256:letteringSha256} : {}),
+      } : {}),
     };
     pages.push(page);
     const owner = membership.owner_kind === 'character' ? characterMap.get(membership.character_id) : membership.owner_kind === 'scene' ? sceneMap.get(membership.scene_id) : null;
@@ -240,31 +294,37 @@ export async function readProjectWorkbenchView(projectRoot, projectId) {
       diagnostics.push({code:'dangling_page_owner',page_id:pageId,owner:structuredClone(membership)});
     } else if (owner) owner.pages.push(page);
   }
+  if (!full) {
+    for (const [kind, entries] of [['character', characters], ['scene', scenes.scenes]]) {
+      for (const entry of entries) if (requiredSettings[kind].has(entry.id)) Object.assign(entry, await readWorkbenchSettingDetail(project.projectDirectory, project.projectId, kind, entry.id));
+    }
+  }
   for (const character of characters) {
+    if (!character.prompt) continue;
     const visualVariants = new Set(character.visual.variants.map(variant => variant.id));
     const promptVariants = new Set(Object.keys(character.prompt.variants));
     for (const variantId of visualVariants) if (!promptVariants.has(variantId)) diagnostics.push({code:'missing_variant_prompt',character_id:character.id,variant_id:variantId});
     for (const variantId of promptVariants) if (!visualVariants.has(variantId)) diagnostics.push({code:'dangling_prompt_variant_reference',character_id:character.id,variant_id:variantId});
   }
-  for (const characterId of Object.keys(letteringSettings.character_colors)) {
+  for (const characterId of Object.keys(letteringSettings?.character_colors ?? {})) {
     if (!characterMap.has(characterId)) diagnostics.push({ code: "dangling_character_style_reference", character_id: characterId });
   }
-  for (const character of characters) character.style = letteringSettings.character_colors[character.id]
+  for (const character of characters) character.style = letteringSettings?.character_colors[character.id]
     ? { display_color: letteringSettings.character_colors[character.id] }
     : null;
-  const { render_capabilities: renderCapabilities } = await readPageRenderConfiguration(path.resolve(projectRoot), project.projectDirectory, projectDocument);
+  const renderCapabilities = full ? (await readPageRenderConfiguration(path.resolve(projectRoot), project.projectDirectory, projectDocument)).render_capabilities : undefined;
   return {
     version: 6,
-    pages, orphan_pages: orphanPages,
+    ...(full || scope.kind === 'finished' ? { pages } : { scope }), orphan_pages: orphanPages,
     scenes,
-    scenes_sha256: hashCanonicalJson(scenes),
+    ...(full ? {scenes_sha256: hashCanonicalJson(scenes)} : {}),
     project: {
       id: project.projectId,
       title: projectDocument.title ?? project.projectId,
       canvas: projectDocument.canvas ?? null,
       default_render_profile: projectDocument.default_render_profile ?? null,
       lettering_settings: structuredClone(letteringSettings),
-      lettering_settings_sha256: hashCanonicalJson(letteringSettings),
+      lettering_settings_sha256: letteringSettings ? hashCanonicalJson(letteringSettings) : null,
     },
     outline: {
       synopsis: outline.synopsis,

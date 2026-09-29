@@ -33,6 +33,8 @@ import ProjectGenerationSettingsView from "./ProjectGenerationSettingsView";
 import StoryOverview, { type StoryOverviewTarget } from "./StoryOverview";
 import { createProjectRequestGuard } from "./project-request-guard";
 import { createWorkbenchSnapshotSync } from "./workbench-snapshot-sync";
+import { isEditablePage, isEditableSetting, type EditableWorkbenchPage } from './project-workbench-client';
+import { workbenchScope } from './workbench-scope';
 import { createPageMediaRequestGuard } from "./page-media-request";
 import { ProjectLetteringSettingsView, ProjectMaterialsView, ProjectSettingsView } from "./ProjectUtilityViews";
 import { ResourceDetailsButton, ResourcePicker, ResourcePreview, loraResourceCatalogItem, rawLoraCatalogItem, resourceStatusLabel, type LoraResourceDefinition, type ResourceCatalogItem } from "./ResourceCatalog";
@@ -544,7 +546,7 @@ function LetteringCanvasProbe({ canvas, onWidthChange }: { canvas: string; onWid
 
 export function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSettings, pageOrder, onOpenPromptOverview, projectId, location, ownerPages, characters, scenes, renderCapabilities, defaultRenderProfile, canvas, letteringStyle, taskCollection, busy, editorWidth, candidateWidth, onEditorWidthChange, onCandidateWidthChange, onPageChanged, onReload, onTrackedTasksChange }: {
   projectId: string;
-  location: PageLocation;
+  location: PageLocation & { page: EditableWorkbenchPage };
   onOpenPromptOverview: () => void;
   onOpenLetteringSettings: () => void;
   editorTab?: "visual" | "lettering" | "flow";
@@ -553,7 +555,7 @@ export function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSet
   ownerPages: PageLocation[];
   characters: WorkbenchCharacter[];
   scenes: Scene[];
-  renderCapabilities: ProjectWorkbenchView["render_capabilities"];
+  renderCapabilities: NonNullable<ProjectWorkbenchView["render_capabilities"]>;
   defaultRenderProfile: string | null;
   canvas: string | null;
   letteringStyle: ProjectWorkbenchView["project"]["lettering_settings"];
@@ -764,6 +766,7 @@ export function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSet
 
   useEffect(() => {
     let disposed = false;
+    if (page.page_kind === 'text') return;
     const timer = window.setTimeout(() => {
       void inspectPageRender(projectId, page.page_key, promptDraft, promptSource).then(({ inspection }) => {
         if (!disposed) { setRenderInspection(inspection); setInspectionBaseKey(currentBaseKey); setRenderInspectionKey(inspectionDepsKey); setRenderInspectionError(""); }
@@ -962,7 +965,9 @@ export default function StoryWorkbench({ initialImagesHidden, imagePrivacyStorag
     navigate(reconcileNavigation(navigationRef.current, viewRef.current, next), true);
     viewRef.current = next;
     setView(next);
-  }));
+  }, () => workbenchScope(navigationRef.current)));
+  const requestedScopeKey = JSON.stringify(workbenchScope(navigation));
+  const scopeReady = view && JSON.stringify(view.scope) === requestedScopeKey;
   const [countSnapshot, setCountSnapshot] = useState<{ projectId: string; counts: Record<string, number> } | null>(null);
   const candidateCounts = countSnapshot?.projectId === projectId ? countSnapshot.counts : null;
   useEffect(() => {
@@ -1220,7 +1225,7 @@ export default function StoryWorkbench({ initialImagesHidden, imagePrivacyStorag
       setError(cause instanceof Error ? cause.message : String(cause));
     });
     return () => controller.abort();
-  }, [projectId, snapshotSync]);
+  }, [projectId, snapshotSync, requestedScopeKey]);
 
   useEffect(() => {
     if (!(activeTab === "comparison" || activeTab.startsWith("resource-")) || globalResources) return;
@@ -1410,25 +1415,21 @@ export default function StoryWorkbench({ initialImagesHidden, imagePrivacyStorag
 
   function settingMenuItems(setting: WorkbenchCharacter, kind: 'character' | 'scene' = 'character'): NavigationMenuItem[] {
     const label = kind === 'scene' ? '场景' : '角色';
-    const consumers = locations.filter(({page}) => setting.pages.some(p => p.page_id === page.page_id) || (kind === 'scene' ? page.prompt.scene_id === setting.id : page.characters?.some(ref => ref.character_id === setting.id) || page.dialogue?.some(line => line.speaker === setting.id)));
     return [
       { id: `create-variant-${setting.id}`, label: '新增子设定', onSelect: () => setNamedCreateTarget({ kind: 'variant', entityKind: kind, characterId: setting.id, characterName: setting.name }) },
-      { id: `delete-${kind}-${setting.id}`, label: `删除${label}`, danger: true, hint: consumers.length ? `${consumers.length} 个页面需整理或修复引用` : undefined, onSelect: () => void (async () => {
-        if (await confirm({kind: 'warning', title: `删除${label}`, message: `删除“${setting.name}”？保留引用、页面和图片。${consumers.length} 个页面可能需要整理或修复。`, danger: true}))
+      { id: `delete-${kind}-${setting.id}`, label: `删除${label}`, danger: true, hint: "已有引用和所属页面会保留", onSelect: () => void (async () => {
+        if (await confirm({kind: 'warning', title: `删除${label}`, message: `删除“${setting.name}”？保留引用、页面和图片。已有引用可能需要整理或修复。`, danger: true}))
           await performNavigationAction(`delete-${kind}`, { [`${kind}_id`]: setting.id }, `${label}已删除`);
       })() },
     ];
   }
 
   function settingVariantMenuItems(setting: WorkbenchCharacter, variant: WorkbenchCharacter['visual']['variants'][number], kind: 'character' | 'scene' = 'character'): NavigationMenuItem[] {
-    const inUse = locations.some(({page}) => setting.pages.some(p => p.page_id === page.page_id && p.variant_id === variant.id) || (kind === 'scene'
-      ? page.prompt.scene_id === setting.id && page.prompt.scene_variant_id === variant.id
-      : page.characters?.some(ref => ref.character_id === setting.id && ref.variant_id === variant.id)));
     const last = setting.visual.variants.length <= 1;
     return [
       {id: `variant-after-${variant.id}`, label: '新增子设定', onSelect: () => setNamedCreateTarget({kind:'variant', entityKind: kind, characterId: setting.id, characterName: setting.name, afterVariantId: variant.id})},
       {id: `page-${variant.id}`, label: '新增页面', onSelect: () => createSettingPage(setting, variant.id, kind)},
-      {id: `delete-${variant.id}`, label: '删除子设定', danger: true, disabled: last || inUse, hint: last ? '至少保留一个子设定' : inUse ? '请先移走页面并修复引用' : undefined, onSelect: () => void (async () => {
+      {id: `delete-${variant.id}`, label: '删除子设定', danger: true, disabled: last, hint: last ? '至少保留一个子设定' : '删除时检查页面和引用', onSelect: () => void (async () => {
         if (await confirm({kind:'warning',title:'删除子设定',message:`删除“${variant.name}”及其 Prompt / LoRA？`,danger:true})) await performNavigationAction(`delete-${kind}-variant`, {[`${kind}_id`]:setting.id,variant_id:variant.id},'子设定已删除');
       })()},
     ];
@@ -1852,6 +1853,7 @@ export default function StoryWorkbench({ initialImagesHidden, imagePrivacyStorag
         : resourceSectionActive ? <GlobalModelsView resources={globalResources} kind={activeTab === "resource-base" ? "base" : "lora"} />
         : activeTab === "comparison" ? <ComparisonExperimentsView resources={globalResources} runtimeTasks={runtimeTasks} />
         : !view ? <div className="empty-state"><h3>{error ? "项目加载失败" : projects.length ? "正在加载" : "还没有项目"}</h3><p>{error ?? (projects.length ? "正在读取项目事实。" : "在 workspace 中创建项目后刷新工作台。")}</p></div>
+          : !scopeReady ? <div className="empty-state"><h3>{error ? "视图加载失败" : "正在读取当前视图"}</h3><p>{error}</p>{error && <button onClick={() => void reload().catch(cause => setError(String(cause)))}>重试</button>}</div>
           : activeTab === "project-settings" && view.project.canvas && view.project.default_render_profile ? <ProjectSettingsView projectId={projectId} project={{ ...view.project, canvas: view.project.canvas, default_render_profile: view.project.default_render_profile }} busy={utilityBusy} onSave={(settings) => saveProjectSettings({ ...view.project, ...settings }, "基础设置")} directory={currentRegisteredProject?.path} />
           : activeTab === "project-render-profile" && view.project.canvas && view.project.default_render_profile ? <ProjectGenerationSettingsView projectId={projectId} project={{ ...view.project, canvas: view.project.canvas, default_render_profile: view.project.default_render_profile }} busy={utilityBusy} onSaveProject={(settings) => saveProjectSettings({ ...view.project, ...settings }, "生成设置")} />
           : activeTab === "project-lettering" && view.project.lettering_settings && view.project.lettering_settings_sha256 ? <ProjectLetteringSettingsView projectId={projectId} settings={view.project.lettering_settings} settingsSha256={view.project.lettering_settings_sha256} characters={view.characters.map(({ id, name }) => ({ id, name }))} previewCanvasWidth={letteringCanvasWidth} busy={utilityBusy} onSave={saveProjectLetteringSettings} />
@@ -1867,7 +1869,7 @@ export default function StoryWorkbench({ initialImagesHidden, imagePrivacyStorag
             });
           }} />
           : activeTab === 'orphan-pages' && !activeLocation ? <section className="resource-editor"><WorkspaceHeader title="待整理页面" /><p>所属目录已不存在；页面内容和图片仍保留，可以移动到新的目录。</p>{(view.orphan_pages ?? []).map(page=><div key={page.page_id}><button className="button" onClick={()=>chooseNavigationPage(page)} onContextMenu={event=>showNavigationMenu(event,page.title,pageMenuItems(page))}>{page.title}</button><button className="button button--quiet" onClick={()=>setMovingPage(page)}>移动页面</button></div>)}</section>
-          : activeTab === "scenes" && !activeLocation && activeScene ? <SettingView key={`scene:${activeScene.id}`} kind="scene" projectId={projectId} character={activeScene} initialSettingId={sceneSettingId} busy={loading} onSaved={() => { void reload(true); }} onSettingChange={id => navigate(openNavigationScene(navigationRef.current, activeScene.id, id))} />
+          : activeTab === "scenes" && !activeLocation && activeScene && isEditableSetting(activeScene) ? <SettingView key={`scene:${activeScene.id}`} kind="scene" projectId={projectId} character={activeScene} initialSettingId={sceneSettingId} busy={loading} onSaved={() => { void reload(true); }} onSettingChange={id => navigate(openNavigationScene(navigationRef.current, activeScene.id, id))} />
           : activeTab === "scenes" && !activeLocation ? <section className="empty-state"><h3>还没有场景</h3><button className="button" onClick={createScene}>新建场景</button></section>
           : activeTab === "prompt-overview" ? <PromptOverview key={projectId} projectId={projectId} view={view} focus={promptOverviewFocus} busy={loading} onOpenPage={(page) => void choosePage(page)} onSaved={(page) => { if (projectRequestGuard.current.isProjectCurrent(renderedProjectScope)) setView(current => current ? replaceWorkbenchPage(current, page, page) : current); }} onTrackedTasks={updateTrackedRuntimeTasks} />
           : activeTab === "finished" ? <FinishedPagesView key={projectId} projectId={projectId} onOpenPage={(key) => { const target = locations.find(item => samePageKey(item.page.page_key, key)); if (target) void choosePage(target.page); }} />
@@ -1875,8 +1877,8 @@ export default function StoryWorkbench({ initialImagesHidden, imagePrivacyStorag
           : activeTab === "project-materials" ? <ProjectMaterialsView projectId={projectId} />
 
 
-          : activeLocation ? <PageWorkspace pageOrder={activeLocation.page.kind === "story" ? locations.filter(item => item.page.kind === "story").findIndex(item => item.key === activeLocation.key) + 1 : activeOwnerLocations.findIndex(item => item.key === activeLocation.key) + 1} editorTab={navigation.editorTab} onEditorTabChange={tab => navigate({ ...navigationRef.current, editorTab: tab }, true)} onOpenLetteringSettings={() => void openTab("project-lettering")} onOpenPromptOverview={() => void openPromptOverview(activeLocation.page)} projectId={projectId} location={activeLocation} ownerPages={activeOwnerLocations} characters={view.characters} scenes={view.scenes?.scenes ?? []} renderCapabilities={activeLocation.page.render_capabilities??view.render_capabilities} defaultRenderProfile={activeLocation.page.render?.profile_id??view.project.default_render_profile} canvas={activeLocation.page.render?.canvas??view.project.canvas} letteringStyle={view.project.lettering_settings} taskCollection={runtimeTasks} busy={loading} editorWidth={editorWidth} candidateWidth={candidateWidth} onEditorWidthChange={setEditorWidth} onCandidateWidthChange={setCandidateWidth} onPageChanged={(page, replacement) => { if (projectRequestGuard.current.isProjectCurrent(renderedProjectScope)) setView((current) => current ? replaceWorkbenchPage(current, page, replacement) : current); }} onReload={reload} onTrackedTasksChange={updateTrackedRuntimeTasks} />
-          : activeTab === "characters" && activeCharacter ? (<SettingView key={`character:${activeCharacter.id}`} projectId={projectId} character={activeCharacter} initialSettingId={activeCharacterSettingId} busy={loading} onSaved={(result) => { if (!projectRequestGuard.current.isProjectCurrent(renderedProjectScope)) return; setView((current) => current ? { ...current, characters: current.characters.map((entry) => entry.id === activeCharacter.id ? { ...entry, ...result } : entry) } : current); void reload(true); }} onSettingChange={(next) => navigate(openNavigationCharacter(navigationRef.current, activeCharacter.id, next))} />)
+          : activeLocation && isEditablePage(activeLocation.page) && activeLocation.page.render_capabilities ? <PageWorkspace pageOrder={activeLocation.page.kind === "story" ? locations.filter(item => item.page.kind === "story").findIndex(item => item.key === activeLocation.key) + 1 : activeOwnerLocations.findIndex(item => item.key === activeLocation.key) + 1} editorTab={navigation.editorTab} onEditorTabChange={tab => navigate({ ...navigationRef.current, editorTab: tab }, true)} onOpenLetteringSettings={() => void openTab("project-lettering")} onOpenPromptOverview={() => void openPromptOverview(activeLocation.page)} projectId={projectId} location={{...activeLocation, page:activeLocation.page}} ownerPages={activeOwnerLocations} characters={view.characters} scenes={view.scenes?.scenes ?? []} renderCapabilities={activeLocation.page.render_capabilities} defaultRenderProfile={activeLocation.page.render?.profile_id??view.project.default_render_profile} canvas={activeLocation.page.render?.canvas??view.project.canvas} letteringStyle={view.project.lettering_settings} taskCollection={runtimeTasks} busy={loading} editorWidth={editorWidth} candidateWidth={candidateWidth} onEditorWidthChange={setEditorWidth} onCandidateWidthChange={setCandidateWidth} onPageChanged={(page, replacement) => { if (projectRequestGuard.current.isProjectCurrent(renderedProjectScope)) setView((current) => current ? replaceWorkbenchPage(current, page, replacement) : current); }} onReload={reload} onTrackedTasksChange={updateTrackedRuntimeTasks} />
+          : activeTab === "characters" && activeCharacter && isEditableSetting(activeCharacter) ? (<SettingView key={`character:${activeCharacter.id}`} projectId={projectId} character={activeCharacter} initialSettingId={activeCharacterSettingId} busy={loading} onSaved={(result) => { if (!projectRequestGuard.current.isProjectCurrent(renderedProjectScope)) return; setView((current) => current ? { ...current, characters: current.characters.map((entry) => entry.id === activeCharacter.id ? { ...entry, ...result } : entry) } : current); void reload(true); }} onSettingChange={(next) => navigate(openNavigationCharacter(navigationRef.current, activeCharacter.id, next))} />)
             : <div className="empty-state"><h3>当前没有页面</h3><p>Agent 写入页面事实后会显示在这里。</p></div>}</section>
     </div>
     {!globalArea && navigationDrawer && pageNavigationVisible && <nav className="page-turn-navigation" aria-label="页面翻页">

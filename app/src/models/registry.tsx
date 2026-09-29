@@ -6,7 +6,7 @@ import type {ModelPageEditorProps,ModelSettingEditorProps} from './types';
 import {AnimaSettingView} from './anima/SettingView';
 import {QwenSettingView} from './qwen/SettingView';
 import type {CharacterPromptDocument as AnimaPrompt} from './anima/types';
-import {saveSettingPrompt,type WorkbenchCharacter} from '../project-workbench-client';
+import {saveSettingPrompt,type EditableWorkbenchCharacter as WorkbenchCharacter, type WorkbenchCharacter as SettingSummary} from '../project-workbench-client';
 import {PageLoraEditor} from './PageLoraEditor';
 import {AnimaOverviewEditor,QwenOverviewEditor} from './OverviewEditor';
 const AnimaSettingEditor=(props:ModelSettingEditorProps)=><AnimaSettingView {...props} character={props.character as unknown as WorkbenchCharacter<AnimaPrompt>} onSaved={value=>props.onSaved(value as unknown as Partial<WorkbenchCharacter>)}/>;
@@ -34,7 +34,7 @@ export function ModelOverviewEditor(props:Parameters<typeof QwenOverviewEditor>[
 export const modelChoices=[{id:'anima',label:'Anima Basic',profileId:'anima-base-v1'},{id:'qwen',label:'Qwen-Image-2.1',profileId:'qwen-image-2-1'}] as const;
 export function ModelPromptEditor(props:ModelPageEditorProps) {
   const adapter=models[props.page.model_id??'qwen'];
-  const projectSetting=(value:WorkbenchCharacter)=>({...value,prompt:value.model_prompts?.models?.[props.page.model_id??'qwen']??value.prompt}) as WorkbenchCharacter;
+  const projectSetting=(value:SettingSummary)=>({...value,prompt:value.model_prompts?.models?.[props.page.model_id??'qwen']??value.prompt}) as SettingSummary;
   const inheritedNames=props.page.model_id==='anima'?[...props.references.flatMap(ref=>{const input=props.characters.find(c=>c.id===ref.character_id)?.model_prompts?.models?.anima;return input?settingLoras(input.identity,input.variants[ref.variant_id]).map(lora=>lora.filename):[];}),...props.scenes.filter(c=>c.id===props.prompt.scene_id).flatMap(c=>{const input=c.model_prompts?.models?.anima;return input?settingLoras(input.identity,input.variants[props.prompt.scene_variant_id??'']).map(lora=>lora.filename):[];})]:[];
   return <div className="compact-prompt-editor">{props.page.model_id!=='anima'&&props.header}<adapter.PageEditor {...props} characters={props.characters.map(projectSetting)} scenes={props.scenes.map(projectSetting)}/><PageLoraEditor settingFilenames={inheritedNames} projectId={props.projectId} page={props.page} prompt={props.prompt} onChange={props.onChange} disabled={props.disabled}/></div>;
 }

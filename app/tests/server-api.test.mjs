@@ -478,7 +478,7 @@ test("子设定重命名端点联动更新引用并返回新指纹", async (cont
   assert.deepEqual(Object.keys(persistedPrompt.models.qwen.variants), ["casual"]);
   // sha 与落盘事实一致，可直接刷新前端乐观锁指纹。
   const view = await (await fetch(`${origin}/api/projects/current-story/workbench`)).json();
-  const viewCharacter = view.characters.find((item) => item.id === character.character_id);
+  const viewCharacter = await (await fetch(origin + '/api/projects/current-story/workbench/setting-detail?kind=character&id=' + character.character_id)).json();
   assert.equal(viewCharacter.visual_sha256, renamed.visual_sha256);
   assert.equal(viewCharacter.prompt_sha256, renamed.prompt_sha256);
 
@@ -566,7 +566,7 @@ test("候选原图使用不可变私有缓存；其他媒体仍不缓存", async
   const project = path.join(projectRoot, "workspace", "current-story");
   const { PNG } = (await import("pngjs")).default;
   const png = PNG.sync.write(new PNG({ width: 1, height: 1 }));
-  for (const file of ["Outputs/story/page-001/candidate-11111111-1111-4111-8111-111111111111/image.png", "materials/reference.png"]) {
+  for (const file of ["Outputs/pages/page-001/candidate-11111111-1111-4111-8111-111111111111/image.png", "materials/reference.png"]) {
     await mkdir(path.dirname(path.join(project, file)), { recursive: true });
     await writeFile(path.join(project, file), png);
     const response = await fetch(`${origin}/api/projects/current-story/media/${file}`);
@@ -582,7 +582,7 @@ test("候选图按 w 参数生成缩放变体并落盘缓存，其他媒体忽�
   const { PNG } = (await import("pngjs")).default;
   const sharp = (await import("sharp")).default;
   const png = PNG.sync.write(new PNG({ width: 2000, height: 1000 }));
-  const file = "Outputs/story/page-001/candidate-22222222-2222-4222-8222-222222222222/image.png";
+  const file = "Outputs/pages/page-001/candidate-22222222-2222-4222-8222-222222222222/image.png";
   await mkdir(path.dirname(path.join(project, file)), { recursive: true });
   await writeFile(path.join(project, file), png);
 
@@ -620,7 +620,7 @@ test("候选图按 w 参数生成缩放变体并落盘缓存，其他媒体忽�
   const plain = await fetch(`${origin}/api/projects/current-story/media/${material}?w=100`);
   assert.equal(plain.headers.get("content-type"), "image/png", "非候选路径忽略变体参数");
 
-  const broken = "Outputs/story/page-001/candidate-33333333-3333-4333-8333-333333333333/image.png";
+  const broken = "Outputs/pages/page-001/candidate-33333333-3333-4333-8333-333333333333/image.png";
   await mkdir(path.dirname(path.join(project, broken)), { recursive: true });
   await writeFile(path.join(project, broken), Buffer.from("not a real png"));
   const fallback = await fetch(`${origin}/api/projects/current-story/media/${broken}?w=320`);
@@ -633,7 +633,7 @@ test("候选发布预热全部变体档位", async () => {
   try {
     const { PNG } = (await import("pngjs")).default;
     const png = PNG.sync.write(new PNG({ width: 2000, height: 1000 }));
-    const file = "Outputs/story/page-001/candidate-44444444-4444-4444-8444-444444444444/image.png";
+    const file = "Outputs/pages/page-001/candidate-44444444-4444-4444-8444-444444444444/image.png";
     await mkdir(path.dirname(path.join(projectDirectory, file)), { recursive: true });
     await writeFile(path.join(projectDirectory, file), png);
     await warmMediaVariants(projectDirectory, file);
@@ -657,7 +657,7 @@ test("Agent 草稿与网页共用窄写入：无关页面放行，目标和 Prom
     const response = await fetch(origin + route, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     return { status: response.status, body: await response.json() };
   };
-  const view = await (await fetch(origin + base)).json();
+  const view = await (await fetch(origin + base + '?scope=' + encodeURIComponent(JSON.stringify({kind:'prompts'})))).json();
   const [page, other] = view.outline.chapters[0].sequences[0].pages;
   const begin = await call("/api/agent/facts/story/narrative/read", { project_id: "current-story", target_id: first.page_id });
   assert.equal(begin.status, 200);
@@ -671,7 +671,7 @@ test("Agent 草稿与网页共用窄写入：无关页面放行，目标和 Prom
   const stalePrompt = await call(base + "/page-prompt", promptRequest, "PUT");
   assert.equal(stalePrompt.status, 409);
   assert.equal(stalePrompt.body.error, "page_prompt_upstream_conflict");
-  const current = (await (await fetch(origin + base)).json()).outline.chapters[0].sequences[0].pages[0];
+  const current = (await (await fetch(origin + base + '?scope=' + encodeURIComponent(JSON.stringify({kind:'prompts'})))).json()).outline.chapters[0].sequences[0].pages[0];
   assert.equal(current.title, "Agent 的修改");
   const pending = await call("/api/agent/facts/story/narrative/read", { project_id: "current-story", target_id: first.page_id });
   const changed = await call(base + "/page-content", { page_key: current.page_key, expected_sha256: current.content_sha256, content: { ...content(current), title: "网页的新修改" } }, "PUT");

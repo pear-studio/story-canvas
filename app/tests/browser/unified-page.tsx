@@ -15,6 +15,7 @@ const setting = (id: string, name: string): WorkbenchCharacter => ({
 });
 const characters = [setting('alice','艾莲'),setting('bob','鲍勃')];
 const scenes = [setting('room','房间'),setting('street','街道')];
+if (new URLSearchParams(location.search).has('lazy-reference')) { delete characters[1].prompt; delete characters[1].prompt_sha256; }
 const kind = new URLSearchParams(location.search).get('kind') as WorkbenchPage['kind'] ?? 'story';
 const initial: WorkbenchPage = {
   kind, page_id:'page-fixture', page_key:{page_id:'page-fixture'}, character_id:kind==='character'?'alice':undefined,
@@ -28,7 +29,8 @@ function Harness() {
  const [page,setPage] = useState(initial);
  if (new URLSearchParams(location.search).has('workspace')) return <PageWorkspace projectId="test" location={{page,key:page.page_id,breadcrumb:['测试',page.title]}} ownerPages={[]} characters={characters} scenes={scenes} renderCapabilities={{candidates:{available:true,counts:[1,3]}}} defaultRenderProfile="qwen" canvas="2:3" letteringStyle={null} taskCollection={{tasks:[],history:[]}} busy={false} editorWidth={600} candidateWidth={200} pageOrder={1} onEditorTabChange={()=>{}} onOpenLetteringSettings={()=>{}} onOpenPromptOverview={()=>{}} onEditorWidthChange={()=>{}} onCandidateWidthChange={()=>{}} onPageChanged={(_target,patch)=>setPage(current=>({...current,...patch}))} onReload={async()=>{}} onTrackedTasksChange={()=>{}} />;
  return <div style={{maxWidth:1000,padding:24}}><button onClick={()=>setPage(current=>({...current,scene_description:'外部改写的内容',characters:[],prompt:{ text:'', scene_id:'room', scene_variant_id:'night' },content_sha256:'external-content',prompt_sha256:'external-prompt',prompt_context_sha256:'external-context',layout_sha256:'external-layout'}))}>模拟外部刷新</button><WorkbenchPageEditor projectId="test" page={page} characters={characters} scenes={scenes} letteringStyle={{font_family:"Microsoft YaHei",font_size:28,character_speech:{direction:"horizontal",kind:"balloon"},character_thought:{direction:"horizontal",kind:"plain"},npc_speech:{direction:"horizontal",kind:"balloon"}}}
-   onSavePage={async(content,prompt,items,baseline)=>{
+   onSavePage={async(content,prompt,items,baseline,sourceVersions)=>{
+     localStorage.setItem('submitted-sources',JSON.stringify(sourceVersions));
      localStorage.setItem('submitted-baseline',JSON.stringify(baseline));
      if(baseline.content_sha256!==page.content_sha256)throw new Error('page_content_target_conflict');
      if(new URLSearchParams(location.search).has('fail-once')&&!sessionStorage.getItem('failed')){sessionStorage.setItem('failed','true');throw new Error('模拟写入冲突');}

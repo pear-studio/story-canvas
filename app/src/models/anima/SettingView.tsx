@@ -9,7 +9,7 @@ import { PromptFragmentEditor, type PromptFragment as DisplayPromptFragment } fr
 import { createPromptDraftFragment, displayPromptDraft, persistPromptDraft } from '../../prompt-fragment-draft';
 import { InlineTitleEditor, SectionHeader, WorkspaceHeader } from '../../WorkspaceHeader';
 import { useFeedback } from '../../feedback';
-import {saveSettingProfile, saveSettingVisual, saveSettingPromptScope, renameSettingVariant, type SettingKind, type CharacterProfileDraft, type CharacterVisualDraft, type WorkbenchCharacter as SharedCharacter} from '../../project-workbench-client';
+import {saveSettingProfile, saveSettingVisual, saveSettingPromptScope, renameSettingVariant, type SettingKind, type CharacterProfileDraft, type CharacterVisualDraft, type EditableWorkbenchCharacter as SharedCharacter} from '../../project-workbench-client';
 import {promptCategories, type CharacterLora, type CharacterPromptDocument, type CharacterPromptSetting, type InheritedAdjustments} from './types';
 type WorkbenchCharacter = SharedCharacter<CharacterPromptDocument>;
 const promptLabels = { population: '其他', person: '人物', setting: '场景', camera: '镜头', avoid: '避免' };

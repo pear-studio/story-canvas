@@ -10,6 +10,8 @@ import {
   readFacts,
 } from "./project-write-client";
 import type { LetteringItem, LetteringSettings } from "./lettering";
+import type { WorkbenchScope } from '../shared/workbench-scope.mjs';
+export type { WorkbenchScope } from '../shared/workbench-scope.mjs';
 
 export const characterSource = (id: string, variant: string) => `character:${id}:${variant}`;
 export const sceneSource = (id: string, variant: string) => `scene:${id}:${variant}`;
@@ -88,9 +90,9 @@ export type WorkbenchPage = {
   title: string;
   visual_goal?: string;
   scene_description?: string;
-  content_sha256: string;
-  prompt: PagePrompt;
-  prompt_sha256: string;
+  content_sha256?: string;
+  prompt?: PagePrompt;
+  prompt_sha256?: string;
   prompt_context_sha256?: string | null;
   characters?: Array<{ character_id: string; variant_id: string }>;
   dialogue?: Array<{ id: string; mode: "narration" | "speech" | "thought" | "heart"; speaker?: string; text: string; position?: "top" | "bottom" }>;
@@ -110,16 +112,17 @@ export type WorkbenchCharacter<TPrompt = CharacterPromptDocument> = {
   model_prompts?: {models?: {anima?:import('./models/anima/types').CharacterPromptDocument;qwen?:CharacterPromptDocument}};
   id: string;
   name: string;
-  description: string;
-  profile_sha256: string;
+  description?: string;
+  profile_sha256?: string;
   visual: { description?: string; variants: Array<{ id: string; name: string; description?: string }> };
-  visual_sha256: string;
-  prompt: TPrompt;
-  prompt_sha256: string;
+  visual_sha256?: string;
+  prompt?: TPrompt;
+  prompt_sha256?: string;
   style: { display_color: string } | null;
   pages: WorkbenchPage[];
 };
 export type ProjectWorkbenchView = {
+  scope?: WorkbenchScope;
   scenes?: { scenes: Scene[] };
   scenes_sha256?: string;
   pages?: WorkbenchPage[];
@@ -132,12 +135,21 @@ export type ProjectWorkbenchView = {
     chapters: Array<{ id: string; title: string; summary: string; summary_sha256: string; sequences: Array<{ id: string; title: string; summary: string; summary_sha256: string; pages: WorkbenchPage[] }> }>;
   };
   characters: WorkbenchCharacter[];
-  render_capabilities: {
+  render_capabilities?: {
     text_page?: { dimensions: { width: number; height: number } | null; error: string | null };
     candidates: { available: boolean; counts: number[]; blocker?: string; details?: string[] };
   };
   diagnostics: Array<{ code: string; [key: string]: unknown }>;
 };
+
+export type EditableWorkbenchPage = WorkbenchPage & Required<Pick<WorkbenchPage, 'prompt' | 'prompt_sha256' | 'content_sha256'>>;
+export type EditableWorkbenchCharacter<TPrompt = CharacterPromptDocument> = WorkbenchCharacter<TPrompt> & Required<Pick<WorkbenchCharacter<TPrompt>, 'prompt' | 'prompt_sha256' | 'profile_sha256' | 'visual_sha256' | 'description'>>;
+export function isEditablePage(page: WorkbenchPage): page is EditableWorkbenchPage {
+  return Boolean(page.prompt && page.prompt_sha256 && page.content_sha256);
+}
+export function isEditableSetting(setting: WorkbenchCharacter): setting is EditableWorkbenchCharacter {
+  return Boolean(setting.prompt && setting.prompt_sha256 && setting.profile_sha256 && setting.visual_sha256 && typeof setting.description === 'string');
+}
 
 function base(projectId: string) {
   return `/api/projects/${encodeURIComponent(projectId)}/workbench`;
@@ -151,8 +163,8 @@ export async function runNavigationAction(projectId: string, action: string, val
   }));
 }
 
-export async function loadProjectWorkbench(projectId: string, signal?: AbortSignal) {
-  const response = await readFacts(base(projectId), { headers: { accept: "application/json" }, signal });
+export async function loadProjectWorkbench(projectId: string, signal?: AbortSignal, scope: WorkbenchScope = { kind: 'directory' }) {
+  const response = await readFacts(`${base(projectId)}?scope=${encodeURIComponent(JSON.stringify(scope))}`, { headers: { accept: "application/json" }, signal });
   const view = await workbenchResponseJson<ProjectWorkbenchView>(response);
   const revision = response.headers.get(PROJECT_REVISION_HEADER);
   if (!revision) throw new Error("工作台响应缺少项目 revision");
@@ -161,6 +173,10 @@ export async function loadProjectWorkbench(projectId: string, signal?: AbortSign
 
 export async function loadProjectRevision(projectId: string, signal?: AbortSignal) {
   return workbenchResponseJson<{ revision: string }>(await readFacts(`/api/projects/${encodeURIComponent(projectId)}/revision`, { cache: "no-store", signal }));
+}
+
+export async function loadWorkbenchSetting(projectId: string, kind: SettingKind, id: string, signal?: AbortSignal) {
+  return workbenchResponseJson<Omit<WorkbenchCharacter, 'pages' | 'style'>>(await readFacts(`${base(projectId)}/setting-detail?kind=${kind}&id=${encodeURIComponent(id)}`, {signal}));
 }
 
 export async function loadPageMedia(

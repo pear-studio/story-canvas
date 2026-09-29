@@ -107,7 +107,16 @@ async function setup(t, { character = false, mobile = false, visualPages = false
     if (pathname === "/api/lora-training/environment") return reply({ available: false, checks: [], captioning: { configured: false, ready: false } });
     const id = pathname.split("/")[3];
     if (pathname.endsWith("/revision")) return reply({ revision: String(revision) });
-    if (pathname.endsWith("/workbench")) return reply(views[id]);
+    if (pathname.endsWith("/workbench")) {
+      const view = structuredClone(views[id]);
+      view.scope = JSON.parse(new URL(route.request().url()).searchParams.get('scope'));
+      for (const page of [...view.outline.chapters.flatMap(c=>c.sequences.flatMap(s=>s.pages)),...view.characters.flatMap(c=>c.pages)]) {
+        if (view.scope.kind === 'page' && view.scope.page_id === page.page_id) page.render_capabilities = view.render_capabilities;
+        else if (view.scope.kind !== 'prompts') for (const key of ['prompt','prompt_sha256','prompt_context_sha256','project_loras','render_capabilities']) delete page[key];
+      }
+      delete view.render_capabilities;
+      return reply(view);
+    }
     if (pathname.endsWith("/candidate-counts")) return reply({ revision: "media", counts: {} });
     if (pathname.endsWith("/page-media")) return reply({ revision: "media", media: { candidates: [] } });
     if (pathname.endsWith("/page-render-inspection")) return reply({ inspection: { ready: true, blockers: [], warnings: [], structured_import: null, generation_signature: "test", audit: { status: "complete", errors: [], warnings: [] }, prompt: { positive: "", negative: "" } } });
@@ -170,16 +179,15 @@ for (const mobile of [false, true]) test(`页面显示项目 LoRA，单项调整
   });
   await page.getByRole('tab', { name: '视觉描述 / Prompt', exact: true }).click();
   const section = page.getByRole('region', { name: '本页 LoRA' });
-  await section.getByText('来自项目设置', { exact: true }).first().waitFor();
-  assert.equal(await section.getByText('来自项目设置', { exact: true }).count(), 2);
+  await section.locator('summary').filter({hasText:'继承的项目 LoRA'}).click();
+  assert.equal(await section.getByText('继承 LoRA', { exact: true }).count(), 2);
   await section.getByRole('spinbutton').first().fill('0.5');
   await section.getByLabel('启用 project-a.safetensors').uncheck();
   const save = async () => { const response = page.waitForResponse(r => r.url().endsWith('/page-save')); await page.keyboard.press('Control+s'); await response; };
   await save();
-  assert.equal(saves.at(-1).loras.length, 1);
-  assert.equal(saves.at(-1).loras[0].weight, .5);
-  assert.equal(saves.at(-1).loras[0].enabled, false);
-  await section.getByRole('button', { name: '恢复项目设置', exact: true }).click();
+  assert.equal(saves.at(-1).loras.length, 0);
+  assert.deepEqual(saves.at(-1).lora_overrides['project-a.safetensors'], {weight:.5,enabled:false});
+  await section.getByRole('button', { name: '恢复继承', exact: true }).click();
   assert.equal(await section.getByRole('spinbutton').first().inputValue(), '0.9');
   assert.equal(await section.getByLabel('启用 project-a.safetensors').isChecked(), true);
   await save();
@@ -425,7 +433,7 @@ test("Ctrl 和 Shift 点击只打开一个页面，生成只提交当前页", as
   await page.locator('.tree-page').filter({ hasText: '页面c' }).click({ modifiers: ['Shift'] });
   assert.equal(await page.locator('.tree-page[aria-selected="true"]').count(), 1);
   assert.equal(await page.locator('.tree-page.is-active').textContent(), '03页面c0 张');
-  await page.locator('.workbench-page-editor .generate-split__action').click();
+  await page.locator('.current-workbench-page .generate-split__action').filter({visible:true}).last().click();
   await page.getByText('已启动当前页面任务', { exact: true }).waitFor();
   assert.deepEqual(renders.map(item => item.page_key), [{ page_id: 'c' }]);
 });
@@ -636,14 +644,18 @@ test("剧情范围目录全部展开，局部渲染且后台刷新不抢滚动",
   const { page } = await setup(t, { longStory: true });
   const directory = page.getByRole('navigation', { name: '剧情阅读目录' });
   assert.equal(await directory.getByRole('button').count(), 13);
+  await page.waitForFunction(count=>document.querySelectorAll('.story-overview-page').length===count, 27);
   assert.equal(await page.locator('.story-overview-page').count(), 27);
   await directory.getByRole('button', { name: '2. 章节2', exact: true }).click();
+  await page.waitForFunction(count=>document.querySelectorAll('.story-overview-page').length===count, 9);
   assert.equal(await page.locator('.story-overview-page').count(), 9);
   await directory.getByRole('button', { name: /2\.2 单元2-2/ }).click();
+  await page.waitForFunction(count=>document.querySelectorAll('.story-overview-page').length===count, 3);
   assert.equal(await page.locator('.story-overview-page').count(), 3);
   assert.equal(await directory.getByRole('button').count(), 13);
   assert.equal(await page.locator('.story-overview-page-number').first().innerText(), '13');
   await page.getByRole('button', { name: '下一个情节单元', exact: true }).click();
+  await page.locator('.story-reading-location').filter({hasText:'单元2-3'}).waitFor();
   assert.match(await page.locator('.story-reading-location').innerText(), /单元2-3/);
   await page.locator('.story-reading-controls').getByRole('button', { name: '更多', exact: true }).click();
   assert.match(await page.locator('.story-reading-actions').innerText(), /当前范围：章节2 \/ 单元2-3/);
@@ -656,6 +668,7 @@ test("剧情范围目录全部展开，局部渲染且后台刷新不抢滚动",
   await page.waitForTimeout(150);
   assert.ok(Math.abs(await page.locator('.project-main').evaluate(node => node.scrollTop) - position) < 3);
   await directory.getByRole('button', { name: '全文', exact: true }).click();
+  await page.waitForFunction(count=>document.querySelectorAll('.story-overview-page').length===count, 27);
   assert.equal(await page.locator('.story-overview-page').count(), 27);
   await page.screenshot({ path: 'Saved/story-overview-desktop.png' });
   await page.setViewportSize({ width: 390, height: 844 });

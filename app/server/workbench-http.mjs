@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 
 import { readReferenceLibrary, mutateReferenceLibrary } from "./reference-library.mjs";
+import { parseWorkbenchScope } from '../shared/workbench-scope.mjs';
 import { savePage } from "./page-facts.mjs";
 import {reimportAnimaPrompt} from './page-render-settings.mjs';
 import { SCENE_PROFILE_SCHEMA_ID, SCENE_VISUAL_SCHEMA_ID, SCENE_PROMPT_SCHEMA_ID } from "./scene-files.mjs";
@@ -24,6 +25,8 @@ import { readPageRewriteProgress, trackPageRewrite } from './page-rewrite-runtim
 import {
   readPageCandidateDetail,
   readProjectWorkbenchView,
+  readWorkbenchSettingDetail,
+  readWorkbenchLettering,
   deletePageTextSource,
   saveCharacterProfile,
   saveCharacterPrompt,
@@ -160,12 +163,25 @@ export async function handleWorkbenchRequest({
   }
   const workbenchMatch = /^\/api\/projects\/([^/]+)\/workbench\/?$/.exec(decodedPath);
   if (request.method === "GET" && workbenchMatch) {
-    const result = await readFacts(workbenchMatch[1], ({ projectId }) => readProjectWorkbenchView(projectRoot, projectId));
+    let scope;
+    try { scope = parseWorkbenchScope(requestUrl.searchParams.has('scope') ? JSON.parse(requestUrl.searchParams.get('scope')) : undefined); }
+    catch { throw new ApiError(400, 'invalid_workbench_scope'); }
+    const result = await readFacts(workbenchMatch[1], ({ projectId }) => readProjectWorkbenchView(projectRoot, projectId, scope));
     sendOperation(200, result);
     return true;
   }
 
+  const settingReadMatch = /^\/api\/projects\/([^/]+)\/workbench\/setting-detail$/.exec(decodedPath);
+  if (request.method === 'GET' && settingReadMatch) {
+    sendOperation(200, await readFacts(settingReadMatch[1], ({ projectDirectory, projectId }) => readWorkbenchSettingDetail(projectDirectory, projectId, requestUrl.searchParams.get('kind'), requestUrl.searchParams.get('id'))));
+    return true;
+  }
+
   const letteringSettingsMatch = /^\/api\/projects\/([^/]+)\/workbench\/lettering-settings\/?$/.exec(decodedPath);
+  if (request.method === 'GET' && letteringSettingsMatch) {
+    sendOperation(200, await readFacts(letteringSettingsMatch[1], ({projectDirectory}) => readWorkbenchLettering(projectDirectory)));
+    return true;
+  }
   if (request.method === "PUT" && letteringSettingsMatch) {
     const value = await readJsonBody(request);
     const result = await mutateTargetFacts(letteringSettingsMatch[1], ({ projectId }) => saveLetteringSettings(projectRoot, projectId, value));
@@ -314,6 +330,12 @@ export async function handleWorkbenchRequest({
   }
 
   const pageLetteringMatch = /^\/api\/projects\/([^/]+)\/workbench\/page-lettering\/?$/.exec(decodedPath);
+  if (request.method === 'GET' && pageLetteringMatch) {
+    const pageId = requestUrl.searchParams.get('page_id');
+    if (!pageId) throw new ApiError(400, 'invalid_page_id');
+    sendOperation(200, await readFacts(pageLetteringMatch[1], ({projectDirectory}) => readWorkbenchLettering(projectDirectory, pageId)));
+    return true;
+  }
   if (request.method === "PUT" && pageLetteringMatch) {
     const value = await readJsonBody(request);
     const result = await mutateTargetFacts(pageLetteringMatch[1], ({ projectId }) => savePageLettering(projectRoot, projectId, value));

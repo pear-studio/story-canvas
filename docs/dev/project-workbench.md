@@ -1,5 +1,30 @@
 # 项目工作台
 
+## 按当前视图载入
+
+浏览器 `GET /api/projects/:id/workbench` 默认只返回目录摘要；`scope` 查询参数是 JSON，
+支持 `directory`、`page`（`page_id`）、`setting`（`setting_kind`、`setting_id`）、
+`story`（可选 `chapter_id` 或 `sequence_id`）、`prompts`、`lettering`。
+同一事实快照只组织目录与当前视图的数据。页面详情仅在其归属目录中出现，不再额外传输顶层
+完整 `pages` 副本；未读取的 Prompt、编辑指纹和生成能力不填空值冒充已读取事实。
+
+目录仍从各页 content 文件提取标题，不在页面索引中重复持久化标题；不读取页面 Prompt、
+render 或编辑依赖，也不编译生成配置。正文总览只读取当前章节／单元的展示内容，全文总览
+读取全文正文。Prompt 总览在打开时读取剧情页 Prompt 与保存依据，不预编译每页生成配置。
+当前单页读取自身编辑事实和已引用的设定；草稿新增引用通过 `workbench/setting-detail`
+补读。未读完或读取失败时不能保存；来源版本仍按编辑时的读据保护。
+
+切换范围和后台同步共用快照接纳流程，迟到的旧范围响应不推进项目写入版本。当前视图载入
+前只显示目录和载入状态；同范围后台刷新保留编辑器及未保存草稿。结构变化导致当前页删除
+时先按目录选择回退页，再读取该页详情。
+
+Agent 的嵌字读取使用 `GET workbench/lettering-settings` 和
+`GET workbench/page-lettering?page_id=...`，只返回对应内容及 `expected_sha256`。
+成品列表和单页成品操作仅组织正文、布局及文字页尺寸，不读取生成 Prompt。
+
+候选媒体位于 `Outputs/pages/`，`w=320`／`w=1024` 返回磁盘缓存的 WebP，候选路径按不可变
+私有资源长期缓存；其他可变素材不因此启用长期缓存。生成失败仍可回退原图。
+
 浏览器通过普通项目 URL 打开唯一工作台：
 
 ```text

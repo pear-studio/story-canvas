@@ -161,7 +161,7 @@ export async function moveWorkbenchSequence(projectRoot, projectId, sequenceId, 
 }
 
 export async function deleteWorkbenchSequence(projectRoot, projectId, sequenceId) {
-  const view = await readProjectWorkbenchView(projectRoot, projectId);
+  const view = await readProjectWorkbenchView(projectRoot, projectId, {kind:'directory'});
   const current = view.outline.chapters.flatMap((chapter) => chapter.sequences).find((sequence) => sequence.id === sequenceId);
   if (!current) fail("story_sequence_not_found", [sequenceId]);
   if (current.pages.length) fail("story_sequence_not_empty", [sequenceId]);

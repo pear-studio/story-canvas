@@ -21,6 +21,37 @@ async function open(t,query,setup){
  if(!query.includes('collapsed')) { await page.getByTitle('展开角色引用').click(); await page.getByTitle('展开场景引用').click(); }
  return page;
 }
+test('新引用按需读取，失败时保留草稿且不得保存，重试后携带读据', async t => {
+ let requests=0;
+ const page=await open(t,'kind=story&lazy-reference',async page=>{
+   await page.route('**/workbench/setting-detail?*',async route=>{
+     requests++;
+     if(requests===1)return route.fulfill({status:503,json:{error:'暂时不可用'}});
+     return route.fulfill({json:{id:'bob',name:'鲍勃',description:'',profile_sha256:'profile',visual_sha256:'visual',prompt_sha256:'loaded',
+       visual:{variants:[{id:'day',name:'白天'},{id:'night',name:'夜晚'}]},
+       prompt:{prompt_name:'鲍勃',variants:{day:{text:requests > 2 ? '更新后的鲍勃设定' : '刚读取的鲍勃设定'},night:{text:'夜间'}}},
+       prompt_source_versions:{qwen:{day:requests > 2 ? 'source-after-reload' : 'source-at-read'}}}});
+   });
+ });
+ assert.equal(requests,0);
+ await page.getByTitle('选择角色',{exact:true}).click();
+ await page.locator('.reference-picker-menu label').filter({hasText:'鲍勃 · 白天'}).getByRole('checkbox').check();
+ await page.getByRole('alert').filter({hasText:'暂时不可用'}).waitFor();
+ await page.getByRole('button',{name:'保存',exact:true}).click();
+ assert.equal(await page.evaluate(()=>localStorage.getItem('saved-page')),null);
+ await page.getByRole('button',{name:'重试',exact:true}).click();
+ await page.getByLabel('鲍勃 · 白天 引用文字').waitFor();
+ assert.equal(await page.getByLabel('鲍勃 · 白天 引用文字').inputValue(),'刚读取的鲍勃设定');
+ await page.getByRole('button',{name:'放弃修改',exact:true}).click();
+ if (!await page.locator('.reference-picker-menu label').filter({hasText:'鲍勃 · 白天'}).isVisible()) await page.getByTitle('选择角色',{exact:true}).click();
+ await page.locator('.reference-picker-menu label').filter({hasText:'鲍勃 · 白天'}).getByRole('checkbox').check();
+ await page.waitForFunction(()=>document.querySelector('[aria-label="鲍勃 · 白天 引用文字"]')?.value==='更新后的鲍勃设定');
+ await page.getByRole('button',{name:'保存',exact:true}).click();
+ await page.waitForFunction(()=>localStorage.getItem('saved-page'));
+ assert.equal(JSON.parse(await page.evaluate(()=>localStorage.getItem('submitted-sources')))['character:bob:day'],'source-after-reload');
+ assert.equal(requests,3);
+});
+
 for(const kind of ['story','character','scene'])test(`${kind} 页面均可编辑人物、场景、嵌字并移除默认引用`,async t=>{
  const page=await open(t,`kind=${kind}`);
  assert.equal(await page.getByLabel('艾莲角色设定').inputValue(),'day');

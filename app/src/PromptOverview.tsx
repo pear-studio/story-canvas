@@ -1,12 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {ModelOverviewEditor} from './models/registry';
 import { GenerateSplitButton } from "./GenerateSplitButton";
-import { savePagePrompt, startPageRender, type ProjectWorkbenchView, type WorkbenchPage } from "./project-workbench-client";
+import { savePagePrompt, startPageRender, type ProjectWorkbenchView, type WorkbenchPage, type EditableWorkbenchPage, isEditablePage } from "./project-workbench-client";
 import { useFeedback } from "./feedback";
 import "./PromptOverview.css";
 
 type ColumnHandle = { save: () => Promise<WorkbenchPage | null>; dirty: () => boolean };
-type Entry = { page: WorkbenchPage; chapter: string; sequence: string };
+type Entry = { page: EditableWorkbenchPage; chapter: string; sequence: string };
 const columnWidth = 375;
 
 function PromptColumn({ projectId, entry, characters, scenes, selected, busy, visible, onSelect, onOpenPage, onSaved, handles }: {
@@ -55,7 +55,7 @@ export function PromptOverview({ projectId, view, focus, busy = false, onOpenPag
   onOpenPage: (page: WorkbenchPage) => void; onSaved: (page: WorkbenchPage) => void; onTrackedTasks: (projectId: string, taskIds: string[]) => void;
 }) {
   const { notify } = useFeedback();
-  const entries = useMemo(() => view.outline.chapters.flatMap(chapter => chapter.sequences.flatMap(sequence => sequence.pages.map(page => ({ page, chapter: chapter.title, sequence: sequence.title })))), [view.outline]);
+  const entries = useMemo(() => view.outline.chapters.flatMap(chapter => chapter.sequences.flatMap(sequence => sequence.pages.filter(isEditablePage).map(page => ({ page, chapter: chapter.title, sequence: sequence.title })))), [view.outline]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [working, setWorking] = useState(false);
   const [count, setCount] = useState<1 | 3>(3);
@@ -110,9 +110,8 @@ export function PromptOverview({ projectId, view, focus, busy = false, onOpenPag
     } finally { if (active.current) setWorking(false); }
   }
 
-  const blockedPage = entries.find(({page}) => selected.has(page.page_id) && !(page.render_capabilities ?? view.render_capabilities).candidates.available)?.page;
   return <section className="prompt-overview" aria-label="Prompt 总览">
-    <header className="prompt-overview-toolbar"><h2>Prompt 总览</h2><small>{entries.length} 页 · 已选 {selected.size} 页</small><button type="button" className="button" disabled={busy || working} onClick={() => void run(false)}>保存全部修改</button><GenerateSplitButton dirty={true} count={count} pageCount={selected.size} disabled={busy || working || !selected.size || Boolean(blockedPage)} reason={blockedPage ? `${blockedPage.title}：${(blockedPage.render_capabilities ?? view.render_capabilities).candidates.blocker ?? '生成不可用'}` : ''} onSubmit={() => void run(true)} onCountChange={setCount} /></header>
+    <header className="prompt-overview-toolbar"><h2>Prompt 总览</h2><small>{entries.length} 页 · 已选 {selected.size} 页</small><button type="button" className="button" disabled={busy || working} onClick={() => void run(false)}>保存全部修改</button><GenerateSplitButton dirty={true} count={count} pageCount={selected.size} disabled={busy || working || !selected.size} reason="" onSubmit={() => void run(true)} onCountChange={setCount} /></header>
     <div className="prompt-overview-scroll" ref={scroller} onScroll={updateWindow}><div className="prompt-overview-grid" style={{ gridAutoColumns: columnWidth, gridTemplateRows: "auto minmax(0, auto)" } as CSSProperties}>
       {entries.map((entry, index) => <PromptColumn projectId={projectId} key={entry.page.page_id} entry={entry} characters={view.characters} scenes={view.scenes?.scenes ?? []} visible={index >= window.start && index < window.end} selected={selected.has(entry.page.page_id)} busy={busy || working} onSelect={() => setSelected(current => { const next = new Set(current); next.has(entry.page.page_id) ? next.delete(entry.page.page_id) : next.add(entry.page.page_id); return next; })} onOpenPage={() => onOpenPage(entry.page)} onSaved={onSaved} handles={handles.current} />)}
     </div></div>

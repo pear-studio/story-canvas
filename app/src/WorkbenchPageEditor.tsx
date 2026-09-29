@@ -1,3 +1,4 @@
+import { useReferencedSettings } from './use-referenced-settings';
 import {ModelPromptEditor} from './models/registry';
 import {PageGenerationSettings} from './models/PageGenerationSettings';
 import {ReferenceRow,ReferenceLabel,ParticipantEditor} from './PromptReferences';
@@ -41,7 +42,7 @@ import {
   type TextSourceContext,
   type TextSourceEntry,
   type WorkbenchCharacter,
-  type WorkbenchPage,
+  type EditableWorkbenchPage as WorkbenchPage,
 } from "./project-workbench-client";
 import {
   previewLetteringItems,
@@ -613,8 +614,8 @@ function FlowPreviewPanel({ projectId, preview, error = "" }: { projectId: strin
 export default function WorkbenchPageEditor({
   projectId,
   page,
-  characters,
-  scenes = [],
+  characters: directoryCharacters,
+  scenes: directoryScenes = [],
   breadcrumb = [],
   pageOrder,
   busy = false,
@@ -659,8 +660,6 @@ export default function WorkbenchPageEditor({
   activeIdentity.current = pageIdentity;
   const savingPage = useRef<{ identity: string } | null>(null);
   const editBaseline = useRef(page);
-  const incomingSourceVersions = readPromptSourceVersions(page.model_id ?? 'qwen', characters, scenes);
-  const sourceVersions = useRef(incomingSourceVersions);
   const hasDraft = useRef(false);
   const [externalConflict, setExternalConflict] = useState(false);
   const incomingContent = useMemo(() => contentFromPage(page), [page.characters, page.dialogue, page.kind, page.title, page.visual_goal, page.scene_description, page.page_kind, page.body, page.display_title, page.text_layout]);
@@ -674,6 +673,10 @@ export default function WorkbenchPageEditor({
   const incomingPrompt = useMemo(() => clone(page.prompt), [page.prompt_sha256,page.model_id]);
   const [promptBaseline, setPromptBaseline] = useState(incomingPrompt);
   const [promptDraft, setPromptDraft] = useState(incomingPrompt);
+  const references = useReferencedSettings(projectId, page.page_id, directoryCharacters, directoryScenes, promptDraft.composition === 'standalone' ? [] : (contentDraft.characters ?? []).map(ref=>ref.character_id), promptDraft.composition === 'standalone' ? undefined : promptDraft.scene_id);
+  const {characters, scenes} = references;
+  const incomingSourceVersions = readPromptSourceVersions(page.model_id ?? 'qwen', characters, scenes);
+  const sourceVersions = useRef(incomingSourceVersions);
   const persistedPrompt = promptDraft;
   const [promptPhase, setPromptPhase] = useState<SavePhase>("saved");
   const [promptError, setPromptError] = useState("");
@@ -741,6 +744,7 @@ export default function WorkbenchPageEditor({
   }
 
   async function saveAll(): Promise<boolean> {
+    if (references.pending) { setContentError(references.error || '正在读取新引用的设定，请稍后保存。'); return false; }
     if (savingPage.current || (!contentDirty && !layoutDirty && !promptDirty)) return !savingPage.current;
     const run = { identity: pageIdentity };
     savingPage.current = run;
@@ -771,6 +775,7 @@ export default function WorkbenchPageEditor({
   });
 
   function discardAll() {
+    references.reset();
     editBaseline.current = page; setExternalConflict(false);
     sourceVersions.current = incomingSourceVersions;
     setContentDraft(clone(incomingContent)); setContentBaseline(clone(incomingContent)); setDialogueDraft(editableDialogue(incomingContent.dialogue));
@@ -851,6 +856,7 @@ export default function WorkbenchPageEditor({
 
       {promptError && <p className="prompt-save-error" role="alert">{promptError}</p>}
       {promptAuditErrors.length > 0 && <PromptIssueList issues={promptAuditErrors} title="Prompt 错误" />}
+      {references.pending && <p role={references.error ? 'alert' : 'status'}>{references.error || '正在读取引用设定…'}{references.error && <button type="button" onClick={references.retry}>重试</button>}</p>}
       <ModelPromptEditor header={<SectionHeader title="Prompt" actions={<div className="prompt-save-actions">{promptPhase === "error" && <button type="button" className="button button--quiet" onClick={() => void reloadAll()}>放弃本页草稿并重新载入</button>}{promptAuditWarnings.length > 0 && <button type="button" className="issue-indicator issue-indicator--warning" aria-label={`查看 ${promptAuditWarnings.length} 条 Prompt 警告`} title="查看 Prompt 警告" onClick={() => setPromptWarningsOpen(true)}>!</button>}</div>} />} projectId={projectId} page={page} prompt={promptDraft} onChange={setPromptDraft} characters={characters} scenes={scenes} references={contentDraft.characters??[]} onReferencesChange={changeCharacters} disabled={busy||saving} onOpenOverview={onOpenPromptOverview} rewrite={<>{onRewrite && <div className="page-rewrite" aria-label="最终 Prompt 优化">
         <div className="page-rewrite__toolbar">
           <label className="page-rewrite__choice"><input type="checkbox" checked={promptSource === "rewrite"} disabled={promptSource !== "rewrite" && !canChooseRewrite} onChange={(event) => onPromptSourceChange?.(event.target.checked ? "rewrite" : "original")} />使用优化结果</label>

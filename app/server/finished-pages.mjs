@@ -43,7 +43,7 @@ function letteringSnapshot(view, page, canvas = page.render?.canvas ?? view.proj
   return { dialogue: page.dialogue ?? [], items: page.lettering?.items ?? [], settings, canvas };
 }
 export async function readFinishedPages(repositoryRoot, projectId, directory, { page_id = null } = {}) {
-  const view = await readProjectWorkbenchView(repositoryRoot, projectId);
+  const view = await readProjectWorkbenchView(repositoryRoot, projectId, {kind:'finished',page_id});
   const jobs = await listFinishedJobs(directory);
   const pages = [];
   const entries = page_id ? view.pages.filter(page => page.page_id === page_id).map(page => ({ page })) : orderedFinishedPages(view);
@@ -117,7 +117,7 @@ export async function prepareFinishedPage(repositoryRoot, projectId, directory, 
   const jobs = await listFinishedJobs(directory);
   const busy = jobs.find(job => job.page_id === id && busyStatuses.has(job.status));
   if (busy && busy.id !== queuedJob?.id) fail("本页正在输出成品");
-  const view = await readProjectWorkbenchView(repositoryRoot, projectId);
+  const view = await readProjectWorkbenchView(repositoryRoot, projectId, {kind:'finished',page_id:id});
   const page = view.pages.find(page => page.page_id === id);
   if (!page) fail("页面已经删除", 404);
   const old = await readFinishedRecord(directory, id);
@@ -157,8 +157,9 @@ export async function prepareFinishedPage(repositoryRoot, projectId, directory, 
 export async function publishFinishedPage(repositoryRoot, projectId, directory, prepared, record) {
   const { page_id: id } = prepared.job;
   if (hashCanonicalJson(await readFinishedRecord(directory, id)) !== prepared.expected) fail("本页成品已被其他操作更新，请重新读取");
-  const view = await readProjectWorkbenchView(repositoryRoot, projectId);
-  if (!view.pages.some(page => page.page_id === id)) fail("页面已删除，本次输出不再发布");
+  const view = await readProjectWorkbenchView(repositoryRoot, projectId, {kind:'directory'});
+  const pages = [...view.outline.chapters.flatMap(chapter=>chapter.sequences.flatMap(sequence=>sequence.pages)), ...view.characters.flatMap(setting=>setting.pages), ...view.scenes.scenes.flatMap(setting=>setting.pages), ...view.orphan_pages];
+  if (!pages.some(page => page.page_id === id)) fail("页面已删除，本次输出不再发布");
   await writeJson(recordPath(directory, id), record);
 }
 

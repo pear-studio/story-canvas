@@ -175,6 +175,49 @@ test("workbench只组织页面事实，候选媒体按完整PageKey独立读取"
   }
 });
 
+test('工作台按视图读取：目录和正文总览不读取 Prompt，单页只读取自身及引用', async context => {
+  const current = await fixture(context);
+  const read = scope => readProjectWorkbenchView(current.root, current.projectId, scope);
+  const directory = await read({kind:'directory'});
+  const summary = directory.outline.chapters[0].sequences[0].pages[0];
+  assert.equal(summary.title, '抵达');
+  for (const field of ['prompt','content_sha256','prompt_context_sha256','render','render_capabilities','dialogue']) assert.equal(field in summary, false, field);
+  assert.equal('pages' in directory, false, '响应不重复携带全部页面');
+  assert.equal('prompt' in directory.characters[0], false);
+  assert.equal(directory.project.lettering_settings, null);
+  await writeFile(path.join(current.directory, 'pages/page-101.prompt.json'), '{broken');
+  const single = await read({kind:'page',page_id:'page-001'});
+  assert.equal(single.outline.chapters[0].sequences[0].pages[0].prompt.text, '艾莲走入柔和晨光。');
+  assert.ok(single.characters[0].prompt_source_versions.qwen);
+  assert.equal(single.characters[0].pages[0].prompt, undefined);
+  await assert.rejects(read({kind:'page',page_id:'page-101'}));
+  await writeFile(path.join(current.directory, 'pages/page-001.prompt.json'), '{broken');
+  await writeFile(path.join(current.directory, 'characters/ellen.prompt.json'), '{broken');
+  await read({kind:'directory'});
+  const story = await read({kind:'story',sequence_id:'arrival'});
+  const displayed = story.outline.chapters[0].sequences[0].pages[0];
+  assert.equal(displayed.scene_description, '艾莲走入晨光。');
+  assert.equal(displayed.prompt, undefined);
+  assert.equal(displayed.render_capabilities, undefined);
+  assert.equal(story.characters[0].prompt, undefined);
+});
+
+test('Prompt 总览不编译生成配置或加载角色 Prompt，设定视图不读取页面 Prompt', async context => {
+  const current = await fixture(context);
+  await writeFile(path.join(current.directory, 'pages/page-101.prompt.json'), '{broken');
+  const prompts = await readProjectWorkbenchView(current.root, current.projectId, {kind:'prompts'});
+  const page = prompts.outline.chapters[0].sequences[0].pages[0];
+  assert.ok(page.prompt_sha256);
+  assert.equal(page.render_capabilities, undefined);
+  assert.equal(page.project_loras, undefined);
+  assert.equal(prompts.characters[0].prompt, undefined);
+  await writeFile(path.join(current.directory, 'pages/page-001.prompt.json'), '{broken');
+  const setting = await readProjectWorkbenchView(current.root, current.projectId, {kind:'setting',setting_kind:'character',setting_id:'ellen'});
+  assert.equal(setting.characters[0].description, '短篇主角。');
+  assert.ok(setting.characters[0].prompt_sha256);
+  assert.equal(setting.characters[0].pages[0].prompt, undefined);
+});
+
 test("页面 Prompt 整段保存本页文字并阻止陈旧覆盖", async (context) => {
   const current = await fixture(context);
   const page = (await readProjectWorkbenchView(current.root, current.projectId)).outline.chapters[0].sequences[0].pages[0];

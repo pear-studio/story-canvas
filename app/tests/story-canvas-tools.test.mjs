@@ -337,7 +337,7 @@ test('统一工具经真实 HTTP Adapter 完成结构、设定及三类页面生
     if (captured.url.endsWith('/revision')) return response.end(JSON.stringify({ revision: 'r-test' }));
     const request = Readable.from([captured.rawBody]); request.method = captured.method; request.headers=captured.headers; request.url=captured.url;
     const context = {
-      request, response, decodedPath: decodeURIComponent(captured.url), projectRoot: root, config: {},
+      request, response, requestUrl:new URL(captured.url, "http://test"), decodedPath: decodeURIComponent(new URL(captured.url, "http://test").pathname), projectRoot: root, config: {},
       pageMediaReader:{read:async(projectId,value)=>({...await readPageMedia(root,projectId,value),revision:'media-test'})},
       readFacts: async (projectId, fn) => ({ value: await fn({ projectId, projectDirectory: path.join(root, 'workspace', projectId) }) }),
       mutateFacts: async (projectId, fn) => {

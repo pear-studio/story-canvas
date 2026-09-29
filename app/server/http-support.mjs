@@ -271,14 +271,15 @@ export async function readLoraAssetRequest(request) {
 export async function serveProjectMedia(response, projectRoot, projectId, relativePath, { variantWidth = null } = {}) {
   const { projectDirectory } = await requireProjectDirectory(projectRoot, projectId);
   let media = await resolveProjectMedia(projectDirectory, relativePath);
-  if (variantWidth && /^Outputs\/(?:story|characters|finished|comparisons)\//.test(relativePath)) {
+  const immutableOutput = /^Outputs\/(?:pages|finished|comparisons)\//.test(relativePath);
+  if (variantWidth && immutableOutput) {
     try {
       media = await ensureMediaVariant(projectDirectory, media, relativePath, variantWidth);
     } catch {
       // 变体生成失败时回退原图
     }
   }
-  sendFile(response, media, { headers: { "x-content-type-options": "nosniff", ...(/^Outputs\/(?:story|characters|finished|comparisons)\//.test(relativePath) ? { "cache-control": "private, max-age=31536000, immutable" } : {}) } });
+  sendFile(response, media, { headers: { "x-content-type-options": "nosniff", ...(immutableOutput ? { "cache-control": "private, max-age=31536000, immutable" } : {}) } });
 }
 
 export async function serveProductionAsset(response, requestUrl, distRoot) {

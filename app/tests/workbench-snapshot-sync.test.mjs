@@ -71,6 +71,23 @@ test("工作台等待关联事实准备完毕才一起接纳数据、版本与�
   assert.equal(sync.loading, false);
 });
 
+test('同项目切换读取范围后，迟到的上一视图不得更新内容或写入版本', async context => {
+  const {requests,guard,views} = setup(context);
+  let scope = {kind:'page',page_id:'page-001'};
+  const sync = createWorkbenchSnapshotSync(guard, view=>views.push(view), ()=>scope);
+  const first = sync.load('demo');
+  scope = {kind:'page',page_id:'page-002'};
+  requests[0].resolve(response({scope:{kind:'page',page_id:'page-001'}}, 'stale'));
+  assert.equal(await first, false);
+  assert.deepEqual(views, []);
+  assert.equal(client.getProjectWriteRevision('demo'), 'old');
+  const second = sync.load('demo');
+  requests[1].resolve(response({scope}, 'current'));
+  assert.equal(await second, true);
+  assert.deepEqual(views, [{scope}]);
+  assert.equal(client.getProjectWriteRevision('demo'), 'current');
+});
+
 test("项目切换、后发读取和取消均阻止旧结果及其导航回调", async (context) => {
   for (const action of ["switch", "newer", "abort"]) {
     await context.test(action, async (t) => {
