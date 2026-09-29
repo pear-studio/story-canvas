@@ -1,9 +1,8 @@
 import { inspectionGenerationSignature } from "./generation-signature.mjs";
 import { deletePageCandidates } from "./candidate-delete.mjs";
 import { readPageMedia } from "./page-media.mjs";
-import { encodePageKey, validatePageKey } from "./page-key.mjs";
+import { validatePageKey } from "./page-key.mjs";
 import { compilePageRenderInspectionContext, resolveExactPageIdentity, PageRenderError } from "./page-render-resolver.mjs";
-import { isActiveRenderTaskState, listProjectRenderTaskStates } from "./render-task-storage.mjs";
 
 function requireStoryKey(key) {
   if (validatePageKey(key).length) {
@@ -21,8 +20,6 @@ export async function inspectStoryCandidates({ projectRoot, projectDirectory, pr
     const identity = await resolveExactPageIdentity(projectDirectory, key);
     if (identity.kind !== "story") throw new PageRenderError("invalid_story_refresh_request", [], 400);
   }
-  const active = new Set((await listProjectRenderTaskStates(projectDirectory, { scope: "active", strict: true }))
-    .filter(isActiveRenderTaskState).flatMap((task) => task.items.map((item) => encodePageKey(item.page_key))));
   const results = new Array(pageKeys.length);
   let cursor = 0;
   await Promise.all(Array.from({ length: Math.min(3, pageKeys.length) }, async () => {
@@ -31,7 +28,6 @@ export async function inspectStoryCandidates({ projectRoot, projectDirectory, pr
       const pageKey = pageKeys[index];
       const result = { page_key: pageKey, status: "unavailable", signature: null, matched: 0, candidate_ids: [], all_candidate_ids: [] };
       results[index] = result;
-      if (active.has(encodePageKey(pageKey))) { result.status = "active"; continue; }
       const { media } = await readPageMedia(projectRoot, projectId, { page_key: pageKey });
       result.all_candidate_ids = media.candidates.map((item) => item.candidate_id);
       const context = await compilePageRenderInspectionContext({ repositoryRoot: projectRoot, projectDirectory, pageKey }).catch(() => null);
@@ -59,7 +55,7 @@ export async function executeStoryCandidateRefresh(context, value, startRender) 
     throw new PageRenderError("invalid_story_refresh_request", [], 400);
   }
   const [current] = await inspectStoryCandidates({ ...context, pageKeys: [value.page_key] });
-  if (current.status === "active" || (current.status !== "ready" && !(value.action === "clean" && all))) return { status: "skipped" };
+  if (current.status !== "ready" && !(value.action === "clean" && all)) return { status: "skipped" };
   if (!(value.action === "clean" && all) && current.signature !== value.expected_signature) {
     throw new PageRenderError("candidate_generation_signature_stale", ["当前生成条件已变化，请重新扫描后确认"], 409);
   }
@@ -71,5 +67,6 @@ export async function executeStoryCandidateRefresh(context, value, startRender) 
   const ids = (all ? current.all_candidate_ids : current.candidate_ids).filter((id) => requested.has(id));
   if (!ids.length) return { status: "skipped" };
   const deleted = await deletePageCandidates(context.projectRoot, context.projectId, { page_key: value.page_key, candidate_ids: ids });
-  return { status: "deleted", count: deleted.deleted_candidate_ids.length };
+  return { status: deleted.failed_candidates?.length ? 'incomplete' : 'deleted', count: deleted.deleted_candidate_ids.length,
+    ...(deleted.failed_candidates?.length ? { deleted_candidate_ids: deleted.deleted_candidate_ids, failed_candidates: deleted.failed_candidates, recovery: deleted.recovery } : {}) };
 }

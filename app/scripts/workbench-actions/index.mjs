@@ -88,6 +88,7 @@ export async function executeWorkbench(input, execution={}) {
     return await definition.execute(args, execution);
   }catch(error){
     const recovery=error.code==='capability_disabled'?'请交给具有该能力的其他 Agent。'
+      :error.code==='candidate_file_busy'?'文件移动失败，工具已短时重试。不要空等或重放生成；可继续其他工作，排查权限或文件占用后仅处理失败候选。'
       :error.code==='invalid_arguments'?'按参数定义修正；本次未执行。'
       :actions[operation]?.recover?.(error,input.args??{})
         ??(error.status===409?'重新读取目标并判断冲突，不直接换新指纹覆盖。':'按本操作帮助处理；写入结果不明先核实，不盲目重放。');

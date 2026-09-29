@@ -573,7 +573,6 @@ test("成果发布立即刷新，不依赖任务available标记", async (context
   const task = (await readRenderTask(current.directory, id)).task;
   await publishCandidateResult(current.directory, task, task.items[0], Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aJXkAAAAASUVORK5CYII=", "base64"));
   event("rename", file);
-  await assert.rejects(deletePageCandidateById(current.root, current.projectId, pageKey, candidateId), error => error.code === "candidate_task_active");
   await assert.rejects(deleteStoryPage(current.root, current.projectId, pageKey.page_id), error => error.code === "page_has_active_render");
   await assert.rejects(deleteCharacter(current.root, current.projectId, "ellen"), error => error.code === "page_has_active_render");
   assert.deepEqual((await readJson(path.join(current.directory, "characters", "index.json"))).characters, ["ellen"]);
@@ -581,6 +580,23 @@ test("成果发布立即刷新，不依赖任务available标记", async (context
   const published = await reader.read(current.projectId, { page_key: pageKey });
   assert.notEqual(published.revision, before.revision);
   assert.equal(published.media.candidates.length, 2);
+  await warmMediaVariants(current.directory, file);
+  // 第一张无法删除时仍处理第二张，并明确返回两者结果。
+  const originalFile = path.join(current.directory, current.candidateFile);
+  await warmMediaVariants(current.directory, current.candidateFile);
+  const originalImage = await readFile(originalFile);
+  await rm(originalFile);
+  await mkdir(originalFile);
+  const receipt = await deletePageCandidates(current.root, current.projectId, { page_key: pageKey, candidate_ids: [current.candidateId, candidateId] });
+  assert.deepEqual(receipt.deleted_candidate_ids, [candidateId]);
+  assert.equal(receipt.status, 'incomplete');
+  assert.equal(receipt.failed_candidates[0].candidate_id, current.candidateId);
+  assert.equal(receipt.failed_candidates[0].code, 'candidate_path_invalid');
+  await rm(originalFile, { recursive: true });
+  await writeFile(originalFile, originalImage);
+  assert.equal((await readRenderTask(current.directory, id)).task.items[0].status, 'discarded', '任务仍排队也可删除已发布成果');
+  event('rename', file);
+  assert.equal((await reader.read(current.projectId, { page_key: pageKey })).media.candidates.length, 1);
 });
 
 test("短暂写锁释放后继续操作，不重复执行写入", async (context) => {

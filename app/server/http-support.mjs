@@ -1,6 +1,7 @@
 import { registeredProjectPath, listRegisteredProjects, registerProject, unregisterProject, readProjectRegistry } from "./project-registry.mjs";
 import { randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
+import { pipeline } from "node:stream";
 import {
   access,
   lstat,
@@ -77,7 +78,7 @@ export function sendFile(response, media, { headers = {} } = {}) {
     "cache-control": "no-store",
     ...headers,
   });
-  createReadStream(media.target).pipe(response);
+  pipeline(createReadStream(media.target), response, () => {});
 }
 
 export function imageContentType(target) {

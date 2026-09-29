@@ -578,6 +578,7 @@ export async function deleteCandidates(
   return workbenchResponseJson<{
     page_key: WorkbenchPage["page_key"];
     deleted_candidate_ids: string[];
+    failed_candidates?: Array<{ candidate_id: string; code: string; message: string }>;
   }>(await mutateDerived(`${base(projectId)}/candidates`, {
     method: "DELETE",
     headers: { "content-type": "application/json" },

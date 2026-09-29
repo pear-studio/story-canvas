@@ -12,5 +12,5 @@ test('候选按 task_id 分组，不把一张图当成一次生成；按任务�
   assert.deepEqual(plan.keep_candidate_ids,['b','c','d']);assert.deepEqual(plan.delete_candidate_ids,['a']);
   const explicit=planCandidateCleanup(snapshot,'old');assert.equal(explicit.keep_candidate_ids.length,1);assert.equal(explicit.complete,false);
   assert.throws(()=>planCandidateCleanup(snapshot,'missing'),e=>e.code==='candidate_batch_not_found');
-  groups[1].status='running';assert.throws(()=>planCandidateCleanup(snapshot),e=>e.code==='candidate_task_active');
+  groups[1].status='running';assert.deepEqual(planCandidateCleanup(snapshot).delete_candidate_ids,['a']);
 });

@@ -8,6 +8,10 @@
 
 单页命令直接读取当前项目事实，启动渲染时不要求项目 revision，不接受临时 Prompt 或 negative Prompt；seed 可用 `--seed` 固定，与网页一致。
 
+每次提交冻结独立任务快照。同页已有排队或运行任务时仍可编辑、再次提交与删除已发布候选；GPU 执行仍由统一队列调度。
+网页只在保存／提交请求期间防止重复点击，不等待生成终态。候选删除与发布共用短时锁，删除状态持久化后执行器不得重新发布该候选。
+批量删除逐张尝试，部分失败时分别返回 `deleted_candidate_ids` 与 `failed_candidates`；文件占用已在工具内短时重试，不要求 Agent 空等或重放生成。
+
 ## 命令
 
 生成一至三张候选，缺省为一张：
@@ -32,7 +36,7 @@ npm --prefix <仓库根>/app run visual:produce -- preview page <project-id> <pa
 npm --prefix <仓库根>/app run visual:produce -- candidate delete <project-id> <page-id> <absolute-candidate-path>
 ```
 
-删除命令接受完整绝对路径或 candidate-id，调用网页相同入口，尽力把仍存在的任务条目标为 `discarded`。所有保留候选均可用，不再有选用状态或选用保护；活动任务候选仍禁止删除。该便捷命令只删除单张候选；已有批量 API 可经通用命令调用，操作范围仍按用户授权。
+删除命令接受完整绝对路径或 candidate-id，调用网页相同入口，把仍存在的任务条目标为 `discarded` 后移走候选目录。所有已发布候选均可删除，不受所属任务是否结束限制。该便捷命令只删除单张候选；已有批量 API 可经通用命令调用，操作范围仍按用户授权。
 
 ## Resolver 与 Prompt 语义
 

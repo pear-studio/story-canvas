@@ -54,7 +54,7 @@ export const mediaActions = {
   },
   'candidate.counts': endpoint('读取各页面候选数量','GET',a=>projectPath(a,'workbench/candidate-counts'),{}, {project:true}),
   'candidate.inspect': post('查看一个候选的生成详情','candidate-detail',{page_key:pageKey,candidate_id:string('候选 ID')},{body:a=>({page_key:a.page_key,candidate_id:a.candidate_id}),details:'candidate.list 取得真实候选 ID；返回冻结的生成记录。'}),
-  'candidate.delete': endpoint('删除指定候选','DELETE',a=>projectPath(a,'workbench/candidates'),{page_key:pageKey,candidate_ids:array('明确授权删除的候选 ID')},{project:true,body:a=>({page_key:a.page_key,candidate_ids:a.candidate_ids}),details:'不可恢复；只删除用户授权的候选，不自动挑选。'}),
+  'candidate.delete': endpoint('删除指定候选','DELETE',a=>projectPath(a,'workbench/candidates'),{page_key:pageKey,candidate_ids:array('明确授权删除的候选 ID')},{project:true,body:a=>({page_key:a.page_key,candidate_ids:a.candidate_ids}),details:'不可恢复；只删除用户授权的候选，不自动挑选。生成中也可删除已发布候选。逐张尝试，deleted_candidate_ids 是成功项；failed_candidates 是失败项。文件占用已短时重试，不用 sleep 等待或重放成功项，可继续其他工作。'}),
   'candidate.scan': post('检查最多八页的候选是否符合当前生成条件','story-candidate-refresh',{page_keys:array('剧情页面身份',pageKey,8)},{body:a=>({action:'inspect',page_keys:a.page_keys})}),
   'candidate.clean': post('清理已确认的候选集合','story-candidate-refresh',{page_key:pageKey,scope:{...string('清理范围'),enum:['mismatch','all']},candidate_ids:array('扫描后确认的候选 ID'),expected_signature:string('mismatch 必须提供 scan 的 signature')},{required:['page_key','scope','candidate_ids'],body:a=>({action:'clean',page_key:a.page_key,scope:a.scope,candidate_ids:a.candidate_ids,expected_signature:a.expected_signature}),details:'仅删除确认集合与当前扫描集合的交集。mismatch 必须携带 expected_signature，变化返回409。'}),
   'generation.page.inspect': post('检查页面最终模型输入与依赖，不运行模型','page-render-inspection',{page_key:pageKey},{body:a=>({page_key:a.page_key})}),

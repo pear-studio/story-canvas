@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, rename, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import sharp from "sharp";
@@ -20,7 +20,8 @@ export function resolveMediaVariantWidth(value) {
 
 async function generateVariant(projectDirectory, media, relativePath, width, target) {
   await mkdir(path.dirname(target), { recursive: true });
-  const buffer = await sharp(media.target)
+  // Buffer 输入避免 libvips 缓存持有原图句柄，阻止 Windows 删除候选目录。
+  const buffer = await sharp(await readFile(media.target))
     .rotate()
     .resize({ width, withoutEnlargement: true })
     .webp({ quality: 82 })

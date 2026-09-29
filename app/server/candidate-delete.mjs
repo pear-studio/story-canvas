@@ -8,7 +8,7 @@ import { withCandidateMutationLock } from "./candidate-mutation-lock.mjs";
 import { encodePageKey } from "./page-key.mjs";
 import { resolveProjectLocation } from "./project-operations.mjs";
 import { PageRenderError, compilePageRenderInspectionContext, resolveExactPageIdentity, resolvePageIdentity } from "./page-render-resolver.mjs";
-import { listActiveProjectTaskIds, updateRenderTask } from "./render-task-storage.mjs";
+import { updateRenderTask } from "./render-task-storage.mjs";
 import { factStorage as storage } from "./story-facts.mjs";
 import {replaceFileWithRetry} from './file-replace.mjs';
 
@@ -56,7 +56,6 @@ export async function deletePageCandidate(projectRoot, projectId, pageId, absolu
       if (matches.length !== 1) fail(matches.length ? "candidate_record_ambiguous" : "candidate_not_found", [requested], matches.length ? 409 : 404);
       const record = matches[0];
       if (record.status !== "available") fail("candidate_not_available", [record.candidate_id], 409);
-      if ((await listActiveProjectTaskIds(project.projectDirectory)).includes(record.task_id)) fail("candidate_task_active", [record.task_id], 409);
       const mediaLock = `candidate-media-${createHash("sha256").update(requested).digest("hex")}`;
       return storage.withResourceLock(projectRoot, projectId, mediaLock, record.candidate_id, async () => {
         await assertCandidateFile(project.projectDirectory, requested);
@@ -64,17 +63,26 @@ export async function deletePageCandidate(projectRoot, projectId, pageId, absolu
         const current = currentRecords.find((candidate) => candidate.task_id === record.task_id
           && candidate.candidate_id === record.candidate_id && encodePageKey(candidate.page_key) === canonical);
         if (!current || current.status !== "available") fail("candidate_delete_conflict", [record.candidate_id], 409);
-        if ((await listActiveProjectTaskIds(project.projectDirectory)).includes(record.task_id)) fail("candidate_task_active", [record.task_id], 409);
         const staged = path.join(project.projectDirectory, "Saved", "staging", "deleted-" + randomUUID());
         await mkdir(path.dirname(staged), { recursive: true });
-        try{await replaceFileWithRetry(path.dirname(requested),staged);}
-        catch(error){if(['EPERM','EACCES','EBUSY'].includes(error.code))fail('candidate_file_busy',['候选文件被占用；关闭正在读取它的图片窗口后，重新核对本页候选再清理。'],409);throw error;}
-        // 成果删除已经生效；历史标记失败不能复活它。
+        // 先持久化删除状态，再移走目录；标记失败时不删除，防止执行器重新发布。
+        let previousItem;
         await updateRenderTask(project.projectDirectory, current.task_id, (task) => {
           const item = task.items.find(entry => entry.candidate_id === current.candidate_id);
-          if (item) { item.status = "discarded"; item.discarded_at = new Date().toISOString(); }
-        }).catch(() => undefined);
-        await rm(staged, { recursive: true, force: true });
+          if (item) { previousItem = structuredClone(item); item.status = 'discarded'; item.discarded_at = new Date().toISOString(); }
+        }).catch(error => { if (error.code !== 'ENOENT') throw error; });
+        try{await replaceFileWithRetry(path.dirname(requested),staged);}
+        catch(error){
+          if (previousItem) await updateRenderTask(project.projectDirectory, current.task_id, task => {
+            const item = task.items.find(entry => entry.candidate_id === current.candidate_id);
+            if (item) { item.status = previousItem.status; if (previousItem.discarded_at) item.discarded_at = previousItem.discarded_at; else delete item.discarded_at; }
+          });
+          if(['EPERM','EACCES','EBUSY'].includes(error.code))fail('candidate_file_busy',[
+          {candidate_id:record.candidate_id,filesystem_code:error.code,phase:'stage_delete'},
+          '移动候选目录失败，已完成短时重试；可能是文件占用或权限问题。停止空等，可继续其他编辑或生成。',
+        ],409);throw error;}
+        // 候选已移出发布目录；暂存垃圾回收失败不把已完成删除报成失败。
+        await rm(staged, { recursive: true, force: true }).catch(() => undefined);
         return {
           deleted_candidate_id: current.candidate_id,
           deleted_path: requested,
@@ -134,15 +142,15 @@ export async function deletePageCandidates(projectRoot, projectId, value) {
   const byId = new Map(available.map((record) => [record.candidate_id, record]));
   const missing = requestedIds.filter((candidateId) => !byId.has(candidateId));
   if (missing.length) fail("candidate_not_found", missing, 404);
-  const activeIds = new Set(await listActiveProjectTaskIds(project.projectDirectory));
-  const active = requestedIds.map((candidateId) => byId.get(candidateId)).filter((record) => activeIds.has(record.task_id));
-  if (active.length) fail("candidate_task_active", [...new Set(active.map((record) => record.task_id))], 409);
   const deleted = [];
+  const failed = [];
   for (const candidateId of requestedIds) {
-    deleted.push(await deletePageCandidateById(projectRoot, projectId, identity.page_key, candidateId));
+    try { deleted.push(await deletePageCandidateById(projectRoot, projectId, identity.page_key, candidateId)); }
+    catch (error) { failed.push({ candidate_id: candidateId, code: error.code ?? 'candidate_delete_failed', details: error.details ?? [], message: error.message }); }
   }
   return {
     page_key: structuredClone(identity.page_key),
     deleted_candidate_ids: deleted.map((item) => item.deleted_candidate_id),
+    ...(failed.length ? { status: 'incomplete', failed_candidates: failed, recovery: '已尝试全部指定候选。不要重放成功项或等待生成结束；可继续其他工作，排查失败原因后仅处理失败 ID。' } : {}),
   };
 }

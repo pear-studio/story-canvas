@@ -451,7 +451,7 @@ test("剧情批量刷新只删除确认过的不符候选，Prompt 变化时拒�
   assert.deepEqual((await readGenerationCandidateRecords(fixture.projectDirectory)).map((item) => item.candidate_id), [task.items[2].candidate_id]);
 });
 
-test("剧情补齐使用普通单页任务，执行前跳过活动任务和已经补齐的页面", async (context) => {
+test("剧情补齐允许再次排队，已有相符候选则跳过补齐，活动任务不阻止旧候选清理", async (context) => {
   const fixture = await createFixture(context);
   await prepareWriteAuditFixture(fixture);
   const options = { projectRoot: fixture.repositoryRoot, projectDirectory: fixture.projectDirectory, projectId: fixture.projectId, config: {} };
@@ -476,9 +476,15 @@ test("剧情补齐使用普通单页任务，执行前跳过活动任务和已�
   assert.deepEqual(result, { status: "queued", task: { task_id: task.id, status: "queued" } });
   assert.equal(task.items.length, 1);
   assert.deepEqual(task.items[0].page_key, key);
-  assert.equal((await inspectStoryCandidates({ ...options, pageKeys: [key] }))[0].status, "active");
-  const unexpectedLaunch = () => assert.fail("已有任务或相符候选时不能重复生成");
-  assert.deepEqual(await executeStoryCandidateRefresh(options, value, unexpectedLaunch), { status: "skipped" });
+  assert.equal((await inspectStoryCandidates({ ...options, pageKeys: [key] }))[0].status, "ready");
+  const next = await executeStoryCandidateRefresh(options, value, async input => {
+    const nextTask = (await compileAndPersistWorkbenchRenderTask(fixture.repositoryRoot, fixture.projectId, input)).task;
+    assert.notEqual(nextTask.id, task.id);
+    assert.notEqual(nextTask.items[0].candidate_id, task.items[0].candidate_id);
+    return { task_id: nextTask.id };
+  });
+  assert.equal(next.status, 'queued');
+  const unexpectedLaunch = () => assert.fail("已有相符候选时无需再次补齐");
   await publishCandidateResult(fixture.projectDirectory, task, task.items[0], Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aJXkAAAAASUVORK5CYII=", "base64"));
   await updateRenderTask(fixture.projectDirectory, task.id, (current) => { current.status = "completed"; current.items[0].status = "available"; });
   assert.deepEqual(await executeStoryCandidateRefresh(options, value, unexpectedLaunch), { status: "skipped" });
@@ -490,13 +496,13 @@ test("剧情补齐使用普通单页任务，执行前跳过活动任务和已�
   assert.deepEqual(allResult, { status: "queued", task: { task_id: allTask.id } });
   assert.equal(allTask.items.length, 3, "所有页面模式即使已有相符候选也按指定张数生成");
   const cleanAll = { action: "clean", scope: "all", page_key: key, candidate_ids: [task.items[0].candidate_id] };
-  assert.deepEqual(await executeStoryCandidateRefresh(options, cleanAll), { status: "skipped" }, "清理全部仍跳过活动任务页面");
+  assert.deepEqual(await executeStoryCandidateRefresh(options, cleanAll), { status: "deleted", count: 1 }, "另一任务排队时仍可删除旧候选");
   await updateRenderTask(fixture.projectDirectory, allTask.id, (current) => { current.status = "failed"; current.items.forEach((item) => { item.status = "failed"; }); });
   await writeFile(path.join(fixture.projectDirectory, "pages/page-001.prompt.json"), "{broken");
   const [unavailable] = await inspectStoryCandidates({ ...options, pageKeys: [key] });
   assert.equal(unavailable.status, "unavailable");
-  assert.deepEqual(unavailable.all_candidate_ids, [task.items[0].candidate_id]);
-  assert.deepEqual(await executeStoryCandidateRefresh(options, cleanAll), { status: "deleted", count: 1 }, "无法编译时仍可清理全部，包括原来相符的候选");
+  assert.deepEqual(unavailable.all_candidate_ids, []);
+  assert.deepEqual(await executeStoryCandidateRefresh(options, cleanAll), { status: "skipped" }, "已清理集合不会重复删除");
   assert.deepEqual(await readGenerationCandidateRecords(fixture.projectDirectory), []);
   await assert.rejects(executeStoryCandidateRefresh(options, { ...value, scope: "all", count: 0 }), { code: "invalid_story_refresh_request" });
 });

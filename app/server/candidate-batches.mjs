@@ -5,7 +5,6 @@ import {hashCanonicalJson} from './workflow-definition.mjs';
 import {ApiError} from './http-support.mjs';
 import {decodePageKey} from './page-key.mjs';
 
-const active=new Set(['queued','running','launching']);
 const fingerprint=candidates=>hashCanonicalJson(candidates.map(c=>[c.candidate_id,c.task_id]).sort((a,b)=>a[0].localeCompare(b[0])));
 export function groupCandidateTasks(candidates,states,pageKey) {
   const groups=new Map();
@@ -32,7 +31,6 @@ function selections(value) {
   if(new Set(ids).size!==ids.length)throw new ApiError(400,'duplicate_cleanup_page');
 }
 export function planCandidateCleanup(snapshot,keepTaskId) {
-  if(snapshot.groups.some(g=>active.has(g.status)))throw new ApiError(409,'candidate_task_active');
   const keep=keepTaskId?snapshot.groups.find(g=>g.task_id===keepTaskId):snapshot.groups[0];
   if(!keep)throw new ApiError(404,'candidate_batch_not_found');
   if(!keepTaskId && keep.status!=='completed')throw new ApiError(409,'candidate_batch_not_completed',['最新批次未成功完成，请指定要保留的任务或等待完成']);
@@ -46,7 +44,7 @@ export async function previewCandidateCleanup(context,rows) {
   for(const row of rows)plans.push(planCandidateCleanup(await readCandidateBatches(context,row.page_key),row.keep_task_id));
   return {project_id:context.projectId,plans};
 }
-// 每页核对预览集合，绝不把后来生成的图片加入删除范围；复用已有删除锁与活动任务检查。
+// 每页核对预览集合，绝不把后来生成的图片加入删除范围；复用候选删除短锁。
 export async function applyCandidateCleanup(context,plans) {
   selections(plans);
   const results=[];
@@ -57,7 +55,7 @@ export async function applyCandidateCleanup(context,plans) {
       if(current.fingerprint!==plan.expected_fingerprint || hashCanonicalJson(expected.delete_candidate_ids.slice().sort())!==hashCanonicalJson(plan.delete_candidate_ids.slice().sort())
         || hashCanonicalJson(expected.keep_candidate_ids.slice().sort())!==hashCanonicalJson(plan.keep_candidate_ids.slice().sort()))throw new ApiError(409,'candidate_cleanup_conflict',['候选集合已变化，重新预览；不重放旧计划']);
       const deleted=plan.delete_candidate_ids.length?await deletePageCandidates(context.projectRoot,context.projectId,{page_key:plan.page_key,candidate_ids:plan.delete_candidate_ids}):{deleted_candidate_ids:[]};
-      results.push({page_key:plan.page_key,status:'cleaned',deleted:deleted.deleted_candidate_ids.length,kept:expected.keep_candidate_ids.length});
+      results.push({page_key:plan.page_key,status:deleted.failed_candidates?.length?'error':'cleaned',deleted:deleted.deleted_candidate_ids.length,kept:expected.keep_candidate_ids.length,...(deleted.failed_candidates?.length?{failed_candidates:deleted.failed_candidates,recovery:deleted.recovery}:{})});
     }catch(error){results.push({page_key:plan.page_key,status:'error',error:{code:error.code??'cleanup_failed',status:error.status,message:error.message},recovery:'本页可能已有部分删除；重新查询并预览本页，其他成功页不重放。'});}
   }
   return {results,cleaned:results.filter(r=>r.status==='cleaned').length,failed:results.filter(r=>r.status==='error').length,deleted:results.reduce((n,r)=>n+(r.deleted??0),0)};

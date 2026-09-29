@@ -18,7 +18,7 @@ import { renderTaskIdPattern } from "./render-task-id.mjs";
 import { waitForGenerationQueueDrain, waitForGenerationUnitTurn } from "./generation-queue.mjs";
 import { validateFrozenRenderTask } from "./render-task-contract.mjs";
 import { applyRecoveredRenderItemStatuses } from "./render-task-state.mjs";
-import { readRenderTask, renderTaskProgressFile, updateRenderTask } from "./render-task-storage.mjs";
+import { readRenderTask, readRenderTaskState, renderTaskProgressFile, updateRenderTask } from "./render-task-storage.mjs";
 import { executeGenerationTask } from "./generation-lifecycle.mjs";
 import {
   isCompletePng,
@@ -468,6 +468,9 @@ async function runRender(options, assignedTaskId) {
             const projectId = path.basename(options.projectRoot);
             await unit.recorder.measure("save", () => withCandidateMutationLock(repo, projectId, () => storage.withPageLocks(repo, projectId, [item.page_key.page_id], async () => {
               await resolveExactPageIdentity(options.projectRoot, item.page_key);
+              // 删除与发布共用短锁；运行中的内存快照不能复活已删除成果。
+              const latest = await readRenderTaskState(options.projectRoot, task.id);
+              if (latest?.items.find(entry => entry.id === item.id)?.status === 'discarded') return;
               return publishCandidateResult(options.projectRoot, task, { ...item, generated_at: generatedAt }, bytes, { submission: unit.submission });
             })), item.id);
           }
