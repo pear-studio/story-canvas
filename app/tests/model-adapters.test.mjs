@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { mkdtemp, mkdir, writeFile, readFile, cp, rm } from 'node:fs/promises';
+import fs from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
 import { modelAdapter, profileModelAdapter } from '../server/model-adapters.mjs';
 import { readResolvedRenderProfile } from '../server/render-profile-compiler.mjs';
 import { pageSettingsFromDefaults, readPageRenderSettings, readPageRenderDraft, commitPageRender } from '../server/page-render-settings.mjs';
@@ -113,6 +115,61 @@ test('已注册 Anima Basic 资源完整可解析，编译保留分类、权重�
   const compiled=adapter.compilePrompt({pageId:'page-001',pageKey:{page_id:'page-001'},pagePrompt:prompt,profile,participantIds:[],dictionaryEntries:[]});
   assert.equal(adapter.id,'anima');assert.match(compiled.positive_prompt,/\(quiet garden:1.2\)/);
   assert.match(compiled.negative_prompt,/blur/);assert.equal(compiled.errors.length,0);
+});
+test('Anima 预览按引用读取场景，同次复用事实，后续请求读取更新', async t => {
+  const f = await fixture(t), {page_id: id} = await f.create();
+  const scenePrompt = text => ({$schema: schema('scene-prompt'), models: {anima: {
+    identity: {prompt: modelAdapter('anima').emptyPrompt(), lora: null},
+    variants: {default: {prompt: {...modelAdapter('anima').emptyPrompt(), setting: [{id: 'token-111111111111', description: text}]}, loras: []}},
+  }}});
+  await f.put('scenes/index.json', {$schema: schema('scene-index'), scenes: ['garden', 'room', 'unrelated']});
+  for (const scene of ['garden', 'room']) {
+    await f.put(`scenes/${scene}.profile.json`, {$schema: schema('scene-profile'), name: scene, description: scene});
+    await f.put(`scenes/${scene}.visual.json`, {$schema: schema('scene-visual'), variants: [{id: 'default', name: '默认'}]});
+    await f.put(`scenes/${scene}.prompt.json`, scenePrompt(`quiet ${scene}`));
+  }
+  // 无关场景损坏不得影响当前页，也不能被预览读取。
+  await writeFile(path.join(f.directory, 'scenes/unrelated.profile.json'), '{broken');
+  const document = await f.get(`pages/${id}.prompt.json`);
+  document.models.anima.scene_id = 'garden'; document.models.anima.scene_variant_id = 'default';
+  await f.put(`pages/${id}.prompt.json`, document);
+  const reads = [];
+  const originalReadFile = fs.readFile;
+  const mocked = t.mock.method(fs, 'readFile', async (file, ...args) => {
+    reads.push(path.relative(f.directory, String(file)).replaceAll('\\', '/'));
+    return originalReadFile(file, ...args);
+  });
+  syncBuiltinESMExports();
+  try {
+    const inspect = draft => compilePageRenderInspectionContext({repositoryRoot: f.root, projectDirectory: f.directory,
+      pageKey: {page_id: id}, pagePromptDraft: draft});
+    const sceneReads = () => reads.filter(file => file.startsWith('scenes/')).sort();
+    const expectedReads = ids => ['scenes/index.json', ...ids.flatMap(scene => ['profile', 'visual', 'prompt'].map(kind => `scenes/${scene}.${kind}.json`))].sort();
+    const saved = await inspect();
+    assert.equal(saved.blockers.length, 0);
+    assert.deepEqual(sceneReads(), expectedReads(['garden']));
+    reads.length = 0;
+    const same = await inspect(document.models.anima);
+    assert.deepEqual(sceneReads(), expectedReads(['garden']));
+    assert.equal(same.compiled_page.positive_prompt, saved.compiled_page.positive_prompt);
+    assert.equal(same.snapshot.source_fingerprint, saved.snapshot.source_fingerprint);
+    reads.length = 0;
+    const switched = await inspect({...document.models.anima, scene_id: 'room'});
+    assert.deepEqual(sceneReads(), expectedReads(['garden', 'room']));
+    assert.match(switched.compiled_page.positive_prompt, /quiet room/);
+    assert.doesNotMatch(switched.compiled_page.positive_prompt, /quiet garden/);
+    await f.put('scenes/garden.prompt.json', scenePrompt('sunlit garden'));
+    const updated = await inspect(document.models.anima);
+    assert.match(updated.compiled_page.positive_prompt, /sunlit garden/);
+    assert.notEqual(updated.snapshot.source_fingerprint, saved.snapshot.source_fingerprint);
+    const missing = await inspect({...document.models.anima, scene_id: 'missing'});
+    assert.ok(missing.blockers.some(item => item.code === 'scene_dangling'));
+    const invalidVariant = await inspect({...document.models.anima, scene_variant_id: 'missing'});
+    assert.ok(invalidVariant.blockers.some(item => item.code === 'scene_variant_dangling'));
+  } finally {
+    mocked.mock.restore();
+    syncBuiltinESMExports();
+  }
 });
 test('两模型均能冻结可执行任务，Anima policy 身份随任务保存并校验',async t=>{
   for(const modelId of ['anima','qwen']){

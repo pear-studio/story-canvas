@@ -5,7 +5,6 @@ import { readPageRenderSettings, pageProjectSettings } from './page-render-setti
 import { modelPrompt, isModelPromptDocument } from './model-prompts.mjs';
 import { profileModelAdapter } from './model-adapters.mjs';
 import { resolveSceneConfiguration } from './scene-files.mjs';
-import { readScenes } from './scene-facts.mjs';
 import { createHash } from "node:crypto";
 import { lstat, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
@@ -196,7 +195,25 @@ export async function resolvePageIdentity(projectDirectory, pageId) {
   };
 }
 
-async function loadPageSnapshot(projectDirectory, pageId, exactPageKey = null, renderOverride = null) {
+// 只在一次快照/预览内复用；后续请求仍重新读取当前事实。
+function createSceneReader(projectDirectory) {
+  let index;
+  const scenes = new Map();
+  return async (id) => {
+    index ??= readJsonFact(projectDirectory, 'scenes/index.json', { optional: true });
+    if (!(await index)?.value.scenes.includes(id)) return null;
+    if (!scenes.has(id)) scenes.set(id, (async () => {
+      const sources = await Promise.all(['profile', 'visual', 'prompt'].map(kind =>
+        readJsonFact(projectDirectory, `scenes/${id}.${kind}.json`, { optional: true })));
+      if (sources.some(source => !source)) fail('scene_fact_missing', [id]);
+      const [profile, visual, prompt] = sources.map(source => source.value);
+      return { scene: { id, name: profile.name, visual, prompt }, sources };
+    })());
+    return scenes.get(id);
+  };
+}
+
+async function loadPageSnapshot(projectDirectory, pageId, exactPageKey, renderOverride, readScene) {
   const render = renderOverride ?? await readPageRenderSettings(projectDirectory, pageId);
   const modelId = render.model_id ?? 'qwen';
   const identity = await readPageIdentity(projectDirectory, pageId);
@@ -228,12 +245,12 @@ async function loadPageSnapshot(projectDirectory, pageId, exactPageKey = null, r
   sources.push(...resolvedCharacters.flatMap(entry => entry.sources));
   const scenes = [];
   if (!standalone && pagePrompt.scene_id) {
-    const scene = (await readScenes(projectDirectory)).scenes.find(item => item.id === pagePrompt.scene_id);
-    if (!scene) referenceErrors.push(`场景不存在：${pagePrompt.scene_id}`);
+    const entry = await readScene(pagePrompt.scene_id);
+    if (!entry) referenceErrors.push(`场景不存在：${pagePrompt.scene_id}`);
     else {
-      try { scenes.push(resolveSceneConfiguration(scene, pagePrompt.scene_variant_id, modelId)); }
+      try { scenes.push(resolveSceneConfiguration(entry.scene, pagePrompt.scene_variant_id, modelId)); }
       catch (error) { referenceErrors.push(error.message); }
-      sources.push(...await Promise.all(['profile', 'visual', 'prompt'].map(kind => readJsonFact(projectDirectory, `scenes/${scene.id}.${kind}.json`))));
+      sources.push(...entry.sources);
     }
   }
   referenceErrors.push(...checkPagePromptOverrideReferences(pagePrompt, references));
@@ -254,9 +271,13 @@ async function loadPageSnapshot(projectDirectory, pageId, exactPageKey = null, r
 
 // 写入入口在已有事实锁内捕获，后续编译只消费这份内存快照。
 export async function capturePagePromptSnapshot(projectDirectory, pageId, pageKey = null, renderOverride = null) {
+  return capturePageSnapshot(projectDirectory, pageId, pageKey, renderOverride, createSceneReader(projectDirectory));
+}
+
+async function capturePageSnapshot(projectDirectory, pageId, pageKey, renderOverride, readScene) {
   const [projectSource, snapshot] = await Promise.all([
     readJsonFact(projectDirectory, "project.json"),
-    loadPageSnapshot(projectDirectory, pageId, pageKey, renderOverride),
+    loadPageSnapshot(projectDirectory, pageId, pageKey, renderOverride, readScene),
   ]);
   snapshot.sources.push(projectSource);
   const render = renderOverride ?? await readPageRenderSettings(projectDirectory, pageId, projectSource.value);
@@ -456,7 +477,8 @@ export async function compilePageRenderInspectionContext({
 }) {
   const requestedPageKey = decodeFullPageKey(pageKey);
   const pageId = requestedPageKey.page_id;
-  const snapshot = await capturePagePromptSnapshot(projectDirectory, pageId, requestedPageKey, renderOverride);
+  const readScene = createSceneReader(projectDirectory);
+  const snapshot = await capturePageSnapshot(projectDirectory, pageId, requestedPageKey, renderOverride, readScene);
   const { project, project_source: projectSource } = snapshot;
   if (encodePageKey(snapshot.page_key) !== encodePageKey(requestedPageKey)) {
     fail("page_owner_mismatch", [`请求 ${encodePageKey(requestedPageKey)}，实际 ${encodePageKey(snapshot.page_key)}`], 404);
@@ -473,9 +495,9 @@ export async function compilePageRenderInspectionContext({
     snapshot.page_prompt = normalized.prompt;
     snapshot.scenes = [];
     if (normalized.prompt.scene_id) {
-      const scene = (await readScenes(projectDirectory)).scenes.find(s => s.id === normalized.prompt.scene_id);
-      if (scene) {
-        try { snapshot.scenes = [resolveSceneConfiguration(scene, normalized.prompt.scene_variant_id,snapshot.model_id)]; }
+      const entry = await readScene(normalized.prompt.scene_id);
+      if (entry) {
+        try { snapshot.scenes = [resolveSceneConfiguration(entry.scene, normalized.prompt.scene_variant_id,snapshot.model_id)]; }
         catch (error) { blockers.push(inspectionBlocker("scene_variant_dangling", error.message)); }
       } else blockers.push(inspectionBlocker("scene_dangling", `场景不存在：${normalized.prompt.scene_id}`));
     }
