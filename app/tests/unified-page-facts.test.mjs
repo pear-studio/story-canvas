@@ -4,7 +4,7 @@ import {mkdtemp,mkdir,readFile,writeFile,rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import {savePage,movePage,duplicatePage} from '../server/page-facts.mjs';
+import {savePage,movePage,duplicatePage,createPage} from '../server/page-facts.mjs';
 import {readPageContent,readPagePrompt,PAGES_INDEX_SCHEMA_ID} from '../server/pages-store.mjs';
 import {readStoryPromptUpstream} from '../server/story-facts.mjs';
 import {hashCanonicalJson} from '../server/workflow-definition.mjs';
@@ -24,6 +24,20 @@ async function fixture(t) {
  async function request(){const content=await readPageContent(directory,'page-001'),prompt=await readPagePrompt(directory,'page-001');return {page_key:{page_id:'page-001'},content,prompt,expected_content_sha256:hashCanonicalJson(content),expected_prompt_sha256:hashCanonicalJson(prompt),expected_context_sha256:hashCanonicalJson(await readStoryPromptUpstream(directory,'page-001'))};}
  registerFixtureProjects(root); return {root,directory,write,request};
 }
+test('创建与移动统一支持前后定位，拒绝双锚点且自定位不改变顺序',async t=>{
+ const f=await fixture(t),owner={owner_kind:'story',sequence_id:'a'};
+ const first=await createPage(f.root,'test',owner);
+ const second=await createPage(f.root,'test',owner,{beforePageId:first.page_id});
+ const order=async()=>JSON.parse(await readFile(path.join(f.directory,'pages/index.json'),'utf8')).pages.filter(p=>p.sequence_id==='a').map(p=>p.page_id);
+ assert.deepEqual(await order(),[second.page_id,first.page_id]);
+ await movePage(f.root,'test',second.page_id,owner,{afterPageId:first.page_id});
+ assert.deepEqual(await order(),[first.page_id,second.page_id]);
+ await movePage(f.root,'test',second.page_id,owner,{afterPageId:second.page_id});
+ await assert.rejects(movePage(f.root,'test',second.page_id,owner,{afterPageId:first.page_id,beforePageId:first.page_id}),{code:'invalid_page_position'});
+ await assert.rejects(createPage(f.root,'test',owner,{afterPageId:first.page_id,beforePageId:first.page_id}),{code:'invalid_page_position'});
+ assert.deepEqual(await order(),[first.page_id,second.page_id]);
+});
+
 test('整页保存同时分配对白ID并映射布局，失效归属不阻止编辑',async t=>{
  const f=await fixture(t),request=await f.request();request.content.title='新标题';request.content.dialogue=[{id:'draft-dialogue-0',mode:'speech',speaker:'npc',text:'你好'}];
  request.lettering={items:[{dialogue_id:'draft-dialogue-0',box:{x:.1,y:.1,w:.3,h:.2}}]};request.expected_layout_sha256=hashCanonicalJson(emptyLetteringDocument());

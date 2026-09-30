@@ -45,6 +45,33 @@ async function failure(tool, input) {
   assert.fail('必须保持工具失败状态');
 }
 
+test('常见参数错误直接给出字段路径与最小例子，不发送请求',async t=>{
+ const f=await fixture(t);
+ const owner={owner_kind:'story',sequence_id:'unit-1',after_page_key:{page_id:'page-001'}};
+ const move=await failure(f.tool,{operation:'page.move',args:{project_id:'demo',page_key:{page_id:'page-002'},owner}});
+ assert.match(move.message,/owner.after_page_key/);assert.ok(move.example.after_page_key);assert.equal(move.example.owner.after_page_key,undefined);
+ const sources=await failure(f.tool,{operation:'prompt.sources',args:{project_id:'demo',source:'scene:room:default'}});
+ assert.equal(sources.example.target.kind,'page');
+ const deletion=await failure(f.tool,{operation:'candidate.delete',args:{project_id:'demo',page_key:{page_id:'page-001'},candidate_id:'x'}});
+ assert.ok(Array.isArray(deletion.example.candidate_ids));
+ const both=await failure(f.tool,{operation:'page.move',args:{...move.example,before_page_key:{page_id:'page-003'}}});
+ assert.match(both.message,/只能提供一个/);assert.equal(f.requests.length,0);
+});
+
+test('Prompt 来源冲突给出准确读取入口，同模型相同来源批量合并，范围冲突仍重读页面',async t=>{
+ const f=await fixture(t,({body},response)=>{
+   response.statusCode=409;response.end(JSON.stringify(body.target.id==='page-scope'
+     ?{error:'prompt_scope_conflict',details:[]}
+     :{error:'prompt_source_conflict',details:['scene:room:default']}));
+ });
+ const item=id=>({target:{kind:'page',id,model_id:'anima'},expected_sha256:'old',changes:{}});
+ const single=await failure(f.tool,{operation:'prompt.save',args:{project_id:'demo',...item('page-a')}});
+ assert.equal(single.recovery.next.operation,'prompt.sources');assert.equal(single.recovery.next.args.source,'scene:room:default');
+ const result=await f.tool.execute({operation:'prompt.batch.save',args:{project_id:'demo',items:['page-a','page-b','page-scope'].map(item)}});
+ assert.equal(result.counts.failed,3);assert.equal(result.recoveries.length,1);assert.equal(result.recoveries[0].affected_targets.length,2);
+ assert.deepEqual(result.results[0].recovery_ids,result.results[1].recovery_ids);assert.equal(result.results[2].next.operation,'prompt.read');
+});
+
 test('字段帮助按需展开，分类与默认操作帮助不注入完整细则',async t=>{
   const f=await fixture(t);
   assert.ok((await f.tool.execute({operation:'help',args:{}})).groups);

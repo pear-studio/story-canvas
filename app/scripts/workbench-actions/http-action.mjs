@@ -19,11 +19,11 @@ export async function jsonArtifact(value) {
   return { file, content_type: 'application/json' };
 }
 // 每个操作声明自己的固定路径、参数和帮助；没有模型可控的任意路径入口。
-export function endpoint(summary, method, route, properties = {}, { required = Object.keys(properties), details, body, query, credential, capability, project = false, transform, recover, freshMedia = false } = {}) {
+export function endpoint(summary, method, route, properties = {}, { required = Object.keys(properties), details, example, body, query, credential, capability, project = false, transform, recover, freshMedia = false } = {}) {
   const fields = { ...(project ? projectId : {}), ...properties, ...(credential ? { [credential]: string(`先读目标返回的 ${credential}，409 必须重读`) } : {}) };
   return { summary, parameters: schema(fields, [...(project ? ['project_id'] : []), ...required, ...(credential ? [credential] : [])]),
     details: `${details ?? '返回服务端回执。'}${credential ? ` 保存使用读取时的 ${credential}，不自动获取新版本覆盖。` : ''}${capability ? ` 需要 ${capability} 执行能力；极简预设禁用，不能通过其他操作绕过。` : ''}`, ...(capability ? { capability } : {}),
-    recover, transport: { method, route: typeof route === 'string' ? route : '领域固定路径', credential: credential ?? null },
+    recover, ...(example?{example}:{}), transport: { method, route: typeof route === 'string' ? route : '领域固定路径', credential: credential ?? null },
     async execute(args, execution = {}) {
       let target = typeof route === 'function' ? route(args) : route;
       if (query) { const params = new URLSearchParams(Object.entries(query(args)).filter(([,v]) => v !== undefined).map(([k,v]) => [k, String(v)])); if (params.size) target += `?${params}`; }

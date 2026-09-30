@@ -6,9 +6,15 @@ function countsFor(results) {
   for(const result of results)counts[result.status]++;
   return counts;
 }
+export function generationQuantity(record) {
+  const perPage=record.images_per_page;
+  return {pages:record.results.length,tasks_submitted:record.results.filter(row=>row.status==='submitted').length,
+    images_per_page:perPage??null,images_requested:perPage===undefined?null:record.results.length*perPage,
+    images_submitted:perPage===undefined?null:record.results.filter(row=>row.status==='submitted').length*perPage};
+}
 function receiptFailure(error,batch_id,record,phase) {
   const {results,targets}=record;
-  return {batch_id,error:'receipt_write_failed',phase,message:error.message,counts:countsFor(results),results,targets,
+  return {batch_id,error:'receipt_write_failed',phase,message:error.message,quantity:generationQuantity(record),counts:countsFor(results),results,targets,
     ...(targets.length?{wait:{operation:'task.wait',args:{targets}}}:{}),
     recovery:'以本次返回的 results/targets 为准，磁盘批次回执可能过期。submitted 只等待原任务；unknown 核对后再决定；not_submitted 确认未发送。不要重放整批。'};
 }
@@ -17,7 +23,7 @@ function receiptFailure(error,batch_id,record,phase) {
 export async function submitGenerationBatch({project_id,page_keys,...settings},{submit,signal,recover,persist=saveOperationRecord}) {
   if(new Set(page_keys.map(page=>page.page_id)).size!==page_keys.length)throw invalid('page_keys 不能包含重复页面');
   const results=page_keys.map(page_key=>({page_key,status:'not_submitted'})),targets=[];
-  const record={project_id,created_at:new Date().toISOString(),results,targets};
+  const record={project_id,created_at:new Date().toISOString(),images_per_page:settings.count??3,results,targets};
   let batch_id;
   try{batch_id=await persist('generation',record);}
   catch(error){return receiptFailure(error,undefined,record,'initialize');}
@@ -57,7 +63,7 @@ export async function submitGenerationBatch({project_id,page_keys,...settings},{
     catch(error){return receiptFailure(error,batch_id,record,'after_submit');}
   }
   const counts=countsFor(results);
-  return {batch_id,counts,inspect:{operation:'task.batch.read',args:{batch_id}},...(targets.length?{wait:{operation:'task.wait',args:{batch_id}}}:{}),
+  return {batch_id,quantity:generationQuantity(record),message:`已提交 ${counts.submitted} 个页面任务，每页 ${record.images_per_page} 张，共 ${counts.submitted*record.images_per_page} 张；counts 按任务计数，等待原任务即可。`,counts,inspect:{operation:'task.batch.read',args:{batch_id}},...(targets.length?{wait:{operation:'task.wait',args:{batch_id}}}:{}),
     ...(counts.rejected||counts.unknown?{issues:results.filter(r=>['rejected','unknown'].includes(r.status)).slice(0,5)}:{}),
     ...(counts.rejected||counts.unknown||counts.not_submitted?{recovery:'已提交项只等待原任务；rejected 修正后仅重提该页；unknown 先用 task.list / task.history 核对，不能直接重提；not_submitted 尚未发送。不要重放整批。'}:{})};
 }

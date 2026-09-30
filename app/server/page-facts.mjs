@@ -46,6 +46,7 @@ export async function assertPageOwner(directory,owner) {
 }
 function sameOwner(a,b) {return ['owner_kind','sequence_id','character_id','scene_id','variant_id'].every(key=>a[key]===b[key]);}
 function insertEntry(index,entry,{afterPageId=null,beforePageId=null}={}) {
+  if(beforePageId!==null && afterPageId!==null)fail('invalid_page_position',['before_page_id 与 after_page_id 只能提供一个']);
   const anchor=beforePageId??afterPageId;
   let position=index.pages.length;
   if(anchor!==null){position=index.pages.findIndex(page=>page.page_id===anchor&&sameOwner(page,entry));if(position<0)fail('page_anchor_not_found',[anchor]);if(beforePageId===null)position++;}
@@ -56,7 +57,7 @@ async function newPageId(directory,index) {
   for(;;){const id=`page-${randomBytes(6).toString('hex')}`;if(index.pages.some(page=>page.page_id===id))continue;
     if(await lstat(path.join(directory,pageRelativePath(id,'content'))).then(()=>true,error=>error.code==='ENOENT'?false:Promise.reject(error)))continue;return id;}
 }
-export async function createPage(root,projectId,owner,{templateId=null,afterPageId=null,pageKind=null,characterId,variantId,beforeCommit}={}) {
+export async function createPage(root,projectId,owner,{templateId=null,afterPageId=null,beforePageId=null,pageKind=null,characterId,variantId,beforeCommit}={}) {
   const project=await projectAt(root,projectId), directory=project.projectDirectory;
   const projectDocument=await optionalJson(directory,'project.json');
   const bundle=projectDocument.format==='story-models-v1'?await compileEffectiveRenderProfile({repositoryRoot:root,projectRoot:directory,profileId:projectDocument.default_render_profile}):null;
@@ -88,18 +89,19 @@ export async function createPage(root,projectId,owner,{templateId=null,afterPage
     prompt=makeModelPromptDocument(STORY_PAGE_PROMPT_SCHEMA_ID,render.model_id,native);
   }
   assertValid(validateStoryPageNarrativeDocument(content));assertValid(validateStoryPagePromptDocument(prompt));
-  insertEntry(next,{page_id:id,...owner},{afterPageId});
+  insertEntry(next,{page_id:id,...owner},{afterPageId,beforePageId});
   if(beforeCommit)await beforeCommit({page_id:id,content_file:path.join(directory,pageRelativePath(id,'content')),prompt_file:path.join(directory,pageRelativePath(id,'prompt')),index_file:path.join(directory,'pages/index.json')});
   await commitFactChanges(directory,[{relative:pageRelativePath(id,'content'),before:null,after:content},{relative:pageRelativePath(id,'prompt'),before:null,after:prompt},{relative:pageRelativePath(id,'render'),before:null,after:render},{relative:'pages/index.json',before:index,after:next}]);
   return {page_id:id,page_key:{page_id:id},...owner,template_id:templateId,content_file:path.join(directory,pageRelativePath(id,'content')),prompt_file:path.join(directory,pageRelativePath(id,'prompt')),index_file:path.join(directory,'pages/index.json')};
 }
-export async function movePage(root,projectId,pageId,owner,{beforePageId=null}={}) {
+export async function movePage(root,projectId,pageId,owner,{beforePageId=null,afterPageId=null}={}) {
   const {projectDirectory:directory}=await projectAt(root,projectId);await assertPageOwner(directory,owner);
   const index=await readPageIndex(directory),source=index.pages.find(page=>page.page_id===pageId);if(!source)fail('page_not_found',[pageId]);
   const content=await readPageContent(directory,pageId);
   if(content.page_kind==='text'&&owner.owner_kind!=='story')fail('text_page_story_only');
-  if(beforePageId===pageId){if(!sameOwner(source,owner))fail('page_anchor_not_found',[beforePageId]);return {page_id:pageId,...owner};}
-  const next=clone(index);next.pages=next.pages.filter(page=>page.page_id!==pageId);insertEntry(next,{page_id:pageId,...owner},{beforePageId});
+  if(beforePageId!==null && afterPageId!==null)fail('invalid_page_position',['before_page_id 与 after_page_id 只能提供一个']);
+  if(beforePageId===pageId || afterPageId===pageId){if(!sameOwner(source,owner))fail('page_anchor_not_found',[beforePageId]);return {page_id:pageId,...owner};}
+  const next=clone(index);next.pages=next.pages.filter(page=>page.page_id!==pageId);insertEntry(next,{page_id:pageId,...owner},{beforePageId,afterPageId});
   await commitFactChanges(directory,[{relative:'pages/index.json',before:index,after:next}]);return {page_id:pageId,page_key:{page_id:pageId},...owner};
 }
 export async function duplicatePage(root,projectId,pageId) {

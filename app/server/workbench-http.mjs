@@ -212,8 +212,8 @@ export async function handleWorkbenchRequest({
     const [projectId, action] = navigationActionMatch.slice(1);
     const value = await readJsonBody(request);
     const operations = {
-      "create-page": () => createWorkbenchPage(projectRoot, projectId, value?.owner, { templateId: value?.template_id, pageKind: value?.page_kind, afterPageId: value?.after_page_id, characterId: value?.character_id, variantId: value?.variant_id }),
-      "move-page": () => moveWorkbenchPage(projectRoot, projectId, value?.page_id, value?.owner, { beforePageId: value?.before_page_id }),
+      "create-page": () => createWorkbenchPage(projectRoot, projectId, value?.owner, { templateId: value?.template_id, pageKind: value?.page_kind, afterPageId: value?.after_page_id, beforePageId: value?.before_page_id, characterId: value?.character_id, variantId: value?.variant_id }),
+      "move-page": () => moveWorkbenchPage(projectRoot, projectId, value?.page_id, value?.owner, { beforePageId: value?.before_page_id, afterPageId: value?.after_page_id }),
       "duplicate-page": () => duplicateWorkbenchPage(projectRoot, projectId, value?.page_id),
       "delete-page": () => deleteWorkbenchPage(projectRoot, projectId, value?.page_id),
       "create-scene": () => createWorkbenchScene(projectRoot, projectId, value?.id, value?.name),

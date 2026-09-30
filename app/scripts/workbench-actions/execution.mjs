@@ -19,7 +19,7 @@ executionActions['generation.batch']={
   summary:'批量提交多页候选并返回整批等待入口',capability:'generation',
   parameters:schema({...projectId,page_keys:{type:'array',items:pageKey,minItems:1,maxItems:32,description:'明确授权的页面，不可重复，最多32页'},
     ...Object.fromEntries(Object.entries(executionActions['generation.run'].parameters.properties).filter(([key])=>['count','seed','prompt_source'].includes(key)))},['project_id','page_keys']),
-  details:'须已有整批生成授权。每页沿用自己的模型与画幅，默认3张；count/seed/prompt_source 对全批适用。顺序提交，每页最多一次。返回 batch_id、计数和简短 wait 入口；task.wait 只传 batch_id 即可，不抄任务列表、不用 Shell sleep。逐页提交/运行结果用 task.batch.read。部分失败保留已提交任务；断线或回执不明停止后续提交，不重放整批。Saved 中保留派生回执，重启可继续查询。纯文字页不生成候选。极简预设禁用此操作。',
+  details:'须已有整批生成授权。每页沿用自己的模型与画幅，默认3张；count/seed/prompt_source 对全批适用。顺序提交，每页最多一次。返回 batch_id、quantity（页数／每页张数／已提交图片总数）、任务计数和简短 wait 入口；一页三张对应一个任务，不因任务数为1再补交；task.wait 只传 batch_id 即可，不抄任务列表、不用 Shell sleep。逐页提交/运行结果用 task.batch.read。部分失败保留已提交任务；断线或回执不明停止后续提交，不重放整批。Saved 中保留派生回执，重启可继续查询。纯文字页不生成候选。极简预设禁用此操作。',
   execute:(args,execution={})=>submitGenerationBatch(args,{submit:executionActions['generation.run'].execute,recover:executionActions['generation.run'].recover,signal:execution.signal}),
 };
 executionActions['generation.regenerate']={

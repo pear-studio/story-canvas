@@ -5,6 +5,7 @@ import { putProject } from './project-settings.mjs';
 import { jsonArtifact } from './http-action.mjs';
 import {waitResultImages} from './wait-result-images.mjs';
 import { waitForTasks } from './task-wait.mjs';
+import {generationQuantity} from './generation-batch.mjs';
 import {readOperationRecord} from './operation-records.mjs';
 const get = async path => (await requestWorkbench(path)).value;
 const pick=(value,keys)=>Object.fromEntries(keys.filter(key=>value[key]!==undefined).map(key=>[key,value[key]]));
@@ -23,7 +24,7 @@ async function waitForSelection(args,execution={}) {
   const images=await waitResultImages(result,{request:requestWorkbench,signal:execution.signal});
   if(!record)return {...result,...images};
   const problems=result.tasks.filter(t=>t.error || ['failed','cancelled','incomplete'].includes(t.task?.status??t.status));
-  return {...images,batch_id:args.batch_id,reason:result.reason,elapsed_ms:result.elapsed_ms,submission:submissionCounts(record),summary:result.summary,
+  return {...images,batch_id:args.batch_id,reason:result.reason,elapsed_ms:result.elapsed_ms,quantity:generationQuantity(record),submission:submissionCounts(record),summary:result.summary,
     all_terminal:result.all_terminal,all_succeeded:result.all_succeeded && record.results.every(r=>r.status==='submitted'),
     ...(problems.length?{problems:problems.slice(0,5),problems_total:problems.length}:{}),
     ...(!result.all_terminal?{wait:{operation:'task.wait',args:{batch_id:args.batch_id}}}:{}),
@@ -130,7 +131,7 @@ export const workspaceActions = {
         try{return {...row,task:pick(taskSummary((await requestWorkbench(taskPath({project_id:record.project_id,task_id:row.task_id})+'&view=summary',{signal:execution.signal})).value.task),['status','item_counts','error'])};}
         catch(error){return {...row,read_error:{code:error.code??'task_read_failed',message:error.message}};}
       }));
-      return {batch_id,project_id:record.project_id,submission:submissionCounts(record),...page,items};
+      return {batch_id,project_id:record.project_id,quantity:generationQuantity(record),submission:submissionCounts(record),...page,items};
     },
   },
   'task.details': {
