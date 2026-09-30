@@ -91,49 +91,59 @@ export function resolveParticipantLoras(profile, participantIds, characters = []
   return { loras: resolved, errors: [...new Set(errors)] };
 }
 
-export function styleLoraTriggers(profile) {
-  return [...new Set(Object.keys(profile?.style_loras ?? {}).sort(compareStableIds)
-    .map((id) => profile.style_loras[id])
-    .map((lora) => typeof lora?.trigger === "string" ? lora.trigger.trim() : "")
-    .filter(Boolean))];
-}
-
 function inheritedSources(profile, characters = [], scenes = []) {
   return [...Object.keys(profile?.style_loras ?? {}).sort(compareStableIds).map(id=>({lora:profile.style_loras[id],kind:'style',owner:profile.id})),
     ...characters.flatMap(value=>(value.loras??[]).map(lora=>({lora,kind:'character',owner:value.id}))),
     ...scenes.flatMap(value=>(value.loras??[]).map(lora=>({lora,kind:'scene',owner:value.id})))];
 }
-export function pageLoraDefinitions(profile, prompt, characters = [], scenes = []) {
-  return mergeInheritedLoras(inheritedSources(profile,characters,scenes).map(value=>value.lora),prompt.loras,prompt.lora_overrides);
-}
 export function explicitPageLoras(prompt, pageId, profile, characters = [], scenes = []) {
+  const sources = inheritedSources(profile, characters, scenes);
+  const definitions = mergeInheritedLoras(sources.map(value => value.lora), prompt.loras, prompt.lora_overrides);
+  return compilePageLoras(prompt, pageId, profile, sources, definitions);
+}
+
+function compilePageLoras(prompt, pageId, profile, sources, definitions) {
   const errors = profile ? validateStyleLoras(profile) : [];
   const loras=[], local=new Map(), inherited=new Map();
   for(const lora of prompt.loras??[]) {
     if(local.has(lora.filename))errors.push('LoRA 重复：'+lora.filename);
     local.set(lora.filename,lora);
   }
-  for(const source of inheritedSources(profile,characters,scenes)) {
+  for(const source of sources) {
     const previous=inherited.get(source.lora.filename);
     if(previous && !local.has(source.lora.filename) && prompt.lora_overrides?.[source.lora.filename]?.enabled!==false &&
       (previous.lora.sha256!==source.lora.sha256 || previous.lora.weight!==source.lora.weight && prompt.lora_overrides?.[source.lora.filename]?.weight===undefined))errors.push(pageId+' 的继承 LoRA 配置冲突：'+source.lora.filename);
     inherited.set(source.lora.filename,source);
   }
-  for(const [index,item] of pageLoraDefinitions(profile,prompt,characters,scenes).entries()) {
+  for(const [index,item] of definitions.entries()) {
     const {enabled,...definition}=item; errors.push(...validateLoraDefinition(definition,pageId+'.loras['+index+']'));
     const source=inherited.get(definition.filename);
     if(enabled!==false)loras.push({...definition,kind:local.has(definition.filename)?'page':source?.kind??'page',owner:local.has(definition.filename)?pageId:source?.owner??pageId});
   }
   return {loras,errors};
 }
-// 触发词与实际启用的 LoRA 共用继承结果，并保留旧迁移页面的来源位置。
-export function pageLoraTriggers(prompt, kind, owner, fallback = [], profile = null, characters = [], scenes = []) {
-  const active=[...new Set(pageLoraDefinitions(profile,prompt,characters,scenes).filter(lora=>lora.enabled!==false).map(lora=>lora.trigger?.trim()).filter(Boolean))];
-  const sources=prompt.trigger_sources;
+// 设定 LoRA 已在事实读取时合并；这里只解析页面层，执行列表和触发词共用同一结果。
+export function resolvePageLoras(prompt, pageId, profile, characters = [], scenes = []) {
   const inherited=inheritedSources(profile,characters,scenes);
+  const definitions = mergeInheritedLoras(inherited.map(value => value.lora), prompt.loras, prompt.lora_overrides);
+  const active=[...new Set(definitions.filter(lora=>lora.enabled!==false).map(lora=>lora.trigger?.trim()).filter(Boolean))];
+  const sources=prompt.trigger_sources;
   const roleTriggers=inherited.filter(value=>value.kind!=='style').map(value=>value.lora.trigger).filter(Boolean);
   const legacy=[...Object.values(sources?.characters??{}).flat(),...Object.values(sources?.scenes??{}).flat()];
-  if(kind==='style')return active.filter(trigger=>!roleTriggers.includes(trigger)&&!legacy.includes(trigger));
-  const original=[...fallback,...(sources?.[kind]?.[owner]??[])];
-  return [...new Set(original.filter(trigger=>active.includes(trigger)))];
+  // 来源位置按原有触发词匹配，不能用合并后 LoRA 的 owner 替代。
+  function settingTriggers(values, kind) {
+    return new Map(values.map(value => {
+      const fallback = (value.loras ?? []).map(lora => typeof lora?.trigger === 'string' ? lora.trigger.trim() : '').filter(Boolean);
+      const original = [...fallback, ...(sources?.[kind]?.[value.id] ?? [])];
+      return [value.id, [...new Set(original.filter(trigger => active.includes(trigger)))]];
+    }));
+  }
+  return {
+    ...compilePageLoras(prompt, pageId, profile, inherited, definitions),
+    triggers: {
+      style: active.filter(trigger => !roleTriggers.includes(trigger) && !legacy.includes(trigger)),
+      characters: settingTriggers(characters, 'characters'),
+      scenes: settingTriggers(scenes, 'scenes'),
+    },
+  };
 }

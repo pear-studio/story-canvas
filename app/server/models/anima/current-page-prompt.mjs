@@ -1,5 +1,5 @@
-import { effectivePromptEntries, applyInheritedPrompt, variantPrompt, characterSource, sceneSource, duplicatePromptWords } from '../../../shared/prompt-inheritance.mjs';
-import { styleLoraTriggers, explicitPageLoras, pageLoraTriggers } from "../../lora-config.mjs";
+import { effectivePromptEntries, variantPrompt, characterSource, sceneSource, duplicatePromptWords } from '../../../shared/prompt-inheritance.mjs';
+import { explicitPageLoras, resolvePageLoras } from "../../lora-config.mjs";
 import { validatePageKey } from "../../page-key.mjs";
 import { auditPromptContext } from "./prompt-audit.mjs";
 import {
@@ -177,32 +177,43 @@ function pageFactPath(pageKey, pageId, category, index) {
   return `pages/${pageId}.prompt.json.${category}[${index}]`;
 }
 
-function characterPromptParts(character, adjustments = {}, kind = "character", pageId = null) {
+// 保留原始位置，所有层的调整完成后才过滤；校重和编译共享这些有效词条。
+function resolveSettingPrompt(character, adjustments = {}, kind = "character") {
   const configurationPath = character.configuration_path
     ?? `variants.${character.configuration_id}`;
   const documentRoot = `${kind}s/${character.id}.prompt.json`;
   const root = `${documentRoot}.${configurationPath}.prompt`;
-  const parts = [];
+  const inherited = variantPrompt(character.identity ?? { prompt: {} }, character);
+  const prompt = {};
+  const entries = {};
   const missing = [];
-  // 按基础、子设定、页面依次应用显式调整；重复词已由继承检查阻止生成。
-  const identityPrompt = character.identity?.prompt ? applyInheritedPrompt(character.identity.prompt, character.identity_overrides) : null;
-  if (!identityPrompt || typeof identityPrompt !== "object" || Array.isArray(identityPrompt)) missing.push(`${documentRoot}.identity.prompt`);
-  for (const category of kind === "scene" ? ["setting", "avoid"] : storyPromptCategories) {
-    const identityEntries = Array.isArray(identityPrompt?.[category])
-      ? identityPrompt[category]
-        .map((fragment, index) => ({ fragment: { ...fragment, inheritance_key: `identity:${fragment.id}` }, path: `${documentRoot}.identity.prompt.${category}[${index}]` }))
+  if (!character.identity?.prompt) missing.push(`${documentRoot}.identity.prompt`);
+  for (const category of storyPromptCategories) {
+    const effective = effectivePromptEntries(inherited, category, adjustments);
+    prompt[category] = effective.map(({ fragment }) => fragment);
+    const identityCount = character.identity?.prompt?.[category]?.length ?? 0;
+    entries[category] = effective.map(({ fragment, index }) => ({
+      fragment,
+      path: index < identityCount
+        ? `${documentRoot}.identity.prompt.${category}[${index}]`
+        : `${root}.${category}[${index - identityCount}]`,
+    }));
+    if (!character.identity?.prompt || !Array.isArray(character.prompt?.[category])) {
+      entries[category] = null;
+    }
+  }
+  return { prompt, entries, missing, root };
+}
 
-      : null;
-    const variantEntries = Array.isArray(character.prompt?.[category])
-      ? character.prompt[category].map((fragment, index) => ({ fragment: { ...fragment, inheritance_key: `variant:${fragment.id}` }, path: `${root}.${category}[${index}]` }))
-      : null;
-    const entries = identityEntries === null || variantEntries === null ? null : [...identityEntries, ...variantEntries];
-    if (entries === null) {
-      missing.push(`${root}.${category}`);
+function characterPromptParts(character, resolved = resolveSettingPrompt(character), kind = "character", pageId = null) {
+  const parts = [];
+  const missing = [...resolved.missing];
+  for (const category of kind === "scene" ? ["setting", "avoid"] : storyPromptCategories) {
+    if (resolved.entries[category] === null) {
+      missing.push(`${resolved.root}.${category}`);
       continue;
     }
-    for (const { fragment: persisted, index } of effectivePromptEntries({ [category]: entries.map(entry => entry.fragment) }, category, adjustments)) {
-      const { path } = entries[index];
+    for (const { fragment: persisted, path } of resolved.entries[category]) {
       const fragment = currentFragment(persisted);
       if (!String(fragment.prompt_text ?? "").trim()) missing.push(`${path}.prompt_text`);
       parts.push(tracePart(fragment, {
@@ -214,17 +225,6 @@ function characterPromptParts(character, adjustments = {}, kind = "character", p
     }
   }
   return { parts, missing };
-}
-
-function characterLoraList(character) {
-  if (Array.isArray(character?.loras)) return character.loras;
-  return [];
-}
-
-export function characterLoraTriggers(character) {
-  return characterLoraList(character)
-    .map((lora) => (typeof lora?.trigger === "string" ? lora.trigger.trim() : ""))
-    .filter(Boolean);
 }
 
 export function auditCharacterPromptConfiguration(character, dictionaryEntries) {
@@ -253,9 +253,14 @@ export function compileCurrentPagePrompt({
   const rules = profilePromptRules(profile);
   const missing = [];
   const errors = rules.categoryOrderErrors.map((error) => `${profile?.id ?? "当前生成配置"}.${error}`);
+  const characterPrompts = new Map(characters.map(character => [character, resolveSettingPrompt(character,
+    pagePrompt.inheritance?.[characterSource(character.id, character.configuration_id)])]));
+  const scenePrompts = new Map(scenes.map(scene => [scene, resolveSettingPrompt(scene,
+    pagePrompt.inheritance?.[sceneSource(scene.id, scene.configuration_id)], "scene")]));
+  const pageLoras = resolvePageLoras(pagePrompt, pageId, profile, characters, scenes);
   errors.push(...duplicatePromptWords([
-    ...characters.filter(c => c.identity?.prompt).map(character => ({ scope: character.id, label: character.name ?? character.id, prompt: applyInheritedPrompt(variantPrompt(character.identity, character), pagePrompt.inheritance?.[characterSource(character.id, character.configuration_id)]) })),
-    ...scenes.map(scene => ({ scope: 'environment', label: '场景 · ' + scene.name, prompt: applyInheritedPrompt(variantPrompt(scene.identity, scene), pagePrompt.inheritance?.[sceneSource(scene.id, scene.configuration_id)]) })),
+    ...characters.filter(c => c.identity?.prompt).map(character => ({ scope: character.id, label: character.name ?? character.id, prompt: characterPrompts.get(character).prompt })),
+    ...scenes.map(scene => ({ scope: 'environment', label: '场景 · ' + scene.name, prompt: scenePrompts.get(scene).prompt })),
     { scope: 'environment', label: '本页', prompt: pagePrompt },
   ]));
   const categoryPrompts = {};
@@ -296,10 +301,10 @@ export function compileCurrentPagePrompt({
       errors.push(`${pageId} 引用了未知角色：${characterId}`);
       continue;
     }
-    for (const trigger of pageLoraTriggers(pagePrompt,'characters',characterId,characterLoraTriggers(character),profile,characters,scenes)) {
+    for (const trigger of pageLoras.triggers.characters.get(characterId) ?? []) {
       positiveBodyParts.push(loraTriggerPart(trigger, characterId));
     }
-    const characterParts = characterPromptParts(character, pagePrompt.inheritance?.[characterSource(character.id, character.configuration_id)]);
+    const characterParts = characterPromptParts(character, characterPrompts.get(character));
     missing.push(...characterParts.missing);
     positiveBodyParts.push(...characterParts.parts.filter((part) => part.polarity === "positive"));
     characterNegativeParts.push(...characterParts.parts.filter((part) => part.polarity === "negative"));
@@ -310,13 +315,15 @@ export function compileCurrentPagePrompt({
 
   const sceneSettingParts = [];
   for (const scene of scenes) {
-    sceneSettingParts.push(...pageLoraTriggers(pagePrompt,'scenes',scene.id,characterLoraTriggers(scene),profile,characters,scenes).map(trigger => loraTriggerPart(trigger, scene.id, "scene")));
-    const sceneParts = characterPromptParts(scene, pagePrompt.inheritance?.[sceneSource(scene.id, scene.configuration_id)], "scene", pageId);
+    sceneSettingParts.push(...pageLoras.triggers.scenes.get(scene.id).map(trigger => loraTriggerPart(trigger, scene.id, "scene")));
+    const sceneParts = characterPromptParts(scene, scenePrompts.get(scene), "scene", pageId);
     missing.push(...sceneParts.missing);
     sceneSettingParts.push(...sceneParts.parts.filter(part => part.polarity === "positive"));
     characterNegativeParts.push(...sceneParts.parts.filter(part => part.polarity === "negative"));
   }
-  const resolvedLoras = explicitPageLoras(pagePrompt,pageId,profile,characters.filter(c=>participantIds.includes(c.id)),scenes);
+  // 正式页面只传参与者；直接调用传入额外角色时，保留原有的执行列表筛选。
+  const resolvedLoras = characters.every(c => participantIds.includes(c.id)) ? pageLoras
+    : explicitPageLoras(pagePrompt, pageId, profile, characters.filter(c => participantIds.includes(c.id)), scenes);
   errors.push(...resolvedLoras.errors);
   if ((categoryPrompts.avoid.length || characterNegativeParts.length) && !["negative_prompt", "positive_avoid"].includes(rules.avoidanceStrategy)) {
     errors.push(`${profile?.id ?? "当前生成配置"} 不支持 avoid token`);
@@ -331,7 +338,7 @@ export function compileCurrentPagePrompt({
   ]));
   const positiveAuditParts = [
     ...rules.positivePrefix.map((entry) => profileFragmentPart(profile, entry, "positive", profilePromptFragmentSources)),
-    ...pageLoraTriggers(pagePrompt,'style',profile?.id,styleLoraTriggers(profile),profile,characters,scenes).map((text) => loraTriggerPart(text, profile?.id, "style")),
+    ...pageLoras.triggers.style.map((text) => loraTriggerPart(text, profile?.id, "style")),
     ...populationParts,
     ...positiveBodyParts,
     ...rules.positiveSuffix.map((entry) => profileFragmentPart(profile, entry, "positive", profilePromptFragmentSources)),
