@@ -6,7 +6,7 @@ export function promptFragmentText(fragment: PromptFragment) {
 }
 
 function displayPromptFragment(fragment: PromptFragment, category: string, index: number): DisplayPromptFragment {
-  const promptType = fragment.tag ? "danbooru" : "custom_description";
+  const promptType = Object.hasOwn(fragment, "tag") ? "danbooru" : "custom_description";
   return {
     id: fragment.inheritance_key ?? fragment.id ?? nextDraftId(),
     ...(fragment.inheritance_key ? { inheritance_key: fragment.inheritance_key } : {}),

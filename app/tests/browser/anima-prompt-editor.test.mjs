@@ -5,6 +5,18 @@ import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
 import { chromium } from "playwright";
 
+test('空标签与空描述转换往返保留类型，页面不写入临时 ID', async t => {
+  const { page } = await editor(t);
+  const result = await page.evaluate(async () => {
+    const {displayFragmentList,persistFragmentList}=await import('/src/prompt-fragment-draft.ts');
+    const input=[{tag:''},{description:''},{tag:'long_hair',enabled:false,weight:1.2}];
+    const draft=displayFragmentList(input);
+    return {types:draft.map(fragment=>fragment.prompt_type),persisted:persistFragmentList(draft)};
+  });
+  assert.deepEqual(result.types,['danbooru','custom_description','danbooru']);
+  assert.deepEqual(result.persisted,[{tag:''},{description:''},{tag:'long_hair',enabled:false,weight:1.2}]);
+});
+
 let server;
 let browser;
 let url;

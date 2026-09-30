@@ -25,6 +25,10 @@ const initial: WorkbenchPage = {
 } as WorkbenchPage;
 if (new URLSearchParams(location.search).has('empty')) { initial.characters=[]; initial.prompt={ text:'' }; }
 if (new URLSearchParams(location.search).has('extra')) initial.prompt.reference_images=[{id:'ref-33333333-3333-4333-8333-333333333333',file:'reference-extra.png',title:'附加图'}];
+if (new URLSearchParams(location.search).has('anima')) {
+ initial.model_id='anima'; initial.characters=[];
+ initial.prompt={population:[],person:[],setting:[{tag:'first_token'},{tag:'second_token'}],camera:[],avoid:[]};
+}
 function Harness() {
  const [page,setPage] = useState(initial);
  if (new URLSearchParams(location.search).has('workspace')) return <PageWorkspace projectId="test" location={{page,key:page.page_id,breadcrumb:['测试',page.title]}} ownerPages={[]} characters={characters} scenes={scenes} renderCapabilities={{candidates:{available:true,counts:[1,3]}}} defaultRenderProfile="qwen" canvas="2:3" letteringStyle={null} taskCollection={{tasks:[],history:[]}} busy={false} editorWidth={600} candidateWidth={200} pageOrder={1} onEditorTabChange={()=>{}} onOpenLetteringSettings={()=>{}} onOpenPromptOverview={()=>{}} onEditorWidthChange={()=>{}} onCandidateWidthChange={()=>{}} onPageChanged={(_target,patch)=>setPage(current=>({...current,...patch}))} onReload={async()=>{}} onTrackedTasksChange={()=>{}} />;

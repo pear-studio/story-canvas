@@ -21,6 +21,32 @@ async function open(t,query,setup){
  if(!query.includes('collapsed')) { await page.getByTitle('展开角色引用').click(); await page.getByTitle('展开场景引用').click(); }
  return page;
 }
+test('Anima 放弃修改清空撤销和重做历史，之后的新编辑仍可撤销', async t => {
+ const page=await open(t,'anima&collapsed',async page=>{
+   await page.route('**/api/prompt-dictionary**',route=>route.fulfill({json:{available:true,suggestions:[],matches:[]}}));
+ });
+ const first=page.getByRole('checkbox',{name:'场景第 1 项参与生成'});
+ const second=page.getByRole('checkbox',{name:'场景第 2 项参与生成'});
+ const save=page.getByRole('button',{name:'保存',exact:true});
+ await first.press('Space'); await second.press('Space');
+ assert.equal(await first.isChecked(),false); assert.equal(await second.isChecked(),false);
+ const input=page.getByRole('combobox',{name:'场景第 1 项 Prompt'});
+ // 保留过去和未来两端历史，再放弃全部修改。
+ await input.press('Control+z');
+ assert.equal(await first.isChecked(),false); assert.equal(await second.isChecked(),true);
+ await page.getByRole('button',{name:'放弃修改',exact:true}).click();
+ for(const key of ['Control+z','Control+y']) {
+   await input.press(key);
+   assert.equal(await first.isChecked(),true); assert.equal(await second.isChecked(),true);
+   assert.equal(await save.isDisabled(),true);
+ }
+ await first.press('Space');
+ assert.equal(await save.isEnabled(),true);
+ await input.press('Control+z');
+ await page.waitForFunction(()=>document.querySelector('[aria-label="场景第 1 项参与生成"]').checked);
+ assert.equal(await first.isChecked(),true); assert.equal(await save.isDisabled(),true);
+});
+
 test('新引用按需读取，失败时保留草稿且不得保存，重试后携带读据', async t => {
  let requests=0;
  const page=await open(t,'kind=story&lazy-reference',async page=>{

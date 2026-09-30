@@ -673,6 +673,7 @@ export default function WorkbenchPageEditor({
   const incomingPrompt = useMemo(() => clone(page.prompt), [page.prompt_sha256,page.model_id]);
   const [promptBaseline, setPromptBaseline] = useState(incomingPrompt);
   const [promptDraft, setPromptDraft] = useState(incomingPrompt);
+  const [promptDiscardCount, setPromptDiscardCount] = useState(0);
   const references = useReferencedSettings(projectId, page.page_id, directoryCharacters, directoryScenes, promptDraft.composition === 'standalone' ? [] : (contentDraft.characters ?? []).map(ref=>ref.character_id), promptDraft.composition === 'standalone' ? undefined : promptDraft.scene_id);
   const {characters, scenes} = references;
   const incomingSourceVersions = readPromptSourceVersions(page.model_id ?? 'qwen', characters, scenes);
@@ -775,6 +776,8 @@ export default function WorkbenchPageEditor({
   });
 
   function discardAll() {
+    // 明确放弃时重建编辑区，清除词条撤销历史及尚未提交的输入。
+    setPromptDiscardCount(count => count + 1);
     references.reset();
     editBaseline.current = page; setExternalConflict(false);
     sourceVersions.current = incomingSourceVersions;
@@ -857,7 +860,7 @@ export default function WorkbenchPageEditor({
       {promptError && <p className="prompt-save-error" role="alert">{promptError}</p>}
       {promptAuditErrors.length > 0 && <PromptIssueList issues={promptAuditErrors} title="Prompt 错误" />}
       {references.pending && <p role={references.error ? 'alert' : 'status'}>{references.error || '正在读取引用设定…'}{references.error && <button type="button" onClick={references.retry}>重试</button>}</p>}
-      <ModelPromptEditor header={<SectionHeader title="Prompt" actions={<div className="prompt-save-actions">{promptPhase === "error" && <button type="button" className="button button--quiet" onClick={() => void reloadAll()}>放弃本页草稿并重新载入</button>}{promptAuditWarnings.length > 0 && <button type="button" className="issue-indicator issue-indicator--warning" aria-label={`查看 ${promptAuditWarnings.length} 条 Prompt 警告`} title="查看 Prompt 警告" onClick={() => setPromptWarningsOpen(true)}>!</button>}</div>} />} projectId={projectId} page={page} prompt={promptDraft} onChange={setPromptDraft} characters={characters} scenes={scenes} references={contentDraft.characters??[]} onReferencesChange={changeCharacters} disabled={busy||saving} onOpenOverview={onOpenPromptOverview} rewrite={<>{onRewrite && <div className="page-rewrite" aria-label="最终 Prompt 优化">
+      <ModelPromptEditor key={promptDiscardCount} header={<SectionHeader title="Prompt" actions={<div className="prompt-save-actions">{promptPhase === "error" && <button type="button" className="button button--quiet" onClick={() => void reloadAll()}>放弃本页草稿并重新载入</button>}{promptAuditWarnings.length > 0 && <button type="button" className="issue-indicator issue-indicator--warning" aria-label={`查看 ${promptAuditWarnings.length} 条 Prompt 警告`} title="查看 Prompt 警告" onClick={() => setPromptWarningsOpen(true)}>!</button>}</div>} />} projectId={projectId} page={page} prompt={promptDraft} onChange={setPromptDraft} characters={characters} scenes={scenes} references={contentDraft.characters??[]} onReferencesChange={changeCharacters} disabled={busy||saving} onOpenOverview={onOpenPromptOverview} rewrite={<>{onRewrite && <div className="page-rewrite" aria-label="最终 Prompt 优化">
         <div className="page-rewrite__toolbar">
           <label className="page-rewrite__choice"><input type="checkbox" checked={promptSource === "rewrite"} disabled={promptSource !== "rewrite" && !canChooseRewrite} onChange={(event) => onPromptSourceChange?.(event.target.checked ? "rewrite" : "original")} />使用优化结果</label>
           <span className="page-rewrite__status" role="status">状态：{rewriteStatus}</span>
