@@ -107,7 +107,9 @@ export async function movePage(root,projectId,pageId,owner,{beforePageId=null,af
 export async function duplicatePage(root,projectId,pageId) {
   const {projectDirectory:directory}=await projectAt(root,projectId),index=await readPageIndex(directory),source=await requirePage(directory,pageId);
   const id=await newPageId(directory,index),next=clone(index);insertEntry(next,{...source,page_id:id},{afterPageId:pageId});
-  const content=await readPageContent(directory,pageId),prompt=await readPagePrompt(directory,pageId);content.title+=' 副本';
+  const content=await readPageContent(directory,pageId),prompt=await readPagePrompt(directory,pageId);
+  const suffix=content.title.match(/\d+$/);
+  content.title=suffix?content.title.slice(0,-suffix[0].length)+(BigInt(suffix[0])+1n):`${content.title}2`;
   const writes=[{relative:pageRelativePath(id,'content'),before:null,after:content},{relative:pageRelativePath(id,'prompt'),before:null,after:prompt}];
   writes.push({relative:pageRelativePath(id,'render'),before:null,after:await readPageRenderSettings(directory,pageId)});
   const sources=await optionalJson(directory,pageRelativePath(pageId,'text-sources'));if(sources)writes.push({relative:pageRelativePath(id,'text-sources'),before:null,after:sources});

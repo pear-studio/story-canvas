@@ -286,7 +286,7 @@ test("duplicateStoryPage 复制 narrative/prompt、紧随源页插入 index 并�
   const duplicated = await duplicateWorkbenchStoryPage(fixture.root, fixture.projectId, source.page_id);
 
   assert.notEqual(duplicated.page_id, source.page_id);
-  assert.deepEqual(await readJson(path.join(fixture.projectDirectory, `pages/${duplicated.page_id}.content.json`)), { ...narrative, title: `${narrative.title} 副本` });
+  assert.deepEqual(await readJson(path.join(fixture.projectDirectory, `pages/${duplicated.page_id}.content.json`)), { ...narrative, title: `${narrative.title}2` });
   assert.deepEqual(await readJson(path.join(fixture.projectDirectory, `pages/${duplicated.page_id}.prompt.json`)), prompt);
   assert.deepEqual((await readStoryIndex(fixture)).by_sequence.arrival,
     [source.page_id, duplicated.page_id, neighbor.page_id], "副本紧随源页");
@@ -321,7 +321,7 @@ test("duplicateCharacterPage 复制 goal/prompt 并紧随源条目插入 index",
 
 
   assert.notEqual(duplicated.page_id, source.page_id);
-  assert.deepEqual(await readJson(path.join(fixture.projectDirectory, `pages/${duplicated.page_id}.content.json`)), { ...goal, title: `${goal.title} 副本` });
+  assert.deepEqual(await readJson(path.join(fixture.projectDirectory, `pages/${duplicated.page_id}.content.json`)), { ...goal, title: `${goal.title}2` });
   assert.deepEqual(await readJson(path.join(fixture.projectDirectory, `pages/${duplicated.page_id}.prompt.json`)), prompt);
   assert.deepEqual((await readCharacterPagesIndex(fixture)).pages.map((page) => page.page_id),
     [source.page_id, duplicated.page_id, neighbor.page_id], "副本紧随源条目");
