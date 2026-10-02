@@ -1,3 +1,4 @@
+import {usePageRewrite} from './models/qwen/usePageRewrite';
 import { ProjectDirectoryDialog, type RegisteredProject } from "./ProjectDirectoryDialog";
 import { ProjectListEntry } from "./ProjectListEntry";
 import { useTooltips } from "./use-tooltips";
@@ -63,9 +64,6 @@ import {
   loadCandidateCounts,
   deleteCandidates,
   inspectPageRender,
-  loadPageRewrite,
-  loadPageRewriteProgress,
-  runPageRewrite,
   loadCandidateDetail,
   loadPageMedia,
   loadProjectRevision,
@@ -82,8 +80,6 @@ import {
   type CharacterVisualDraft,
   type CandidateDetail,
   type PageRenderInspection,
-  type PageRewriteValue,
-  type PromptSourceChoice,
   type PromptSourceVersions,
   type PageMedia,
   type PagePrompt,
@@ -576,9 +572,6 @@ export function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSet
   if (incomingPage.current !== page) { incomingPage.current = page; latestPage.current = page; }
   const [pageDirty, setPageDirty] = useState(false);
   const [promptDraft, setPromptDraft] = useState<PagePrompt>(() => structuredClone(page.prompt));
-  const [promptSourceState, setPromptSourceState] = useState<{ identity: string; value: PromptSourceChoice }>(() => ({ identity: `${projectId}:${location.key}`, value: "original" }));
-  const [rewriteState, setRewriteState] = useState<{ identity: string; value: PageRewriteValue | null; loading: boolean; running: boolean; error: string; progress?: PageRewriteValue['progress'] }>(() => ({ identity: `${projectId}:${location.key}`, value: null, loading: true, running: false, error: "" }));
-  const pendingRewrites = useRef(new Set<string>());
   const [renderInspection, setRenderInspection] = useState<PageRenderInspection | null>(null);
   const [renderInspectionKey, setRenderInspectionKey] = useState("");
   const [inspectionBaseKey, setInspectionBaseKey] = useState("");
@@ -596,8 +589,6 @@ export function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSet
   const editorDiscardAll = useRef<(() => void) | null>(null);
   const mediaRevision = useRef("");
   const workspaceIdentity = `${projectId}:${location.key}:${page.render_sha256??""}`;
-  const promptSource: PromptSourceChoice = promptSourceState.identity === workspaceIdentity ? promptSourceState.value : "original";
-  const currentRewriteState = rewriteState.identity === workspaceIdentity ? rewriteState : { identity: workspaceIdentity, value: null, loading: true, running: false, error: "" };
   const pageWorkspaceRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const workspace = pageWorkspaceRef.current;
@@ -644,11 +635,19 @@ export function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSet
   const isCurrentWorkspace = () => workspaceIdentityRef.current === workspaceIdentity;
   const factReady = !busy && !pageDirty;
   const sceneFactsSignature = JSON.stringify(scenes);
+  const qwenRewrite = usePageRewrite({projectId, workspaceIdentity, page, characters, scenes, defaultRenderProfile, canvas, pageDirty, busy,
+    onSaved: () => {
+      setRenderInspection(null);
+      setRenderInspectionKey("");
+      setInspectionNonce(current => current + 1);
+      notify({kind: 'success', message: '优化结果已保存'});
+    },
+  });
+  const {promptSource} = qwenRewrite;
   const inspectionDepsKey = JSON.stringify([location.key, page.content_sha256, page.render_sha256, characterFactsSignature, sceneFactsSignature, page.project_loras, defaultRenderProfile, promptDraft, promptSource]);
   // 待保存附图不参与编译检查；其余草稿字段都影响编译结果，任意变化都应让旧预览失效。
   const { reference_images: _draftAttachments, ...promptCompileBase } = promptDraft;
   const currentBaseKey = JSON.stringify([location.key, page.content_sha256, characterFactsSignature, sceneFactsSignature, page.project_loras, defaultRenderProfile, promptCompileBase, promptSource]);
-  const rewriteDepsKey = JSON.stringify([workspaceIdentity, page.content_sha256, page.prompt_sha256, page.prompt_context_sha256, characterFactsSignature, sceneFactsSignature, page.project_loras, defaultRenderProfile, canvas]);
 
   useEffect(() => {
     onTrackedTasksChange(projectId, trackedTaskIds);
@@ -691,8 +690,6 @@ export function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSet
 
   useEffect(() => {
     setPageDirty(false);
-    setPromptSourceState({ identity: workspaceIdentity, value: "original" });
-    setRewriteState({ identity: workspaceIdentity, value: null, loading: true, running: false, error: "" });
     setPreviewCanvas(canvas ?? "3:4");
     setPromptDraft(structuredClone(page.prompt));
     setRenderInspection(null);
@@ -709,60 +706,6 @@ export function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSet
     }
     return () => mediaRequestGuard.current.cancel();
   }, [refreshPageMedia, workspaceIdentity]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setRewriteState((current) => ({ identity: workspaceIdentity, value: current.identity === workspaceIdentity ? current.value : null, loading: true, running: current.identity === workspaceIdentity && current.running, error: "" }));
-    if (page.model_id === "anima") { setRewriteState({identity:workspaceIdentity,value:null,loading:false,running:false,error:""}); return () => controller.abort(); }
-    void loadPageRewrite(projectId, page.page_key, controller.signal).then((value) => {
-      if (!controller.signal.aborted) setRewriteState((current) => current.identity === workspaceIdentity ? { ...current, value, loading: false, progress:value.progress, running:current.running||Boolean(value.progress&&!value.progress.finished_at), error:value.progress?.phase==='failed'?value.progress.error??'优化失败':current.error } : current);
-    }).catch((error) => {
-      if (!controller.signal.aborted) setRewriteState((current) => current.identity === workspaceIdentity ? { ...current, loading: false, error: error instanceof Error ? error.message : String(error) } : current);
-    });
-    return () => controller.abort();
-  }, [rewriteDepsKey]);
-
-  useEffect(() => {
-    if (!currentRewriteState.running) return;
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
-    const poll = async () => {
-      try {
-        const { progress } = await loadPageRewriteProgress(projectId, page.page_key, controller.signal);
-        if (controller.signal.aborted) return;
-        if (progress && !progress.finished_at) {
-          setRewriteState(current => current.identity === workspaceIdentity ? { ...current, progress } : current);
-        } else if (progress?.finished_at && !pendingRewrites.current.has(workspaceIdentity)) {
-          const value = await loadPageRewrite(projectId, page.page_key, controller.signal);
-          if (!controller.signal.aborted) setRewriteState(current => current.identity === workspaceIdentity ? {
-            ...current, value, progress, running: false, loading: false,
-            error: progress.phase === 'failed' ? progress.error ?? '优化失败' : '',
-          } : current);
-          return;
-        }
-      } catch { /* 进度读取暂时失败不终止正在执行的优化。 */ }
-      if (!controller.signal.aborted) timer = setTimeout(poll, 1000);
-    };
-    void poll();
-    return () => { controller.abort(); clearTimeout(timer); };
-  }, [workspaceIdentity, currentRewriteState.running]);
-
-  async function rewriteCurrentPage() {
-    if (pageDirty || busy || currentRewriteState.running) return;
-    pendingRewrites.current.add(workspaceIdentity);
-    setRewriteState((current) => current.identity === workspaceIdentity ? { ...current, running: true, error: "",progress:null } : current);
-    try {
-      const value = await runPageRewrite(projectId, page.page_key);
-      if (!isCurrentWorkspace()) return;
-      setRewriteState({ identity: workspaceIdentity, value, loading: false, running: false, error: "" });
-      setRenderInspection(null);
-      setRenderInspectionKey("");
-      setInspectionNonce((current) => current + 1);
-      notify({ kind: "success", message: "优化结果已保存" });
-    } catch (error) {
-      if (isCurrentWorkspace()) setRewriteState((current) => current.identity === workspaceIdentity ? { ...current, running: false, error: error instanceof Error ? error.message : String(error) } : current);
-    } finally {pendingRewrites.current.delete(workspaceIdentity);}
-  }
 
   useEffect(() => {
     let disposed = false;
@@ -890,7 +833,7 @@ export function PageWorkspace({ editorTab, onEditorTabChange, onOpenLetteringSet
     || (!renderInspection?.ready ? "当前页面尚未满足生成条件" : "");
   const isTextPage = page.kind === "story" && page.page_kind === "text";
   return <div ref={pageWorkspaceRef} className="story-layout current-workbench-page">
-    {<WorkbenchPageEditor desktopActionsTarget={desktopActionsTarget} editorTab={editorTab} onEditorTabChange={onEditorTabChange} onOpenLetteringSettings={onOpenLetteringSettings} onOpenPromptOverview={onOpenPromptOverview} projectId={projectId} page={page} characters={characters} scenes={scenes} breadcrumb={location.breadcrumb} pageOrder={pageOrder} busy={busy} canvas={artworkCanvas} letteringStyle={letteringStyle} letteringItems={page.lettering?.items ?? []} letteringTarget={letteringTarget} fullscreenLetteringTarget={fullscreenLetteringTarget} flowPreview={isTextPage ? null : inspectionBaseKey === currentBaseKey ? renderInspection : null} flowPreviewError={renderInspectionError} rewriteValue={currentRewriteState.value} rewriteLoading={currentRewriteState.loading} rewriteRunning={currentRewriteState.running} rewriteProgress={currentRewriteState.progress} rewriteError={currentRewriteState.error} promptSource={promptSource} onPromptSourceChange={(value) => setPromptSourceState({ identity: workspaceIdentity, value })} onRewrite={isTextPage || page.model_id === "anima" ? undefined : () => void rewriteCurrentPage()} onSavePage={saveWhole} onReloadContent={onReload} onReloadPrompt={onReload} onPageSaved={() => { if (isCurrentWorkspace()) notify({ kind: "success", message: page.kind === "story" ? "文案与布局已保存" : "页面内容已保存" }); }} onPromptDraftChange={setPromptDraft} onDirtyChange={setPageDirty} saveAllRef={editorSaveAll} discardAllRef={editorDiscardAll} onGenerate={isTextPage ? undefined : saveAndGenerate} generationCount={generationCount} onGenerationCountChange={changeGenerationCount} generationDisabled={generationDisabled} generationDisabledReason={generateReason} generationProblems={isTextPage ? [] : generationProblems} />}
+    {<WorkbenchPageEditor desktopActionsTarget={desktopActionsTarget} editorTab={editorTab} onEditorTabChange={onEditorTabChange} onOpenLetteringSettings={onOpenLetteringSettings} onOpenPromptOverview={onOpenPromptOverview} projectId={projectId} page={page} characters={characters} scenes={scenes} breadcrumb={location.breadcrumb} pageOrder={pageOrder} busy={busy} canvas={artworkCanvas} letteringStyle={letteringStyle} letteringItems={page.lettering?.items ?? []} letteringTarget={letteringTarget} fullscreenLetteringTarget={fullscreenLetteringTarget} flowPreview={isTextPage ? null : inspectionBaseKey === currentBaseKey ? renderInspection : null} flowPreviewError={renderInspectionError} qwenRewrite={qwenRewrite} onSavePage={saveWhole} onReloadContent={onReload} onReloadPrompt={onReload} onPageSaved={() => { if (isCurrentWorkspace()) notify({ kind: "success", message: page.kind === "story" ? "文案与布局已保存" : "页面内容已保存" }); }} onPromptDraftChange={setPromptDraft} onDirtyChange={setPageDirty} saveAllRef={editorSaveAll} discardAllRef={editorDiscardAll} onGenerate={isTextPage ? undefined : saveAndGenerate} generationCount={generationCount} onGenerationCountChange={changeGenerationCount} generationDisabled={generationDisabled} generationDisabledReason={generateReason} generationProblems={isTextPage ? [] : generationProblems} />}
     <PaneResizeHandle className="pane-resizer--editor" label="调整页面事实栏宽度" value={editorWidth} defaultValue={44} min={32} max={64} unit="%" onChange={onEditorWidthChange} />
     {isTextPage
       ? <TextPageWorkspace onDesktopActionsTarget={setDesktopActionsTarget} projectId={projectId} pageId={page.page_id} canvas={artworkCanvas} dimensionError={renderCapabilities.text_page?.error ?? (!textDimensions ? "无法确定成品尺寸，请检查生成设置。" : null)} dirty={pageDirty} disabled={busy || submittingGeneration} onLetteringTarget={setLetteringTarget} onOutput={async () => { if (!await editorSaveAll.current?.()) return null; if (!isCurrentWorkspace()) return null; return (await startFinishedPage(projectId, page.page_key)).job; }} />

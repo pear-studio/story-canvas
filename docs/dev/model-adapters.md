@@ -54,6 +54,7 @@ StoryCanvas 仍是独立的 Node + React 应用。当前内置 Anima Basic 与 Q
 | `app/server/page-render-settings.mjs` | 本页设置、首次初始化、显式重新带入及并发检查 |
 | `app/src/models/registry.tsx` | 显式注册 PageEditor、SettingEditor、OverviewEditor |
 | `app/src/models/<model>/` | 模型专用交互；宿主传草稿和 onChange，不在编辑器直接写页面文件 |
+| `app/src/models/qwen/usePageRewrite.ts`、`RewritePanel.tsx` | Qwen 优化的状态、请求与界面；hook 驻留页面工作区，切标签继续跟踪，公共宿主使用所选 Prompt 来源与完成后的预览刷新回调 |
 | `library/render-profiles/`、`render-recipes/`、`workflows/` | 模型资源、配方与 ComfyUI 工作流契约 |
 
 公共页面解析器选择适配器，冻结 Prompt、LoRA、参考图及生成配置后才进入队列。

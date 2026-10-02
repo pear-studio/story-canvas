@@ -59,7 +59,7 @@ async function setup(t, { character = false, mobile = false, visualPages = false
   page.on("pageerror", error => errors.push(error.message));
   t.after(async () => { await page.close(); assert.deepEqual(errors, []); });
   const prompt = Object.fromEntries(["population", "person", "setting", "camera", "avoid"].map(key => [key, []]));
-  const pages = ["a", "b", "c"].map(id => ({ kind: "story", page_id: id, page_key: { page_id: id }, title: `页面${id}`, scene_description: "窗台", characters: [], dialogue: [], prompt, content_sha256: "a".repeat(64), prompt_sha256: "b".repeat(64), prompt_context_sha256: "c".repeat(64), lettering: { page: id, items: [] } }));
+  const pages = ["a", "b", "c"].map(id => ({ kind: "story", model_id: 'anima', page_id: id, page_key: { page_id: id }, title: `页面${id}`, scene_description: "窗台", characters: [], dialogue: [], prompt, content_sha256: "a".repeat(64), prompt_sha256: "b".repeat(64), prompt_context_sha256: "c".repeat(64), lettering: { page: id, items: [] } }));
   const views = Object.fromEntries(["alpha", "beta"].map(id => [id, { version: 4, project: { id, title: id, canvas: "2:3", default_render_profile: "anima", lettering_settings: defaultLetteringSettings(), lettering_settings_sha256: "e".repeat(64) }, outline: { synopsis: "", chapters: [{ id: "chapter", title: "第一章", summary: "", sequences: [{ id: "sequence", title: "单元", summary: "", pages: structuredClone(pages) }] }] }, characters: [], render_capabilities: { candidates: { available: true, counts: [1, 3] } }, diagnostics: [] }]));
   if(generationSettings) for(const view of Object.values(views)) for(const page of view.outline.chapters[0].sequences[0].pages) Object.assign(page,{model_id:'qwen',prompt:{text:'quiet garden'},render:{version:1,model_id:'qwen',profile_id:'qwen-image-2-1',canvas:'3:4'},render_sha256:'initial-render'});
   if (projectLoras) for (const view of Object.values(views)) for (const page of view.outline.chapters[0].sequences[0].pages) page.project_loras = [
@@ -67,11 +67,12 @@ async function setup(t, { character = false, mobile = false, visualPages = false
     { filename: 'project-b.safetensors', sha256: 'b'.repeat(64), weight: .8 },
   ];
   if (character) views.alpha.characters = [{
-    id: "alice", name: "Alice", description: "角色设定", profile_sha256: "profile",
+    id: "alice", model_id: 'anima', name: "Alice", description: "角色设定", profile_sha256: "profile",
     visual: { description: "视觉说明", variants: [{ id: "daily", name: "日常", description: "原日常说明" }, { id: "dress", name: "礼服", description: "原礼服说明" }] },
     visual_sha256: "visual", prompt_sha256: "prompt", style: null, pages: [],
     prompt: { identity: { prompt, lora: null }, variants: Object.fromEntries(["daily", "dress"].map(id => [id, { prompt: structuredClone(prompt), loras: [], identity_disabled: [] }])) },
   }];
+  if (character) views.alpha.characters[0].model_prompts = {models:{anima:structuredClone(views.alpha.characters[0].prompt)}};
   if (visualPages) views.alpha.characters[0].pages = ['daily', 'daily', 'dress'].map((variant_id, index) => ({
     ...structuredClone(pages[0]), kind: 'character', page_id: `portrait-${index}`, title: `视觉页${index}`,
     page_key: { page_id: `portrait-${index}` }, character_id: 'alice', variant_id, visual_goal: '自然站立',
@@ -119,7 +120,7 @@ async function setup(t, { character = false, mobile = false, visualPages = false
     }
     if (pathname.endsWith("/candidate-counts")) return reply({ revision: "media", counts: {} });
     if (pathname.endsWith("/page-media")) return reply({ revision: "media", media: { candidates: [] } });
-    if (pathname.endsWith("/page-render-inspection")) return reply({ inspection: { ready: true, blockers: [], warnings: [], structured_import: null, generation_signature: "test", audit: { status: "complete", errors: [], warnings: [] }, prompt: { positive: "", negative: "" } } });
+    if (pathname.endsWith("/page-render-inspection")) return reply({ inspection: { ready: true, blockers: [], warnings: [], structured_import: null, generation_signature: "test", audit: { status: "complete", errors: [], warnings: [] }, prompt: { positive: "", negative: "", images: [] }, generation: {profile_name:'测试配置',canvas:'3:4',parameters:null,models:[],loras:[],prompt:{positive:'',negative:'',sections:[]}} } });
     if (pathname.endsWith("/render")) { renders.push(route.request().postDataJSON()); return reply({ task: { task_id: "render-test" } }); }
     if (pathname.endsWith("/navigation/delete-page")) {
       const { page_id } = route.request().postDataJSON();
@@ -168,6 +169,73 @@ for (const mobile of [false, true]) test(`优化刷新后继续显示进度并�
   await page.getByRole('tab', { name: '视觉描述 / Prompt', exact: true }).click();
   await page.getByText('优化失败：等待优化超过 3 分钟', { exact: true }).waitFor();
   assert.equal(posts, 0);
+});
+
+test('优化跨标签继续跟踪，切页后旧提交不覆盖新页，草稿阻止运行', async t => {
+  const {page}=await setup(t,{generationSettings:true});
+  let release, posts=0, polls=0;
+  const pending=new Promise(resolve=>{release=resolve;});
+  t.after(()=>release());
+  await page.route('**/workbench/page-rewrite*',async route=>{
+    if(route.request().method()==='POST') {
+      posts++;
+      await pending;
+      return route.fulfill({json:{status:'current',original_prompt:'old page',rewrite:{rewritten_prompt:'OLD PAGE RESULT',wh_ratio:'3:4'}}});
+    }
+    const query=new URL(route.request().url()).searchParams;
+    if(query.get('progress')==='1') {
+      polls++;
+      return route.fulfill({json:{progress:{phase:'generating',elapsed_ms:2000,tokens:2}}});
+    }
+    return route.fulfill({json:{status:'missing',original_prompt:'quiet garden',rewrite:null}});
+  });
+  await page.reload();
+  const visual=()=>page.getByRole('tab',{name:'视觉描述 / Prompt',exact:true}).click();
+  await visual();
+  await page.getByText('状态：未生成',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'优化',exact:true}).click();
+  await page.getByText('状态：优化中 · 2 token · 0分2秒',{exact:true}).waitFor();
+  await page.getByRole('tab',{name:'生成详情',exact:true}).click();
+  const before=polls;
+  await page.waitForResponse(r=>r.url().includes('page-rewrite')&&r.url().includes('progress=1'));
+  assert.ok(polls>before);
+  await visual();
+  assert.equal(await page.getByRole('button',{name:'优化中…',exact:true}).isDisabled(),true);
+  await page.locator('.tree-page').filter({hasText:'页面c'}).click();
+  // 项目快照在写请求结束后才载入新页；先放行旧页响应，再核验新页状态。
+  const completed=page.waitForResponse(r=>r.url().endsWith('/page-rewrite')&&r.request().method()==='POST');
+  release();await completed;
+  await visual();
+  await page.getByText('状态：未生成',{exact:true}).waitFor();
+  await page.getByLabel('本页 Prompt',{exact:true}).fill('unsaved draft');
+  await page.getByText('状态：待保存',{exact:true}).waitFor();
+  assert.equal(await page.getByRole('button',{name:'优化',exact:true}).isDisabled(),true);
+  assert.equal(await page.getByLabel('使用优化结果').isDisabled(),true);
+  assert.equal(await page.getByText('OLD PAGE RESULT',{exact:true}).count(),0);
+  assert.equal(posts,1);
+});
+
+test('切换到 Anima 后不读取或轮询 Qwen 优化，生成回到原文',async t=>{
+  const {page,renders}=await setup(t,{generationSettings:true});
+  let requests=0;
+  await page.route('**/workbench/page-rewrite*',route=>{
+    requests++;
+    return route.fulfill({json:{status:'current',original_prompt:'quiet garden',rewrite:{rewritten_prompt:'Qwen result',wh_ratio:'3:4'}}});
+  });
+  await page.reload();
+  await page.getByRole('tab',{name:'视觉描述 / Prompt',exact:true}).click();
+  await page.getByText('状态：当前',{exact:true}).waitFor();
+  await page.getByLabel('使用优化结果').check();
+  await page.getByLabel('本页生成模型').selectOption('anima');
+  await page.getByRole('button',{name:'机位控制',exact:true}).waitFor();
+  await page.locator('.page-rewrite').waitFor({state:'detached'});
+  const before=requests;
+  await page.getByRole('tab',{name:'生成详情',exact:true}).click();
+  await page.getByRole('tab',{name:'视觉描述 / Prompt',exact:true}).click();
+  await page.locator('.current-workbench-page .generate-split__action').filter({visible:true}).last().click();
+  await page.getByText('已启动当前页面任务',{exact:true}).waitFor();
+  assert.equal(renders.at(-1).prompt_source,'original');
+  assert.equal(requests,before);
 });
 
 for (const mobile of [false, true]) test(`页面显示项目 LoRA，单项调整和恢复不复制其他项目项 ${mobile ? '手机' : '桌面'}`, async t => {
@@ -506,13 +574,14 @@ test("同角色切换子设定保留共享草稿不提示放弃，离开角色�
 });
 
 test("Ctrl+S 保存包含本页 Prompt 文本框中未保存的草稿", async t => {
-  const { page } = await setup(t);
+  const { page } = await setup(t, {generationSettings:true});
   const saves = [];
   await page.route("**/api/projects/*/workbench/page-save", route => {
     const body = route.request().postDataJSON();
     saves.push(body);
     return route.fulfill({ json: { content: body.content, content_sha256: "saved-content", prompt: body.prompt, prompt_sha256: "d".repeat(64), lettering: { page: body.page_key.page_id, items: body.lettering.items }, layout_sha256: "saved-layout" }, headers: { "x-story-canvas-revision": "2" } });
   });
+  await page.getByRole('tab',{name:'视觉描述 / Prompt',exact:true}).click();
   const input = page.getByRole("textbox", { name: "本页 Prompt", exact: true });
   await input.waitFor();
   await input.fill("a lamp by the window");
