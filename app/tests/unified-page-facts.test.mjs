@@ -1,3 +1,5 @@
+import {installQwenProfiles} from './helpers/qwen-fixture.mjs';
+import {writeQwenFixtureJson, qwenDocument} from './helpers/qwen-fixture.mjs';
 import { registerFixtureProjects } from "./project-registry-fixture.mjs";
 import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,readFile,writeFile,rm} from 'node:fs/promises';
@@ -11,17 +13,17 @@ import {hashCanonicalJson} from '../server/workflow-definition.mjs';
 import {STORY_OUTLINE_SCHEMA_ID,STORY_PAGE_NARRATIVE_SCHEMA_ID,STORY_PAGE_PROMPT_SCHEMA_ID} from '../server/story-files.mjs';
 import {emptyLetteringDocument} from '../server/lettering-document.mjs';
 async function fixture(t) {
- const root=await mkdtemp(path.join(os.tmpdir(),'unified-save-'));t.after(()=>rm(root,{recursive:true,force:true}));
+ const root=await mkdtemp(path.join(os.tmpdir(),'unified-save-'));await installQwenProfiles(root);t.after(()=>rm(root,{recursive:true,force:true}));
  const directory=path.join(root,'workspace','test');
- const write=async(relative,value)=>{const file=path.join(directory,relative);await mkdir(path.dirname(file),{recursive:true});await writeFile(file,JSON.stringify(value));};
- await write('project.json',{format:'story-free-text-v1',title:'测试',canvas:'2:3',default_render_profile:'qwen-image-2-1'});
+ const write=async(relative,value)=>{const file=path.join(directory,relative);await mkdir(path.dirname(file),{recursive:true});await writeQwenFixtureJson(file,value);};
+ await write('project.json',{format:'story-models-v1',title:'测试',canvas:'2:3',default_render_profile:'qwen-image-2-1'});
  await write('story/outline.json',{$schema:STORY_OUTLINE_SCHEMA_ID,synopsis:'测试',chapters:[{id:'chapter',title:'章',summary:'摘要',sequences:[{id:'a',title:'一',summary:'摘要'},{id:'b',title:'二',summary:'摘要'}]}]});
  await write('characters/index.json',{$schema:'https://storyvisualizer.local/schemas/character-index.schema.json',characters:[]});
  await write('scenes/index.json',{$schema:'https://storyvisualizer.local/schemas/scene-index.schema.json',scenes:[]});
  await write('pages/index.json',{$schema:PAGES_INDEX_SCHEMA_ID,pages:[{page_id:'page-001',owner_kind:'scene',scene_id:'removed',variant_id:'default'}]});
  await write('pages/page-001.content.json',{$schema:STORY_PAGE_NARRATIVE_SCHEMA_ID,title:'验证',scene_description:'',characters:[],dialogue:[]});
  await write('pages/page-001.prompt.json',{$schema:STORY_PAGE_PROMPT_SCHEMA_ID,text:''});
- async function request(){const content=await readPageContent(directory,'page-001'),prompt=await readPagePrompt(directory,'page-001');return {page_key:{page_id:'page-001'},content,prompt,expected_content_sha256:hashCanonicalJson(content),expected_prompt_sha256:hashCanonicalJson(prompt),expected_context_sha256:hashCanonicalJson(await readStoryPromptUpstream(directory,'page-001'))};}
+ async function request(){const content=await readPageContent(directory,'page-001'),prompt=await readPagePrompt(directory,'page-001');return {page_key:{page_id:'page-001'},content,prompt:{$schema:prompt.$schema,...prompt.models.qwen},expected_content_sha256:hashCanonicalJson(content),expected_prompt_sha256:hashCanonicalJson(prompt),expected_context_sha256:hashCanonicalJson(await readStoryPromptUpstream(directory,'page-001'))};}
  registerFixtureProjects(root); return {root,directory,write,request};
 }
 test('创建与移动统一支持前后定位，拒绝双锚点且自定位不改变顺序',async t=>{
@@ -47,7 +49,7 @@ test('整页保存同时分配对白ID并映射布局，失效归属不阻止编
 test('整页保存先验证所有草稿，布局失败不留下内容或Prompt半次保存',async t=>{
  const f=await fixture(t),request=await f.request(),before=await readPageContent(f.directory,'page-001');request.content.title='不会落盘';request.content.dialogue=[{id:'draft-dialogue-0',mode:'speech',speaker:'npc',text:'你好'}];
  request.prompt.text=42;request.lettering={items:[{dialogue_id:'draft-dialogue-0',box:{x:-1,y:.1,w:.3,h:.2}}]};request.expected_layout_sha256=hashCanonicalJson(emptyLetteringDocument());
- await assert.rejects(savePage(f.root,'test',request),error=>error.code==='invalid_page_document');assert.deepEqual(await readPageContent(f.directory,'page-001'),before);assert.equal((await readPagePrompt(f.directory,'page-001')).text,'');
+ await assert.rejects(savePage(f.root,'test',request),error=>error.code==='invalid_page_document');assert.deepEqual(await readPageContent(f.directory,'page-001'),before);assert.equal((await readPagePrompt(f.directory,'page-001')).models.qwen.text,'');
 });
 test('整页保存拒绝陈旧Prompt，移除引用时清理对应覆盖',async t=>{
  const f=await fixture(t),request=await f.request();request.content.characters=[{character_id:'missing',variant_id:'default'}];request.prompt.text_overrides={'character:missing:default':'失效角色的覆盖'};
@@ -55,9 +57,9 @@ test('整页保存拒绝陈旧Prompt，移除引用时清理对应覆盖',async 
  assert.deepEqual((await readPageContent(f.directory,'page-001')).characters,[],'新增缺失来源不得产生半次保存');
  await f.write('pages/page-001.content.json',request.content);
  await f.write('pages/page-001.prompt.json',request.prompt);
- assert.equal((await readPagePrompt(f.directory,'page-001')).text_overrides['character:missing:default'],'失效角色的覆盖');
+ assert.equal((await readPagePrompt(f.directory,'page-001')).models.qwen.text_overrides['character:missing:default'],'失效角色的覆盖');
  const next=await f.request();next.content.characters=[];next.content.title='修复中';await savePage(f.root,'test',next);
- assert.deepEqual((await readPagePrompt(f.directory,'page-001')).text_overrides,{});
+ assert.deepEqual((await readPagePrompt(f.directory,'page-001')).models.qwen.text_overrides,{});
  await assert.rejects(savePage(f.root,'test',request),error=>error.code.endsWith('_conflict'));
 });
 test('重新归属只更改索引，复制保留内容和布局但不复制生成媒体',async t=>{

@@ -28,7 +28,7 @@ export function PageGenerationSettings({projectId,page,disabled,beforeChange,onS
     }catch(cause){setError(cause instanceof Error?cause.message:String(cause));}finally{setSaving(false);}
   }
   return <div className={`page-generation-settings${compact?" page-generation-settings--compact":""}`}>
-    <label><span className="generation-setting-label">生成模型</span> <select aria-label="本页生成模型" disabled={disabled||saving} value={page.render.model_id??'qwen'} onChange={event=>{const choice=modelChoices.find(c=>c.id===event.target.value)!;void change({model_id:choice.id,profile_id:choice.profileId});}}>{modelChoices.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}</select></label>
+    <label><span className="generation-setting-label">生成模型</span> <select aria-label="本页生成模型" disabled={disabled||saving} value={page.render.model_id} onChange={event=>{const choice=modelChoices.find(c=>c.id===event.target.value)!;void change({model_id:choice.id,profile_id:choice.profileId});}}>{modelChoices.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}</select></label>
     <label className="page-canvas-control" title={`画幅：${page.render.canvas} · ${canvasChoices.find(c=>c.value===page.render!.canvas)?.label??''}`}><span className="generation-setting-label">画幅</span>
       <svg className="page-canvas-preview" width="30" height="30" viewBox="0 0 30 30" role="img" aria-label={`画幅示意：${page.render.canvas} · ${canvasChoices.find(c=>c.value===page.render!.canvas)?.label??''}`}>
         <rect x={(30-width*scale)/2} y={(30-height*scale)/2} width={width*scale} height={height*scale} rx="1"/>

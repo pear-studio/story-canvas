@@ -8,11 +8,14 @@ StoryCanvas 仍是独立的 Node + React 应用。当前内置 Anima Basic 与 Q
 - `project.json` 的格式为 `story-models-v1`，画幅和 default_render_profile 只作为新页默认。
 - `pages/<id>.render.json` 保存 `{version:1, model_id, profile_id, canvas}`。
   创建时复制；调整项目默认不改变已有页。复制页面保留完整 render 和各模型输入。
+  文件缺失时报错，不从项目默认回退。
 - 工作台新选项统一为竖幅 3:4（960×1280）、方形 1:1（1024×1024）、横幅 4:3（1280×960）。
   新项目默认竖幅；两模型的候选配方使用相同尺寸，切换模型不改变像素大小。
   页面、项目默认和对比实验共用 `app/shared/canvas-presets.json` 中的选项，测试核对候选配方与其一致。
   已保存的 2:3／9:16 仍可读取与生成，选择器仅展示当前原值并允许改选三种新画幅；不自动改写已有项目。
 - Prompt 文件为 `{$schema, models:{anima:…, qwen:…}}`，可以只有一个模型输入。
+  日常文件读写不接受裸模型输入；模型分派后编译和范围编辑只消费单模型输入。
+  页面操作的模型来自 render，设定操作显式指定模型；公共层不默认 Qwen。
   切换不会清空另一份输入；首次 Anima → Qwen 复制有效正向全文，之后只在用户点击重新带入时更新。
 - Anima 原词条组件、词库、分类规则、机位和逐词继承由适配器复用。
   角色/场景缺少 Anima 输入时，可在设定页明确创建；不从 Qwen 自由文本猜测分类词条。
@@ -23,7 +26,7 @@ StoryCanvas 仍是独立的 Node + React 应用。当前内置 Anima Basic 与 Q
   保存先核验读取版本，再在写锁内合并当前文件，其他模型和子设定不被旧草稿覆盖。
   网页设定页按同样范围保存，整页内容、Prompt、嵌字仍由一个事务提交；新引用必须携带其已读来源版本。
 - Qwen `composition:"standalone"` 直接使用全文及本页附图，不追加全局、角色或场景文字。
-  已有 Qwen 的 `settings` 组合方式继续保留；本轮不迁移 Qwen 项目。
+  Qwen 的 `settings` 组合方式继续保留，与 Anima 一样使用当前模型容器。
 - 项目 LoRA 对使用对应 profile 的全部页面实时生效；Anima 角色／场景的 `identity.lora`
   由子设定继承，子设定 `loras` 可以追加或按 filename 替换。页面自动继承当前引用的有效 LoRA。
   子设定和页面用 `lora_overrides:{"filename":{"weight":0.8,"enabled":false}}` 单独覆盖权重或开关，

@@ -25,7 +25,7 @@ export function AnimaPageEditor({projectId,page,prompt,onChange,characters,scene
   useEffect(()=>{const incoming=JSON.stringify(prompt);if(incoming!==emitted.current){if(!matchesLocalPromptDraft(draft,native))setDraft(displayPromptDraft(native));emitted.current=incoming;}},[prompt]);
   function changeDraft(next:ReturnType<typeof displayPromptDraft>){setDraft(next);const value={...prompt,...persistPromptDraft(next)};emitted.current=JSON.stringify(value);onChange(value);}
   const roles=references.flatMap(ref=>{const c=characters.find(c=>c.id===ref.character_id);return c?[{id:c.id,label:c.name,color:c.style?.display_color}]:[];});
-  const setting=(c:typeof characters[number])=>c.model_prompts?.models?.anima??(c.model_id==='anima'?c.prompt as unknown as CharacterPromptDocument:undefined);
+  const setting=(c:typeof characters[number])=>c.model_prompts?.models?.anima;
   const enabledCounts=Object.fromEntries(references.flatMap(ref=>{
     const c=characters.find(c=>c.id===ref.character_id),input=c&&setting(c),variant=input?.variants[ref.variant_id];
     if(!input||!variant)return [];

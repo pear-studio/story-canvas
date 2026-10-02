@@ -1,3 +1,4 @@
+import {writeQwenFixtureJson, qwenDocument} from './helpers/qwen-fixture.mjs';
 import { registerFixtureProjects } from "./project-registry-fixture.mjs";
 import { PAGES_INDEX_SCHEMA_ID, readPageIndex } from "../server/pages-store.mjs";
 import { factFixture, fixtureMutation } from "./fact-fixture.mjs";
@@ -37,8 +38,7 @@ async function writeJson(target, value) {
   if (path.basename(path.dirname(target)) === "pages" && path.basename(target) === "index.json" && value.by_sequence) {
     value = { $schema: PAGES_INDEX_SCHEMA_ID, pages: Object.entries(value.by_sequence).flatMap(([sequence_id, ids]) => ids.map(page_id => ({ page_id, owner_kind: "story", sequence_id }))) };
   }
-  await mkdir(path.dirname(target), { recursive: true });
-  await writeFile(target, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  await writeQwenFixtureJson(target,value);
 }
 
 async function readJson(target) {
@@ -68,7 +68,7 @@ async function createFixture(context) {
   context.after(() => rm(repositoryRoot, { recursive: true, force: true }));
   const projectId = "demo";
   const projectDirectory = path.join(repositoryRoot, "workspace", projectId);
-  await writeJson(path.join(projectDirectory,"project.json"),{format:"story-free-text-v1",title:"测试",canvas:"2:3",default_render_profile:"qwen-image-2-1"});
+  await writeJson(path.join(projectDirectory,"project.json"),{format:"story-models-v1",title:"测试",canvas:"2:3",default_render_profile:"qwen-image-2-1"});
   const pagesDirectory = path.join(projectDirectory, "pages");
   const charactersDirectory = path.join(projectDirectory, "characters");
   await writeJson(path.join(projectDirectory, "story", "outline.json"), {
@@ -122,16 +122,16 @@ test("Prompt read 修复 variant 结构，保存保留 prompt_name 与自由文�
 
   const session = await readCharacterPromptDraft(fixture.repositoryRoot, fixture.projectId, "ellen");
   const draft = structuredClone(session.document);
-  assert.deepEqual(Object.keys(draft.variants), ["coat"]);
-  assert.deepEqual(draft.variants.coat, { text: "", reference_images: [] });
-  assert.equal(draft.prompt_name, "ellen");
-  draft.variants.coat.text = "艾莲穿长外套。";
+  assert.deepEqual(Object.keys(draft.models.qwen.variants), ["coat"]);
+  assert.deepEqual(draft.models.qwen.variants.coat, { text: "", reference_images: [] });
+  assert.equal(draft.models.qwen.prompt_name, "ellen");
+  draft.models.qwen.variants.coat.text = "艾莲穿长外套。";
   session.document = structuredClone(draft);
   await saveCharacterPromptDraft(fixture.repositoryRoot, session);
   const persistedPrompt = await readJson(promptTarget);
-  assert.deepEqual(Object.keys(persistedPrompt.variants), ["coat"]);
-  assert.equal(persistedPrompt.variants.coat.text, "艾莲穿长外套。");
-  assert.equal(persistedPrompt.prompt_name, "ellen");
+  assert.deepEqual(Object.keys(persistedPrompt.models.qwen.variants), ["coat"]);
+  assert.equal(persistedPrompt.models.qwen.variants.coat.text, "艾莲穿长外套。");
+  assert.equal(persistedPrompt.models.qwen.prompt_name, "ellen");
 });
 
 test("Visual save 可移除多余 variant 并返回下游 dangling diagnostics", async (context) => {
@@ -183,8 +183,8 @@ test("character create 原子维护index，并与dangling speaker修复共享项
   assert.equal((await readJson(result.profile_file)).name, "店主");
   assert.deepEqual((await readJson(result.visual_file)).variants.map((variant) => variant.id), ["default"]);
   const createdPrompt = await readJson(result.prompt_file);
-  assert.equal(createdPrompt.prompt_name, "店主");
-  assert.deepEqual(createdPrompt.variants, { default: { text: "", reference_images: [] } });
+  assert.equal(createdPrompt.models.qwen.prompt_name, "店主");
+  assert.deepEqual(createdPrompt.models.qwen.variants, { default: { text: "", reference_images: [] } });
   assert.deepEqual((await readJson(result.index_file)).characters, ["ellen", "guest", "shop-owner"]);
 });
 
@@ -230,7 +230,7 @@ test("角色设定与 variant 身份写入分别阻止陈旧 story Prompt/narrat
   const storyPromptSession = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
   const characterPromptSession = await readCharacterPromptDraft(fixture.repositoryRoot, fixture.projectId, "ellen");
   const characterPromptDraft = structuredClone(characterPromptSession.document);
-  characterPromptDraft.variants.uniform.text = "艾莲穿更新的制服。";
+  characterPromptDraft.models.qwen.variants.uniform.text = "艾莲穿更新的制服。";
   characterPromptSession.document = structuredClone(characterPromptDraft);
   let releasePrompt;
   const holdPrompt = new Promise((resolve) => { releasePrompt = resolve; });
@@ -336,7 +336,7 @@ test("子设定文字变化使仅引用该造型的旧页面草稿失效", async
   const storyPromptSession = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-002");
   const characterPromptSession = await readCharacterPromptDraft(fixture.repositoryRoot, fixture.projectId, "ellen");
   const characterPromptDraft = structuredClone(characterPromptSession.document);
-  characterPromptDraft.variants.default.text = "艾莲的新基础形象。";
+  characterPromptDraft.models.qwen.variants.default.text = "艾莲的新基础形象。";
   characterPromptSession.document = structuredClone(characterPromptDraft);
   let releasePrompt;
   const holdPrompt = new Promise((resolve) => { releasePrompt = resolve; });
@@ -356,7 +356,7 @@ test("子设定文字变化使仅引用该造型的旧页面草稿失效", async
   await pendingSave;
   await characterPromptWrite;
   assert.equal(
-    (await readJson(path.join(fixture.charactersDirectory, "ellen.prompt.json"))).variants.default.text,
+    (await readJson(path.join(fixture.charactersDirectory, "ellen.prompt.json"))).models.qwen.variants.default.text,
     "艾莲的新基础形象。",
   );
   await assert.rejects(
@@ -380,7 +380,7 @@ test("禁止删除最后一个子设定，未被引用的多余子设定可删�
     ["uniform"],
   );
   assert.deepEqual(
-    Object.keys((await readJson(path.join(fixture.charactersDirectory, "ellen.prompt.json"))).variants),
+    Object.keys((await readJson(path.join(fixture.charactersDirectory, "ellen.prompt.json"))).models.qwen.variants),
     ["uniform"],
   );
   // 剩余 uniform 被 page-001 引用，不可删除。
@@ -416,8 +416,8 @@ test("重命名子设定联动更新 visual、prompt 与全部引用，键序与
   assert.deepEqual(result.updated_page_ids, ["page-001", "page-002"]);
   assert.deepEqual(result.visual.variants.map((variant) => variant.id), ["default", "casual"], "visual 条目位置不变");
   assert.equal(result.visual.variants[1].name, "制服");
-  assert.deepEqual(Object.keys(result.prompt.variants), ["default", "casual"], "prompt 键序不变");
-  assert.equal(result.prompt.variants.casual.text, "艾莲穿深色学校制服。", "配置内容随键一起改名");
+  assert.deepEqual(Object.keys(result.prompt.models.qwen.variants), ["default", "casual"], "prompt 键序不变");
+  assert.equal(result.prompt.models.qwen.variants.casual.text, "艾莲穿深色学校制服。", "配置内容随键一起改名");
   for (const pageId of ["page-001", "page-002"]) {
     const narrative = await readJson(path.join(fixture.pagesDirectory, `${pageId}.content.json`));
     assert.deepEqual(narrative.characters, [{ character_id: "ellen", variant_id: "casual" }]);
@@ -466,8 +466,8 @@ test(`子设定重命名同时更新跨归属画面引用、页面归属和覆�
   await writeJson(path.join(fixture.pagesDirectory, "page-002.content.json"), { ...source, characters: [], dialogue: [] });
   await writeJson(path.join(fixture.pagesDirectory, "page-002.prompt.json"), { $schema: STORY_PAGE_PROMPT_SCHEMA_ID, text: "" });
   const prompt = await readJson(path.join(fixture.pagesDirectory, "page-001.prompt.json"));
-  prompt.text_overrides = { "character:ellen:uniform": text };
-  if (withReferences) prompt.reference_overrides = { "character:ellen:uniform": [] };
+  prompt.models.qwen.text_overrides = { "character:ellen:uniform": text };
+  if (withReferences) prompt.models.qwen.reference_overrides = { "character:ellen:uniform": [] };
   else delete prompt.reference_overrides;
   await writeJson(path.join(fixture.pagesDirectory, "page-001.prompt.json"), prompt);
   const result = await renameCharacterVariant(fixture.repositoryRoot, fixture.projectId, "ellen", "uniform", "casual");
@@ -478,7 +478,7 @@ test(`子设定重命名同时更新跨归属画面引用、页面归属和覆�
   assert.equal((await readJson(path.join(fixture.pagesDirectory, "page-001.content.json"))).characters[0].variant_id, "casual");
   assert.deepEqual((await readJson(path.join(fixture.pagesDirectory, "page-002.content.json"))).characters, []);
   const renamed = await readJson(path.join(fixture.pagesDirectory, "page-001.prompt.json"));
-  assert.deepEqual(renamed.text_overrides, { "character:ellen:casual": text });
-  assert.deepEqual(renamed.reference_overrides, withReferences ? { "character:ellen:casual": [] } : undefined);
+  assert.deepEqual(renamed.models.qwen.text_overrides, { "character:ellen:casual": text });
+  assert.deepEqual(renamed.models.qwen.reference_overrides, withReferences ? { "character:ellen:casual": [] } : undefined);
 });
 }

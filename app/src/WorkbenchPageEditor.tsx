@@ -653,7 +653,7 @@ export default function WorkbenchPageEditor({
   generationDisabledReason = "",
   generationProblems = [],
 }: WorkbenchPageEditorProps) {
-  const pageIdentity = `${page.page_id}:${page.model_id??'qwen'}:${page.render_sha256??''}`;
+  const pageIdentity = `${page.page_id}:${page.model_id}:${page.render_sha256??''}`;
   const isTextPage = page.page_kind === "text";
   const [textOverflow, setTextOverflow] = useState(false);
   const activeIdentity = useRef(pageIdentity);
@@ -676,7 +676,7 @@ export default function WorkbenchPageEditor({
   const [promptDiscardCount, setPromptDiscardCount] = useState(0);
   const references = useReferencedSettings(projectId, page.page_id, directoryCharacters, directoryScenes, promptDraft.composition === 'standalone' ? [] : (contentDraft.characters ?? []).map(ref=>ref.character_id), promptDraft.composition === 'standalone' ? undefined : promptDraft.scene_id);
   const {characters, scenes} = references;
-  const incomingSourceVersions = readPromptSourceVersions(page.model_id ?? 'qwen', characters, scenes);
+  const incomingSourceVersions = readPromptSourceVersions(page.model_id, characters, scenes);
   const sourceVersions = useRef(incomingSourceVersions);
   const persistedPrompt = promptDraft;
   const [promptPhase, setPromptPhase] = useState<SavePhase>("saved");

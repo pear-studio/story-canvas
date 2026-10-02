@@ -8,27 +8,32 @@ import { readCandidateResult } from './candidate-storage.mjs';
 import { resolveExistingProjectMedia } from './render-media.mjs';
 import { hashCanonicalJson } from './workflow-definition.mjs';
 import { ApiError } from './http-support.mjs';
-import {isModelPromptDocument} from './model-prompts.mjs';
+import {readPageRenderSettings} from './page-render-settings.mjs';
+import {resolveProjectLocation} from './project-operations.mjs';
 
 function targetArgs(projectId, target) {
   if (!target || !['character', 'scene', 'page'].includes(target.kind) || typeof target.id !== 'string') throw new ApiError(400, 'invalid_reference_target');
   return { projectId, domain: target.kind, kind: 'prompt', targetId: target.id };
 }
-function holder(draft, target) {
-  const document = isModelPromptDocument(draft.document) ? draft.document.models[target.model_id ?? 'qwen'] : draft.document;
+async function holder(root, projectId, draft, target) {
+  const modelId = target.kind === 'page'
+    ? (await readPageRenderSettings((await resolveProjectLocation(root,projectId)).projectDirectory,target.id)).model_id
+    : target.model_id;
+  if (modelId !== 'qwen') throw new ApiError(422, 'reference_model_unsupported');
+  const document = draft.document.models[modelId];
   const value = target.kind === 'page' ? document : document?.variants[target.variant_id];
   if (!value) throw new ApiError(404, 'reference_setting_not_found');
   return value;
 }
 export async function readReferenceLibrary(root, projectId, target) {
   const draft = await readFactDraft(root, targetArgs(projectId, target));
-  const entries = holder(draft, target).reference_images ?? [];
+  const entries = (await holder(root, projectId, draft, target)).reference_images ?? [];
   return { entries, sha256: hashCanonicalJson(entries) };
 }
 // 调用方持有 mutateTargetFacts 项目锁。先准备新图片，成功保存引用后才清理旧图片。
 export async function mutateReferenceLibrary(root, directory, projectId, value) {
   const args = targetArgs(projectId, value.target), draft = await readFactDraft(root, args);
-  const target = holder(draft, value.target), entries = target.reference_images ?? [];
+  const target = await holder(root, projectId, draft, value.target), entries = target.reference_images ?? [];
   if (hashCanonicalJson(entries) !== value.expected_sha256) throw new ApiError(409, 'reference_library_conflict', ['参考图列表已变化，请刷新后重试']);
   const existing = value.id ? entries.find(e => e.id === value.id) : null;
   if (value.id && !existing) throw new ApiError(404, 'reference_image_not_found');

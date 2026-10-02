@@ -53,7 +53,8 @@ test('新引用按需读取，失败时保留草稿且不得保存，重试后�
    await page.route('**/workbench/setting-detail?*',async route=>{
      requests++;
      if(requests===1)return route.fulfill({status:503,json:{error:'暂时不可用'}});
-     return route.fulfill({json:{id:'bob',name:'鲍勃',description:'',profile_sha256:'profile',visual_sha256:'visual',prompt_sha256:'loaded',
+     const prompt={prompt_name:'鲍勃',variants:{day:{text:requests > 2 ? '更新后的鲍勃设定' : '刚读取的鲍勃设定'},night:{text:'夜间'}}};
+     return route.fulfill({json:{model_id:'qwen',model_prompts:{models:{qwen:prompt}},id:'bob',name:'鲍勃',description:'',profile_sha256:'profile',visual_sha256:'visual',prompt_sha256:'loaded',
        visual:{variants:[{id:'day',name:'白天'},{id:'night',name:'夜晚'}]},
        prompt:{prompt_name:'鲍勃',variants:{day:{text:requests > 2 ? '更新后的鲍勃设定' : '刚读取的鲍勃设定'},night:{text:'夜间'}}},
        prompt_source_versions:{qwen:{day:requests > 2 ? 'source-after-reload' : 'source-at-read'}}}});

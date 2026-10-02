@@ -108,6 +108,44 @@ async function fixture(t, modelId='anima') {
   const switchModel=async(pageId,model)=>{const {definition:d}=await readPageRenderDraft(testRoot,'demo',pageId);return commitPageRender(testRoot,{project_id:'demo',page_id:pageId,target:{sha256:hash(d.persisted)},upstream:d.upstream},()=>({...d.persisted,model_id:model,profile_id:model==='anima'?'anima-base-v1':'qwen-image-2-1'}));};
   return {root:testRoot,directory,put,get,create,switchModel};
 }
+
+test('日常契约拒绝旧项目与裸 Prompt，缺失页面设置不回退且不改写事实',async t=>{
+  const {validateProjectManifest}=await import('../server/project-manifest.mjs');
+  const {validateStoryPagePromptDocument}=await import('../server/story-files.mjs');
+  const {validateCharacterPromptDocument}=await import('../server/character-files.mjs');
+  const f=await fixture(t,'qwen'),page=await f.create();
+  const project=await f.get('project.json');
+  assert.equal(validateProjectManifest({...project,format:'story-free-text-v1'}).length>0,true);
+  assert.equal(validateStoryPagePromptDocument({$schema:schema('story-page-prompt'),text:''}).length>0,true);
+  assert.equal(validateCharacterPromptDocument({$schema:schema('character-prompt'),prompt_name:'角色',variants:{default:{text:''}}}).length>0,true);
+  const before=await f.get(`pages/${page.page_id}.prompt.json`);
+  await rm(path.join(f.directory,`pages/${page.page_id}.render.json`));
+  await assert.rejects(readPageRenderSettings(f.directory,page.page_id),{code:'page_render_settings_missing'});
+  assert.deepEqual(await f.get(`pages/${page.page_id}.prompt.json`),before);
+});
+
+test('参考图设定必须显式选择 Qwen，页面使用当前 render，保存保留另一模型',async t=>{
+  const {createCharacter}=await import('../server/character-facts.mjs');
+  const {readReferenceLibrary,mutateReferenceLibrary}=await import('../server/reference-library.mjs');
+  const f=await fixture(t);
+  await createCharacter(f.root,'demo','hero',{name:'角色'});
+  const document=await f.get('characters/hero.prompt.json');
+  const anima=structuredClone(document.models.anima);
+  document.models.qwen={prompt_name:'角色',variants:{default:{text:'portrait',reference_images:[]}}};
+  await f.put('characters/hero.prompt.json',document);
+  const target={kind:'character',id:'hero',variant_id:'default',model_id:'qwen'};
+  await assert.rejects(readReferenceLibrary(f.root,'demo',{...target,model_id:undefined}),{code:'reference_model_unsupported'});
+  const library=await readReferenceLibrary(f.root,'demo',target);
+  await mutateReferenceLibrary(f.root,f.directory,'demo',{target,expected_sha256:library.sha256,action:'reorder',ids:[]});
+  assert.deepEqual((await f.get('characters/hero.prompt.json')).models.anima,anima);
+  const page=await f.create();
+  await assert.rejects(readReferenceLibrary(f.root,'demo',{kind:'page',id:page.page_id,model_id:'qwen'}),{code:'reference_model_unsupported'});
+  const prompt=await f.get(`pages/${page.page_id}.prompt.json`);
+  prompt.models.anima.setting=[{description:'quiet garden'}];
+  await f.put(`pages/${page.page_id}.prompt.json`,prompt);
+  await f.switchModel(page.page_id,'qwen');
+  assert.deepEqual((await readReferenceLibrary(f.root,'demo',{kind:'page',id:page.page_id})).entries,[]);
+});
 test('已注册 Anima Basic 资源完整可解析，编译保留分类、权重与负向',async()=>{
   const {resolved_profile:profile}=await readResolvedRenderProfile(root,'anima-base-v1');
   const adapter=profileModelAdapter(profile);

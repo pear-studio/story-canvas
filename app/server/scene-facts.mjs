@@ -1,5 +1,5 @@
 import { cleanRemovedReferences } from './reference-materials.mjs';
-import { mapModelPrompts, promptModelEntries, emptySettingVariant, renamePromptSource, emptySettingPrompt, makeModelPromptDocument } from './model-prompts.mjs';
+import { mapModelPrompts, promptModelEntries, emptySettingVariant, renamePromptSource } from './model-prompts.mjs';
 import { modelAdapter, defaultProfileAdapter } from './model-adapters.mjs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -56,7 +56,6 @@ async function sceneFact(directory, id, kind) {
   assertValid(validators[kind](value));
   return value;
 }
-const emptyVariant = () => ({ text: '', reference_images: [] });
 function normalizedPrompt(prompt, visual) {
   return mapModelPrompts(prompt, (input, modelId) => ({ ...input, variants: Object.fromEntries(visual.variants.map(v => [v.id, input.variants[v.id] ?? emptySettingVariant(modelId)])) }));
 }
@@ -107,12 +106,9 @@ export async function createScene(root, projectId, sceneId, { name, beforeCommit
   const project = await resolveProjectLocation(path.resolve(root), projectId);
   const before = await sceneIndex(project.projectDirectory);
   if (before.scenes.includes(sceneId)) fail('scene_already_exists', [sceneId]);
-  const facts = defaultSceneFacts(sceneId, name);
   const projectDocument = await optionalFact(project.projectDirectory,'project.json');
-  if (projectDocument.format === 'story-models-v1') {
-    const modelId = (await defaultProfileAdapter(root,projectDocument.default_render_profile)).id;
-    facts.prompt = makeModelPromptDocument(SCENE_PROMPT_SCHEMA_ID,modelId,emptySettingPrompt(modelId,facts.profile.name,['default']));
-  }
+  const modelId = (await defaultProfileAdapter(root,projectDocument.default_render_profile)).id;
+  const facts = defaultSceneFacts(sceneId, name, modelId);
   const writes = [];
   for (const kind of ['profile', 'visual', 'prompt']) {
     if (await optionalFact(project.projectDirectory, relative(sceneId, kind))) fail('scene_fact_already_exists', [sceneId, kind]);
@@ -216,7 +212,7 @@ export async function deleteScene(root, projectId, sceneId, { beforeCommit } = {
     await storage.removeSafeRuntimeDirectory(root, path.resolve(root, 'Saved/state/deleted-scenes'), archive, 'deleted scene archive');
     throw error;
   }
-  for (const fact of facts) await cleanRemovedReferences(project.projectDirectory, fact);
+  await cleanRemovedReferences(project.projectDirectory, facts[2]);
   return { scene_id: sceneId, deletion_id: deletionId, archive_directory: archive,
     downstream_diagnostics: references.map(ref => ({ code: ref.reference_kind === 'owner' ? 'page_owner_missing' : 'page_scene_missing', page_id: ref.page_id, scene_id: sceneId, variant_id: ref.variant_id })) };
 }

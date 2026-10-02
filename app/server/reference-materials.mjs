@@ -26,6 +26,7 @@ export async function removeUnusedFile(directory, file) {
 
 
 export async function cleanRemovedReferences(directory, document) {
+  if (document === null) return;
   const entries = promptModelEntries(document).flatMap(([,input]) => [...(input?.reference_images ?? []), ...Object.values(input?.variants ?? {}).flatMap(v => v.reference_images ?? [])]);
   for (const file of new Set(entries.map(e => e.file))) await removeUnusedFile(directory, file);
 }
@@ -34,8 +35,8 @@ export async function checkRemovedSettingReferences(directory, writes) {
   const removals = [];
   for (const write of writes) {
     const match = /^(characters|scenes)\/([a-z0-9-]+)\.prompt\.json$/.exec(write.relative);
-    if (!match) continue;
-    const afterModels = new Map(promptModelEntries(write.after));
+    if (!match || write.before === null) continue;
+    const afterModels = new Map(write.after === null ? [] : promptModelEntries(write.after));
     for (const [modelId, input] of promptModelEntries(write.before)) for (const [variantId, variant] of Object.entries(input?.variants ?? {})) {
       const nextIds = new Set((afterModels.get(modelId)?.variants?.[variantId]?.reference_images ?? []).map(entry => entry.id));
       const removed = (variant.reference_images ?? []).filter(entry => !nextIds.has(entry.id));

@@ -1,5 +1,4 @@
-import { validateReferenceEntries } from "../shared/reference-images.mjs";
-import { isModelPromptDocument, validateModelPromptDocument, promptModelEntries } from './model-prompts.mjs';
+import { validateModelPromptDocument, promptModelEntries } from './model-prompts.mjs';
 import {
   STORY_PAGE_PROMPT_SCHEMA_ID,
   storyNarrativeSpeakerIds,
@@ -79,26 +78,7 @@ export function validateCharacterVisualDocument(visual) {
 }
 
 export function validateCharacterPromptDocument(promptDocument, options = {}) {
-  if (isModelPromptDocument(promptDocument)) return validateModelPromptDocument(promptDocument, 'setting', options);
-  const errors = [];
-  if (!isRecord(promptDocument)) return ["character prompt 必须是对象"];
-  checkExactKeys(promptDocument, ["$schema", "prompt_name", "variants"], "character prompt", errors);
-  if (promptDocument.$schema !== CHARACTER_PROMPT_SCHEMA_ID) errors.push("character prompt.$schema 不匹配");
-  checkNonemptyText(promptDocument.prompt_name, "character prompt.prompt_name", errors, 200);
-  if (!isRecord(promptDocument.variants)) errors.push("character prompt.variants 必须是对象");
-  else {
-    const variantIdList = Object.keys(promptDocument.variants);
-    if (variantIdList.length === 0) errors.push("character prompt.variants 至少需要一个造型");
-    for (const [variantId, configuration] of Object.entries(promptDocument.variants)) {
-      const valuePath = `character prompt.variants.${variantId}`;
-      if (!characterVariantIdPattern.test(variantId) || variantId === "main") errors.push(`character prompt.variants 包含无效 variant ID：${variantId}`);
-      if (!isRecord(configuration)) { errors.push(`${valuePath} 必须是对象`); continue; }
-      checkExactKeys(configuration, ["text", "reference_images"], valuePath, errors);
-      if (typeof configuration.text !== "string") errors.push(`${valuePath}.text 必须是字符串`);
-      errors.push(...validateReferenceEntries(configuration.reference_images));
-    }
-  }
-  return errors;
+  return validateModelPromptDocument(promptDocument, 'setting', options);
 }
 
 export function validateCharacterPagesIndexDocument(indexDocument) {
@@ -273,7 +253,7 @@ export function diagnoseCharacterCoreDependents({
   characterId,
   exists = true,
   visual = { variants: [] },
-  prompt = { variants: {} },
+  prompt = { models: {} },
   characterPages = [],
   characterStyles = { characters: {} },
   storyNarrativesByPage = {},

@@ -1,3 +1,4 @@
+import {writeQwenFixtureJson,qwenDocument} from './helpers/qwen-fixture.mjs';
 import { registerFixtureProjects } from "./project-registry-fixture.mjs";
 import { handleComparisonRequest } from "../server/comparison-http.mjs";
 import { recoverGenerationTasks, submitGenerationTask } from "../server/generation-lifecycle.mjs";
@@ -91,15 +92,15 @@ async function fixture(context) {
   delete profile.operations.candidates.routes.reference_image;
   const recipe = JSON.parse(await readFile(path.join(sourceRoot, "library", "render-recipes", "qwen-image-2-1-candidate.json"), "utf8"));
   recipe.id = "comparison-candidate";
+  await writeQwenFixtureJson(path.join(projectRoot, "project.json"),{ format: "story-models-v1", title: "比较", canvas: "2:3", default_render_profile: profile.id });
   await Promise.all([
-    writeFile(path.join(projectRoot, "project.json"), JSON.stringify({ format: "story-free-text-v1", title: "比较", canvas: "2:3", default_render_profile: profile.id })),
-    writeFile(path.join(projectRoot, "story", "outline.json"), JSON.stringify({ $schema: STORY_OUTLINE_SCHEMA_ID, synopsis: "测试。", chapters: [{ id: "chapter-main", title: "正文", summary: "测试。", sequences: [{ id: "sequence-main", title: "场景", summary: "测试页。" }] }] })),
-    writeFile(path.join(projectRoot, "pages", "index.json"), JSON.stringify({ $schema: "https://storyvisualizer.local/schemas/pages-index.schema.json", pages: [{ page_id: "page-001", owner_kind: "story", sequence_id: "sequence-main" }] })),
-    writeFile(path.join(projectRoot, "pages", "page-001.content.json"), JSON.stringify({ $schema: STORY_PAGE_NARRATIVE_SCHEMA_ID, title: "测试页", scene_description: "测试画面。", characters: [], dialogue: [] })),
-    writeFile(path.join(projectRoot, "pages", "page-001.prompt.json"), JSON.stringify(pagePrompt())),
-    writeFile(path.join(projectRoot, "characters", "index.json"), JSON.stringify({ $schema: CHARACTER_INDEX_SCHEMA_ID, characters: [] })),
-    writeFile(path.join(root, "library", "render-profiles", `${profile.id}.json`), JSON.stringify(profile)),
-    writeFile(path.join(root, "library", "render-recipes", `${recipe.id}.json`), JSON.stringify(recipe)),
+    writeQwenFixtureJson(path.join(projectRoot, "story", "outline.json"),{ $schema: STORY_OUTLINE_SCHEMA_ID, synopsis: "测试。", chapters: [{ id: "chapter-main", title: "正文", summary: "测试。", sequences: [{ id: "sequence-main", title: "场景", summary: "测试页。" }] }] }),
+    writeQwenFixtureJson(path.join(projectRoot, "pages", "index.json"),{ $schema: "https://storyvisualizer.local/schemas/pages-index.schema.json", pages: [{ page_id: "page-001", owner_kind: "story", sequence_id: "sequence-main" }] }),
+    writeQwenFixtureJson(path.join(projectRoot, "pages", "page-001.content.json"),{ $schema: STORY_PAGE_NARRATIVE_SCHEMA_ID, title: "测试页", scene_description: "测试画面。", characters: [], dialogue: [] }),
+    writeQwenFixtureJson(path.join(projectRoot, "pages", "page-001.prompt.json"),pagePrompt()),
+    writeQwenFixtureJson(path.join(projectRoot, "characters", "index.json"),{ $schema: CHARACTER_INDEX_SCHEMA_ID, characters: [] }),
+    writeQwenFixtureJson(path.join(root, "library", "render-profiles", `${profile.id}.json`),profile),
+    writeQwenFixtureJson(path.join(root, "library", "render-recipes", `${recipe.id}.json`),recipe),
     writeFile(path.join(root, "models", "diffusion_models", "base.safetensors"), checkpoint),
     writeFile(path.join(root, "models", "text_encoders", "base.safetensors"), checkpoint),
     writeFile(path.join(root, "models", "vae", "base.safetensors"), checkpoint),
@@ -225,8 +226,8 @@ test("比较运行时按 ordinal 串行执行并保存 PNG", async (context) => 
   const liveFile = path.join(target.root, "Saved", "comparisons", manifest.id, "status.json");
   const stale = JSON.parse(await readFile(liveFile, "utf8"));
   stale.status = "running"; stale.cells.at(-1).status = "running"; stale.cells.at(-1).result = null;
-  await writeFile(liveFile, JSON.stringify(stale));
-  await writeFile(path.join(target.root, "Saved", "comparison-results", manifest.id, "result.json"), JSON.stringify(stale));
+  await writeQwenFixtureJson(liveFile,stale);
+  await writeQwenFixtureJson(path.join(target.root, "Saved", "comparison-results", manifest.id, "result.json"),stale);
   await recoverGenerationTasks(target.root);
   assert.equal(JSON.parse(await readFile(liveFile, "utf8")).status, "completed");
   await cleanProjectRuntime(target.root);
@@ -247,7 +248,7 @@ test("对比实验冻结配置无效时仍能记录失败并移出队列", async
     localConfig: { models_root: "models" }, experimentId: manifest.id });
   const reference = generationReference(null, manifest.id, "comparison", manifest.created_at);
   await submitGenerationTask(target.root, reference);
-  await writeFile(path.join(target.root, "Saved", "comparison-results", manifest.id, "execution.json"), JSON.stringify({ version: -1 }));
+  await writeQwenFixtureJson(path.join(target.root, "Saved", "comparison-results", manifest.id, "execution.json"),{ version: -1 });
   await assert.rejects(runComparisonExperiment({ projectRoot: target.root, experimentId: manifest.id,
     generationQueue: { repositoryRoot: target.root, reference } }), error => error.code === "invalid_comparison_execution_plan");
   const status = JSON.parse(await readFile(path.join(target.root, "Saved", "comparisons", manifest.id, "status.json"), "utf8"));
@@ -279,8 +280,8 @@ test("比较恢复只领取真实未完成 cell，最终 domain completed 后清
   const current = await readComparisonExperimentStorage(target.root, manifest.id);
   current.status.status = "queued";
   current.status.started_at = null;
-  await writeFile(path.join(current.directory, "result.json"), JSON.stringify(current.status));
-  await writeFile(path.join(target.root, "Saved", "comparisons", manifest.id, "status.json"), JSON.stringify(current.status));
+  await writeQwenFixtureJson(path.join(current.directory, "result.json"),current.status);
+  await writeQwenFixtureJson(path.join(target.root, "Saved", "comparisons", manifest.id, "status.json"),current.status);
   await enqueueGenerationTask(target.root, generationReference(null, manifest.id, "comparison", manifest.created_at));
 
   const submitted = [];
@@ -401,8 +402,8 @@ test("失败补跑沿用冻结输入，跳过稀疏已发布成果并保留原�
   const cell = frozen.execution.cells[3];
   const stale = structuredClone(failed.status);
   stale.cells[3].status = "running";
-  await writeFile(archive, JSON.stringify(stale));
-  await writeFile(runtime, JSON.stringify(stale));
+  await writeQwenFixtureJson(archive,stale);
+  await writeQwenFixtureJson(runtime,stale);
   await publishComparisonCell(target.root, manifest.id, cell.id, minimalPng, {
     image: { relative_path: cell.outputs[0].relative_path, sha256: createHash("sha256").update(minimalPng).digest("hex"), byte_length: minimalPng.length },
     completed_at: new Date().toISOString(), generation: { prompt_id: "published-before-state" },
@@ -451,7 +452,7 @@ test("补跑拒绝取消、损坏计划与成果；零完成实验可经 HTTP �
   const runtime = path.join(target.root, "Saved/comparisons", manifest.id, "status.json");
   const state = JSON.parse(await readFile(archive));
   state.status = "queued"; state.cells.forEach(c => { c.status = "queued"; c.error = null; });
-  await writeFile(archive, JSON.stringify(state)); await writeFile(runtime, JSON.stringify(state));
+  await writeQwenFixtureJson(archive,state); await writeQwenFixtureJson(runtime,state);
   const frozen = await prepareComparisonExperimentExecution({ repositoryRoot: target.root, projectRoot: target.root, localConfig: { models_root: "models" }, experimentId: manifest.id });
   await failComparisonExperiment(target.root, manifest.id, new Error("before first cell"));
   const executionFile = path.join(frozen.directory, "execution.json");
@@ -484,7 +485,7 @@ test("补跑拒绝取消、损坏计划与成果；零完成实验可经 HTTP �
   // 失败收尾写不进去时，磁盘仍是 running，但执行器和队列已经退出。
   const orphan = JSON.parse(await readFile(runtime));
   orphan.status = "running"; orphan.cells[0].status = "running";
-  await writeFile(archive, JSON.stringify(orphan)); await writeFile(runtime, JSON.stringify(orphan));
+  await writeQwenFixtureJson(archive,orphan); await writeQwenFixtureJson(runtime,orphan);
   await handleComparisonRequest({ ...request, request: { method: "GET" }, decodedPath: `/api/comparison-experiments/${manifest.id}`,
     readFacts: async (_id, fn) => ({ value: await fn({ projectDirectory: target.projectRoot }) }) });
   assert.equal(response.experiment.retry_available, true);
@@ -497,7 +498,7 @@ test("补跑拒绝取消、损坏计划与成果；零完成实验可经 HTTP �
 
   // 模拟已有成功成果缺失，恢复必须明确拒绝而不是跳过或覆盖。
   state.status = "incomplete"; state.cells[0].status = "completed"; state.cells[1].status = "incomplete";
-  await writeFile(archive, JSON.stringify(state)); await writeFile(runtime, JSON.stringify(state));
+  await writeQwenFixtureJson(archive,state); await writeQwenFixtureJson(runtime,state);
   await assert.rejects(retryComparisonExperiment(target.root, manifest.id), { code: "comparison_result_not_ready" });
   assert.equal(JSON.parse(await readFile(archive)).status, "incomplete");
 });

@@ -1,3 +1,4 @@
+import {writeQwenFixtureJson, qwenDocument} from './helpers/qwen-fixture.mjs';
 import { registerFixtureProjects } from "./project-registry-fixture.mjs";
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -13,9 +14,9 @@ async function fixture(t) {
  const root = await mkdtemp(path.join(os.tmpdir(), 'sv-scene-facts-'));
  t.after(() => rm(root, {recursive:true,force:true}));
  const directory = path.join(root,'workspace','demo');
- const put = async (file, value) => { await mkdir(path.dirname(path.join(directory,file)),{recursive:true}); await writeFile(path.join(directory,file),JSON.stringify(value)); };
+ const put = async (file, value) => { await mkdir(path.dirname(path.join(directory,file)),{recursive:true}); await writeQwenFixtureJson(path.join(directory,file),value); };
  const get = async file => JSON.parse(await readFile(path.join(directory,file),'utf8'));
- await put('project.json',{format:'story-free-text-v1',title:'测试'});
+ await put('project.json',{format:'story-models-v1',title:'测试',canvas:'3:4',default_render_profile:'qwen-image-2-1'});
  registerFixtureProjects(root);
  await createScene(root,'demo','room',{name:'房间'});
  async function draft(kind) {
@@ -29,31 +30,31 @@ test('场景子设定保存同步 Prompt 各造型自由文本，来源正确展
  const f=await fixture(t), v=await f.draft('visual');
  v.document.variants.push({id:'night',name:'夜晚'}); await f.save('visual',v);
  const p=await f.draft('prompt');
- assert.equal(p.document.prompt_name,'房间');
- p.document.variants.default.text='安静的房间。';
- p.document.variants.night.text='月光下的房间。';
+ assert.equal(p.document.models.qwen.prompt_name,'房间');
+ p.document.models.qwen.variants.default.text='安静的房间。';
+ p.document.models.qwen.variants.night.text='月光下的房间。';
  await f.save('prompt',p);
  const scene=(await readScenes(f.directory)).scenes[0];
- const config=resolveSceneConfiguration(scene,'night');
+ const config=resolveSceneConfiguration(scene,'night','qwen');
  assert.equal(config.text,'月光下的房间。');
  assert.equal(config.prompt_name,'房间');
  assert.deepEqual(config.reference_images,[]);
  const saved=await f.get('scenes/room.prompt.json');
- assert.equal(saved.variants.default.text,'安静的房间。');
- assert.equal(saved.prompt_name,'房间');
- const day=resolveSceneConfiguration(scene,'default');
+ assert.equal(saved.models.qwen.variants.default.text,'安静的房间。');
+ assert.equal(saved.models.qwen.prompt_name,'房间');
+ const day=resolveSceneConfiguration(scene,'default','qwen');
  assert.equal(day.text,'安静的房间。');
 });
 test('场景 Prompt 名称独立修改，不随显示名称同步',async t=>{
  const f=await fixture(t);
  const p=await f.draft('prompt');
- p.document.prompt_name='旧宅客厅';
+ p.document.models.qwen.prompt_name='旧宅客厅';
  await f.save('prompt',p);
  const profile=await f.draft('profile');
  profile.document.name='新客厅';
  await f.save('profile',profile);
  const scene=(await readScenes(f.directory)).scenes[0];
- assert.equal(scene.prompt.prompt_name,'旧宅客厅');
+ assert.equal(scene.prompt.models.qwen.prompt_name,'旧宅客厅');
 });
 test('删除场景保留页面引用，页面仍能修复；归档按七天清理',async t=>{
  const f=await fixture(t);
@@ -61,7 +62,7 @@ test('删除场景保留页面引用，页面仍能修复；归档按七天清�
  const page=pagePrompt({scene_id:'room',scene_variant_id:'default',text_overrides:{'scene:room:default':'本页覆盖'}});
  await f.put('pages/page-001.prompt.json',page);
  const result=await deleteScene(f.root,'demo','room');
- assert.equal(result.downstream_diagnostics.length,2); assert.deepEqual(await f.get('pages/page-001.prompt.json'),page);
+ assert.equal(result.downstream_diagnostics.length,2); assert.deepEqual(await f.get('pages/page-001.prompt.json'),qwenDocument(page));
  assert.deepEqual((await readScenes(f.directory)).scenes,[]);
  assert.equal((await cleanupDeletedScenes(f.root)).length,0);
  assert.equal((await cleanupDeletedScenes(f.root,{now:Date.now()+8*86400000})).length,1);
@@ -76,9 +77,9 @@ test(`场景子设定重命名同时更新归属、实际引用及覆盖键，�
  await renameSceneVariant(f.root,'demo','room','night','evening');
  assert.equal((await f.get('pages/index.json')).pages[0].variant_id,'evening');
  const p=await f.get('pages/page-003.prompt.json');
- assert.equal(p.scene_variant_id,'evening');
- assert.deepEqual(p.text_overrides,{'scene:room:evening':text});
- assert.deepEqual(p.reference_overrides,withReferences ? {'scene:room:evening':[]} : undefined);
+ assert.equal(p.models.qwen.scene_variant_id,'evening');
+ assert.deepEqual(p.models.qwen.text_overrides,{'scene:room:evening':text});
+ assert.deepEqual(p.models.qwen.reference_overrides,withReferences ? {'scene:room:evening':[]} : undefined);
 });
 }
 test('删除提交失败恢复场景事实和索引，不动页面引用',async t=>{

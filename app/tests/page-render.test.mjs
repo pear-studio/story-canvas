@@ -1,3 +1,4 @@
+import {writeQwenFixtureJson, qwenDocument} from './helpers/qwen-fixture.mjs';
 import { registerFixtureProjects } from "./project-registry-fixture.mjs";
 import {SCENE_INDEX_SCHEMA_ID,SCENE_PROFILE_SCHEMA_ID,SCENE_VISUAL_SCHEMA_ID,SCENE_PROMPT_SCHEMA_ID} from '../server/scene-files.mjs';
 import {PAGES_INDEX_SCHEMA_ID} from '../server/pages-store.mjs';
@@ -58,10 +59,7 @@ import { readPageRewriteState, rewriteSource, savePageRewriteResult } from "../s
 
 const sourceRepositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-async function writeJson(target, value) {
-  await mkdir(path.dirname(target), { recursive: true });
-  await writeFile(target, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-}
+const writeJson = writeQwenFixtureJson;
 
 async function readJson(target) {
   return JSON.parse(await readFile(target, "utf8"));
@@ -89,7 +87,7 @@ async function createFixture(context) {
   const projectDirectory = path.join(repositoryRoot, "workspace", projectId);
   await mkdir(path.join(projectDirectory, "pages"), { recursive: true });
   await writeJson(path.join(projectDirectory, "project.json"), {
-    format: "story-free-text-v1", title: "页面渲染测试", canvas: "2:3", default_render_profile: "qwen-image-2-1",
+    format: "story-models-v1", title: "页面渲染测试", canvas: "2:3", default_render_profile: "qwen-image-2-1",
   });
   await writeJson(path.join(projectDirectory, "story", "outline.json"), {
     $schema: STORY_OUTLINE_SCHEMA_ID,
@@ -200,7 +198,7 @@ test("页面优化独立保存，源变化提示过期但仍可选择并冻结�
 
   const promptFile = path.join(fixture.projectDirectory, "pages", "page-001.prompt.json");
   const prompt = await readJson(promptFile);
-  prompt.text = "艾莲转身面向列车。";
+  prompt.models.qwen.text = "艾莲转身面向列车。";
   await writeJson(promptFile, prompt);
   assert.equal((await readPageRewriteState({ ...fixture, pageKey })).status, "stale");
   const staleInspection = await inspectPageRender({ ...fixture, pageKey, promptSource: "rewrite" });
@@ -218,7 +216,7 @@ test("INT8 重写不保留图片标签时，最终 Prompt 仍按实际图片顺�
   await prepareWriteAuditFixture(fixture);
   const reference = await saveReferenceMaterial(fixture, "11111111-1111-4111-8111-111111111111");
   const draft = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
-  draft.document.reference_images = [{ id: reference.id, file: reference.file, title: "参考", purpose: "构图参考" }];
+  draft.document.models.qwen.reference_images = [{ id: reference.id, file: reference.file, title: "参考", purpose: "构图参考" }];
   await saveStoryPromptDraft(fixture.repositoryRoot, draft);
   const pageKey = { page_id: "page-001" };
   const source = await rewriteSource({ ...fixture, pageKey });
@@ -258,7 +256,7 @@ test("单张参考图使用“参考图：”约定，冻结输入贯通；源�
   await writeJson(narrativeFile, narrative);
   const reference = await saveReferenceMaterial(fixture, "11111111-1111-4111-8111-111111111111");
   const draft = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
-  draft.document.reference_images = [{ id: reference.id, file: reference.file, title: "参考", purpose: "画风参考" }];
+  draft.document.models.qwen.reference_images = [{ id: reference.id, file: reference.file, title: "参考", purpose: "画风参考" }];
   await saveStoryPromptDraft(fixture.repositoryRoot, draft);
   const { task, task_directory } = await compileAndPersistPageRenderTask(fixture.repositoryRoot, fixture.projectId, "page-001", { count: 3, repositoryRoot: fixture.repositoryRoot });
   validateFrozenRenderTask(task);
@@ -310,15 +308,15 @@ test("多参考图按角色、场景、本页顺序编号组装，附图无用�
     refs.push(await saveReferenceMaterial(fixture, `11111111-1111-4111-8111-${String(index).padStart(12, "0")}`));
   }
   const character = await readJson(path.join(fixture.projectDirectory, "characters/ellen.prompt.json"));
-  character.variants.uniform.reference_images = refs.slice(0, 2).map(({ id, file, title }) => ({ id, file, title }));
+  character.models.qwen.variants.uniform.reference_images = refs.slice(0, 2).map(({ id, file, title }) => ({ id, file, title }));
   await writeJson(path.join(fixture.projectDirectory, "characters/ellen.prompt.json"), character);
-  const scene = defaultSceneFacts("station", "车站");
-  scene.prompt.variants.default.text = "傍晚的城市车站。";
-  scene.prompt.variants.default.reference_images = [{ id: refs[2].id, file: refs[2].file, title: refs[2].title }];
+  const scene = defaultSceneFacts("station","车站",'qwen');
+  scene.prompt.models.qwen.variants.default.text = "傍晚的城市车站。";
+  scene.prompt.models.qwen.variants.default.reference_images = [{ id: refs[2].id, file: refs[2].file, title: refs[2].title }];
   for (const kind of ["profile", "visual", "prompt"]) await writeJson(path.join(fixture.projectDirectory, `scenes/station.${kind}.json`), scene[kind]);
   await writeJson(path.join(fixture.projectDirectory, "scenes/index.json"), { $schema: SCENE_INDEX_SCHEMA_ID, scenes: ["station"] });
   const draft = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
-  Object.assign(draft.document, {
+  Object.assign(draft.document.models.qwen, {
     scene_id: "station", scene_variant_id: "default",
     reference_images: [{ id: refs[3].id, file: refs[3].file, title: refs[3].title }],
     reference_overrides: { "character:ellen:uniform": refs.slice(0, 2).map((entry) => entry.id) },
@@ -333,7 +331,7 @@ test("多参考图按角色、场景、本页顺序编号组装，附图无用�
     [1, "character:ellen:uniform"], [2, "character:ellen:uniform"], [3, "scene:station:default"], [4, "page"],
   ]);
   const purpose = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
-  purpose.document.reference_images[0].purpose = "构图参考";
+  purpose.document.models.qwen.reference_images[0].purpose = "构图参考";
   await saveStoryPromptDraft(fixture.repositoryRoot, purpose);
   const withPurpose = await resolvePageForRender({ repositoryRoot: fixture.repositoryRoot, projectDirectory: fixture.projectDirectory, pageId: "page-001" });
   assert.match(withPurpose.compiled_page.positive_prompt, /<image4>：构图参考。/);
@@ -346,18 +344,18 @@ test("整段覆盖不随上游更新，恢复继承后跟随上游最新值", as
   const before = await resolvePageForRender(options);
   assert.match(before.compiled_page.positive_prompt, /艾莲，银发少女，穿深色学校制服。/);
   const draft = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
-  draft.document.text_overrides = { "character:ellen:uniform": "本页艾莲穿旅行斗篷。" };
+  draft.document.models.qwen.text_overrides = { "character:ellen:uniform": "本页艾莲穿旅行斗篷。" };
   await saveStoryPromptDraft(fixture.repositoryRoot, draft);
   const overridden = await resolvePageForRender(options);
   assert.match(overridden.compiled_page.positive_prompt, /本页艾莲穿旅行斗篷。/);
   assert.doesNotMatch(overridden.compiled_page.positive_prompt, /穿深色学校制服/);
   const character = await readJson(path.join(fixture.projectDirectory, "characters/ellen.prompt.json"));
-  character.variants.uniform.text = "艾莲换上红色冬季制服。";
+  character.models.qwen.variants.uniform.text = "艾莲换上红色冬季制服。";
   await writeJson(path.join(fixture.projectDirectory, "characters/ellen.prompt.json"), character);
   const upstreamChanged = await resolvePageForRender(options);
   assert.match(upstreamChanged.compiled_page.positive_prompt, /本页艾莲穿旅行斗篷。/, "override 不随上游更新");
   const restore = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
-  delete restore.document.text_overrides;
+  delete restore.document.models.qwen.text_overrides;
   await saveStoryPromptDraft(fixture.repositoryRoot, restore);
   const restored = await resolvePageForRender(options);
   assert.match(restored.compiled_page.positive_prompt, /艾莲换上红色冬季制服。/, "恢复继承后跟随上游最新值");
@@ -367,7 +365,7 @@ test("显式空覆盖保留名称与图片说明但不输出文字", async conte
   const fixture = await createFixture(context);
   await prepareWriteAuditFixture(fixture);
   const draft = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
-  draft.document.text_overrides = { "character:ellen:uniform": "" };
+  draft.document.models.qwen.text_overrides = { "character:ellen:uniform": "" };
   await saveStoryPromptDraft(fixture.repositoryRoot, draft);
   const resolved = await resolvePageForRender({ repositoryRoot: fixture.repositoryRoot, projectDirectory: fixture.projectDirectory, pageId: "page-001" });
   assert.match(resolved.compiled_page.positive_prompt, /艾莲：\n/);
@@ -381,29 +379,29 @@ test("移除引用连带清理覆盖，场景切换删除旧场景覆盖，未�
   const fixture = await createFixture(context);
   await prepareWriteAuditFixture(fixture);
   const { defaultSceneFacts } = await import("../server/scene-files.mjs");
-  const scene = defaultSceneFacts("station", "车站");
+  const scene = defaultSceneFacts("station","车站",'qwen');
   for (const kind of ["profile", "visual", "prompt"]) await writeJson(path.join(fixture.projectDirectory, `scenes/station.${kind}.json`), scene[kind]);
   await writeJson(path.join(fixture.projectDirectory, "scenes/index.json"), { $schema: SCENE_INDEX_SCHEMA_ID, scenes: ["station"] });
   const draft = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
-  draft.document.scene_id = "station"; draft.document.scene_variant_id = "default";
-  draft.document.text_overrides = { "character:ellen:uniform": "覆盖文字", "scene:station:default": "场景覆盖" };
+  draft.document.models.qwen.scene_id = "station"; draft.document.models.qwen.scene_variant_id = "default";
+  draft.document.models.qwen.text_overrides = { "character:ellen:uniform": "覆盖文字", "scene:station:default": "场景覆盖" };
   await saveStoryPromptDraft(fixture.repositoryRoot, draft, { sourceVersions: sceneVersions(fixture, 'station', scene) });
   const narrative = await readStoryNarrativeDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
   narrative.document.characters = [];
   const savedNarrative = await mutateSave(fixture, narrative);
-  assert.equal(savedNarrative.page_prompt.text_overrides["character:ellen:uniform"], undefined, "移除引用清理角色覆盖");
-  assert.equal(savedNarrative.page_prompt.text_overrides["scene:station:default"], "场景覆盖", "场景覆盖不受影响");
+  assert.equal(savedNarrative.page_prompt.models.qwen.text_overrides["character:ellen:uniform"], undefined, "移除引用清理角色覆盖");
+  assert.equal(savedNarrative.page_prompt.models.qwen.text_overrides["scene:station:default"], "场景覆盖", "场景覆盖不受影响");
   const restored = await readStoryNarrativeDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
   restored.document.characters = [{ character_id: "ellen", variant_id: "uniform" }];
   await mutateSave(fixture, restored);
   const stale = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
-  stale.document.text_overrides = { "character:ellen:default": "未出场子设定" };
+  stale.document.models.qwen.text_overrides = { "character:ellen:default": "未出场子设定" };
   await assert.rejects(saveStoryPromptDraft(fixture.repositoryRoot, stale), (error) => error.code === "invalid_story_edit_document" && error.details.some((detail) => detail.includes("未出场")));
   const switchScene = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
-  delete switchScene.document.scene_id; delete switchScene.document.scene_variant_id;
+  delete switchScene.document.models.qwen.scene_id; delete switchScene.document.models.qwen.scene_variant_id;
   await saveStoryPromptDraft(fixture.repositoryRoot, switchScene);
   const after = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
-  assert.equal(Object.hasOwn(after.document.text_overrides ?? {}, "scene:station:default"), false, "取消场景引用删除旧场景覆盖");
+  assert.equal(Object.hasOwn(after.document.models.qwen.text_overrides ?? {}, "scene:station:default"), false, "取消场景引用删除旧场景覆盖");
 });
 
 async function mutateSave(fixture, draft) {
@@ -435,14 +433,14 @@ test("剧情批量刷新只删除确认过的不符候选，Prompt 变化时拒�
   assert.deepEqual(matching.candidate_ids, []);
   const promptPath = path.join(fixture.projectDirectory, "pages/page-001.prompt.json");
   const changed = await readJson(promptPath);
-  changed.text = "艾莲跑向列车。";
+  changed.models.qwen.text = "艾莲跑向列车。";
   await writeJson(promptPath, changed);
   const [preview] = await inspectStoryCandidates({ ...options, pageKeys: [key] });
   assert.equal(preview.status, "ready");
   assert.equal(preview.matched, 0);
   assert.deepEqual(new Set(preview.candidate_ids), new Set(task.items.slice(0, 2).map((item) => item.candidate_id)));
   const request = { action: "clean", scope: "mismatch", page_key: key, expected_signature: preview.signature, candidate_ids: preview.candidate_ids };
-  await writeJson(promptPath, { ...changed, text: "艾莲离开车站。" });
+  await writeJson(promptPath, {...changed,models:{qwen:{...changed.models.qwen,text:'艾莲离开车站。'}}});
   await assert.rejects(executeStoryCandidateRefresh(options, request), { code: "candidate_generation_signature_stale" });
   assert.equal((await readGenerationCandidateRecords(fixture.projectDirectory)).length, 2);
   await writeJson(promptPath, changed);
@@ -577,8 +575,8 @@ test("两个页面 save 返回与渲染相同的审计，失效引用不撤销�
     ["page-101", readCharacterPagePromptDraft, saveCharacterPagePromptDraft],
   ]) {
     const session = await edit(fixture.repositoryRoot, fixture.projectId, pageId);
-    session.document.text_overrides = undefined;
-    delete session.document.text_overrides;
+    session.document.models.qwen.text_overrides = undefined;
+    delete session.document.models.qwen.text_overrides;
     const result = await write(fixture.repositoryRoot, session);
     assert.equal(result.audit.status, "complete");
     assert.equal(result.audit.valid, true);
@@ -610,7 +608,7 @@ test("后置审计消费捕获快照，不读后续写入；通过结果也与 r
   assert.equal(result.audit.valid, true);
   assert.deepEqual(result.audit.warnings, []);
   const later = await readJson(result.target_file);
-  later.text = "后续写入的描述。";
+  later.models.qwen.text = "后续写入的描述。";
   await writeJson(result.target_file, later);
   const capturedResult = await auditSavedPagePrompt(fixture.repositoryRoot, fixture.projectDirectory, prepared, { value: snapshot });
   assert.deepEqual(capturedResult, result.audit);
@@ -619,7 +617,9 @@ test("后置审计消费捕获快照，不读后续写入；通过结果也与 r
 test("有效配置不可用时 write 仍保存，网页不伪造审计通过", async (context) => {
   const fixture = await createFixture(context);
   await prepareWriteAuditFixture(fixture);
-  await writeJson(path.join(fixture.projectDirectory, "project.json"), { format: "story-free-text-v1", title: "测试", canvas: "2:3", default_render_profile: "missing-profile" });
+  await writeJson(path.join(fixture.projectDirectory, "project.json"), { format: "story-models-v1", title: "测试", canvas: "2:3", default_render_profile: "missing-profile" });
+  await writeJson(path.join(fixture.projectDirectory,'pages/page-001.render.json'),{version:1,model_id:'qwen',profile_id:'missing-profile',canvas:'2:3'});
+  await writeJson(path.join(fixture.projectDirectory,'pages/page-101.render.json'),{version:1,model_id:'qwen',profile_id:'missing-profile',canvas:'2:3'});
   const session = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
   const result = await saveStoryPromptDraft(fixture.repositoryRoot, session);
   assert.equal(result.audit.status, "unavailable");
@@ -633,14 +633,14 @@ test("角色 write 审计各子设定并保留原文", async (context) => {
   const fixture = await createFixture(context);
   await prepareWriteAuditFixture(fixture);
   const session = await readCharacterPromptDraft(fixture.repositoryRoot, fixture.projectId, "ellen");
-  session.document.variants.uniform.text = "艾莲的制服自由文本，不做结构化限制。";
+  session.document.models.qwen.variants.uniform.text = "艾莲的制服自由文本，不做结构化限制。";
   const result = await saveCharacterPromptDraft(fixture.repositoryRoot, session);
   assert.equal(result.audit.status, "complete");
   assert.deepEqual(Object.keys(result.audit.variants), ["default", "uniform"]);
   assert.equal(result.audit.variants.uniform.valid, true);
   const persisted = await readJson(result.target_file);
-  assert.equal(persisted.variants.uniform.text, "艾莲的制服自由文本，不做结构化限制。");
-  assert.equal(persisted.prompt_name, "艾莲");
+  assert.equal(persisted.models.qwen.variants.uniform.text, "艾莲的制服自由文本，不做结构化限制。");
+  assert.equal(persisted.models.qwen.prompt_name, "艾莲");
 });
 
 test("override 冲突的基础配置预览不得冒充有效配置审计通过", async (context) => {
@@ -698,7 +698,7 @@ test("Prompt 语义 CLI 读写三种目标并返回审计，旧 CLI 给出迁移
     const output = await run(editable.save.operation, {...editable.save.args,changes:{text:'斗篷与短裙。'}});
     assert.equal(output.saved, true);
     assert.equal(output.audit.status, "complete");
-    assert.equal((await run('prompt.read', {project_id:fixture.projectId,target})).document.text, '斗篷与短裙。');
+    assert.equal((await run('prompt.read', {project_id:fixture.projectId,target} )).document.text, '斗篷与短裙。');
   }
 });
 
@@ -751,7 +751,7 @@ test("character page resolver 使用规范PageKey与当前 variant 设定", asyn
   await prepareWriteAuditFixture(fixture);
   const promptTarget = path.join(fixture.projectDirectory, "characters", "ellen.prompt.json");
   const document = await readJson(promptTarget);
-  delete document.variants.uniform;
+  delete document.models.qwen.variants.uniform;
   await writeJson(promptTarget, document);
   const resolved = await resolvePageForRender({
     repositoryRoot: fixture.repositoryRoot,
@@ -1021,7 +1021,7 @@ test("编辑上下文返回引用、整段覆盖与最终文本", async t => {
   const { readPromptEditContext } = await import("../server/prompt-edit-context.mjs");
   const { readFactDraft, saveFactDraft } = await import("../server/fact-drafts.mjs");
   const draft = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
-  draft.document.text_overrides = { "character:ellen:uniform": "本页覆盖的完整描述" };
+  draft.document.models.qwen.text_overrides = { "character:ellen:uniform": "本页覆盖的完整描述" };
   await saveStoryPromptDraft(fixture.repositoryRoot, draft);
   const options = { projectRoot: fixture.repositoryRoot, repositoryRoot: fixture.repositoryRoot, projectDirectory: fixture.projectDirectory, projectId: fixture.projectId, pageKey: "v3/page-001" };
   const result = await readPromptEditContext(options);
@@ -1050,7 +1050,7 @@ test("编辑上下文返回引用、整段覆盖与最终文本", async t => {
   const fresh = await readPromptEditContext(options);
   const characterFile = path.join(fixture.projectDirectory, "characters/ellen.prompt.json");
   const character = await readJson(characterFile);
-  character.variants.uniform.text = "上游变化后的描述。";
+  character.models.qwen.variants.uniform.text = "上游变化后的描述。";
   await writeJson(characterFile, character);
   await assert.rejects(save(fresh.draft), error => error.code === "fact_upstream_conflict");
 });
@@ -1074,7 +1074,9 @@ test("编辑上下文覆盖角色页实际来源，配置缺失明确返回不�
   assert.equal(conflict.context.configuration.effective_loras,null);
   assert.equal(conflict.context.final, null, "配置冲突时不能把基础预览冒充实际输出");
   assert.equal(conflict.context.diagnostics.filter((item) => item.code === "render_profile_override_conflict").length > 0, true);
-  await writeJson(path.join(fixture.projectDirectory, "project.json"), { format: "story-free-text-v1", title: "测试", canvas: "2:3", default_render_profile: "missing-profile" });
+  await writeJson(path.join(fixture.projectDirectory, "project.json"), { format: "story-models-v1", title: "测试", canvas: "2:3", default_render_profile: "missing-profile" });
+  await writeJson(path.join(fixture.projectDirectory,'pages/page-001.render.json'),{version:1,model_id:'qwen',profile_id:'missing-profile',canvas:'2:3'});
+  await writeJson(path.join(fixture.projectDirectory,'pages/page-101.render.json'),{version:1,model_id:'qwen',profile_id:'missing-profile',canvas:'2:3'});
   const incomplete = await readPromptEditContext(options);
   assert.equal(incomplete.context.status, "incomplete");
   assert.equal(incomplete.context.final, null);
@@ -1091,14 +1093,14 @@ test('十张参考图按角色、场景、本页顺序冻结并连接，十一�
     refs.push(await saveReferenceMaterial(fixture, `11111111-1111-4111-8111-${String(i).padStart(12, '0')}`, { r: i * 20, g: 100, b: 50 }));
   }
   const character = await readJson(path.join(fixture.projectDirectory, 'characters/ellen.prompt.json'));
-  character.variants.uniform.reference_images = refs.slice(0, 5).map(({ id, file, title }) => ({ id, file, title }));
+  character.models.qwen.variants.uniform.reference_images = refs.slice(0, 5).map(({ id, file, title }) => ({ id, file, title }));
   await writeJson(path.join(fixture.projectDirectory, 'characters/ellen.prompt.json'), character);
-  const scene = defaultSceneFacts('room', '房间');
-  scene.prompt.variants.default.reference_images = refs.slice(5, 9).map(({ id, file, title }) => ({ id, file, title }));
+  const scene = defaultSceneFacts('room','房间','qwen');
+  scene.prompt.models.qwen.variants.default.reference_images = refs.slice(5, 9).map(({ id, file, title }) => ({ id, file, title }));
   for (const kind of ['profile', 'visual', 'prompt']) await writeJson(path.join(fixture.projectDirectory, `scenes/room.${kind}.json`), scene[kind]);
   await writeJson(path.join(fixture.projectDirectory, 'scenes/index.json'), { $schema: SCENE_INDEX_SCHEMA_ID, scenes: ['room'] });
   const draft = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, 'page-001');
-  Object.assign(draft.document, { scene_id: 'room', scene_variant_id: 'default', reference_images: refs.slice(9).map(({ id, file, title }) => ({ id, file, title })), reference_overrides: { 'character:ellen:uniform': refs.slice(0,5).map(r=>r.id), 'scene:room:default': refs.slice(5,9).map(r=>r.id) } });
+  Object.assign(draft.document.models.qwen, { scene_id: 'room', scene_variant_id: 'default', reference_images: refs.slice(9).map(({ id, file, title }) => ({ id, file, title })), reference_overrides: { 'character:ellen:uniform': refs.slice(0,5).map(r=>r.id), 'scene:room:default': refs.slice(5,9).map(r=>r.id) } });
   await saveStoryPromptDraft(fixture.repositoryRoot, draft, { sourceVersions: sceneVersions(fixture, 'room', scene) });
   const { task, task_directory } = await compileAndPersistPageRenderTask(fixture.repositoryRoot, fixture.projectId, 'page-001', { count: 1, repositoryRoot: fixture.repositoryRoot });
   assert.deepEqual(task.items[0].reference_images.map(r=>r.material_file), refs.map(r=>r.file));
@@ -1111,7 +1113,7 @@ test('十张参考图按角色、场景、本页顺序冻结并连接，十一�
   const { validateFrozenRenderTask } = await import('../server/render-task-contract.mjs');
   validateFrozenRenderTask(task);
   const next = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, 'page-001');
-  next.document.reference_images.push({ id: refs[0].id, file: refs[0].file, title: refs[0].title });
+  next.document.models.qwen.reference_images.push({ id: refs[0].id, file: refs[0].file, title: refs[0].title });
   await saveStoryPromptDraft(fixture.repositoryRoot, next);
   await assert.rejects(compileAndPersistPageRenderTask(fixture.repositoryRoot, fixture.projectId, 'page-001', { repositoryRoot: fixture.repositoryRoot }), (error) => error.code === "page_not_renderable" && error.details.some((detail) => /最多支持 10/.test(detail)));
 });

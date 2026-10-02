@@ -1,7 +1,5 @@
-import { validateReferenceEntries, validateReferenceOverrides } from "../shared/reference-images.mjs";
 import { parseOverrideSource } from "./prompt-contract.mjs";
-import { isModelPromptDocument, validateModelPromptDocument, promptModelEntries } from './model-prompts.mjs';
-import { validateStoryPagePromptDocument as validateQwenPagePrompt } from './models/qwen/prompt-contract.mjs';
+import { validateModelPromptDocument, promptModelEntries } from './model-prompts.mjs';
 import { NARRATION_CHARACTER_LIMIT } from "../shared/story-content-guidance.mjs";
 export const STORY_OUTLINE_SCHEMA_ID = "https://storyvisualizer.local/schemas/story-outline.schema.json";
 export const STORY_PAGES_INDEX_SCHEMA_ID = "https://storyvisualizer.local/schemas/story-pages-index.schema.json";
@@ -211,13 +209,16 @@ export function validateTextOverrides(value) {
 }
 
 export function validateStoryPagePromptDocument(prompt) {
-  if (isModelPromptDocument(prompt)) return validateModelPromptDocument(prompt, 'page');
-  return validateQwenPagePrompt(prompt);
+  return validateModelPromptDocument(prompt, 'page');
 }
 
 // 页面 override 的 key 必须对应当前实际引用；切换子设定或移除引用后旧 key 不允许残留。
 export function checkPagePromptOverrideReferences(prompt, characterReferences) {
-  if (isModelPromptDocument(prompt)) return promptModelEntries(prompt).flatMap(([,value]) => checkPagePromptOverrideReferences(value, characterReferences));
+  return promptModelEntries(prompt).flatMap(([,value]) => checkPagePromptInputOverrideReferences(value, characterReferences));
+}
+
+// 单模型输入，不接受持久化 models 容器。
+export function checkPagePromptInputOverrideReferences(prompt, characterReferences) {
   const errors = [];
   const active = new Set((Array.isArray(characterReferences) ? characterReferences : [])
     .map((reference) => `character:${reference?.character_id}:${reference?.variant_id}`));
@@ -231,7 +232,10 @@ export function checkPagePromptOverrideReferences(prompt, characterReferences) {
 }
 
 export function promptOverrideCharacterIds(prompt) {
-  if (isModelPromptDocument(prompt)) return [...new Set(promptModelEntries(prompt).flatMap(([,value]) => promptOverrideCharacterIds(value)))];
+  return [...new Set(promptModelEntries(prompt).flatMap(([,value]) => promptInputOverrideCharacterIds(value)))];
+}
+
+export function promptInputOverrideCharacterIds(prompt) {
   const ids = new Set();
   for (const field of ["text_overrides", "reference_overrides", "inheritance"]) {
     for (const source of Object.keys(isRecord(prompt?.[field]) ? prompt[field] : {})) {

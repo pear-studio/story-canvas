@@ -7,7 +7,7 @@ import { type ProjectWorkbenchView, type WorkbenchPage } from "../../src/project
 import "../../src/styles.css";
 
 const page = (index: number): WorkbenchPage => ({
-  kind: "story", page_id: `page-${index}`, page_key: { page_id: `page-${index}` }, title: `页面 ${index}`,
+  model_id: "qwen", kind: "story", page_id: `page-${index}`, page_key: { page_id: `page-${index}` }, title: `页面 ${index}`,
   content_sha256: `content-${index}`, prompt_sha256: `prompt-${index}`, prompt_context_sha256: `context-${index}`, characters: [],
   prompt: { text: index === 1 ? " dim lighting, a sentence with unrecognized words " : `第 ${index} 页的画面描述`, reference_images: [{ id: "ref-11111111-1111-4111-8111-111111111111", file: "reference-11111111.png", title: "参考" }] },
 });

@@ -46,7 +46,7 @@ function ScopeHarness() {
  <button onClick={()=>setSelected('profile')}>打开基础</button><button onClick={()=>setSelected('day')}>打开日常</button>
  <button onClick={()=>setCharacter(current=>({...current,prompt_sha256:'prompt-v2',prompt_scope_versions:{anima:{base:'base-v1',variants:{day:'day-v2'}}},prompt:{...current.prompt,variants:{day:{...variant,prompt:{...prompt,person:[{id:'token-222222222222',description:'updated variant'}]}}}}}))}>更新未编辑子设定</button>
  <button onClick={()=>setCharacter(current=>({...current,prompt_sha256:'prompt-v3',prompt_scope_versions:{anima:{base:'base-v2',variants:{day:'day-v2'}}},prompt:{...current.prompt,identity:{prompt:{...prompt,person:[{id:'token-111111111111',description:'updated base'}]},lora:null}}}))}>更新基础版本</button>
- <AnimaSettingView projectId="demo" character={character} initialSettingId={selected} busy={false} onSaved={()=>{}} />
+ <AnimaSettingView projectId="demo" character={{...character,model_prompts:{models:{anima:character.prompt}}}} initialSettingId={selected} busy={false} onSaved={()=>{}} />
  </main>;
 }
 createRoot(document.getElementById('root')!).render(<FeedbackProvider>{location.search.includes('scopes') ? <ScopeHarness /> : location.search.includes('candidates') ? <StoryCandidateRefresh projectId="demo" busy={false} pages={['empty','changed'].map(id => ({page_id:id,title:id==='empty'?'没有候选的页面':'有变化的页面',page_key:{page_id:id}} as WorkbenchPage))} /> : location.search.includes('feedback') ? <FeedbackHarness /> : <Harness />}</FeedbackProvider>);

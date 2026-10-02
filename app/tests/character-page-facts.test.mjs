@@ -1,3 +1,5 @@
+import {installQwenProfiles} from './helpers/qwen-fixture.mjs';
+import {writeQwenFixtureJson, qwenDocument} from './helpers/qwen-fixture.mjs';
 import { registerFixtureProjects } from "./project-registry-fixture.mjs";
 import { PAGES_INDEX_SCHEMA_ID } from "../server/pages-store.mjs";
 import { factFixture, fixtureMutation } from "./fact-fixture.mjs";
@@ -33,10 +35,7 @@ import {
 import { defaultLetteringSettings } from "../server/lettering-settings.mjs";
 import { STORY_PAGE_PROMPT_SCHEMA_ID, STORY_PAGE_NARRATIVE_SCHEMA_ID } from "../server/story-files.mjs";
 
-async function writeJson(target, value) {
-  await mkdir(path.dirname(target), { recursive: true });
-  await writeFile(target, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-}
+const writeJson = writeQwenFixtureJson;
 
 async function readJson(target) {
   return JSON.parse(await readFile(target, "utf8"));
@@ -64,13 +63,14 @@ function characterPrompt(id, withVariant = false) {
 
 async function createFixture(context, { templates = false } = {}) {
   const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), "character-page-session-"));
+  await installQwenProfiles(repositoryRoot);
   context.after(() => rm(repositoryRoot, { recursive: true, force: true }));
   if (templates) {
     await cp(new URL("../../library/visual-page-templates", import.meta.url), path.join(repositoryRoot, "library", "visual-page-templates"), { recursive: true });
   }
   const projectId = "demo";
   const projectDirectory = path.join(repositoryRoot, "workspace", projectId);
-  await writeJson(path.join(projectDirectory, 'project.json'), { format: 'story-free-text-v1', title: '测试', canvas: '2:3', default_render_profile: 'qwen-image-2-1' });
+  await writeJson(path.join(projectDirectory, 'project.json'), { format: 'story-models-v1', title: '测试', canvas: '2:3', default_render_profile: 'qwen-image-2-1' });
   const charactersDirectory = path.join(projectDirectory, "characters");
   const pagesDirectory = path.join(projectDirectory, "pages");
   await mkdir(path.join(projectDirectory, "lettering"), { recursive: true });
@@ -151,14 +151,14 @@ test("页面内容与 Prompt 分权写入，标题可编辑且归属移动不改
 
   const promptSession = await readCharacterPagePromptDraft(fixture.repositoryRoot, fixture.projectId, "page-101");
   const prompt = structuredClone(promptSession.document);
-  prompt.text = "换一个机位的制服全身。";
+  prompt.models.qwen.text = "换一个机位的制服全身。";
   promptSession.document = structuredClone(prompt);
   const guestVisual = await readJson(path.join(fixture.charactersDirectory, "guest.visual.json"));
   guestVisual.description = "无关 guest 变化";
   await writeJson(path.join(fixture.charactersDirectory, "guest.visual.json"), guestVisual);
   await saveCharacterPagePromptDraft(fixture.repositoryRoot, promptSession);
   assert.equal(
-    (await readJson(path.join(fixture.pagesDirectory, "page-101.prompt.json"))).text,
+    (await readJson(path.join(fixture.pagesDirectory, "page-101.prompt.json"))).models.qwen.text,
     "换一个机位的制服全身。",
   );
 
@@ -186,7 +186,7 @@ test("page create 一次性转换显式模板，模板后续变化不回写页�
   assert.equal(goal.visual_goal, undefined);
   assert.ok(goal.title);
   assert.deepEqual(goal.characters, [{ character_id: 'guest', variant_id: 'default' }]);
-  assert.match(prompt.text, /自然|站立|全身/, "模板展开为本页自由文本");
+  assert.match(prompt.models.qwen.text, /自然|站立|全身/, "模板展开为本页自由文本");
 
   const beforeInvalid = await readJson(path.join(fixture.pagesDirectory, "index.json"));
   await writeFile(path.join(fixture.repositoryRoot, "library", "visual-page-templates", "catalog.json"), "{ broken", "utf8");
@@ -223,7 +223,7 @@ test("角色配置写入与实际引用它的 character-page Prompt 串行保存
   const pageSession = await readCharacterPagePromptDraft(fixture.repositoryRoot, fixture.projectId, "page-101");
   const characterSession = await readCharacterPromptDraft(fixture.repositoryRoot, fixture.projectId, "ellen");
   const characterDraft = structuredClone(characterSession.document);
-  characterDraft.variants.uniform.text = "穿更新制服的艾莲。";
+  characterDraft.models.qwen.variants.uniform.text = "穿更新制服的艾莲。";
   characterSession.document = structuredClone(characterDraft);
   let release;
   const held = new Promise((resolve) => { release = resolve; });

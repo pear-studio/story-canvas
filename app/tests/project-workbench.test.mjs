@@ -1,3 +1,5 @@
+import {installQwenProfiles} from './helpers/qwen-fixture.mjs';
+import {writeQwenFixtureJson, qwenDocument} from './helpers/qwen-fixture.mjs';
 import { registerFixtureProjects } from "./project-registry-fixture.mjs";
 import {PAGES_INDEX_SCHEMA_ID} from '../server/pages-store.mjs';
 import { defaultTextPageLayout } from "../shared/text-page-layout.mjs";
@@ -51,13 +53,10 @@ import {
 } from "../server/story-files.mjs";
 import { factStorage as storage } from "../server/story-facts.mjs";
 
-const saveCharacterPrompt = saveCharacterPromptDirect;
+const saveCharacterPrompt = (root,id,value)=>saveCharacterPromptDirect(root,id,{...value,prompt:qwenDocument(value.prompt)});
 const sourceRepositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-async function writeJson(target, value) {
-  await mkdir(path.dirname(target), { recursive: true });
-  await writeFile(target, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-}
+const writeJson = writeQwenFixtureJson;
 
 async function readJson(target) {
   return JSON.parse(await readFile(target, "utf8"));
@@ -69,12 +68,13 @@ function emptyPrompt(schema = STORY_PAGE_PROMPT_SCHEMA_ID) {
 
 async function fixture(context) {
   const root = await mkdtemp(path.join(os.tmpdir(), "project-workbench-"));
+  await installQwenProfiles(root);
   context.after(() => rm(root, { recursive: true, force: true }));
   const projectId = "demo";
   const directory = path.join(root, "workspace", projectId);
   const storyPrompt = { ...emptyPrompt(), text: "艾莲走入柔和晨光。" };
   await writeJson(path.join(directory, "project.json"), {
-    format: "story-free-text-v1", title: "短篇", canvas: "2:3", default_render_profile: "qwen-image-2-1",
+    format: "story-models-v1", title: "短篇", canvas: "2:3", default_render_profile: "qwen-image-2-1",
   });
   await writeJson(path.join(directory, "story", "outline.json"), {
     $schema: STORY_OUTLINE_SCHEMA_ID, synopsis: "一次短暂相遇。",
@@ -228,9 +228,9 @@ test("页面 Prompt 整段保存本页文字并阻止陈旧覆盖", async (conte
     kind: "story", page_id: "page-001", prompt, expected_sha256: page.prompt_sha256, expected_context_sha256: page.prompt_context_sha256,
   });
   const persisted = await readJson(path.join(current.directory, "pages", "page-001.prompt.json"));
-  assert.equal(persisted.text, "艾莲停在门口，半身镜头。");
-  assert.deepEqual(persisted.text_overrides, { "character:ellen:default": "本页覆盖的角色描述" });
-  assert.equal(result.prompt.text, persisted.text);
+  assert.equal(persisted.models.qwen.text, "艾莲停在门口，半身镜头。");
+  assert.deepEqual(persisted.models.qwen.text_overrides, { "character:ellen:default": "本页覆盖的角色描述" });
+  assert.equal(result.prompt.text, persisted.models.qwen.text);
   await assert.rejects(
     savePagePrompt(current.root, current.projectId, { kind: "story", page_id: "page-001", prompt, expected_sha256: page.prompt_sha256, expected_context_sha256: page.prompt_context_sha256 }),
     (error) => error?.code === "prompt_target_conflict" && error.status === 409,
@@ -252,10 +252,10 @@ test("角色 Prompt 一次保存 prompt_name 与各造型自由文本", async (c
     expected_visual_sha256: character.visual_sha256,
   });
   const persisted = await readJson(path.join(current.directory, "characters", "ellen.prompt.json"));
-  assert.equal(persisted.prompt_name, "艾莲·乔");
-  assert.equal(persisted.variants.default.text, "艾莲，银发少女，琥珀色眼睛。");
-  assert.equal(persisted.variants.casual.text, "穿针织开衫的艾莲。");
-  assert.equal(result.prompt.prompt_name, "艾莲·乔");
+  assert.equal(persisted.models.qwen.prompt_name, "艾莲·乔");
+  assert.equal(persisted.models.qwen.variants.default.text, "艾莲，银发少女，琥珀色眼睛。");
+  assert.equal(persisted.models.qwen.variants.casual.text, "穿针织开衫的艾莲。");
+  assert.equal(result.prompt.models.qwen.prompt_name, "艾莲·乔");
   assert.equal(Object.hasOwn(result.prompt, "$schema"), false);
   assert.match(result.prompt_sha256, /^[a-f0-9]{64}$/);
 });
@@ -331,9 +331,9 @@ test("角色 visual 内容入口拒绝结构变化，Prompt 允许缺少下游 v
     expected_sha256: character.prompt_sha256,
     expected_visual_sha256: character.visual_sha256,
   });
-  assert.deepEqual(Object.keys(removedPrompt.prompt.variants), ["default"], "下游 Prompt 可以先于上游 visual variant 清理");
+  assert.deepEqual(Object.keys(removedPrompt.prompt.models.qwen.variants), ["default"], "下游 Prompt 可以先于上游 visual variant 清理");
 
-  const promptWithDanglingVariant = structuredClone(removedPrompt.prompt);
+  const promptWithDanglingVariant = structuredClone(removedPrompt.prompt.models.qwen);
   promptWithDanglingVariant.variants.unknown = structuredClone(promptWithDanglingVariant.variants.default);
   await assert.rejects(
     saveCharacterPrompt(current.root, current.projectId, {
@@ -827,7 +827,7 @@ test('参考图迭代保留 ID，默认/多选跟随，冲突不留垃圾，使�
   const { readReferenceLibrary, mutateReferenceLibrary } = await import('../server/reference-library.mjs');
   const { resolveReferenceEntries } = await import('../shared/reference-images.mjs');
   const { renameCharacterVariant, deleteCharacterVariant } = await import('../server/character-facts.mjs');
-  const target = { kind: 'character', id: 'ellen', variant_id: 'default' };
+  const target = { kind: 'character', model_id: 'qwen', id: 'ellen', variant_id: 'default' };
   const image = async color => (await sharp({ create: { width: 16, height: 24, channels: 3, background: color } }).png().toBuffer()).toString('base64');
   let library = await readReferenceLibrary(root, projectId, target);
   const mutate = async value => library = await mutateReferenceLibrary(root, directory, projectId, { target, expected_sha256: library.sha256, ...value });
@@ -852,12 +852,12 @@ test('参考图迭代保留 ID，默认/多选跟随，冲突不留垃圾，使�
   assert.equal(resolve({ [source]: [first.id] })[0].file, replacement.file);
   await assert.rejects(access(path.join(directory, 'materials', first.file)), /ENOENT/);
   const promptFile = path.join(directory, 'pages/page-001.prompt.json');
-  const pagePrompt = await readJson(promptFile); pagePrompt.reference_overrides = { [source]: [first.id] }; await writeJson(promptFile, pagePrompt);
+  const pagePrompt = await readJson(promptFile); pagePrompt.models.qwen.reference_overrides = { [source]: [first.id] }; await writeJson(promptFile, pagePrompt);
   await assert.rejects(mutate({ action: 'delete', id: first.id }), error => error.code === 'reference_image_in_use' && error.details.includes('pages/page-001.prompt.json'));
   await access(path.join(directory, 'materials', replacement.file));
   await renameCharacterVariant(root, projectId, 'ellen', 'default', 'renamed');
   const updated = await readJson(promptFile);
-  assert.deepEqual(updated.reference_overrides, { 'character:ellen:renamed': [first.id] });
+  assert.deepEqual(updated.models.qwen.reference_overrides, { 'character:ellen:renamed': [first.id] });
   target.variant_id = 'casual'; library = await readReferenceLibrary(root, projectId, target);
   await mutate({ action: 'save', content: await image('#223344') });
   const removed = library.entries[0];
@@ -885,14 +885,14 @@ test('Agent事实保存也保护手动引用并清理移除的参考图', async 
  const {readReferenceLibrary,mutateReferenceLibrary}=await import('../server/reference-library.mjs');
  const {readFactDraft,saveFactDraft}=await import('../server/fact-drafts.mjs');
  const {access}=await import('node:fs/promises');const sharp=(await import('sharp')).default;
- const target={kind:'character',id:'ellen',variant_id:'default'};
+ const target={kind:'character',model_id:'qwen',id:'ellen',variant_id:'default'};
  const initial=await readReferenceLibrary(root,projectId,target);
  const library=await mutateReferenceLibrary(root,directory,projectId,{target,expected_sha256:initial.sha256,action:'save',content:(await sharp({create:{width:2,height:2,channels:3,background:'red'}}).png().toBuffer()).toString('base64')});
  const entry=library.entries[0],pageFile=path.join(directory,'pages/page-001.prompt.json');
- const page=await readJson(pageFile);page.reference_overrides={'character:ellen:default':[entry.id]};await writeJson(pageFile,page);
+ const page=await readJson(pageFile);page.models.qwen.reference_overrides={'character:ellen:default':[entry.id]};await writeJson(pageFile,page);
  const args={projectId,domain:'character',kind:'prompt',targetId:'ellen'};
- const save=async()=>{const draft=await readFactDraft(root,args);draft.document.variants.default.reference_images=[];return saveFactDraft(root,{...args,document:draft.document,expectedSha256:draft.expected_sha256,expectedContextSha256:draft.expected_context_sha256});};
+ const save=async()=>{const draft=await readFactDraft(root,args);draft.document.models.qwen.variants.default.reference_images=[];return saveFactDraft(root,{...args,document:draft.document,expectedSha256:draft.expected_sha256,expectedContextSha256:draft.expected_context_sha256});};
  await assert.rejects(save(),e=>e.code==='reference_image_in_use');await access(path.join(directory,'materials',entry.file));
- page.reference_overrides={};await writeJson(pageFile,page);await save();
+ page.models.qwen.reference_overrides={};await writeJson(pageFile,page);await save();
  await assert.rejects(access(path.join(directory,'materials',entry.file)),{code:'ENOENT'});
 });

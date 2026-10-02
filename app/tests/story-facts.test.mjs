@@ -1,3 +1,5 @@
+import {installQwenProfiles} from './helpers/qwen-fixture.mjs';
+import {writeQwenFixtureJson, qwenDocument} from './helpers/qwen-fixture.mjs';
 import { registerFixtureProjects } from "./project-registry-fixture.mjs";
 import { defaultSceneFacts, SCENE_INDEX_SCHEMA_ID } from "../server/scene-files.mjs";
 import { PAGES_INDEX_SCHEMA_ID, storyPagesIndexProjection, readPageIndex } from "../server/pages-store.mjs";
@@ -48,8 +50,7 @@ async function writeJson(target, value) {
   if (path.basename(path.dirname(target)) === "pages" && path.basename(target) === "index.json" && value.by_sequence) {
     value = { $schema: PAGES_INDEX_SCHEMA_ID, pages: Object.entries(value.by_sequence).flatMap(([sequence_id, ids]) => ids.map(page_id => ({ page_id, owner_kind: "story", sequence_id }))) };
   }
-  await mkdir(path.dirname(target), { recursive: true });
-  await writeFile(target, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  await writeQwenFixtureJson(target,value);
 }
 
 async function readJson(target) {
@@ -90,10 +91,11 @@ function narrative(title, characterId, variantId) {
 
 async function createFixture(context) {
   const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), "story-fact-"));
+  await installQwenProfiles(repositoryRoot);
   context.after(() => rm(repositoryRoot, { recursive: true, force: true }));
   const projectId = "demo";
   const projectDirectory = path.join(repositoryRoot, "workspace", projectId);
-  await writeJson(path.join(projectDirectory, 'project.json'), { format: 'story-free-text-v1', title: '测试', canvas: '2:3', default_render_profile: 'qwen-image-2-1' });
+  await writeJson(path.join(projectDirectory, 'project.json'), { format: 'story-models-v1', title: '测试', canvas: '2:3', default_render_profile: 'qwen-image-2-1' });
   const pagesDirectory = path.join(projectDirectory, "pages");
   await mkdir(pagesDirectory, { recursive: true });
   await writeJson(path.join(projectDirectory, "story", "outline.json"), {
@@ -254,7 +256,7 @@ test("Prompt save 忽略其他页面和未引用角色变化", async (context) =
   const fixture = await createFixture(context);
   const session = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
   const draft = structuredClone(session.document);
-  draft.text = "艾莲的全身镜头。";
+  draft.models.qwen.text = "艾莲的全身镜头。";
   session.document = structuredClone(draft);
   const unrelatedPage = path.join(fixture.pagesDirectory, "page-002.content.json");
   const unrelated = await readJson(unrelatedPage);
@@ -267,7 +269,7 @@ test("Prompt save 忽略其他页面和未引用角色变化", async (context) =
 
   const result = await saveStoryPromptDraft(fixture.repositoryRoot, session);
   const persisted = await readJson(result.target_file);
-  assert.equal(persisted.text, "艾莲的全身镜头。");
+  assert.equal(persisted.models.qwen.text, "艾莲的全身镜头。");
 });
 
 test("目标文件变化时拒绝陈旧保存", async (context) => {
@@ -275,14 +277,14 @@ test("目标文件变化时拒绝陈旧保存", async (context) => {
   const session = await readStoryPromptDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
   const target = path.join(fixture.pagesDirectory, "page-001.prompt.json");
   const external = await readJson(target);
-  external.text = "外部修改的描述。";
+  external.models.qwen.text = "外部修改的描述。";
   await writeJson(target, external);
 
   await assert.rejects(
     () => saveStoryPromptDraft(fixture.repositoryRoot, session),
     (error) => error?.code === "fact_target_conflict",
   );
-  assert.equal((await readJson(target)).text, "外部修改的描述。");
+  assert.equal((await readJson(target)).models.qwen.text, "外部修改的描述。");
 });
 
 test("同页 narrative 与 Prompt 串行保存，Prompt 不会在 narrative 变化后陈旧落盘", async (context) => {
@@ -445,7 +447,7 @@ test("page create 生成服务端 ID、完整文件对并追加到 sequence", as
   assert.equal(narrative.scene_description, "待补充画面内容。");
   assert.deepEqual(narrative.characters, []);
   assert.deepEqual(narrative.dialogue, []);
-  assert.equal(prompt.text, "");
+  assert.equal(prompt.models.qwen.text, "");
   assert.equal(pagesIndex.by_sequence.arrival.at(-1), result.page_id);
 });
 
@@ -572,18 +574,18 @@ test("公共页面不依赖归属存在，缺失 Prompt 来源需要先修复引
   narrativeDraft.document.title = "归属失效但仍能编辑";
   await saveStoryNarrativeDraft(root, narrativeDraft);
   const promptDraft = await readStoryPromptDraft(root, id, "page-001");
-  promptDraft.document.text_overrides = { "character:absent:default": "失效覆盖" };
-  promptDraft.document.text = "仍然可以编辑本页描述。";
+  promptDraft.document.models.qwen.text_overrides = { "character:absent:default": "失效覆盖" };
+  promptDraft.document.models.qwen.text = "仍然可以编辑本页描述。";
   await assert.rejects(saveStoryPromptDraft(root, promptDraft), { code: "invalid_story_edit_document" });
-  delete promptDraft.document.text_overrides;
+  delete promptDraft.document.models.qwen.text_overrides;
   await assert.rejects(saveStoryPromptDraft(root, promptDraft), { code: "prompt_source_missing" });
   const repairedContent = await readStoryNarrativeDraft(root, id, "page-001");
   repairedContent.document.characters = [];
   await saveStoryNarrativeDraft(root, repairedContent);
   const repairedPrompt = await readStoryPromptDraft(root, id, "page-001");
-  repairedPrompt.document.text = "仍然可以编辑本页描述。";
+  repairedPrompt.document.models.qwen.text = "仍然可以编辑本页描述。";
   const saved = await saveStoryPromptDraft(root, repairedPrompt);
-  assert.equal(saved.value.text, "仍然可以编辑本页描述。");
+  assert.equal(saved.value.models.qwen.text, "仍然可以编辑本页描述。");
   assert.equal((await readStoryNarrativeDraft(root, id, "page-001")).document.title, "归属失效但仍能编辑");
 });
 
@@ -609,7 +611,7 @@ test("页面 Prompt 只依赖所引场景子设定，场景缺失与恢复会使
   const sceneIndexPath = path.join(projectDirectory, "scenes", "index.json");
   await writeJson(sceneIndexPath, { $schema: SCENE_INDEX_SCHEMA_ID, scenes: ["station", "street"] });
   for (const name of ["station", "street"]) {
-    for (const [kind, value] of Object.entries(defaultSceneFacts(name, name))) {
+    for (const [kind, value] of Object.entries(defaultSceneFacts(name,name,'qwen'))) {
       await writeJson(path.join(projectDirectory, "scenes", `${name}.${kind}.json`), value);
     }
   }
@@ -618,21 +620,21 @@ test("页面 Prompt 只依赖所引场景子设定，场景缺失与恢复会使
   const unrelated = await readStoryPromptDraft(root, id, "page-001");
   const streetPath = path.join(projectDirectory, "scenes", "street.prompt.json");
   const street = await readJson(streetPath);
-  street.variants.default.text = "街道外观描述。";
+  street.models.qwen.variants.default.text = "街道外观描述。";
   await writeJson(streetPath, street);
-  unrelated.document.text = "从侧面拍摄。";
+  unrelated.document.models.qwen.text = "从侧面拍摄。";
   await saveStoryPromptDraft(root, unrelated);
   const stale = await readStoryPromptDraft(root, id, "page-001");
   await writeJson(sceneIndexPath, { $schema: SCENE_INDEX_SCHEMA_ID, scenes: ["street"] });
   await assert.rejects(saveStoryPromptDraft(root, stale), { code: "fact_upstream_conflict" });
   const missing = await readStoryPromptDraft(root, id, "page-001");
-  missing.document.text = "从上方拍摄。";
+  missing.document.models.qwen.text = "从上方拍摄。";
   await assert.rejects(saveStoryPromptDraft(root, missing), { code: "prompt_source_missing" });
   const restored = await readStoryPromptDraft(root, id, "page-001");
   await writeJson(sceneIndexPath, { $schema: SCENE_INDEX_SCHEMA_ID, scenes: ["station", "street"] });
   await assert.rejects(saveStoryPromptDraft(root, restored), { code: "fact_upstream_conflict" });
   const refreshed = await readStoryPromptDraft(root, id, "page-001");
-  refreshed.document.text = "从上方拍摄。";
+  refreshed.document.models.qwen.text = "从上方拍摄。";
   await saveStoryPromptDraft(root, refreshed);
 });
 
@@ -642,9 +644,9 @@ test("外部登记项目可保存 Prompt 和 outline，仍拒绝越界 pages jun
   await mkdir(root);
   registerProject(root, { id: f.projectId, type: 'story', path: f.projectDirectory });
   const prompt = await readStoryPromptDraft(root, f.projectId, 'page-001');
-  prompt.document.text = '特写镜头。';
+  prompt.document.models.qwen.text = '特写镜头。';
   await saveStoryPromptDraft(root, prompt);
-  assert.equal((await readStoryPromptDraft(root, f.projectId, 'page-001')).document.text, '特写镜头。');
+  assert.equal((await readStoryPromptDraft(root, f.projectId, 'page-001')).document.models.qwen.text, '特写镜头。');
   const outline = await readStoryOutlineDraft(root, f.projectId);
   outline.document.synopsis = '外部项目正常保存。';
   await saveStoryOutlineDraft(root, outline);

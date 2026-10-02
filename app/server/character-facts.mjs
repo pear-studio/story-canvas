@@ -78,10 +78,6 @@ function visualIdentity(visual) {
     .sort((left, right) => left.localeCompare(right, "en")));
 }
 
-function emptyVariant() {
-  return { text: "", reference_images: [] };
-}
-
 function normalizePromptToVisual(promptDocument, visual) {
   return mapModelPrompts(promptDocument, (input, modelId) => ({
     ...input,
@@ -298,7 +294,7 @@ export async function commitCharacterFact(projectRoot, context, readDocument, ki
   return result;
 }
 
-function defaultCharacterFacts(characterId, name) {
+function defaultCharacterFacts(characterId, name, modelId) {
   const displayName = typeof name === "string" && name.trim() ? name.trim() : characterId;
   return {
     profile: {
@@ -310,11 +306,7 @@ function defaultCharacterFacts(characterId, name) {
       $schema: CHARACTER_VISUAL_SCHEMA_ID,
       variants: [{ id: "default", name: "默认" }],
     },
-    prompt: {
-      $schema: CHARACTER_PROMPT_SCHEMA_ID,
-      prompt_name: displayName,
-      variants: { default: emptyVariant() },
-    },
+    prompt: makeModelPromptDocument(CHARACTER_PROMPT_SCHEMA_ID,modelId,emptySettingPrompt(modelId,displayName,['default'])),
   };
 }
 
@@ -324,12 +316,9 @@ export async function createCharacter(projectRoot, projectId, characterId, { nam
 
   const index = await readCharacterIndex(project.projectDirectory);
   if (index.characters.includes(characterId)) fail("character_already_exists", [characterId]);
-  const facts = defaultCharacterFacts(characterId, name);
   const projectDocument = await storage.readJson(path.join(project.projectDirectory,'project.json'),'project.json');
-  if (projectDocument.format === 'story-models-v1') {
-    const modelId = (await defaultProfileAdapter(projectRoot,projectDocument.default_render_profile)).id;
-    facts.prompt = makeModelPromptDocument(CHARACTER_PROMPT_SCHEMA_ID,modelId,emptySettingPrompt(modelId,facts.profile.name,['default']));
-  }
+  const modelId = (await defaultProfileAdapter(projectRoot,projectDocument.default_render_profile)).id;
+  const facts = defaultCharacterFacts(characterId, name, modelId);
   assertDocument(validateCharacterProfileDocument(facts.profile));
   assertDocument(validateCharacterVisualDocument(facts.visual));
   assertDocument(validateCharacterPromptDocument(facts.prompt));
@@ -646,7 +635,7 @@ export async function deleteCharacter(projectRoot, projectId, characterId, { bef
   const dependencyState = await currentCharacterDiagnostics(projectRoot, project.projectDirectory, characterId, {
     exists: false,
     visual: { variants: [] },
-    prompt: { variants: {} },
+    prompt: { models: {} },
   });
   const references = referencesForCharacter(
     dependencyState.storyNarrativesByPage,

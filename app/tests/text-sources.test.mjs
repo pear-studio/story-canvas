@@ -1,3 +1,4 @@
+import {writeQwenFixtureJson, qwenDocument} from './helpers/qwen-fixture.mjs';
 import { registerFixtureProjects } from "./project-registry-fixture.mjs";
 import { PAGES_INDEX_SCHEMA_ID } from "../server/pages-store.mjs";
 import { factFixture } from "./fact-fixture.mjs";
@@ -52,10 +53,7 @@ function corpusOffset(sentence) {
   return Buffer.byteLength(corpusText.slice(0, charIndex), "utf8");
 }
 
-async function writeJson(target, value) {
-  await mkdir(path.dirname(target), { recursive: true });
-  await writeFile(target, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-}
+const writeJson = writeQwenFixtureJson;
 
 async function readJson(target) {
   return JSON.parse(await readFile(target, "utf8"));
@@ -94,7 +92,7 @@ async function createFixture(context) {
   context.after(() => rm(repositoryRoot, { recursive: true, force: true }));
   const projectId = "demo";
   const projectDirectory = path.join(repositoryRoot, "workspace", projectId);
-  await writeJson(path.join(projectDirectory, 'project.json'), { format: 'story-free-text-v1', title: '测试', canvas: '2:3', default_render_profile: 'qwen-image-2-1' });
+  await writeJson(path.join(projectDirectory, 'project.json'), { format: 'story-models-v1', title: '测试', canvas: '2:3', default_render_profile: 'qwen-image-2-1' });
   const pagesDirectory = path.join(projectDirectory, "pages");
   await mkdir(pagesDirectory, { recursive: true });
   await writeJson(path.join(projectDirectory, "story", "outline.json"), {

@@ -96,7 +96,8 @@ export async function commitModelMigration(root,projectId,expectedFingerprint) {
   await mkdir(backup);
   for(const write of plan.writes)if(write.before!==null){const target=path.join(backup,write.relative);await mkdir(path.dirname(target),{recursive:true});await copyFile(path.join(directory,write.relative),target);}
   await writeFile(path.join(backup,'migration.json'),JSON.stringify(modelMigrationSummary(plan),null,2)+'\n',{flag:'wx'});
-  await commitFactChanges(directory,plan.writes);
+  // 一次迁移保留原素材；旧输入不进入当前模型容器的引用清理。
+  await commitFactChanges(directory,plan.writes,{cleanupReferences:false});
   for(const write of plan.writes)if(hash(await read(directory,write.relative))!==hash(write.after))fail('model_migration_readback_failed',[write.relative,backup]);
   return {...modelMigrationSummary(plan),backup_directory:backup};
 }

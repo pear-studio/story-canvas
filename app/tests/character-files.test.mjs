@@ -1,3 +1,4 @@
+import {qwenDocument} from './helpers/qwen-fixture.mjs';
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -40,34 +41,33 @@ async function validators() {
   }
   return Object.fromEntries(Object.keys(schemaFiles).map((id) => [id, document => {
     // 以下用例检查 Qwen 原生字段；磁盘 Schema 通过明确的模型容器校验。
-    if (id.endsWith('prompt.schema.json') && !document.models) {const {$schema,...qwen}=document;return ajv.getSchema(id)({$schema,models:{qwen}});}
     return ajv.getSchema(id)(document);
   }]));
 }
 
 function pagePrompt({ schema } = {}) {
-  return { ...(schema ? { $schema: schema } : {}), text: "艾莲走向公寓，全身镜头。" };
+  return qwenDocument({ ...(schema ? { $schema: schema } : {}), text: "艾莲走向公寓，全身镜头。" });
 }
 
 function characterPrompt({ schema, promptName = "艾莲", text = "银发少女，红色眼睛。" } = {}) {
-  return {
+  return qwenDocument({
     ...(schema ? { $schema: schema } : {}),
     prompt_name: promptName,
     variants: { default: { text, reference_images: [] } },
-  };
+  });
 }
 
 test("角色和场景参考图校验拒绝错误类型、重复 ID 和非法条目", () => {
   const entry = { id: "ref-11111111-1111-4111-8111-111111111111", file: "reference-11111111-1111-4111-8111-111111111111.png", title: "参考图" };
   for (const kind of ["character", "scene"]) {
-    const prompt = defaultSceneFacts("room", "房间").prompt;
+    const prompt = defaultSceneFacts("room","房间",'qwen').prompt;
     const validate = kind === "character" ? validateCharacterPromptDocument : validateScenePromptDocument;
     if (kind === "character") prompt.$schema = CHARACTER_PROMPT_SCHEMA_ID;
     assert.deepEqual(validate(prompt), [], kind);
-    prompt.variants.default.reference_images = [entry];
+    prompt.models.qwen.variants.default.reference_images = [entry];
     assert.deepEqual(validate(prompt), [], kind);
     for (const invalid of ["broken", [entry, { ...entry }], [{ ...entry, file: "../outside.png" }], [{ ...entry, title: "" }]]) {
-      prompt.variants.default.reference_images = invalid;
+      prompt.models.qwen.variants.default.reference_images = invalid;
       assert.ok(validate(prompt).length > 0, `${kind}: ${JSON.stringify(invalid)}`);
     }
   }
@@ -87,14 +87,14 @@ test("角色 profile、visual 与自由文本 Prompt 通过拆分契约", async 
     variants: [{ id: "school-uniform", name: "学生制服", description: "穿白衬衫、百褶裙和黑色连裤袜。" }],
   };
   const prompt = characterPrompt({ schema: CHARACTER_PROMPT_SCHEMA_ID });
-  prompt.variants["school-uniform"] = { text: "穿白衬衫、百褶裙和黑色连裤袜的艾莲。", reference_images: [] };
+  prompt.models.qwen.variants["school-uniform"] = { text: "穿白衬衫、百褶裙和黑色连裤袜的艾莲。", reference_images: [] };
 
   assert.equal(validate[CHARACTER_INDEX_SCHEMA_ID](characterIndex), true);
   assert.equal(validate[CHARACTER_PROFILE_SCHEMA_ID](profile), true);
   assert.equal(validate[CHARACTER_VISUAL_SCHEMA_ID](visual), true);
   assert.equal(validate[CHARACTER_PROMPT_SCHEMA_ID](prompt), true);
 
-  delete prompt.variants["school-uniform"].text;
+  delete prompt.models.qwen.variants["school-uniform"].text;
   assert.equal(validate[CHARACTER_PROMPT_SCHEMA_ID](prompt), false, "子设定必须有 text");
 });
 
@@ -120,7 +120,7 @@ test("角色视觉页索引、goal 与共享页面 Prompt 保持独立文件形�
 
 test("角色 Prompt 契约要求 prompt_name 与自包含子设定，拒绝旧 identity/lora/分类形状", async () => {
   const validate = await validators();
-  const validPrompt = () => ({
+  const validPrompt = () => qwenDocument({
     $schema: CHARACTER_PROMPT_SCHEMA_ID,
     prompt_name: "艾莲",
     variants: {
@@ -132,23 +132,23 @@ test("角色 Prompt 契约要求 prompt_name 与自包含子设定，拒绝旧 i
   assert.equal(validate[CHARACTER_PROMPT_SCHEMA_ID](validPrompt()), true);
 
   const missingName = validPrompt();
-  delete missingName.prompt_name;
+  delete missingName.models.qwen.prompt_name;
   assert.ok(validateCharacterPromptDocument(missingName).some((error) => error.includes("prompt_name")), "缺少 prompt_name 必须报错");
   assert.equal(validate[CHARACTER_PROMPT_SCHEMA_ID](missingName), false);
 
   const legacy = validPrompt();
-  legacy.identity = { prompt: {}, lora: null };
-  legacy.variants.default = { prompt: { population: [] }, loras: [], identity_disabled: [] };
+  legacy.models.qwen.identity = { prompt: {}, lora: null };
+  legacy.models.qwen.variants.default = { prompt: { population: [] }, loras: [], identity_disabled: [] };
   const legacyErrors = validateCharacterPromptDocument(legacy);
   assert.ok(legacyErrors.some((error) => error.includes("未知字段：identity")), "旧 identity 层被拒绝");
   assert.ok(legacyErrors.some((error) => error.includes("未知字段")), "旧分类/loras 字段被拒绝");
 
   const badText = validPrompt();
-  badText.variants.default.text = ["结构化词条"];
+  badText.models.qwen.variants.default.text = ["结构化词条"];
   assert.ok(validateCharacterPromptDocument(badText).some((error) => error.includes("text 必须是字符串")));
 
   const emptyVariants = validPrompt();
-  emptyVariants.variants = {};
+  emptyVariants.models.qwen.variants = {};
   assert.ok(validateCharacterPromptDocument(emptyVariants).some((error) => error.includes("至少需要一个造型")));
   assert.equal(validate[CHARACTER_PROMPT_SCHEMA_ID](emptyVariants), false);
 
@@ -175,7 +175,7 @@ test("跨文件诊断报告角色与 variant 悬空、视觉页缺失配对和�
     characterIndex: { characters: ["ellen"] },
     profileCharacterIds: ["ellen"],
     visualByCharacter: { ellen: { variants: [{ id: "uniform" }] } },
-    promptByCharacter: { ellen: { variants: { obsolete: {} } } },
+    promptByCharacter: { ellen: qwenDocument({ variants: { obsolete: {} } }) },
     characterPagesIndex: { pages: [
       { page_id: "page-001", character_id: "ellen", variant_id: "missing" },
       { page_id: "page-002", character_id: "ghost", variant_id: "uniform" },

@@ -60,9 +60,9 @@ async function newPageId(directory,index) {
 export async function createPage(root,projectId,owner,{templateId=null,afterPageId=null,beforePageId=null,pageKind=null,characterId,variantId,beforeCommit}={}) {
   const project=await projectAt(root,projectId), directory=project.projectDirectory;
   const projectDocument=await optionalJson(directory,'project.json');
-  const bundle=projectDocument.format==='story-models-v1'?await compileEffectiveRenderProfile({repositoryRoot:root,projectRoot:directory,profileId:projectDocument.default_render_profile}):null;
-  if(bundle?.blocked)fail('render_profile_override_conflict');
-  const render=pageSettingsFromDefaults(projectDocument,bundle?profileModelAdapter(bundle.effective_profile).id:'qwen');
+  const bundle=await compileEffectiveRenderProfile({repositoryRoot:root,projectRoot:directory,profileId:projectDocument.default_render_profile});
+  if(bundle.blocked)fail('render_profile_override_conflict');
+  const render=pageSettingsFromDefaults(projectDocument,profileModelAdapter(bundle.effective_profile).id);
   await assertPageOwner(directory,owner);
   if(pageKind!==null&&pageKind!=='text')fail('invalid_page_kind');
   if(pageKind==='text'&&templateId!==null)fail('invalid_page_kind',['文字页不支持模板']);
@@ -80,7 +80,7 @@ export async function createPage(root,projectId,owner,{templateId=null,afterPage
     const materialized=materializeVisualPageTemplate(template);
     content.title=materialized.title;content.scene_description=materialized.visual_goal;prompt={...prompt,...materialized.prompt};
   }
-  if(bundle){
+  {
     const native={...modelAdapter(render.model_id).emptyPrompt(),...(owner.owner_kind==='scene'?{scene_id:owner.scene_id,scene_variant_id:owner.variant_id}:{}),loras:[]};
     if (templateId !== null) {
       if (render.model_id === 'qwen') native.text = prompt.text;
@@ -158,7 +158,7 @@ export async function savePage(root,projectId,value) {
   for(const item of contentInput.dialogue??[])if(typeof item.id==='string'&&item.id.startsWith('draft-dialogue-'))delete item.id;
   const content=prepareStoryPageNarrativeForPersistence({$schema:STORY_PAGE_NARRATIVE_SCHEMA_ID,...contentInput},{baselineNarrative:beforeContent,createDialogueId:()=>`dialogue-${randomBytes(6).toString('hex')}`});
   if(content.page_kind!==beforeContent.page_kind)fail('page_kind_immutable');
-  const render=await readPageRenderSettings(directory,pageId), modelId=render.model_id??'qwen';
+  const render=await readPageRenderSettings(directory,pageId), modelId=render.model_id;
   const prompt=modelAdapter(modelId).preparePagePrompt({$schema:STORY_PAGE_PROMPT_SCHEMA_ID,...clone(value.prompt)}, {baselinePrompt:modelPrompt(beforePrompt,modelId),createFragmentId:()=>`token-${randomBytes(6).toString('hex')}`});
   const persistedPrompt=replaceModelPrompt(beforePrompt,modelId,prompt);
   for(const [,input] of promptModelEntries(persistedPrompt)) {

@@ -38,7 +38,7 @@ function SettingHarness() {
       prompt: { ...value.prompt, variants: { ...value.prompt.variants, night: { text: '外部更新的夜晚描述' } } },
       prompt_scope_versions: { qwen: { ...value.prompt_scope_versions!.qwen!, variants: { ...value.prompt_scope_versions!.qwen!.variants, night: 'night-external' } } },
     }))}>外部更新夜晚</button>
-  </nav><SettingView kind="character" projectId="test" character={current} initialSettingId={settingId} busy={false}
+  </nav><SettingView kind="character" projectId="test" character={{...current,model_prompts:{models:{qwen:current.prompt}}}} initialSettingId={settingId} busy={false}
     onSaved={(replacement) => setCurrent((value) => ({ ...value, ...replacement }))} /></>;
 }
 

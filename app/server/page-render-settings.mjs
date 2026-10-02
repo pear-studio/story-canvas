@@ -7,7 +7,6 @@ import { readPageEntry, pageRelativePath } from './pages-store.mjs';
 import { commitFactChanges } from './story-facts.mjs';
 import { compileEffectiveRenderProfile } from './render-profile-compiler.mjs';
 import { modelAdapter, profileModelAdapter } from './model-adapters.mjs';
-import { makeModelPromptDocument, isModelPromptDocument } from './model-prompts.mjs';
 
 export const pageCanvases = Object.freeze(['3:4', '1:1', '4:3', '2:3', '9:16']);
 export function validatePageRenderSettings(value) {
@@ -20,19 +19,16 @@ export function validatePageRenderSettings(value) {
   if (!pageCanvases.includes(value.canvas)) errors.push('页面画幅无效');
   return errors;
 }
-export function pageSettingsFromDefaults(project, modelId = 'qwen') {
+export function pageSettingsFromDefaults(project, modelId) {
   return { version: 1, model_id: modelId, profile_id: project.default_render_profile, canvas: project.canvas };
 }
-export async function readPageRenderSettings(directory, pageId, project = null) {
+export async function readPageRenderSettings(directory, pageId) {
   const relative = pageRelativePath(pageId, 'render');
   let value;
   try { value = JSON.parse(await readFile(path.join(directory, relative), 'utf8')); }
   catch (error) {
     if (error.code !== 'ENOENT') throw error;
-    // 迁移窗口只允许旧格式项目使用旧行为；新格式缺失文件必须报错。
-    project ??= JSON.parse(await readFile(path.join(directory, 'project.json'), 'utf8'));
-    if (project.format !== 'story-free-text-v1') throw new ApiError(422, 'page_render_settings_missing', [relative]);
-    value = pageSettingsFromDefaults(project);
+    throw new ApiError(422, 'page_render_settings_missing', [relative]);
   }
   const errors = validatePageRenderSettings(value);
   if (errors.length) throw new ApiError(422, 'page_render_settings_invalid', errors);
@@ -64,7 +60,7 @@ export async function commitPageRender(root, context, readDocument) {
   const promptRelative=pageRelativePath(context.page_id,'prompt');
   const beforePrompt=JSON.parse(await readFile(path.join(project.projectDirectory,promptRelative),'utf8'));
   if(context.upstream.prompt_sha256!==hashCanonicalJson(beforePrompt))throw new ApiError(409,'page_render_input_conflict');
-  const nextPrompt=isModelPromptDocument(beforePrompt)?structuredClone(beforePrompt):makeModelPromptDocument(beforePrompt.$schema,'qwen',beforePrompt);
+  const nextPrompt=structuredClone(beforePrompt);
   if(!nextPrompt.models[value.model_id]) {
     const input=modelAdapter(value.model_id).emptyPrompt();
     if(value.model_id==='qwen' && nextPrompt.models.anima) {

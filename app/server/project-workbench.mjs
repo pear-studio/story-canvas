@@ -1,6 +1,6 @@
 import { readPageIndex, pageRelativePath } from './pages-store.mjs';
 import { readPageRenderSettings, pageProjectSettings } from './page-render-settings.mjs';
-import { modelPrompt, isModelPromptDocument, promptModelEntries, replaceModelPrompt } from './model-prompts.mjs';
+import { modelPrompt, promptModelEntries, replaceModelPrompt } from './model-prompts.mjs';
 import { settingPromptSourceVersions } from './prompt-source-context.mjs';
 import { settingPromptScopeVersions } from './prompt-scope-version.mjs';
 import { parseWorkbenchScope } from '../shared/workbench-scope.mjs';
@@ -251,7 +251,7 @@ export async function readProjectWorkbenchView(projectRoot, projectId, requested
     const content = validated(narrative, validateStoryPageNarrativeDocument, pageRelativePath(pageId, 'content'));
     const promptDocument = edit ? validated(prompt, validateStoryPagePromptDocument, pageRelativePath(pageId, 'prompt')) : null;
     const render = edit || output && content.page_kind === 'text' ? await readPageRenderSettings(project.projectDirectory, pageId, projectDocument) : null;
-    const promptValue = edit ? modelPrompt(promptDocument,render.model_id ?? 'qwen') : null;
+    const promptValue = edit ? modelPrompt(promptDocument,render.model_id) : null;
     if (edit && !promptValue) fail('page_model_input_missing',[pageId,render.model_id]);
     if ((full || scope.kind === 'page') && edit && promptValue.composition !== 'standalone') {
       for (const reference of content.characters) requiredSettings.character.add(reference.character_id);
@@ -269,7 +269,7 @@ export async function readProjectWorkbenchView(projectRoot, projectId, requested
       else if (!scene.visual.variants.some(variant => variant.id === promptValue.scene_variant_id)) diagnostics.push({code:"dangling_scene_variant_reference",page_id:pageId,scene_id:promptValue.scene_id,variant_id:promptValue.scene_variant_id});
     }
     const page = {
-      ...(edit ? { model_id: render.model_id ?? 'qwen', ...(full ? {model_prompts: structuredClone(promptDocument)} : {}),
+      ...(edit ? { model_id: render.model_id, ...(full ? {model_prompts: structuredClone(promptDocument)} : {}),
       render, render_sha256: hashCanonicalJson(render),
       ...(full || scope.kind === 'page' ? await readPageRenderConfiguration(path.resolve(projectRoot), project.projectDirectory, pageProjectSettings(projectDocument, render)) : {}),
       prompt:publicPrompt(promptValue),prompt_sha256:hashCanonicalJson(promptDocument),
@@ -473,15 +473,15 @@ export async function savePagePrompt(projectRoot, projectId, value) {
   const {projectDirectory} = await resolveProjectLocation(path.resolve(projectRoot), projectId);
   const current = await readJson(projectDirectory, pageRelativePath(pageId,'prompt'));
   const render = await readPageRenderSettings(projectDirectory,pageId);
-  const document = replaceModelPrompt(current,render.model_id ?? 'qwen',{$schema:STORY_PAGE_PROMPT_SCHEMA_ID,...structuredClone(prompt)});
+  const document = replaceModelPrompt(current,render.model_id,{$schema:STORY_PAGE_PROMPT_SCHEMA_ID,...structuredClone(prompt)});
   const saved = await saveFactDraft(projectRoot, {
     expectedContextSha256: value.expected_context_sha256,
-    sourceVersions: { [render.model_id ?? 'qwen']: value.source_versions ?? {} },
+    sourceVersions: { [render.model_id]: value.source_versions ?? {} },
     domain: "page", kind: "prompt",
     projectId, targetId: pageId, document,
     expectedSha256, conflictCode: "prompt_target_conflict",
   });
-  return { kind, page_id: pageId, prompt: publicPrompt(modelPrompt(saved.value,render.model_id ?? 'qwen')), prompt_sha256: hashCanonicalJson(saved.value), audit: saved.audit };
+  return { kind, page_id: pageId, prompt: publicPrompt(modelPrompt(saved.value,render.model_id)), prompt_sha256: hashCanonicalJson(saved.value), audit: saved.audit };
 }
 
 function sameOrderedStrings(left, right) {
@@ -537,7 +537,7 @@ export async function saveCharacterPrompt(projectRoot, projectId, value) {
   const checkVisual = async () => {
     const visual = await readJson(project.projectDirectory, `characters/${value.character_id}.visual.json`);
     if (hashCanonicalJson(visual) !== value.expected_visual_sha256) fail("character_prompt_visual_conflict", [], 409);
-    const unknown = Object.keys(value.prompt.variants ?? {}).filter(id => !visual.variants.some(v => v.id === id));
+    const unknown = promptModelEntries(value.prompt).flatMap(([,input])=>Object.keys(input.variants ?? {})).filter(id => !visual.variants.some(v => v.id === id));
     if (unknown.length) fail("character_prompt_visual_conflict", unknown, 409);
   };
   await checkVisual();

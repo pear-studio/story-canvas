@@ -4,7 +4,7 @@ import { schema, string, object, array, boolean, pagination, paginate } from './
 import {saveOperationRecord,readOperationRecord} from './operation-records.mjs';
 import { endpoint, projectId, pageKey, projectPath, encode, localImage, downloadArtifact } from './http-action.mjs';
 const post = (summary, suffix, fields, options = {}) => endpoint(summary, 'POST', a => projectPath(a, `workbench/${suffix}`), fields, { project: true, ...options });
-const target = { ...schema({ kind: { ...string('归属'), enum: ['character','scene','page'] }, id: string('角色/场景/页面 ID'), variant_id: string('角色和场景需要子设定 ID'), model_id: string('模型分支，默认 qwen') }, ['kind','id']), description: '参考图归属；角色和场景必须给 variant_id' };
+const target = { ...schema({ kind: { ...string('归属'), enum: ['character','scene','page'] }, id: string('角色/场景/页面 ID'), variant_id: string('角色和场景必须提供子设定 ID'), model_id: { ...string('角色和场景必须显式提供 qwen；页面省略，模型取自当前 render'), enum: ['qwen'] } }, ['kind','id']), description: '参考图仅支持 Qwen；角色和场景必须给 variant_id 和 model_id:qwen；页面模型由当前 render 决定，不能用此参数切换模型' };
 const reference = (summary, action, fields, required, body) => post(summary, 'reference-library', { target, ...fields }, { required: ['target', ...required], details: '先 reference.list 取得 entries 与 sha256；修改传 expected_sha256。参考图最多十张，候选提升后保存到 materials，不依赖临时输出。', body: a => ({ target:a.target, action, ...body(a) }) });
 export const mediaActions = {
   'candidate.sheet': endpoint('按单元或章节顺序查看最新批次的全部画面','POST','/api/agent/candidate-sheet',{

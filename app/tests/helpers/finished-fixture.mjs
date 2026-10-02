@@ -1,3 +1,4 @@
+import {writeQwenFixtureJson} from './qwen-fixture.mjs';
 import { registerFixtureProjects } from "../project-registry-fixture.mjs";
 import { PAGES_INDEX_SCHEMA_ID } from "../../server/pages-store.mjs";
 import { mkdtemp, mkdir, symlink, writeFile, rm } from "node:fs/promises";
@@ -13,14 +14,14 @@ import { prepareFinishedPage, runFinishedPage } from "../../server/finished-page
 import { createProjectOperations } from "../../server/project-operations.mjs";
 export const key = { page_id: "page-001" };
 export const candidateId = "candidate-11111111-1111-4111-8111-111111111111";
-export async function json(file, value) { await mkdir(path.dirname(file), { recursive: true }); await writeFile(file, JSON.stringify(value)); }
+export const json = writeQwenFixtureJson;
 export async function fixture(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), "finished-pages-"));
   await symlink(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "library"), path.join(root, "library"), process.platform === "win32" ? "junction" : "dir");
   const directory = path.join(root, "workspace", "demo");
   const operations = createProjectOperations({ projectRoot: root });
   t.after(async () => { operations.close(); await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); });
-  await json(path.join(directory, "project.json"), { $schema: "https://storyvisualizer.local/schemas/project.schema.json", format: "story-free-text-v1", title: "成品测试", canvas: "2:3", default_render_profile: "qwen-image-2-1" });
+  await json(path.join(directory, "project.json"), { $schema: "https://storyvisualizer.local/schemas/project.schema.json", format: "story-models-v1", title: "成品测试", canvas: "2:3", default_render_profile: "qwen-image-2-1" });
   await json(path.join(directory, "story/outline.json"), { $schema: STORY_OUTLINE_SCHEMA_ID, synopsis: "测试", chapters: [{ id: "chapter", title: "第一章", summary: "测试", sequences: [{ id: "sequence", title: "片段", summary: "测试" }] }] });
   await json(path.join(directory, "pages/index.json"), { $schema: PAGES_INDEX_SCHEMA_ID, pages: [{ page_id: key.page_id, owner_kind: "story", sequence_id: "sequence" }] });
   await json(path.join(directory, `pages/${key.page_id}.content.json`), { $schema: STORY_PAGE_NARRATIVE_SCHEMA_ID, title: "测试页", scene_description: "阳光照在窗台", characters: [], dialogue: [] });

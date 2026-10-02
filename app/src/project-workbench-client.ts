@@ -74,7 +74,7 @@ export type TextSourceContext = {
 };
 export type WorkbenchPage = {
   project_loras?: PagePrompt['loras'];
-  model_id?: 'anima' | 'qwen';
+  model_id: 'anima' | 'qwen';
   render?: {version:1;model_id:'anima'|'qwen';profile_id:string;canvas:string};
   render_sha256?: string;
   model_prompts?: {models?:Record<string,PagePrompt>};
@@ -106,7 +106,7 @@ export type WorkbenchPage = {
   variant_id?: string | null;
 };
 export type WorkbenchCharacter<TPrompt = CharacterPromptDocument> = {
-  model_id?: 'anima'|'qwen';
+  model_id: 'anima'|'qwen';
   prompt_source_versions?: Partial<Record<PromptModelId, Record<string, string>>>;
   prompt_scope_versions?: Partial<Record<PromptModelId, {base: string; variants: Record<string, string>}>>;
   model_prompts?: {models?: {anima?:import('./models/anima/types').CharacterPromptDocument;qwen?:CharacterPromptDocument}};
@@ -204,8 +204,8 @@ export async function savePagePrompt(projectId: string, page: WorkbenchPage, pro
 }
 
 export async function saveCharacterPrompt<TPrompt extends object>(projectId: string, character: WorkbenchCharacter<TPrompt>, prompt: TPrompt, kind: SettingKind = "character") {
-  const document = character.model_prompts?.models ? {models:{...character.model_prompts.models,[character.model_id ?? 'qwen']:prompt}} : prompt;
-  const result = await workbenchResponseJson<{ character_id: string; prompt: TPrompt & {models?: Record<string,TPrompt>}; prompt_sha256: string; downstream_diagnostics?: Array<{ code: string }> }>(await mutateTargetFacts(`${base(projectId)}/${kind}-prompt`, {
+  const document = {models:{...character.model_prompts?.models,[character.model_id]:prompt}};
+  const result = await workbenchResponseJson<{ character_id: string; prompt: {models: Record<string,TPrompt>}; prompt_sha256: string; downstream_diagnostics?: Array<{ code: string }> }>(await mutateTargetFacts(`${base(projectId)}/${kind}-prompt`, {
     method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -215,7 +215,7 @@ export async function saveCharacterPrompt<TPrompt extends object>(projectId: str
       expected_visual_sha256: character.visual_sha256,
     }),
   }));
-  return {...result, model_prompts: result.prompt.models ? result.prompt as WorkbenchCharacter['model_prompts'] : undefined, prompt: result.prompt.models?.[character.model_id ?? 'qwen'] ?? result.prompt};
+  return {...result, model_prompts: result.prompt as WorkbenchCharacter['model_prompts'], prompt: result.prompt.models[character.model_id]};
 }
 
 export type CharacterProfileDraft = Pick<WorkbenchCharacter, "name" | "description">;
@@ -250,7 +250,7 @@ export async function renameCharacterVariant<TPrompt extends object>(projectId: 
     character_id: string;
     visual: CharacterVisualDraft;
     visual_sha256: string;
-    prompt: TPrompt & {models?:Record<string,TPrompt>};
+    prompt: {models: Record<string,TPrompt>};
     prompt_sha256: string;
   }>(await mutateFacts(`${base(projectId)}/${kind}-variant-rename`, {
     method: "POST",
@@ -263,7 +263,7 @@ export async function renameCharacterVariant<TPrompt extends object>(projectId: 
       expected_prompt_sha256: character.prompt_sha256,
     }),
   }));
-  return {...result, model_prompts: result.prompt.models ? result.prompt as WorkbenchCharacter['model_prompts'] : undefined, prompt: result.prompt.models?.[character.model_id ?? 'qwen'] ?? result.prompt};
+  return {...result, model_prompts: result.prompt as WorkbenchCharacter['model_prompts'], prompt: result.prompt.models[character.model_id]};
 }
 
 export type StoryPageContentDraft = {
@@ -605,7 +605,7 @@ function promptScopeChanges(previous: unknown, next: unknown): unknown {
     Object.hasOwn(after, key) ? promptScopeChanges(before[key], after[key]) : null]));
 }
 export async function saveSettingPromptScope<T extends object>(kind: SettingKind, projectId: string, setting: WorkbenchCharacter<unknown>, scope: {model_id: PromptModelId; scope: 'base' | 'variant'; variant_id?: string}, document: T, expected_sha256: string) {
-  const model = (setting.model_prompts?.models?.[scope.model_id] ?? (setting.model_id === scope.model_id ? setting.prompt : {})) as Record<string, unknown>;
+  const model = (setting.model_prompts?.models?.[scope.model_id] ?? {}) as Record<string, unknown>;
   const prior = scope.scope === 'variant' ? (model.variants as Record<string, unknown> | undefined)?.[scope.variant_id!] :
     scope.model_id === 'anima' ? {identity: model.identity} : {prompt_name: model.prompt_name};
   return workbenchResponseJson<{document: T; save: {args: {expected_sha256: string}}}>(await mutateTargetFacts('/api/agent/prompt/save', {

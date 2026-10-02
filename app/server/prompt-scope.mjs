@@ -1,7 +1,7 @@
 import { readFactDraft, saveFactDraft, fingerprintErrors } from './fact-drafts.mjs';
 import { applyDocumentChanges } from './page-edit-context.mjs';
 import { resolveProjectLocation } from './project-operations.mjs';
-import { modelPrompt, replaceModelPrompt, isModelPromptDocument, makeModelPromptDocument, promptModelEntries } from './model-prompts.mjs';
+import { modelPrompt, replaceModelPrompt, promptModelEntries } from './model-prompts.mjs';
 import { readPageContent } from './pages-store.mjs';
 import { readPageRenderSettings } from './page-render-settings.mjs';
 import { ApiError } from './http-support.mjs';
@@ -48,8 +48,7 @@ export async function savePromptScope(options) {
   if (options.expectedSha256 !== state.version) throw new ApiError(409,'prompt_scope_conflict',[{target:state.target,message:'本次范围或必要上游已变化；重读判断后再编辑'}]);
   const changed = applyDocumentChanges(state.document,options.changes);
   const model = state.target.kind === 'page' ? changed : replaceSettingPromptScope({target:state.target,document:state.draft.document,visual:state.visual,value:changed});
-  const fullDocument = !isModelPromptDocument(state.draft.document) && state.target.model_id !== 'qwen' ? makeModelPromptDocument(state.draft.document.$schema,'qwen',state.draft.document) : state.draft.document;
-  const document = replaceModelPrompt(fullDocument,state.target.model_id,{$schema:state.draft.document.$schema,...model});
+  const document = replaceModelPrompt(state.draft.document,state.target.model_id,{$schema:state.draft.document.$schema,...model});
   const saved = await saveFactDraft(options.projectRoot,{...state.identity,document,
     expectedSha256:state.draft.expected_sha256,expectedContextSha256:state.draft.expected_context_sha256,
     conflictCode:'prompt_scope_conflict',contextConflictCode:'prompt_scope_conflict',

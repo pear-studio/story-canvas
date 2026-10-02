@@ -1,3 +1,4 @@
+import {writeQwenFixtureJson, qwenDocument} from './helpers/qwen-fixture.mjs';
 import { registerFixtureProjects } from "./project-registry-fixture.mjs";
 import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,writeFile,rm} from 'node:fs/promises';
@@ -16,8 +17,8 @@ async function fixture(t) {
  const root=await mkdtemp(path.join(os.tmpdir(),'unified-resolution-'));
  t.after(()=>rm(root,{recursive:true,force:true}));
  const directory=path.join(root,'workspace','demo');
- const write=async (relative,value)=>{const file=path.join(directory,relative);await mkdir(path.dirname(file),{recursive:true});await writeFile(file,JSON.stringify(value));};
- await write('project.json',{format:'story-free-text-v1',title:'测试',canvas:'2:3',default_render_profile:'missing-profile'});
+ const write=async (relative,value)=>{const file=path.join(directory,relative);await mkdir(path.dirname(file),{recursive:true});await writeQwenFixtureJson(file,value);};
+ await write('project.json',{format:'story-models-v1',title:'测试',canvas:'2:3',default_render_profile:'missing-profile'});
  await write('story/outline.json',{$schema:STORY_OUTLINE_SCHEMA_ID,synopsis:'测试',chapters:[{id:'chapter',title:'章节',summary:'测试',sequences:[{id:'sequence',title:'单元',summary:'测试'}]}]});
  await write('characters/index.json',{$schema:CHARACTER_INDEX_SCHEMA_ID,characters:[]});
  await write('scenes/index.json',{$schema:SCENE_INDEX_SCHEMA_ID,scenes:[]});

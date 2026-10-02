@@ -3,7 +3,7 @@ import {
   CHARACTER_PROFILE_SCHEMA_ID, CHARACTER_VISUAL_SCHEMA_ID, CHARACTER_PROMPT_SCHEMA_ID,
   validateCharacterProfileDocument, validateCharacterVisualDocument, validateCharacterPromptDocument,
 } from './character-files.mjs';
-import { modelPrompt } from './model-prompts.mjs';
+import { modelPrompt, makeModelPromptDocument, emptySettingPrompt } from './model-prompts.mjs';
 
 export const SCENE_INDEX_SCHEMA_ID = 'https://storyvisualizer.local/schemas/scene-index.schema.json';
 export const SCENE_PROFILE_SCHEMA_ID = 'https://storyvisualizer.local/schemas/scene-profile.schema.json';
@@ -26,16 +26,16 @@ export function validateSceneIndexDocument(document) {
 export function validateScenePromptDocument(document, options = {}) {
   return validateSetting(document, SCENE_PROMPT_SCHEMA_ID, CHARACTER_PROMPT_SCHEMA_ID, value => validateCharacterPromptDocument(value, options));
 }
-export function defaultSceneFacts(id, name) {
+export function defaultSceneFacts(id, name, modelId) {
   const displayName = name?.trim() || id;
   return {
     profile: { $schema: SCENE_PROFILE_SCHEMA_ID, name: displayName, description: '待补充场景设定。' },
     visual: { $schema: SCENE_VISUAL_SCHEMA_ID, variants: [{ id: 'default', name: '默认' }] },
-    prompt: { $schema: SCENE_PROMPT_SCHEMA_ID, prompt_name: displayName, variants: { default: { text: '', reference_images: [] } } },
+    prompt: makeModelPromptDocument(SCENE_PROMPT_SCHEMA_ID, modelId, emptySettingPrompt(modelId,displayName,['default'])),
   };
 }
 
-export function resolveSceneConfiguration(scene, variantId, modelId = 'qwen') {
+export function resolveSceneConfiguration(scene, variantId, modelId) {
   const prompt = modelPrompt(scene?.prompt, modelId);
   const variant = prompt?.variants?.[variantId];
   if (!variant || !scene.visual?.variants?.some(item => item.id === variantId)) throw new TypeError(`场景子设定不存在：${scene?.id} · ${variantId}`);

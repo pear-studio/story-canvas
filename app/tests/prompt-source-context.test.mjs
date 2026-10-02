@@ -1,3 +1,4 @@
+import {writeQwenFixtureJson, qwenDocument} from './helpers/qwen-fixture.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import path from 'node:path';
@@ -18,7 +19,7 @@ async function fixture(t) {
   const parent = path.join(repository, 'Saved/Tests'); await mkdir(parent, { recursive: true });
   const directory = await mkdtemp(path.join(parent, 'prompt-source-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  const write = async (relative, value) => { const target = path.join(directory, relative); await mkdir(path.dirname(target), { recursive: true }); await writeFile(target, JSON.stringify(value)); };
+  const write = async (relative, value) => { const target = path.join(directory, relative); await mkdir(path.dirname(target), { recursive: true }); await writeQwenFixtureJson(target,value); };
   const visual = { variants: [{ id: 'default', name: '默认' }, { id: 'other', name: '其他' }] };
   const document = { models: {
     anima: { identity: { prompt: categories([{ id: base, tag: 'blue_jacket' }]), lora: null }, variants: {
@@ -93,7 +94,7 @@ test('整页新增引用缺失读据时不落盘任何内容，补齐读据后�
   const schema = name => `https://storyvisualizer.local/schemas/${name}.schema.json`;
   const content = { $schema: schema('story-page-narrative'), title: '原题', scene_description: '', characters: [], dialogue: [] };
   const prompt = { $schema: schema('story-page-prompt'), text: '' };
-  await write('project.json', { format: 'story-free-text-v1', title: '测试', canvas: '2:3', default_render_profile: 'qwen-image-2-1' });
+  await write('project.json', { format: 'story-models-v1', title: '测试', canvas: '2:3', default_render_profile: 'qwen-image-2-1' });
   await write('pages/index.json', { $schema: schema('pages-index'), pages: [{ page_id: 'page-001', owner_kind: 'story', sequence_id: 'test' }] });
   await write('pages/page-001.content.json', content); await write('pages/page-001.prompt.json', prompt);
   await write('characters/index.json', { characters: ['hero'] }); await write('scenes/index.json', { scenes: [] });
@@ -101,7 +102,7 @@ test('整页新增引用缺失读据时不落盘任何内容，补齐读据后�
   await write('characters/hero.prompt.json', { $schema: schema('character-prompt'), ...f.document.models.qwen });
   registerFixtureProjects(root);
   const request = { page_key: { page_id: 'page-001' }, content: { ...content, title: '新题', characters: f.narrative.characters }, prompt,
-    expected_content_sha256: hashCanonicalJson(content), expected_prompt_sha256: hashCanonicalJson(prompt),
+    expected_content_sha256: hashCanonicalJson(content), expected_prompt_sha256: hashCanonicalJson(qwenDocument(prompt)),
     expected_context_sha256: hashCanonicalJson(await readStoryPromptUpstream(directory, 'page-001')) };
   await assert.rejects(savePage(root, 'test', request), { code: 'prompt_source_read_required' });
   assert.equal(JSON.parse(await readFile(path.join(directory, 'pages/page-001.content.json'), 'utf8')).title, '原题');

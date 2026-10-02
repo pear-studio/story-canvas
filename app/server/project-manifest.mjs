@@ -15,7 +15,7 @@ export function validateProjectManifest(project) {
   const errors = [];
   if (!isRecord(project)) return ["project.json 必须是 JSON 对象"];
   checkExactKeys(project, ["$schema", "format", "title", "canvas", "default_render_profile"], "project.json", errors);
-  if (![STORY_PROJECT_FORMAT,'story-free-text-v1'].includes(project.format)) errors.push(`project.json 的 format 必须是 ${STORY_PROJECT_FORMAT}（旧格式项目请先执行模型迁移）`);
+  if (project.format !== STORY_PROJECT_FORMAT) errors.push(`project.json 的 format 必须是 ${STORY_PROJECT_FORMAT}`);
   if (typeof project.title !== "string" || !project.title.trim()) errors.push("project.json 的 title 必须是非空字符串");
   if (!canvases.has(project.canvas)) errors.push("project.json 的 canvas 无效");
   if (typeof project.default_render_profile !== "string" || !/^[a-z0-9][a-z0-9-]*$/.test(project.default_render_profile)) errors.push("project.json 的 default_render_profile 不是有效 ID");

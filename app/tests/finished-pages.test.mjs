@@ -1,3 +1,4 @@
+import {writeQwenFixtureJson,qwenDocument} from './helpers/qwen-fixture.mjs';
 import { defaultTextPageLayout } from "../shared/text-page-layout.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -161,7 +162,7 @@ test("文字页成品不需要候选图：黑底直出、记录无候选字段�
 
 test("文字页成品尺寸对齐当前渲染配置的候选出图尺寸", async t => {
   const f = await fixture(t);
-  await json(path.join(f.directory, "project.json"), { $schema: "https://storyvisualizer.local/schemas/project.schema.json", format: "story-free-text-v1", title: "成品测试", canvas: "3:4", default_render_profile: "qwen-image-2-1" });
+  await json(path.join(f.directory, "project.json"), { $schema: "https://storyvisualizer.local/schemas/project.schema.json", format: "story-models-v1", title: "成品测试", canvas: "3:4", default_render_profile: "qwen-image-2-1" });
   const textKey = { page_id: "page-002" };
   await json(path.join(f.directory, `pages/${textKey.page_id}.content.json`), {
     $schema: "https://storyvisualizer.local/schemas/story-page-narrative.schema.json",
@@ -178,7 +179,7 @@ test("文字页成品尺寸对齐当前渲染配置的候选出图尺寸", async
   assert.equal(record.height, prepared.textPage.height);
   const view = await readProjectWorkbenchView(f.root, "demo");
   assert.deepEqual(view.render_capabilities.text_page.dimensions, prepared.textPage, "预览和成品消费同一尺寸投影");
-  await json(path.join(f.directory, "project.json"), { $schema: "https://storyvisualizer.local/schemas/project.schema.json", format: "story-free-text-v1", title: "成品测试", canvas: "3:4", default_render_profile: "missing-profile" });
+  await json(path.join(f.directory, "project.json"), { $schema: "https://storyvisualizer.local/schemas/project.schema.json", format: "story-models-v1", title: "成品测试", canvas: "3:4", default_render_profile: "missing-profile" });
   const unavailable = await readProjectWorkbenchView(f.root, "demo");
   assert.equal(unavailable.render_capabilities.text_page.dimensions, null);
   assert.match(unavailable.render_capabilities.text_page.error, /无法确定成品尺寸/);
@@ -191,7 +192,7 @@ test("批量输出计划：零张或多张候选跳过，唯一候选与文字�
   await json(path.join(f.directory, candidateFileRelativePath(key, newer).replace("image.png", "result.json")),
     { version: 1, status: "available", page_key: key, candidate_id: newer, file: candidateFileRelativePath(key, newer), seed: 99, task_id: "render-20260827T010203Z", generated_at: "2099-01-01T00:00:00.000Z" });
   const second = "page-002";
-  for (const suffix of ["content", "prompt"]) await writeFile(path.join(f.directory, `pages/${second}.${suffix}.json`), await readFile(path.join(f.directory, `pages/${key.page_id}.${suffix}.json`)));
+  for (const suffix of ["content", "prompt", "render"]) await writeFile(path.join(f.directory, `pages/${second}.${suffix}.json`), await readFile(path.join(f.directory, `pages/${key.page_id}.${suffix}.json`)));
   const textKey = { page_id: "page-003" };
   await json(path.join(f.directory, `pages/${textKey.page_id}.content.json`), {
     $schema: "https://storyvisualizer.local/schemas/story-page-narrative.schema.json",

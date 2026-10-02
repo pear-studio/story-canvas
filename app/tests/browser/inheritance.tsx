@@ -8,12 +8,12 @@ import '../../src/styles.css';
 import { FeedbackProvider, useFeedback } from '../../src/feedback';
 
 const sceneSetting = (id: string, name: string): WorkbenchCharacter => ({
-  id, name, description: '', profile_sha256: 'profile', visual_sha256: 'visual', prompt_sha256: 'prompt', style: null, pages: [],
+  model_id:'qwen', id, name, description: '', profile_sha256: 'profile', visual_sha256: 'visual', prompt_sha256: 'prompt', style: null, pages: [],
   visual: { variants: [{ id: 'default', name: '默认' }] },
   prompt: { prompt_name: name, variants: { default: { text: `${name}的环境描述` } } },
 });
 const characterSetting = (id: string, name: string, dayText: string): WorkbenchCharacter => ({
-  id, name, description: '', profile_sha256: 'profile', visual_sha256: 'visual', prompt_sha256: 'prompt', style: null, pages: [],
+  model_id:'qwen', id, name, description: '', profile_sha256: 'profile', visual_sha256: 'visual', prompt_sha256: 'prompt', style: null, pages: [],
   visual: { variants: [{ id: 'day', name: '白天' }, { id: 'night', name: '夜晚' }] },
   prompt: { prompt_name: name, variants: { day: { text: dayText }, night: { text: `${name}夜晚的描述` } } },
 });
@@ -30,8 +30,9 @@ function SceneHarness() {
 function OverrideHarness() {
   const [upstream, setUpstream] = useState('艾莲白天的上游描述');
   const alice = characterSetting('alice', '艾莲', upstream);
+  alice.model_prompts={models:{qwen:alice.prompt}};
   const initial: WorkbenchPage = {
-    kind: 'story', page_id: 'page-fixture', page_key: { page_id: 'page-fixture' }, title: '覆盖验证页', scene_description: '',
+    model_id:'qwen', kind: 'story', page_id: 'page-fixture', page_key: { page_id: 'page-fixture' }, title: '覆盖验证页', scene_description: '',
     characters: [{ character_id: 'alice', variant_id: 'day' }], dialogue: [], content_sha256: 'content', prompt_sha256: 'prompt', prompt_context_sha256: 'context', layout_sha256: 'layout',
     prompt: { text: '', text_overrides: {}, reference_overrides: {} },
   } as WorkbenchPage;

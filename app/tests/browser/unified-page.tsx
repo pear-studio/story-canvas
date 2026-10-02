@@ -6,7 +6,7 @@ import { PageWorkspace } from '../../src/App';
 import type { WorkbenchCharacter, WorkbenchPage } from '../../src/project-workbench-client';
 import '../../src/styles.css';
 const setting = (id: string, name: string): WorkbenchCharacter => ({
-  id, name, description: '', profile_sha256: 'profile', visual_sha256: 'visual', prompt_sha256: 'prompt', style: null, pages: [],
+  model_id:'qwen', id, name, description: '', profile_sha256: 'profile', visual_sha256: 'visual', prompt_sha256: 'prompt', style: null, pages: [],
   visual: { variants: [{id:'day',name:'白天'},{id:'night',name:'夜晚'}] },
   prompt: { prompt_name: name, variants: {
     day: { text: `${name}白天的完整描述`, reference_images: [{id:'ref-11111111-1111-4111-8111-111111111111',file:'reference-11111111.png',title:'正面'},{id:'ref-22222222-2222-4222-8222-222222222222',file:'reference-22222222.png',title:'侧面'}] },
@@ -15,10 +15,11 @@ const setting = (id: string, name: string): WorkbenchCharacter => ({
 });
 const characters = [setting('alice','艾莲'),setting('bob','鲍勃')];
 const scenes = [setting('room','房间'),setting('street','街道')];
-if (new URLSearchParams(location.search).has('lazy-reference')) { delete characters[1].prompt; delete characters[1].prompt_sha256; }
+for(const item of [...characters,...scenes])item.model_prompts={models:{qwen:item.prompt}};
+if (new URLSearchParams(location.search).has('lazy-reference')) { delete characters[1].model_prompts; delete characters[1].prompt; delete characters[1].prompt_sha256; }
 const kind = new URLSearchParams(location.search).get('kind') as WorkbenchPage['kind'] ?? 'story';
 const initial: WorkbenchPage = {
-  kind, page_id:'page-fixture', page_key:{page_id:'page-fixture'}, character_id:kind==='character'?'alice':undefined,
+  model_id:'qwen', kind, page_id:'page-fixture', page_key:{page_id:'page-fixture'}, character_id:kind==='character'?'alice':undefined,
   scene_id:kind==='scene'?'room':undefined, variant_id:'day', title:'统一视觉页', scene_description:'窗边休息',
   characters:[{character_id:'alice',variant_id:'day'}], dialogue:[], content_sha256:'content', prompt_sha256:'prompt', prompt_context_sha256:'context', layout_sha256:'layout',
   prompt:{ text:'', scene_id:'room', scene_variant_id:'day', text_overrides:{}, reference_overrides:{} },

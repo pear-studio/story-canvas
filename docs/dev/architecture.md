@@ -11,8 +11,8 @@ Anima 保留分类词条、逐词继承、负向与机位；Qwen 保留整段文
 首次从 Anima 切换到 Qwen，一次带入有效正向全文；不会重复追加角色、场景文字，之后独立编辑。
 项目 LoRA 按页面所用配置实时生效；Anima 角色／场景 LoRA 随当前引用继承。本页可追加、覆盖权重或停用，恢复即删除覆盖；新页不复制上游 LoRA。
 候选、队列、保存、媒体和页面工作区共用。总览按各页模型展示编辑器，并逐页使用实际生成配置。
-实现入口与接入方式见[模型适配器](model-adapters.md)。已有 Qwen 项目沿用原读取路径，本轮不迁移，
-普通读取不改写事实；未登记的旧 Anima 项目不自动恢复。
+实现入口与接入方式见[模型适配器](model-adapters.md)。日常读写只接受当前项目格式和模型容器，页面必须具有独立 render 设置；
+不再兼容裸 Qwen 文件或推断缺失的模型身份。显式旧 Anima 恢复工具独立保留，普通读取不迁移事实。
 
 ```text
 剧情章节与角色设定
@@ -309,11 +309,11 @@ PageKey 统一为 `{ page_id }`，编码为 `v3/<page-id>`。`app/server/page-ke
 
 生成配置是根仓库资源，项目用 `default_render_profile` 选择一个基础配置，并在独立的
 `render-profile.override.json` 中按 profile ID 保存一层稀疏项目调整；override 只保存语义 target、
-记录的原值和项目值，不复制完整 profile。每个 profile 以稳定角色映射声明模型，保存一段全局
-`prompt.text`，并引用独立的 recipe 和 workflow；operation 与输入来源的固定 route 就是能力边界，
-不再保存重复的 `capabilities`。模型 SHA-256 必填、来源可缺失。当前唯一生成结构家族是
-`qwen-image-2-1`；全局 `prompt.text` 默认为空，项目 override 的语义 target 也是 `prompt.text`，为空时编译直接
-省略。不再保留独立 Prompt policy 文件、prefix/suffix、分类、权重、负向或 AVOID 转换。
+记录的原值和项目值，不复制完整 profile。每个 profile 以稳定角色映射声明模型，保存对应模型的全局
+Prompt，并引用独立的 recipe 和 workflow；operation 与输入来源的固定 route 就是能力边界，
+不再保存重复的 `capabilities`。模型 SHA-256 必填、来源可缺失。当前生成结构家族为
+`anima` 与 `qwen-image-2-1`；各模型的全局 Prompt 规则由适配器校验和编译，详见[模型适配器](model-adapters.md)。
+Qwen 全局 `prompt.text` 默认为空，项目 override 的语义 target 也是 `prompt.text`，为空时编译直接省略。
 `library/resources/catalog.json` 额外维护供浏览和人工登记的资源
 元数据，包括模型结构家族和模型预览图；生成配置按模型路径与 SHA 复用图片，不另存副本。
 资源目录不是执行身份的替代品。项目与生成配置仍各自保存精确文件名和 SHA，项目不保存全局
@@ -361,7 +361,10 @@ route/registry 与 execution unit 由 `render-task-contract.mjs` 的主要 Inter
 执行器 `render-project-runtime.mjs` 只接受已持久化 task ID。PageKey 输出路径、项目媒体文件身份和 PNG 完整性
 由 `render-media.mjs` 统一提供，避免计划和执行侧各自复制路径与媒体校验。
 
-页面与角色／场景 Prompt 保持模型无关，都是自由文本整段。角色／场景设定保存 `prompt_name` 和
+页面与角色／场景 Prompt 使用 `models` 容器保存各模型原生输入。Anima 使用分类词条、逐词继承、
+负向与 LoRA；Qwen 使用整段自由文本和有序参考图，具体契约见[模型适配器](model-adapters.md)。
+以下文字组合规则适用于 Qwen 的 `settings` 模式；`standalone` 仅使用全文和本页附图。
+Qwen 角色／场景设定保存 `prompt_name` 和
 各子设定一段自包含文字与有序参考图；页面保存本页 `text`、场景引用、按 `character:<id>:<variant>` /
 `scene:<id>:<variant>` 键的整段 `text_overrides` 与图片选择 `reference_overrides`，以及可带用途的
 本页附图。key 存在即使用该字符串（含空串），恢复继承就是删除 key；override 不随上游更新，切换
@@ -385,8 +388,8 @@ Python 路径。共享地址命中当前主机名时以本机直连地址替代�
 
 全局资源目录采用“仓库登记 + 独立本地 LoRA 记录 + 本机发现”三层：登记项提供稳定 ID、模型
 结构家族、精确身份和来源；正式 LoRA 从各自的本地记录提供完整信息；发现项只说明
-`models_root` 中存在某个文件，家族保持“其他 / 未登记”，不自动猜测。生成侧当前只登记
-Qwen-Image-2.1 模型；LoRA 训练与资源记录仍按各自的训练契约保存家族信息。
+`models_root` 中存在某个文件，家族保持“其他 / 未登记”，不自动猜测。生成侧当前登记
+Anima Basic 与 Qwen-Image-2.1 模型；LoRA 训练与资源记录仍按各自的训练契约保存家族信息。
 
 固定 Danbooru 标签与中文翻译快照位于 `library/prompt-dictionaries/`，清单记录上游、取得日期
 和 SHA-256。应用启动时读取仓库快照，不自动联网更新，也不把词库复制进故事项目。

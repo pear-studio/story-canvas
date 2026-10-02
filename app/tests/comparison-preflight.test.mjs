@@ -1,3 +1,4 @@
+import {writeQwenFixtureJson,qwenDocument} from './helpers/qwen-fixture.mjs';
 import { registerFixtureProjects } from "./project-registry-fixture.mjs";
 import { importComparisonPage, createBlankComparisonInput } from "../server/comparison-inputs.mjs";
 import assert from "node:assert/strict";
@@ -80,24 +81,24 @@ async function createFixture(context, { references = false } = {}) {
   } else delete profile.operations.candidates.routes.reference_image;
   const recipe = JSON.parse(await readFile(path.join(sourceRepositoryRoot, "library", "render-recipes", "qwen-image-2-1-candidate.json"), "utf8"));
   recipe.id = "comparison-candidate";
+  await writeQwenFixtureJson(path.join(projectRoot, "project.json"),{ format: "story-models-v1", title: "比较测试", canvas: "2:3", default_render_profile: profile.id });
   await Promise.all([
-    writeFile(path.join(projectRoot, "project.json"), JSON.stringify({ format: "story-free-text-v1", title: "比较测试", canvas: "2:3", default_render_profile: profile.id })),
-    writeFile(path.join(projectRoot, "story", "outline.json"), JSON.stringify({
+    writeQwenFixtureJson(path.join(projectRoot, "story", "outline.json"),{
       $schema: STORY_OUTLINE_SCHEMA_ID,
       synopsis: "比较剧情页与角色页。",
       chapters: [{ id: "chapter-main", title: "正文", summary: "比较。", sequences: [{ id: "sequence-main", title: "场景", summary: "页面。" }] }],
-    })),
-    writeFile(path.join(projectRoot, "pages", "index.json"), JSON.stringify({ $schema: "https://storyvisualizer.local/schemas/pages-index.schema.json", pages: [{ page_id: "page-001", owner_kind: "story", sequence_id: "sequence-main" }, { page_id: "page-002", owner_kind: "character", character_id: "hero", variant_id: "default" }] })),
-    writeFile(path.join(projectRoot, "pages", "page-001.content.json"), JSON.stringify({ $schema: STORY_PAGE_NARRATIVE_SCHEMA_ID, title: "旅人", scene_description: "旅人的画面。", characters: [], dialogue: [] })),
-    writeFile(path.join(projectRoot, "pages", "page-001.prompt.json"), JSON.stringify(prompt("traveler"))),
-    writeFile(path.join(projectRoot, "characters", "index.json"), JSON.stringify({ $schema: CHARACTER_INDEX_SCHEMA_ID, characters: ["hero"] })),
-    writeFile(path.join(projectRoot, "characters", "hero.profile.json"), JSON.stringify({ $schema: CHARACTER_PROFILE_SCHEMA_ID, name: "主角", description: "测试主角。" })),
-    writeFile(path.join(projectRoot, "characters", "hero.visual.json"), JSON.stringify({ $schema: CHARACTER_VISUAL_SCHEMA_ID, description: "主角形象。", variants: [{ id: "default", name: "默认", description: "基础形象。" }] })),
-    writeFile(path.join(projectRoot, "characters", "hero.prompt.json"), JSON.stringify(characterPrompt())),
-    writeFile(path.join(projectRoot, "pages", "page-002.content.json"), JSON.stringify({ $schema: STORY_PAGE_NARRATIVE_SCHEMA_ID, title: "肖像", scene_description: "主角肖像。", characters: [{ character_id: "hero", variant_id: "default" }], dialogue: [] })),
-    writeFile(path.join(projectRoot, "pages", "page-002.prompt.json"), JSON.stringify(prompt("portrait"))),
-    writeFile(path.join(root, "library", "render-profiles", `${profile.id}.json`), JSON.stringify(profile)),
-    writeFile(path.join(root, "library", "render-recipes", `${recipe.id}.json`), JSON.stringify(recipe)),
+    }),
+    writeQwenFixtureJson(path.join(projectRoot, "pages", "index.json"),{ $schema: "https://storyvisualizer.local/schemas/pages-index.schema.json", pages: [{ page_id: "page-001", owner_kind: "story", sequence_id: "sequence-main" }, { page_id: "page-002", owner_kind: "character", character_id: "hero", variant_id: "default" }] }),
+    writeQwenFixtureJson(path.join(projectRoot, "pages", "page-001.content.json"),{ $schema: STORY_PAGE_NARRATIVE_SCHEMA_ID, title: "旅人", scene_description: "旅人的画面。", characters: [], dialogue: [] }),
+    writeQwenFixtureJson(path.join(projectRoot, "pages", "page-001.prompt.json"),prompt("traveler")),
+    writeQwenFixtureJson(path.join(projectRoot, "characters", "index.json"),{ $schema: CHARACTER_INDEX_SCHEMA_ID, characters: ["hero"] }),
+    writeQwenFixtureJson(path.join(projectRoot, "characters", "hero.profile.json"),{ $schema: CHARACTER_PROFILE_SCHEMA_ID, name: "主角", description: "测试主角。" }),
+    writeQwenFixtureJson(path.join(projectRoot, "characters", "hero.visual.json"),{ $schema: CHARACTER_VISUAL_SCHEMA_ID, description: "主角形象。", variants: [{ id: "default", name: "默认", description: "基础形象。" }] }),
+    writeQwenFixtureJson(path.join(projectRoot, "characters", "hero.prompt.json"),characterPrompt()),
+    writeQwenFixtureJson(path.join(projectRoot, "pages", "page-002.content.json"),{ $schema: STORY_PAGE_NARRATIVE_SCHEMA_ID, title: "肖像", scene_description: "主角肖像。", characters: [{ character_id: "hero", variant_id: "default" }], dialogue: [] }),
+    writeQwenFixtureJson(path.join(projectRoot, "pages", "page-002.prompt.json"),prompt("portrait")),
+    writeQwenFixtureJson(path.join(root, "library", "render-profiles", `${profile.id}.json`),profile),
+    writeQwenFixtureJson(path.join(root, "library", "render-recipes", `${recipe.id}.json`),recipe),
     writeFile(path.join(root, "models", "diffusion_models", "base.safetensors"), model),
     writeFile(path.join(root, "models", "text_encoders", "base.safetensors"), model),
     writeFile(path.join(root, "models", "vae", "base.safetensors"), model),
@@ -127,8 +128,8 @@ test("页面参考图随对比输入导入并选择参考图工作流", async co
   await saveMaterial(fixture.projectRoot, "fixture", { file, title: "参考", encoding: "base64", content: bytes.toString("base64") });
   const promptFile = path.join(fixture.projectRoot, "pages", "page-001.prompt.json");
   const document = JSON.parse(await readFile(promptFile, "utf8"));
-  document.reference_images = [{ id: "ref-11111111-1111-4111-8111-111111111111", file, title: "参考", purpose: "画风参考" }];
-  await writeFile(promptFile, JSON.stringify(document));
+  document.models.qwen.reference_images = [{ id: "ref-11111111-1111-4111-8111-111111111111", file, title: "参考", purpose: "画风参考" }];
+  await writeQwenFixtureJson(promptFile,document);
   const input = await importComparisonPage({ repositoryRoot: fixture.root, projectDirectory: fixture.projectRoot, projectId: "fixture", pageKey: storyPageKey, localConfig: {}, includeReferenceBytes: true });
   assert.equal(input.reference_images.length, 1);
   assert.deepEqual(input.reference_image_bytes[0].identity, input.reference_images[0]);
@@ -215,12 +216,12 @@ test("空白输入不需要 workspace、页面或词库，完整文本及LoRA身
 
 test("场景引用从页面导入实验，删除设定后检查仍可返回诊断", async context => {
   const fixture = await createFixture(context);
-  const scene = defaultSceneFacts("station", "车站");
-  scene.prompt.variants.default.text = "车站站台环境。";
+  const scene = defaultSceneFacts("station","车站",'qwen');
+  scene.prompt.models.qwen.variants.default.text = "车站站台环境。";
   await mkdir(path.join(fixture.projectRoot, "scenes"));
-  await writeFile(path.join(fixture.projectRoot, "scenes/index.json"), JSON.stringify({ $schema: SCENE_INDEX_SCHEMA_ID, scenes: ["station"] }));
-  for (const kind of ["profile", "visual", "prompt"]) await writeFile(path.join(fixture.projectRoot, `scenes/station.${kind}.json`), JSON.stringify(scene[kind]));
-  await writeFile(path.join(fixture.projectRoot, "pages/page-001.prompt.json"), JSON.stringify({ ...prompt("traveler"), scene_id: "station", scene_variant_id: "default" }));
+  await writeQwenFixtureJson(path.join(fixture.projectRoot, "scenes/index.json"),{ $schema: SCENE_INDEX_SCHEMA_ID, scenes: ["station"] });
+  for (const kind of ["profile", "visual", "prompt"]) await writeQwenFixtureJson(path.join(fixture.projectRoot, `scenes/station.${kind}.json`),scene[kind]);
+  await writeQwenFixtureJson(path.join(fixture.projectRoot, "pages/page-001.prompt.json"),{ ...prompt("traveler"), scene_id: "station", scene_variant_id: "default" });
   const input = await importComparisonPage({ repositoryRoot: fixture.root, projectDirectory: fixture.projectRoot, projectId: "fixture", pageKey: storyPageKey, localConfig: {} });
   assert.deepEqual(input.loras, []);
   assert.match(input.prompt.positive, /车站：\n车站站台环境。/);
@@ -228,7 +229,7 @@ test("场景引用从页面导入实验，删除设定后检查仍可返回诊�
   assert.equal(input.prompt.negative, "");
   const { task } = await compileAndPersistWorkbenchRenderTask(fixture.root, "fixture", { page_key: storyPageKey, count: 1 });
   assert.deepEqual(task.items[0].loras, []);
-  await writeFile(path.join(fixture.projectRoot, "scenes/index.json"), JSON.stringify({ $schema: SCENE_INDEX_SCHEMA_ID, scenes: [] }));
+  await writeQwenFixtureJson(path.join(fixture.projectRoot, "scenes/index.json"),{ $schema: SCENE_INDEX_SCHEMA_ID, scenes: [] });
   const inspection = await inspectPageRender({ repositoryRoot: fixture.root, projectDirectory: fixture.projectRoot, pageKey: storyPageKey, config: { comfyui_urls: ["http://192.0.2.1:8188"] } });
   assert.match(JSON.stringify(inspection), /场景不存在|找不到场景|scene_dangling/);
 });

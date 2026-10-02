@@ -513,7 +513,7 @@ test('统一工具经真实 HTTP Adapter 完成结构、设定及三类页面生
 
   const layout=await run('lettering.page.read',{page_key});
   await run('lettering.page.save',{page_key,lettering:{items:layout.lettering.items},expected_sha256:layout.expected_sha256});
-  const target={kind:'page',id:pages[0].page_id,model_id:'qwen'};
+  const target={kind:'page',id:pages[0].page_id};
   const beforeRefs=await run('reference.list',{target});
   const imagePath=path.join(root,'reference.png');
   await (await import('sharp')).default({create:{width:16,height:16,channels:3,background:'green'}}).png().toFile(imagePath);
@@ -522,6 +522,22 @@ test('统一工具经真实 HTTP Adapter 完成结构、设定及三类页面生
   await assert.rejects(run('reference.delete',{target,expected_sha256:beforeRefs.value.sha256,id:added.value.entries[0].id}),e=>JSON.parse(e.message).status===409);
   await run('reference.delete',{target,expected_sha256:added.value.sha256,id:added.value.entries[0].id});
   assert.equal((await run('reference.list',{target})).value.entries.length,0);
+  // 设定参考图显式选择 Qwen；页面则直接使用当前 render 的模型。
+  for (const target of [
+    {kind:'character',id:'alice',variant_id:'evening',model_id:'qwen'},
+    {kind:'scene',id:'station',variant_id:'wet',model_id:'qwen'},
+  ]) {
+    const {model_id,...missingModel}=target;
+    const rejected=await failure(f.tool,{operation:'reference.list',args:{project_id:'demo',target:missingModel}});
+    assert.equal(rejected.error,'reference_model_unsupported');
+    const before=await run('reference.list',{target});
+    const saved=await run('reference.save',{target,expected_sha256:before.value.sha256,file:imagePath,title:'设定参考'});
+    assert.equal(saved.value.entries.length,1);
+    assert.deepEqual((await run('reference.list',{target})).value.entries,saved.value.entries);
+    const reordered=await run('reference.reorder',{target,expected_sha256:saved.value.sha256,ids:saved.value.entries.map(entry=>entry.id)});
+    await run('reference.delete',{target,expected_sha256:reordered.value.sha256,id:saved.value.entries[0].id});
+    assert.equal((await run('reference.list',{target})).value.entries.length,0);
+  }
   const templates = await run('page.templates', { owner_kind: 'character' });
   assert.ok(templates.items.length); assert.equal(templates.items[0].page, undefined);
   const templatePage = await run('page.create', { owner: owners[1], template_id: templates.items[0].id });

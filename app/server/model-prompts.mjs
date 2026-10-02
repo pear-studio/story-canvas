@@ -3,15 +3,14 @@ import { modelAdapter } from './model-adapters.mjs';
 import { validateLoraDefinition } from './lora-config.mjs';
 
 const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value);
-export const isModelPromptDocument = value => isRecord(value) && Object.hasOwn(value, 'models');
 export function promptModelEntries(document) {
-  return isModelPromptDocument(document) ? Object.entries(document.models) : [['qwen', document]];
+  return Object.entries(document.models);
 }
 export function mapModelPrompts(document, transform) {
-  if (!isModelPromptDocument(document)) return transform(structuredClone(document),'qwen');
   return {...structuredClone(document),models:Object.fromEntries(promptModelEntries(document).map(([id,value])=>[id,transform(structuredClone(value),id)]))};
 }
 export function emptySettingVariant(modelId) {
+  modelAdapter(modelId);
   return modelId==='anima'?{prompt:modelAdapter('anima').emptyPrompt(),loras:[]}:{text:'',reference_images:[]};
 }
 export function emptySettingPrompt(modelId, name, variantIds) {
@@ -27,12 +26,10 @@ export function renamePromptSource(document, oldSource, newSource) {
   });
 }
 export function modelPrompt(document, id) {
-  if (!isModelPromptDocument(document)) return document;
   const value = document.models[id];
   return value ? { $schema: document.$schema, ...structuredClone(value) } : null;
 }
 export function replaceModelPrompt(document, id, prompt) {
-  if (!isModelPromptDocument(document)) return structuredClone(prompt);
   const { $schema: _schema, ...value } = structuredClone(prompt);
   return { ...structuredClone(document), models: { ...structuredClone(document.models), [id]: value } };
 }

@@ -10,7 +10,7 @@ import { loadPageMedia, loadProjectWorkbench, type WorkbenchPage } from './proje
 import './ReferenceLibrary.css';
 
 export type ReferenceEntry = { id: string; file: string; title: string; purpose?: string; draft?: { content?: string; material_file?: string; candidate_id?:string;page_key?:{page_id:string};preview_url?:string } };
-export type ReferenceTarget = { kind: 'character' | 'scene' | 'page'; id: string; variant_id?: string; model_id?: 'anima'|'qwen' };
+export type ReferenceTarget = {kind:'page';id:string} | {kind:'character'|'scene';id:string;variant_id:string;model_id:'qwen'};
 export const referenceUrl = (project: string, file: string) => `/api/projects/${encodeURIComponent(project)}/materials/file?file=${encodeURIComponent(file)}`;
 
 const entryUrl = (project: string, entry: ReferenceEntry) => entry.draft?.preview_url ?? (entry.draft?.content ? `data:image/png;base64,${entry.draft.content}` : referenceUrl(project, entry.draft?.material_file ?? entry.file));

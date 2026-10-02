@@ -3,7 +3,7 @@ import { checkRemovedSettingReferences, cleanRemovedReferences } from './referen
 import { createHash, randomBytes } from "node:crypto";
 import { lstat, mkdir, open, readFile, readdir, realpath, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { modelPrompt, isModelPromptDocument, promptModelEntries, mapModelPrompts } from './model-prompts.mjs';
+import { modelPrompt, promptModelEntries, mapModelPrompts } from './model-prompts.mjs';
 import { modelAdapter } from './model-adapters.mjs';
 import { readPageRenderSettings } from './page-render-settings.mjs';
 import { setTimeout as delay } from "node:timers/promises";
@@ -154,7 +154,7 @@ async function readPageMembership(projectDirectory, pageId) {
   return { ...entry, sha256: hashCanonicalJson(entry) };
 }
 
-async function readCharacterReferences(projectDirectory, references, { includePrompt, allowMissing = false, modelId = 'qwen' }) {
+async function readCharacterReferences(projectDirectory, references, { includePrompt, allowMissing = false, modelId }) {
   const index = await readPlainJson(path.join(projectDirectory, "characters", "index.json"), "characters/index.json");
   const knownCharacters = new Set(Array.isArray(index?.characters) ? index.characters : []);
   const result = [];
@@ -241,7 +241,7 @@ export async function readStoryFactDraft(projectRoot, projectId, pageId, kind) {
   } };
 }
 
-async function readSceneReferenceIdentity(projectDirectory, pageId, modelId = 'qwen') {
+async function readSceneReferenceIdentity(projectDirectory, pageId, modelId) {
   const prompt = modelPrompt(await readPlainJson(targetPath(projectDirectory, targetRelativePath("prompt", pageId)), "page prompt"), modelId);
   if (!prompt?.scene_id) return hashCanonicalJson(null);
   const reference = { scene_id: prompt.scene_id, variant_id: prompt.scene_variant_id };
@@ -263,11 +263,11 @@ export async function readStoryPromptUpstream(projectDirectory, pageId) {
   const narrative = await readPlainJson(targetPath(projectDirectory, narrativeRelative), narrativeRelative);
   assertDocument(validateStoryPageNarrativeDocument(narrative));
   const prompt=await readPlainJson(targetPath(projectDirectory,targetRelativePath('prompt',pageId)),'page prompt');
-  const render=isModelPromptDocument(prompt)?await readPageRenderSettings(projectDirectory,pageId):null;
-  const modelId=render?.model_id??'qwen';
+  const render=await readPageRenderSettings(projectDirectory,pageId);
+  const modelId=render.model_id;
   const standalone=modelPrompt(prompt,modelId)?.composition==='standalone';
   return {
-    ...(render?{render_sha256:hashCanonicalJson(render)}:{}),
+    render_sha256:hashCanonicalJson(render),
     narrative: { relative_path: narrativeRelative, sha256: hashCanonicalJson(narrative) },
     characters: await readCharacterReferences(projectDirectory, standalone?[]:narrative.characters, { includePrompt: true, allowMissing: true, modelId }),
     scenes_sha256: standalone?hashCanonicalJson(null):await readSceneReferenceIdentity(projectDirectory, pageId,modelId),
@@ -556,7 +556,7 @@ export async function commitStoryFact(projectRoot, context, readDocument, kind, 
     }
     const overrideErrors = checkPagePromptOverrideReferences(persisted, currentNarrative.characters);
     if (overrideErrors.length) fail('invalid_story_edit_document', overrideErrors);
-    const activeModel = (await readPageRenderSettings(project.projectDirectory, context.page_id)).model_id ?? 'qwen';
+    const activeModel = (await readPageRenderSettings(project.projectDirectory, context.page_id)).model_id;
     for (const [modelId, input] of promptModelEntries(persisted)) {
       const baselinePrompt = baselineModels.get(modelId);
       if (hashCanonicalJson(input) === hashCanonicalJson(baselinePrompt ?? null)) continue;
@@ -834,8 +834,8 @@ export async function cleanupDeletedStoryPages(
 }
 
 // 项目写锁由调用入口持有；失败时恢复已写文件，避免半套连带修改。
-export async function commitFactChanges(directory, writes) {
-  await checkRemovedSettingReferences(directory, writes);
+export async function commitFactChanges(directory, writes, { cleanupReferences = true } = {}) {
+  if (cleanupReferences) await checkRemovedSettingReferences(directory, writes);
   const done = [];
   try {
     for (const write of writes) {
@@ -850,7 +850,7 @@ export async function commitFactChanges(directory, writes) {
     }
     throw error;
   }
-  for (const write of writes) if (write.relative.endsWith('.prompt.json')) await cleanRemovedReferences(directory, write.before);
+  if (cleanupReferences) for (const write of writes) if (write.relative.endsWith('.prompt.json')) await cleanRemovedReferences(directory, write.before);
 }
 
 async function rollbackCreatedFactFiles(targets, originalError, failureCode) {  const rollbackFailures = [];
