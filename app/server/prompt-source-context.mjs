@@ -53,12 +53,12 @@ export async function readPagePromptSources(projectDirectory, { projectId, model
   })));
 }
 
-export async function readPagePromptDependencies(projectDirectory, { projectId, pageId, modelId, narrative, prompt }) {
+export async function readPagePromptDependencies(projectDirectory, { projectId, pageId, modelId, narrative, prompt, sources }) {
   narrative ??= await readPageContent(projectDirectory, pageId);
   prompt ??= inputModel(await readPagePrompt(projectDirectory, pageId), modelId);
   if (!prompt) throw new ApiError(422, 'page_model_input_missing', [pageId, modelId]);
   const render = await readPageRenderSettings(projectDirectory, pageId);
-  const sources = await readPagePromptSources(projectDirectory, { projectId, modelId, narrative, prompt });
+  sources ??= await readPagePromptSources(projectDirectory, { projectId, modelId, narrative, prompt });
   return { model_id: modelId, narrative_sha256: hashCanonicalJson(narrative), render_sha256: hashCanonicalJson(render),
     sources: Object.fromEntries(Object.entries(sources).map(([key, source]) => [key, source.sha256])) };
 }

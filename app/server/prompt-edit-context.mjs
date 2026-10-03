@@ -1,3 +1,4 @@
+import {qwenSourceSelection} from '../shared/prompt-source-view.mjs';
 import { readFactDraft } from "./fact-drafts.mjs";
 import { decodePageKey } from "./page-key.mjs";
 import { compilePageRenderInspectionContext } from "./page-render-resolver.mjs";
@@ -12,8 +13,7 @@ function referenceProjection(pagePrompt, source, kind, setting) {
   const overrides = isRecord(pagePrompt?.text_overrides) ? pagePrompt.text_overrides : {};
   const override = Object.hasOwn(overrides, source) ? overrides[source] : null;
   const currentText = setting.text ?? "";
-  const selectedIds = pagePrompt?.reference_overrides?.[source]
-    ?? (setting.reference_images ?? []).slice(0, 1).map((entry) => entry.id);
+  const selection = qwenSourceSelection(setting,pagePrompt,source);
   return {
     ...(setting.identity?{inherited_prompt:variantPrompt(setting.identity,setting),adjustments:structuredClone(pagePrompt.inheritance?.[source]??{})}:{}),
     source,
@@ -23,9 +23,9 @@ function referenceProjection(pagePrompt, source, kind, setting) {
     prompt_name: setting.prompt_name ?? setting.id,
     current_text: currentText,
     override,
-    effective_text: override ?? currentText,
+    effective_text: selection.text,
     reference_images: structuredClone(setting.reference_images ?? []),
-    selected_image_ids: structuredClone(selectedIds),
+    selected_image_ids: structuredClone(selection.selected_image_ids),
   };
 }
 

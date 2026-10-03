@@ -1,4 +1,4 @@
-import { effectivePromptEntries, variantPrompt, characterSource, sceneSource, duplicatePromptWords } from '../../../shared/prompt-inheritance.mjs';
+import { effectivePromptEntries, resolvedSettingEntries, characterSource, sceneSource, duplicatePromptWords } from '../../../shared/prompt-inheritance.mjs';
 import { explicitPageLoras, resolvePageLoras } from "../../lora-config.mjs";
 import { validatePageKey } from "../../page-key.mjs";
 import { auditPromptContext } from "./prompt-audit.mjs";
@@ -138,16 +138,20 @@ function loraTriggerPart(text, owner, kind = "character") {
   });
 }
 
-function deduplicateCompiledParts(parts) {
-  const seen = new Set();
+function deduplicateCompiledParts(parts, suppressed = []) {
+  const seen = new Map();
   return parts.filter((part) => {
     const normalized = part.prompt_text.toLowerCase().replaceAll("_", " ").replace(/\s+/g, " ").trim();
     if (!normalized) return true;
     const key = part.origin === "lora_trigger"
       ? `trigger:${normalized}`
       : `${part.polarity}:${part.scope}:${normalized}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
+    if (seen.has(key)) {
+      suppressed.push({reason:'same_scope_text',path:part.path,origin:part.origin,origin_id:part.origin_id,prompt_text:part.prompt_text,weight:part.weight,
+        retained:{path:seen.get(key).path,origin:seen.get(key).origin,origin_id:seen.get(key).origin_id,weight:seen.get(key).weight}});
+      return false;
+    }
+    seen.set(key,part);
     return true;
   });
 }
@@ -183,13 +187,13 @@ function resolveSettingPrompt(character, adjustments = {}, kind = "character") {
     ?? `variants.${character.configuration_id}`;
   const documentRoot = `${kind}s/${character.id}.prompt.json`;
   const root = `${documentRoot}.${configurationPath}.prompt`;
-  const inherited = variantPrompt(character.identity ?? { prompt: {} }, character);
+  const resolved = resolvedSettingEntries(character.identity, character, adjustments, kind);
   const prompt = {};
   const entries = {};
   const missing = [];
   if (!character.identity?.prompt) missing.push(`${documentRoot}.identity.prompt`);
   for (const category of storyPromptCategories) {
-    const effective = effectivePromptEntries(inherited, category, adjustments);
+    const effective = resolved.filter(entry => entry.category === category && entry.enabled);
     prompt[category] = effective.map(({ fragment }) => fragment);
     const identityCount = character.identity?.prompt?.[category]?.length ?? 0;
     entries[category] = effective.map(({ fragment, index }) => ({
@@ -350,8 +354,9 @@ export function compileCurrentPagePrompt({
   for (const part of [...positiveAuditParts, ...negativeAuditParts]) {
     part.text = encodePromptFragment(part);
   }
-  const positiveTraceParts = deduplicateCompiledParts(positiveAuditParts);
-  const negativeTraceParts = deduplicateCompiledParts(negativeAuditParts);
+  const suppressed=[];
+  const positiveTraceParts = deduplicateCompiledParts(positiveAuditParts,suppressed);
+  const negativeTraceParts = deduplicateCompiledParts(negativeAuditParts,suppressed);
   const positiveParts = positiveTraceParts.filter((part) => part.prompt_text);
   const negativeParts = negativeTraceParts.filter((part) => part.prompt_text);
   const revalidationPositive = positiveTraceParts.filter((part) => part.audit_record.source_kind !== "lora_trigger");
@@ -369,6 +374,7 @@ export function compileCurrentPagePrompt({
     errors: [...new Set(errors)],
     ...applyPromptAvoidance(formatPromptParagraphs(positiveParts, rules.separator, profile.id), formatPromptParagraphs(negativeParts, rules.separator, profile.id), profile),
     prompt_parts: {
+      suppressed,
       separator: rules.separator,
       positive: positiveParts.map(({ audit_record: _record, ...part }) => part),
       negative: negativeParts.map(({ audit_record: _record, ...part }) => part),

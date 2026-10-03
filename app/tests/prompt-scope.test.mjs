@@ -12,6 +12,8 @@ import {readFactDraft} from '../server/fact-drafts.mjs';
 import {readPromptScope,savePromptScope,readPromptScopeSources} from '../server/prompt-scope.mjs';
 import {readPageRenderDraft,commitPageRender} from '../server/page-render-settings.mjs';
 import {hashCanonicalJson} from '../server/workflow-definition.mjs';
+import {checkProjectPrompts} from '../server/prompt-check.mjs';
+import {readPageEditContext,savePageEditChanges} from '../server/page-edit-context.mjs';
 
 const repositoryRoot = fileURLToPath(new URL('../../',import.meta.url));
 async function fixture(t) {
@@ -25,6 +27,32 @@ async function fixture(t) {
   return {root,options,read,save};
 }
 const character=(model_id,scope='variant')=>({kind:'character',id:'alice',model_id,scope,...(scope==='variant'?{variant_id:'default'}:{})});
+
+test('按角色语义保存与跨模型引用保护，标题独立更新；项目检查逐页有界且报告失败',async t=>{
+  const f=await fixture(t);
+  await f.save(await f.read(character('anima','base')),{identity:{prompt:{person:[{tag:'blue_eyes'}]}}});
+  const page=await createPage(f.root,'demo',{owner_kind:'character',character_id:'alice',variant_id:'default'});
+  const second=await createPage(f.root,'demo',{owner_kind:'character',character_id:'alice',variant_id:'default'});
+  const render=await readPageRenderDraft(f.root,'demo',page.page_id);
+  await commitPageRender(f.root,{project_id:'demo',page_id:page.page_id,target:{relative_path:render.definition.targetRelative,sha256:hashCanonicalJson(render.definition.targetBaseline??render.definition.persisted)},upstream:render.definition.upstream},()=>({...render.definition.persisted,model_id:'anima',profile_id:'anima-base-v1'}));
+  const target={kind:'page',id:page.page_id};
+  const contentOptions={...f.options,pageKey:{page_id:page.page_id},section:'content'};
+  const content=await readPageEditContext(contentOptions);
+  const saved=await f.save(await f.read(target),{person_groups:[{character_id:'alice',entries:[{description:'standing'}]},{character_id:null,entries:[{tag:'hat'}]}]});
+  assert.equal(saved.document.person[0].character_id,'alice');assert.equal(saved.document.person[1].character_id,undefined);
+  assert.equal(saved.document.person_groups,undefined);
+  await assert.rejects(f.save(saved,{person:[],person_groups:[{character_id:'alice',entries:[]}]}),{code:'invalid_person_groups'});
+  await assert.rejects(savePageEditChanges({...contentOptions,expectedSha256:content.save.args.expected_sha256,expectedReferenceSha256:content.save.args.expected_reference_sha256,changes:{characters:[]}}),{code:'page_edit_conflict'});
+  await savePageEditChanges({...contentOptions,expectedSha256:content.save.args.expected_sha256,changes:{title:'Independent title'}});
+  const readFacts=async(id,run)=>({value:await run({projectDirectory:path.join(f.root,'workspace',id)})});
+  const check=await checkProjectPrompts(f.root,{project_id:'demo',limit:1},readFacts);
+  assert.equal(check.scanned,1);assert.equal(check.total,2);assert.equal(check.next_offset,1);
+  assert.equal(check.results[0].target.id,page.page_id);assert.equal(check.counts.unbound_person_word,1);
+  assert.equal(check.results[0].document,undefined);
+  const tail=await checkProjectPrompts(f.root,{project_id:'demo',model_id:'anima',offset:1},readFacts);
+  assert.equal(tail.failed,1);assert.equal(tail.next_offset,null);assert.equal(tail.results[0].page_id,second.page_id);
+  await assert.rejects(checkProjectPrompts(f.root,{project_id:'demo',chapter_id:'missing'},readFacts),{code:'chapter_not_found'});
+});
 
 test('设定scope独立合并；同scope/Anima基础冲突；nullable LoRA完整回执可保存',async t=>{
   const f=await fixture(t);
@@ -92,4 +120,33 @@ test('显式非活动模型只依赖自身来源，保留活动模型并明确�
   assert.deepEqual(result.audit,{status:'not_run',model_id:'anima',reason:'inactive_model'});
   assert.equal(result.document.camera[0].id,undefined);
   assert.equal((await f.read({kind:'page',id:page.page_id})).document.text,'Keep the active branch.');
+});
+
+
+test('页面默认读取实际角色及生效继承词，移除引用清理绑定词但保留自由词和对白',async t=>{
+  const f=await fixture(t);
+  const base=await f.save(await f.read(character('anima','base')),{identity:{prompt:{person:[{tag:'blue_jacket'},{tag:'green_eyes'}]}}});
+  const page=await createPage(f.root,'demo',{owner_kind:'character',character_id:'alice',variant_id:'default'});
+  const target={kind:'page',id:page.page_id,model_id:'anima'};
+  const render=await readPageRenderDraft(f.root,'demo',page.page_id);
+  await commitPageRender(f.root,{project_id:'demo',page_id:page.page_id,target:{relative_path:render.definition.targetRelative,sha256:hashCanonicalJson(render.definition.targetBaseline??render.definition.persisted)},upstream:render.definition.upstream},()=>({...render.definition.persisted,model_id:'anima',profile_id:'anima-base-v1'}));
+  const initial=await f.read(target);
+  assert.equal(initial.references.characters[0].character_id,'alice');
+  assert.equal(initial.inherited_sources[0].entries[0].text,'blue_jacket');
+  const key='identity:'+base.document.identity.prompt.person[0].id;
+  const changed=await f.save(initial,{inheritance:{'character:alice:default':{[key]:{enabled:false}}},person:[{character_id:'alice',description:'standing'},{tag:'hat'},{tag:'green_eyes'}]});
+  assert.equal(changed.inherited_sources[0].entries[0].enabled,false);
+  assert.equal(changed.inherited_sources[0].entries[1].enabled,true);
+  assert.deepEqual(changed.bindings.characters[0].person_indices,[0]);
+  assert.deepEqual(changed.bindings.unbound_person_indices,[1,2]);
+  assert.equal(changed.diagnostics.find(issue=>issue.code==='unbound_matches_inherited').index,2);
+  const {readPageEditContext,savePageEditChanges}=await import('../server/page-edit-context.mjs');
+  const opts={...f.options,pageKey:{page_id:page.page_id},section:'content'};
+  const content=await readPageEditContext(opts);
+  await savePageEditChanges({...opts,expectedSha256:content.save.args.expected_sha256,expectedReferenceSha256:content.save.args.expected_reference_sha256,changes:{characters:[],dialogue:[{mode:'speech',speaker:'alice',text:'Hello.'}]}});
+  const after=await f.read(target);
+  assert.deepEqual(after.references.characters,[]);assert.deepEqual(after.inherited_sources,[]);
+  assert.deepEqual(after.document.person,[{tag:'hat'},{tag:'green_eyes'}]);
+  assert.equal(after.document.inheritance?.['character:alice:default'],undefined);
+  assert.equal((await readPageEditContext(opts)).document.dialogue[0].speaker,'alice');
 });

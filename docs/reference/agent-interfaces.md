@@ -68,6 +68,8 @@ Prompt 使用统一语义操作 `prompt.read`／`prompt.save`，按页面模型�
 read 返回该范围的完整 `document` 和可带回的保存参数；不返回或要求回传整个 `models` 容器。
 `changes` 合并对象、替换数组，`null` 删除字段；恢复继承须删除覆盖字段。需要继承词及来源版本时按需查 `prompt.sources`。
 修改引用或组合模式引入新来源，必须携带实际读取的来源版本。参数、批量入口及示例由 `help prompt` 维护。
+按角色编辑本页词使用现有 `prompt.save` 的 `person_groups` 投影；项目范围问题查询用 `prompt.check`，
+详细字段规则分别查询操作帮助和 `person_groups` 主题。检查摘要不是保存凭证。
 旧 Agent Prompt 写入口返回升级指引；其他事实仍使用下表 read/save 契约。
 页面 `render` 草稿包含 `version/model_id/profile_id/canvas`；更换模型或画幅使用同一 read/save 契约，
 不要直接写文件。首次 Anima→Qwen 会复制有效全文，已有输入不会被重新初始化。

@@ -1,3 +1,4 @@
+import {cleanRemovedPageCharacters} from './page-character-cleanup.mjs';
 import { readPageEntry, readStoryPagesIndex, writeStoryPagesIndex, pageRelativePath } from "./pages-store.mjs";
 import { checkRemovedSettingReferences, cleanRemovedReferences } from './reference-materials.mjs';
 import { createHash, randomBytes } from "node:crypto";
@@ -224,6 +225,7 @@ export async function readStoryFactDraft(projectRoot, projectId, pageId, kind) {
   let upstream;
   if (kind === "narrative") {
     upstream = {
+      prompt_sha256: hashCanonicalJson(await readPlainJson(targetPath(project.projectDirectory,targetRelativePath('prompt',pageId)), 'page prompt')),
       membership: await readPageMembership(project.projectDirectory, pageId),
       characters: await readCharacterReferences(project.projectDirectory, persisted.characters, { includePrompt: false, allowMissing: true }),
       speakers: await readDialogueSpeakerIdentities(project.projectDirectory, storyNarrativeSpeakerIds(persisted)),
@@ -462,7 +464,8 @@ async function assertNarrativeUpstream(projectDirectory, baselineContext) {
     const membership = await readPageMembership(projectDirectory, baselineContext.page_id);
     const characters = await readCharacterReferences(projectDirectory, baselineContext.upstream.characters.references, { includePrompt: false, allowMissing: true });
     const speakers = await readDialogueSpeakerIdentities(projectDirectory, baselineContext.upstream.speakers.ids);
-    if (membership.sha256 !== baselineContext.upstream.membership.sha256
+    if (hashCanonicalJson(await readPlainJson(targetPath(projectDirectory,targetRelativePath('prompt',baselineContext.page_id)), 'page prompt')) !== baselineContext.upstream.prompt_sha256
+      || membership.sha256 !== baselineContext.upstream.membership.sha256
       || characters.sha256 !== baselineContext.upstream.characters.sha256
       || speakers.sha256 !== baselineContext.upstream.speakers.sha256) {
       fail("story_edit_upstream_conflict", [baselineContext.target.relative_path]);
@@ -496,7 +499,7 @@ function createDialogueId(occupiedIds) {
 }
 
 // 剧情引用被移除时，连带清理页面 Prompt 中对应的整段覆盖与图片选择，不保留隐藏草稿。
-async function planRemovedReferenceCleanup(projectDirectory, pageId, persisted) {
+async function planRemovedReferenceCleanup(projectDirectory, pageId, persisted, baseline, root, projectId) {
   const relative = targetRelativePath("prompt", pageId);
   let prompt;
   try { prompt = await readPlainJson(targetPath(projectDirectory, relative), relative); }
@@ -504,15 +507,10 @@ async function planRemovedReferenceCleanup(projectDirectory, pageId, persisted) 
     if (error instanceof FactError && error.code === "story_edit_file_missing") return { writes: [] };
     throw error;
   }
-  const keep = new Set((persisted.characters ?? []).map((reference) => characterSource(reference.character_id, reference.variant_id)));
   const next = structuredClone(prompt);
-  for (const [,input] of promptModelEntries(next)) for (const field of ["text_overrides", "reference_overrides", "inheritance"]) {
-    for (const source of Object.keys(input[field] ?? {})) {
-      if (source.startsWith("character:") && !keep.has(source)) delete input[field][source];
-    }
-  }
-  if (hashCanonicalJson(next) === hashCanonicalJson(prompt)) return { writes: [] };
-  return { writes: [{ relative, before: prompt, after: next }] };
+  const warnings=await cleanRemovedPageCharacters(next,baseline.characters,persisted.characters,{root,directory:projectDirectory,projectId,pageId});
+  if (hashCanonicalJson(next) === hashCanonicalJson(prompt)) return { writes: [], warnings };
+  return { writes: [{ relative, before: prompt, after: next }], warnings };
 }
 
 export async function commitStoryFact(projectRoot, context, readDocument, kind, { beforeCommit, sourceVersions = {} } = {}) {
@@ -573,17 +571,17 @@ export async function commitStoryFact(projectRoot, context, readDocument, kind, 
     if (typeof beforeCommit !== "function") fail("invalid_story_edit_option", ["beforeCommit 必须是函数"]);
     await beforeCommit();
   }
+  const cleanupPlan = kind === 'narrative' ? await planRemovedReferenceCleanup(project.projectDirectory, context.page_id, persisted, baseline, projectRoot, context.project_id) : { writes: [] };
+  await commitFactChanges(project.projectDirectory, [...cleanupPlan.writes, { relative: context.target.relative_path, before: baseline, after: persisted }]);
   const downstreamDiagnostics = kind === "narrative"
     ? await narrativeDownstreamDiagnostics(project.projectDirectory, context.page_id, persisted) : [];
-  const cleanupPlan = kind === 'narrative' ? await planRemovedReferenceCleanup(project.projectDirectory, context.page_id, persisted) : { writes: [] };
-  await commitFactChanges(project.projectDirectory, [...cleanupPlan.writes, { relative: context.target.relative_path, before: baseline, after: persisted }]);
   if (kind === "prompt" && auditPrepared.value) {
     auditCaptured = await capturePromptAuditInput(() => capturePagePromptSnapshot(project.projectDirectory, context.page_id, createStoryPageKey(context.page_id)));
   }
 
   const result = { target_file: path.resolve(persistedTarget), value: persisted, downstream_diagnostics: downstreamDiagnostics, ...(cleanupPlan.writes[0] ? { page_prompt: cleanupPlan.writes[0].after } : {}) };
   if (kind === "prompt") result.audit = await auditSavedPagePrompt(projectRoot, project.projectDirectory, auditPrepared, auditCaptured);
-  if (kind === "narrative") result.warnings = storyContentWarnings(result.value);
+  if (kind === "narrative") result.warnings = [...storyContentWarnings(result.value),...(cleanupPlan.warnings ?? [])];
   return result;
 }
 

@@ -30,6 +30,12 @@ if (new URLSearchParams(location.search).has('anima')) {
  initial.model_id='anima'; initial.characters=[];
  initial.prompt={population:[],person:[],setting:[{tag:'first_token'},{tag:'second_token'}],camera:[],avoid:[]};
 }
+if (new URLSearchParams(location.search).has('bound-anima')) {
+ initial.model_id='anima';
+ const empty=()=>({population:[],person:[],setting:[],camera:[],avoid:[]});
+ for(const character of characters) character.model_prompts={models:{anima:{identity:{lora:null,prompt:empty()},variants:{day:{prompt:empty(),loras:[]}}}}};
+ initial.prompt={...empty(),person:[{description:'standing at the window',character_id:'alice'},{tag:'shared_word'}],trigger_sources:{characters:{alice:['old_trigger']}}};
+}
 function Harness() {
  const [page,setPage] = useState(initial);
  if (new URLSearchParams(location.search).has('workspace')) return <PageWorkspace projectId="test" location={{page,key:page.page_id,breadcrumb:['测试',page.title]}} ownerPages={[]} characters={characters} scenes={scenes} renderCapabilities={{candidates:{available:true,counts:[1,3]}}} defaultRenderProfile="qwen" canvas="2:3" letteringStyle={null} taskCollection={{tasks:[],history:[]}} busy={false} editorWidth={600} candidateWidth={200} pageOrder={1} onEditorTabChange={()=>{}} onOpenLetteringSettings={()=>{}} onOpenPromptOverview={()=>{}} onEditorWidthChange={()=>{}} onCandidateWidthChange={()=>{}} onPageChanged={(_target,patch)=>setPage(current=>({...current,...patch}))} onReload={async()=>{}} onTrackedTasksChange={()=>{}} />;

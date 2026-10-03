@@ -57,6 +57,8 @@ async function currentDraft(root, domain, kind, projectId, targetId) {
 export async function readFactDraft(root, { domain, kind, projectId, targetId }) {
   const { context, document } = await currentDraft(root, domain, kind, projectId, targetId);
   return { project_id: context.project_id, target_id: targetId ?? null, document: structuredClone(document),
+    ...(["content","narrative"].includes(kind) && context.upstream.prompt_sha256 ? {expected_reference_sha256:context.upstream.prompt_sha256,
+      expected_edit_context_sha256:hashCanonicalJson(Object.fromEntries(Object.entries(context.upstream).filter(([key])=>key!=='prompt_sha256')))} : {}),
     expected_sha256: context.target.sha256, expected_context_sha256: hashCanonicalJson(context.upstream) };
 }
 

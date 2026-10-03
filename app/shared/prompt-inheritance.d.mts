@@ -13,4 +13,5 @@ export function effectivePromptEntries(prompt: Partial<Prompt>, category: keyof 
 export function variantPrompt(identity: { prompt: Prompt }, variant: { prompt: Prompt; identity_overrides?: Adjustments }): Prompt;
 
 export function adjustmentKey(fragment: Fragment, category?: string): string;
+export function resolvedSettingEntries(identity: {prompt:Partial<Prompt>}, variant: {prompt?:Partial<Prompt>;identity_overrides?:Adjustments}, adjustments?:Adjustments, kind?:string):Array<{fragment:Fragment;category:keyof Prompt;index:number;key:string;layer:string;source_index:number;enabled:boolean;consumed:boolean}>;
 export function validateAdjustments(value: unknown, label?: string, options?: { availableKeys?: Iterable<string>; baselineAdjustments?: Adjustments; layers?: Array<'identity' | 'variant'> }): string[];

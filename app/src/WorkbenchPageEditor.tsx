@@ -1,3 +1,4 @@
+import {cleanPageCharacterInput} from '../shared/page-character-cleanup.mjs';
 import type {PageRewriteController} from './models/qwen/usePageRewrite';
 import { useReferencedSettings } from './use-referenced-settings';
 import {ModelPromptEditor} from './models/registry';
@@ -781,17 +782,19 @@ export default function WorkbenchPageEditor({
   const saveNeeded = anyDirty || contentPhase === "error" || promptPhase === "error";
   const saving = contentPhase === "saving" || promptPhase === "saving";
 
-  function pruneOverrideSources(keep: (source: string) => boolean) {
-    setPromptDraft(current => ({
-      ...current,
-      ...(current.text_overrides ? {text_overrides: Object.fromEntries(Object.entries(current.text_overrides).filter(([key]) => keep(key)))} : {}),
-      ...(current.reference_overrides ? {reference_overrides: Object.fromEntries(Object.entries(current.reference_overrides).filter(([key]) => keep(key)))} : {}),
-      ...(current.inheritance?{inheritance: Object.fromEntries(Object.entries(current.inheritance).filter(([key]) => keep(key)))}:{}),
-    }));
-  }
   function changeCharacters(value: Array<{ character_id: string; variant_id: string }>) {
-    const keep = new Set(value.map(r => characterSource(r.character_id, r.variant_id)));
-    pruneOverrideSources(key => !key.startsWith('character:') || keep.has(key));
+    setPromptDraft(current => {
+      const sources=(refs:typeof value)=>Object.fromEntries([
+        ...refs.map(ref=>({key:characterSource(ref.character_id,ref.variant_id),setting:characters.find(item=>item.id===ref.character_id),variant:ref.variant_id})),
+        ...(current.scene_id?[{key:sceneSource(current.scene_id,current.scene_variant_id!),setting:scenes.find(item=>item.id===current.scene_id),variant:current.scene_variant_id!}]:[]),
+      ].map(({key,setting,variant})=>{
+        const input=setting?.model_prompts?.models?.anima;
+        return [key,{identity:input?.identity,variant:input?.variants[variant],...(!input?.variants[variant]?{missing:'prompt'}:{})}];
+      }));
+      return cleanPageCharacterInput(current, contentDraft.characters ?? [], value, {
+        beforeSources:sources(contentDraft.characters ?? []),afterSources:sources(value),styleLoras:page.render_capabilities?.candidates?.available ? page.project_loras : undefined,
+      });
+    });
     setContentDraft(current => ({ ...current, characters: value }));
   }
 

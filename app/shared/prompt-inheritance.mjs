@@ -42,6 +42,18 @@ export function variantPrompt(identity, variant) {
   ]]));
 }
 
+// 保留关闭项、稳定来源键与原始位置；启用不等于被模型消费（场景只消费 setting/avoid）。
+export function resolvedSettingEntries(identity, variant, adjustments = {}, kind = 'character') {
+  const prompt = applyInheritedPrompt(variantPrompt(identity ?? {prompt:{}}, variant), adjustments);
+  return inheritanceCategories.flatMap(category => prompt[category].map((fragment, index) => ({
+    fragment, category, index, key: adjustmentKey(fragment),
+    layer: index < (identity?.prompt?.[category]?.length ?? 0) ? 'identity' : 'variant',
+    source_index: index < (identity?.prompt?.[category]?.length ?? 0) ? index : index - (identity?.prompt?.[category]?.length ?? 0),
+    enabled: fragment.enabled !== false,
+    consumed: fragment.enabled !== false && (kind !== 'scene' || ['setting','avoid'].includes(category)),
+  })));
+}
+
 export function validateAdjustments(value, label = '继承调整', { availableKeys, baselineAdjustments, layers = ['identity', 'variant'] } = {}) {
   if (value === undefined) return [];
   if (!value || typeof value !== 'object' || Array.isArray(value)) return [`${label} 必须是对象`];
@@ -67,11 +79,14 @@ export function duplicatePromptWords(groups) {
   const seen = new Map(), errors = [];
   for (const { prompt, scope, label } of groups) for (const category of inheritanceCategories) for (const { fragment } of effectivePromptEntries(prompt, category)) {
     const word = promptWord(promptText(fragment));
-    const owner = ['setting', 'camera'].includes(category) ? 'environment' : fragment.character_id ?? fragment.role ?? scope;
-    const key = `${category === 'avoid' ? 'negative' : 'positive'}:${owner}:${word}`;
+    const key = promptDuplicateKey(category, fragment.character_id ?? fragment.role ?? scope, word);
     const source = fragment.inheritance_source ? `${label} · ${fragment.inheritance_source}` : label;
     if (seen.has(key)) errors.push(`重复词“${promptText(fragment)}”：${seen.get(key)} / ${source}。请删除本地重复词，在继承区调整权重和开关。`);
     else seen.set(key, source);
   }
   return errors;
+}
+
+export function promptDuplicateKey(category, owner, text) {
+  return JSON.stringify([category === 'avoid' ? 'negative' : 'positive', ['setting','camera'].includes(category) ? 'environment' : owner, promptWord(text)]);
 }

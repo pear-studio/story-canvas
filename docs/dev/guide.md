@@ -91,6 +91,9 @@
 | `app/server/agent-directory.mjs` | Agent 分页目录摘要：在事实读取边界内查询章节、单元、设定、子设定、页面与模板，不载入 Prompt 和媒体 |
 | `app/scripts/workbench-actions/` | 统一 Agent 工具的领域操作：参数、帮助和执行一起维护，自动汇总分组目录 |
 | `app/server/prompt-edit-context.mjs` | 一致性事实读取内组合可写草稿和只读引用文字、override、图片选择、有效配置及最终编译，不诊断本机模型 |
+| `app/shared/prompt-inheritance.mjs` / `prompt-source-view.mjs` | 共用继承条目解释、启用／模型消费状态、引用选择与有来源证据的问题投影 |
+| `app/shared/page-character-cleanup.mjs` | 网页草稿与服务端引用解除／切换共用的确定性清理；服务端负责准备完整来源 |
+| `app/server/prompt-person-edit.mjs` / `prompt-check.mjs` | 将角色分组编辑映射到原有序数组；在逐页读取边界分页查询同一诊断结果 |
 | `app/server/fact-drafts.mjs` | 统一草稿、目标/依赖指纹与领域提交调度；网页保存也直接复用领域提交 |
 | `app/server/workbench-http.mjs` | 页面工作台、导航、候选、嵌字和单页生成 HTTP Adapter |
 | `app/server/comparison-http.mjs` | 对比实验创建、读取、启动、结果媒体与 Agent 结果工具 HTTP Adapter |

@@ -9,6 +9,7 @@ import { readPageEditContext, savePageEditChanges } from './page-edit-context.mj
 import { readAgentDirectory } from './agent-directory.mjs';
 import { readPageRenderEditor, setPageRenderEditor } from './page-render-editor.mjs';
 import { readPromptScope, savePromptScope, readPromptScopeSources, promptEditorMigration } from './prompt-scope.mjs';
+import {checkProjectPrompts} from './prompt-check.mjs';
 
 export async function handleAgentRequest({ request, response, decodedPath, projectRoot, config = {}, readFacts, mutateTargetFacts, sendOperation }) {
   const match = /^\/api\/agent\/facts\/(story|character|scene|page)\/([a-z-]+)\/(read|save)$/.exec(decodedPath);
@@ -18,7 +19,7 @@ export async function handleAgentRequest({ request, response, decodedPath, proje
   const pageEditorRead = decodedPath === '/api/agent/page-editor';
   const pageEditorSave = decodedPath === '/api/agent/page-editor/save';
   const pageRender = /^\/api\/agent\/page-render\/(read|set)$/.exec(decodedPath);
-  const promptScope = /^\/api\/agent\/prompt\/(read|save|sources)$/.exec(decodedPath);
+  const promptScope = /^\/api\/agent\/prompt\/(read|save|sources|check)$/.exec(decodedPath);
   const populationMigration = decodedPath === '/api/agent/population-migration';
   const candidateSheet = decodedPath === '/api/agent/candidate-sheet';
   const directoryRead = decodedPath === '/api/agent/directory';
@@ -27,6 +28,10 @@ export async function handleAgentRequest({ request, response, decodedPath, proje
   if (!body || typeof body !== "object" || Array.isArray(body)) throw new ApiError(400, "invalid_edit_request");
   if (promptScope) {
     const action = promptScope[1];
+    if(action==='check') {
+      sendJson(response,200,await checkProjectPrompts(projectRoot,body,readFacts));
+      return true;
+    }
     const options = {projectRoot,projectId:body.project_id,target:body.target,expectedSha256:body.expected_sha256,changes:body.changes,sourceVersions:body.source_versions,source:body.source};
     const run = action === 'save' ? savePromptScope : action === 'sources' ? readPromptScopeSources : readPromptScope;
     sendOperation(200,await (action === 'save' ? mutateTargetFacts : readFacts)(body.project_id,()=>run(options)));
@@ -54,6 +59,7 @@ export async function handleAgentRequest({ request, response, decodedPath, proje
     if ((body.section ?? 'content') === 'prompt') throw promptEditorMigration('page','prompt',body.page_key?.page_id,body.project_id);
     sendOperation(200, await mutateTargetFacts(body.project_id, () => savePageEditChanges({
       projectRoot,projectId:body.project_id,pageKey:body.page_key,section:body.section ?? 'content',changes:body.changes,expectedSha256:body.expected_sha256,
+      expectedReferenceSha256:body.expected_reference_sha256,
     })));
     return true;
   }

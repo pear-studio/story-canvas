@@ -1,3 +1,4 @@
+import {cleanRemovedPageCharacters} from './page-character-cleanup.mjs';
 import { cleanRemovedReferences, removeUnusedFile, savePageReferenceInputs } from './reference-materials.mjs';
 import { pageSettingsFromDefaults, readPageRenderSettings } from './page-render-settings.mjs';
 import { modelPrompt, replaceModelPrompt, promptModelEntries, makeModelPromptDocument } from './model-prompts.mjs';
@@ -161,6 +162,7 @@ export async function savePage(root,projectId,value) {
   const render=await readPageRenderSettings(directory,pageId), modelId=render.model_id;
   const prompt=modelAdapter(modelId).preparePagePrompt({$schema:STORY_PAGE_PROMPT_SCHEMA_ID,...clone(value.prompt)}, {baselinePrompt:modelPrompt(beforePrompt,modelId),createFragmentId:()=>`token-${randomBytes(6).toString('hex')}`});
   const persistedPrompt=replaceModelPrompt(beforePrompt,modelId,prompt);
+  const cleanupWarnings=await cleanRemovedPageCharacters(persistedPrompt,beforeContent.characters,content.characters,{root,directory,projectId,pageId});
   for(const [,input] of promptModelEntries(persistedPrompt)) {
     const keep=new Set(content.characters.map(ref=>`character:${ref.character_id}:${ref.variant_id}`));
     if(input.scene_id)keep.add(`scene:${input.scene_id}:${input.scene_variant_id}`);
@@ -211,5 +213,5 @@ export async function savePage(root,projectId,value) {
   }
   const captured=await capturePromptAuditInput(()=>capturePagePromptSnapshot(directory,pageId,pageKey));
   const audit=await auditSavedPagePrompt(root,directory,auditPrepared,captured);
-  return {page_key:pageKey,content:publicDocument(content),prompt:publicDocument(modelPrompt(persistedPrompt,modelId)),content_sha256:hashCanonicalJson(content),prompt_sha256:hashCanonicalJson(persistedPrompt),prompt_context_sha256:hashCanonicalJson(await readStoryPromptUpstream(directory,pageId)),...(lettering?{lettering,layout_sha256:layoutSha}:{}),warnings:storyContentWarnings(content),downstream_diagnostics:await narrativeDownstreamDiagnostics(directory,pageId,content),audit};
+  return {page_key:pageKey,content:publicDocument(content),prompt:publicDocument(modelPrompt(persistedPrompt,modelId)),content_sha256:hashCanonicalJson(content),prompt_sha256:hashCanonicalJson(persistedPrompt),prompt_context_sha256:hashCanonicalJson(await readStoryPromptUpstream(directory,pageId)),...(lettering?{lettering,layout_sha256:layoutSha}:{}),warnings:[...storyContentWarnings(content),...cleanupWarnings],downstream_diagnostics:await narrativeDownstreamDiagnostics(directory,pageId,content),audit};
 }

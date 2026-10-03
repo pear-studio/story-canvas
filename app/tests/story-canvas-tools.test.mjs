@@ -463,6 +463,9 @@ test('统一工具经真实 HTTP Adapter 完成结构、设定及三类页面生
   const upstream=await failure(f.tool,{operation:changedPrompt.save.operation,args:{...changedPrompt.save.args,changes:{text:'陈旧依赖'}}});
   assert.equal(upstream.status,409);assert.equal(upstream.error,'prompt_scope_conflict');
   const checked=await run('prompt.read',{target:promptTarget});assert.equal(checked.document.text,'局部 Prompt');
+  const promptCheck=await run('prompt.check',{limit:1});
+  assert.equal(promptCheck.scanned,1);assert.equal(promptCheck.scope.model,'each_page_active');
+  assert.ok(promptCheck.results.every(row=>row.document===undefined));
   const render=await run('page.editor.read',{page_key,section:'render'});assert.ok(render.document.model_id);
   const otherRender=await run('page.render.read',{page_key:{page_id:pages[1].page_id}});
   const projectBefore=await readFile(path.join(root,'workspace/demo/project.json'),'utf8');
@@ -853,4 +856,22 @@ test('真实 HTTP 保存拒绝新增片段自编 ID，返回字段诊断且不�
   saved.document.identity.prompt.person.push({...saved.document.identity.prompt.person[0]});
   const duplicate=await failure(f.tool,{operation:'prompt.save',args:{...saved.save.args,changes:saved.document}});
   assert.equal(duplicate.status,400);assert.match(duplicate.message,/重复/);
+});
+
+
+test('Prompt 校验错误直接修正，批量继承去重且保存参数无需逐页操作外壳',async t=>{
+ const f=await fixture(t,({body,url},response)=>{
+   if(url.endsWith('/save')){response.statusCode=422;return response.end(JSON.stringify({error:'invalid_story_edit_document',details:['person[0]: 人数词应放 population']}));}
+   response.end(JSON.stringify({target:body.target,document:{person:[]},references:{characters:[{character_id:'alice',variant_id:'default'}]},inherited_sources:[{source:'character:alice:default',id:'alice',entries:[{text:'blue_jacket',enabled:true}]}],save:{operation:'prompt.save',args:{project_id:'demo',target:body.target,expected_sha256:'abc',source_versions:{source:'hash'}}}}));
+ });
+ const targets=['page-a','page-b'].map(id=>({kind:'page',id,model_id:'anima'}));
+ const read=await f.tool.execute({operation:'prompt.batch.read',args:{project_id:'demo',targets}});
+ assert.equal(read.sources.length,1);assert.equal(read.sources[0].ref,'source-1');assert.equal(read.sources[0].id,'alice');
+ assert.deepEqual(read.results[0].inherited_source_refs,read.results[1].inherited_source_refs);
+ assert.equal(read.results[0].save,undefined);assert.equal(read.results[0].expected_sha256,'abc');
+ const items=read.results.map(r=>({target:r.target,expected_sha256:r.expected_sha256,source_versions:r.source_versions,changes:{person:[]}}));
+ const saved=await f.tool.execute({operation:'prompt.batch.save',args:{project_id:'demo',items}});
+ assert.equal(saved.counts.failed,2);assert.equal(saved.results[0].recovery.action,'correct_changes');assert.equal(saved.results[0].next,undefined);
+ const one=await failure(f.tool,{operation:'prompt.save',args:{project_id:'demo',...items[0]}});
+ assert.equal(one.recovery.action,'correct_changes');
 });

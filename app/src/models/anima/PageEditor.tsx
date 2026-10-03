@@ -10,7 +10,7 @@ import {ReferenceRow,ReferenceLabel,ParticipantEditor} from '../../PromptReferen
 import {displayPromptDraft,persistPromptDraft,createPromptDraftFragment,matchesLocalPromptDraft} from '../../prompt-fragment-draft';
 import {applyCameraDraft} from '../../camera-prompt-draft';
 import {cameraFragmentIndex} from '../../../shared/camera-prompt.mjs';
-import {variantPrompt,applyInheritedPrompt} from '../../../shared/prompt-inheritance.mjs';
+import {variantPrompt,resolvedSettingEntries} from '../../../shared/prompt-inheritance.mjs';
 import {characterSource,sceneSource} from '../../project-workbench-client';
 import {promptCategories,type PagePrompt,type CharacterPromptDocument} from './types';
 import type {ModelPageEditorProps} from '../types';
@@ -29,10 +29,10 @@ export function AnimaPageEditor({projectId,page,prompt,onChange,characters,scene
   const enabledCounts=Object.fromEntries(references.flatMap(ref=>{
     const c=characters.find(c=>c.id===ref.character_id),input=c&&setting(c),variant=input?.variants[ref.variant_id];
     if(!input||!variant)return [];
-    const fragments=Object.values(applyInheritedPrompt(variantPrompt(input.identity,variant),prompt.inheritance?.[characterSource(ref.character_id,ref.variant_id)])).flat();
-    return [[ref.character_id,{enabled:fragments.filter(fragment=>fragment.enabled!==false).length,total:fragments.length}]];
+    const fragments=resolvedSettingEntries(input.identity,variant,prompt.inheritance?.[characterSource(ref.character_id,ref.variant_id)]);
+    return [[ref.character_id,{enabled:fragments.filter(fragment=>fragment.enabled).length,total:fragments.length}]];
   }));
-  function inherited(source:string,value:PagePrompt,sha:string) {return <InheritedPromptEditor title="继承词" collapsible={false} source={`${source}:${sha}`} prompt={value} adjustments={prompt.inheritance?.[source]} onChange={adjustments=>onChange({...prompt,inheritance:{...prompt.inheritance,[source]:adjustments}})}/>;}
+  function inherited(source:string,value:PagePrompt,sha:string) {return <>{source.startsWith('scene:') && (['population','person','camera'] as const).some(category=>value[category]?.length) && <small className="field-hint">标签统计所有启用词；场景仅“场景”和“避免”分类进入生成。</small>}<InheritedPromptEditor title="继承词" collapsible={false} source={`${source}:${sha}`} prompt={value} adjustments={prompt.inheritance?.[source]} onChange={adjustments=>onChange({...prompt,inheritance:{...prompt.inheritance,[source]:adjustments}})}/></>;}
   function inheritedLoras(input:CharacterPromptDocument,variant:CharacterPromptDocument['variants'][string]) {
     const inherited=settingLoras(input.identity,variant);if(!inherited.length)return null;
     const names=new Set(inherited.map(lora=>lora.filename)),local=prompt.loras??[];
@@ -48,7 +48,7 @@ export function AnimaPageEditor({projectId,page,prompt,onChange,characters,scene
           return <div className="page-reference-setting" key={source} data-reference-source={source}><ReferenceLabel name={c.name} variant={c.visual.variants.find(v=>v.id===ref.variant_id)?.name??ref.variant_id} color={c.style?.display_color}/>{inherited(source,variantPrompt(input.identity,variant) as PagePrompt,c.prompt_sha256 ?? '')}{inheritedLoras(input,variant)}</div>;
         })}
       </ReferenceRow>
-      <ReferenceRow title="场景" editor={<SceneReferenceEditor enabledCount={(()=>{const c=scenes.find(c=>c.id===prompt.scene_id),input=c&&setting(c),variant=input?.variants[prompt.scene_variant_id??''];if(!input||!variant)return undefined;const fragments=Object.values(applyInheritedPrompt(variantPrompt(input.identity,variant),prompt.inheritance?.[sceneSource(c!.id,prompt.scene_variant_id!)])).flat();return {enabled:fragments.filter(f=>f.enabled!==false).length,total:fragments.length};})()} scenes={scenes} value={prompt.scene_id} variantId={prompt.scene_variant_id} onChange={(scene_id,scene_variant_id)=>onChange({...prompt,scene_id,scene_variant_id,inheritance:Object.fromEntries(Object.entries(prompt.inheritance??{}).filter(([key])=>!key.startsWith('scene:')))})}/> }>
+      <ReferenceRow title="场景" editor={<SceneReferenceEditor enabledCount={(()=>{const c=scenes.find(c=>c.id===prompt.scene_id),input=c&&setting(c),variant=input?.variants[prompt.scene_variant_id??''];if(!input||!variant)return undefined;const fragments=resolvedSettingEntries(input.identity,variant,prompt.inheritance?.[sceneSource(c!.id,prompt.scene_variant_id!)], 'scene');return {enabled:fragments.filter(f=>f.enabled!==false).length,total:fragments.length};})()} scenes={scenes} value={prompt.scene_id} variantId={prompt.scene_variant_id} onChange={(scene_id,scene_variant_id)=>onChange({...prompt,scene_id,scene_variant_id,inheritance:Object.fromEntries(Object.entries(prompt.inheritance??{}).filter(([key])=>!key.startsWith('scene:')))})}/> }>
         {scenes.filter(c=>c.id===prompt.scene_id).map(c=>{const input=setting(c),variant=input?.variants[prompt.scene_variant_id??''];if(!input||!variant)return <p role="alert" key={c.id}>场景设定缺失</p>;const source=sceneSource(c.id,prompt.scene_variant_id!);return <div className="page-reference-setting" key={source} data-reference-source={source}><ReferenceLabel name={c.name} variant={c.visual.variants.find(v=>v.id===prompt.scene_variant_id)?.name}/>{inherited(source,variantPrompt(input.identity,variant) as PagePrompt,c.prompt_sha256 ?? '')}{inheritedLoras(input,variant)}</div>;})}
       </ReferenceRow>
     </div>

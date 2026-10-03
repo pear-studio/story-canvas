@@ -46,6 +46,15 @@ test('有效词条共用覆盖结果，来源索引不随关闭项过滤改变�
   assert.equal(auditCharacterPromptConfiguration(character, []).valid, true);
 });
 
+test('编译保留原有同 scope 文本抑制顺序，并报告不同权重的被抑制项',()=>{
+  const page=prompt('person',[{description:'standing',weight:1.1},{description:'standing',weight:1.8}]);
+  const result=compile(page);
+  assert.equal(result.prompt_parts.positive.filter(part=>part.prompt_text==='standing').length,1);
+  const suppressed=result.prompt_parts.suppressed.find(part=>part.prompt_text==='standing');
+  assert.equal(suppressed.weight,1.8);assert.equal(suppressed.retained.weight,1.1);
+  assert.match(result.positive_prompt,/\(standing:1.1\)/);assert.doesNotMatch(result.positive_prompt,/standing:1.8/);
+});
+
 test('场景校重仍包含全部分类，编译仅取 setting/avoid，缺失分类仍被诊断', () => {
   const scene = setting('garden', 'setting');
   scene.prompt.camera = [{ id: b, description: 'wide framing' }];

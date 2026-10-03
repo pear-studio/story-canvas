@@ -96,6 +96,19 @@ for(const kind of ['story','character','scene'])test(`${kind} 页面均可编辑
  assert.equal(saved.content.dialogue[0].text,'统一文案');
  assert.equal(await page.getByRole('button',{name:'保存',exact:true}).isDisabled(),true);
 });
+
+test('解除 Anima 角色引用在网页草稿中立即清除绑定词和触发词来源，保留未绑定词',async t=>{
+ const page=await open(t,'bound-anima&collapsed',async page=>{
+   await page.route('**/api/prompt-dictionary**',route=>route.fulfill({json:{available:true,suggestions:[],matches:[]}}));
+ });
+ await page.getByRole('button',{name:'移除艾莲',exact:true}).click();
+ await page.getByRole('button',{name:'保存',exact:true}).click();
+ await page.waitForFunction(()=>localStorage.getItem('saved-page'));
+ const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('saved-page')));
+ assert.deepEqual(saved.content.characters,[]);
+ assert.deepEqual(saved.prompt.person,[{tag:'shared_word'}]);
+ assert.deepEqual(saved.prompt.trigger_sources.characters,{});
+});
 test('参考图默认选首张，多选和停用保存在同一设定卡片；恢复默认不存重复选择',async t=>{
  const page=await open(t,'kind=story');
  const card=page.locator('[data-reference-source="character:alice:day"]');

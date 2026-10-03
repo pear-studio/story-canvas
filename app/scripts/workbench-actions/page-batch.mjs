@@ -45,8 +45,8 @@ export const pageBatchActions={
   'page.editor.batch.save':{
     helpTopics:pageEditHelp,
     summary:'带逐页指纹批量修改，返回简短逐页回执',
-    parameters:schema({project_id:string('项目 ID'),section,items:items(schema({page_key:pageKey,expected_sha256:string('该页 read 返回的指纹'),changes:object('该页修改；语义同 page.editor.save')}))}),
-    details:'每项取读取回执的page_key、expected_sha256，加changes；不可自编指纹。content/render逐页保存：对象合并、数组替换、null删除。Prompt统一用prompt.batch.save。不是整批事务，失败不回滚成功页。冲突继续其他页；网络或服务异常标unknown并停止后续，先核实unknown，不重放整批。回执不重复正文。',
+    parameters:schema({project_id:string('项目 ID'),section,items:items(schema({page_key:pageKey,expected_sha256:string('该页 read 返回的指纹'),expected_reference_sha256:string('content 读取回执原样保留；变更 characters 时使用'),changes:object('该页修改；语义同 page.editor.save')},['page_key','expected_sha256','changes']))}),
+    details:'每项取读取回执的page_key、expected_sha256、expected_reference_sha256（如有），加changes；不可自编指纹。content/render逐页保存：对象合并、数组替换、null删除。Prompt统一用prompt.batch.save。不是整批事务，失败不回滚成功页。冲突继续其他页；网络或服务异常标unknown并停止后续，先核实unknown，不重放整批。回执不重复正文。',
     execute:(args,execution)=>executeBatch(args,execution,true),
   },
 };
