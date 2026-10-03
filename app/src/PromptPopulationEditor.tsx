@@ -18,6 +18,7 @@ export function PromptPopulationEditor({ fragments, disabled, onChange }: {
   return <div className="prompt-population" role="group" aria-label="画面人数" title={`人数 Prompt：${result || "—"}；6 表示 6 人及以上`}>
     <span className="prompt-population-title" title="人数词固定放在角色描述之前；单人自动添加 solo，多人自动移除。6 表示 6 人及以上。">画面人数</span>
     {([['girls', 'girl'], ['boys', 'boy'], ['others', 'other']] as const).map(([kind, label]) => <div className="prompt-population-counter" key={kind}>
+      <label className="prompt-population-select">{{girl:"女",boy:"男",other:"其他"}[label]}<select aria-label={label + " 人数选择"} value={counts[kind]} disabled={disabled} onChange={event=>update(kind,Number(event.target.value))}>{[0,1,2,3,4,5,6].map(count=><option key={count} value={count}>{count === 6 ? '6+' : count}</option>)}</select></label>
       <button type="button" aria-label={"减少 " + label + " 人数"} disabled={disabled || counts[kind] <= 0} onClick={() => update(kind, counts[kind] - 1)}>−</button>
       <span className="prompt-population-count" aria-label={label + " 人数"}>{counts[kind]}</span>
       <button type="button" aria-label={"增加 " + label + " 人数"} disabled={disabled || counts[kind] >= 6} onClick={() => update(kind, counts[kind] + 1)}>+</button>

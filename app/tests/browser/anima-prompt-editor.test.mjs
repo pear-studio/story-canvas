@@ -56,6 +56,36 @@ async function editor(t, { viewport = false } = {}) {
   return { page, input, options: page.locator("button[role=option]") };
 }
 
+test("手机词条与操作同排，二级菜单可改权重、开关和删除", async t => {
+  const { page, input } = await editor(t);
+  await page.evaluate(() => { document.querySelector('#host').style.cssText = 'width:100%;margin-top:0'; });
+  for (const width of [360, 390, 430]) {
+    await page.setViewportSize({ width, height: 700 });
+    const trigger = page.getByRole('button', { name: '场景第 1 项选项', exact: true });
+    await trigger.waitFor();
+    assert.equal(await page.getByRole('checkbox').count(), 0);
+    const bounds = await input.boundingBox();
+    assert.ok(bounds.width > width - 140, `正文应充分利用 ${width}px 宽度：${bounds.width}`);
+    const triggerBounds = await trigger.boundingBox();
+    assert.ok(Math.max(bounds.y, triggerBounds.y) < Math.min(bounds.y + bounds.height, triggerBounds.y + triggerBounds.height), '正文与选项同排');
+    await trigger.click();
+    const menu = page.getByRole('dialog');
+    const rect = await menu.boundingBox();
+    assert.ok(rect.x >= 0 && rect.x + rect.width <= width && rect.y >= 0 && rect.y + rect.height <= 700);
+    await page.keyboard.press('Escape');
+    assert.equal(await menu.count(), 0);
+  }
+  const trigger = page.getByRole('button', { name: '场景第 1 项选项', exact: true });
+  await trigger.click();
+  await page.getByRole('button', { name: '×1.5', exact: true }).click();
+  assert.equal(JSON.parse(await page.locator('output').textContent()).setting[0].weight, 1.5);
+  await trigger.click();
+  await page.locator('.prompt-fragment-mobile-actions .prompt-fragment-enabled').click();
+  assert.equal(JSON.parse(await page.locator('output').textContent()).setting[0].enabled, false);
+  await page.getByRole('button', { name: '删除场景第 1 项', exact: true }).click();
+  assert.equal(JSON.parse(await page.locator('output').textContent()).setting.length, 0);
+});
+
 test("标签底色和自动释义常驻，补全只替换句内标记并保留权重", async t => {
   const { page, input, options } = await editor(t);
   const queries = [];

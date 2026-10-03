@@ -321,6 +321,13 @@ function PromptFragmentRow({
   const dictionaryDetailsOpen = useRef(false);
   const [deferEmptyError, setDeferEmptyError] = useState(() => !fragment.prompt_text.trim());
   const [weightMenuOpen, setWeightMenuOpen] = useState(false);
+  const [mobileLayout, setMobileLayout] = useState(() => window.matchMedia("(max-width: 680px)").matches);
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 680px)");
+    const update = () => { setMobileLayout(media.matches); setWeightMenuOpen(false); };
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
   const [weightDraft, setWeightDraft] = useState(() => promptWeightDraft(fragment.weight));
   const [weightError, setWeightError] = useState("");
   // 触屏设备不自动聚焦权重输入框，避免虚拟键盘立即弹出挤压布局。
@@ -600,6 +607,8 @@ function PromptFragmentRow({
     const next = { ...current, prompt_text: queryDraft };
     fragmentRef.current = next;
     onChange(next, { group: `${current.id}:prompt_text` });
+    // 只在提交真实文字编辑时识别类型；单纯聚焦/失焦不能改变既有标签或撤销历史。
+    void inferPromptTypeAfterUserEdit(queryDraft);
   }
 
   function updateQueryDraft(value: string) {
@@ -636,7 +645,6 @@ function PromptFragmentRow({
       else {
         commitQueryDraft();
         closeQuerySearch();
-        void inferPromptTypeAfterUserEdit(queryDraft);
       }
       return;
     }
@@ -755,6 +763,22 @@ function PromptFragmentRow({
       : null;
 
   const enabled = promptFragmentEnabled(fragment);
+  const enabledControl = <label className={`prompt-fragment-enabled ${enabled ? "is-on" : "is-off"}`} title={fragment.inheritance ? Object.hasOwn(fragment.inheritance, 'enabled') ? '开关已覆盖' : '开关随上游' : enabled ? "参与生成" : "已关闭，不参与生成"}>
+      <input type="checkbox" aria-label={`${categoryLabel}第 ${index + 1} 项参与生成`} checked={enabled} onChange={(event) => {
+        if (fragment.inheritance) onChange({ ...fragment, enabled: event.target.checked, inheritance: { ...fragment.inheritance, enabled: event.target.checked } });
+        else if (event.target.checked) {
+          const next = { ...fragment };
+          delete next.enabled;
+          onChange(next);
+        } else onChange({ ...fragment, enabled: false });
+      }} />
+      <span aria-hidden="true"><i /></span>
+      {mobileLayout && <b>参与生成</b>}
+    </label>;
+  const deleteControl = toggleOnly ? (fragment.inheritance && Object.keys(fragment.inheritance).length > 0
+      ? <button type="button" className="prompt-fragment-delete prompt-fragment-reset" title="恢复继承的权重和开关" aria-label={`恢复${categoryLabel}第 ${index + 1} 项继承值`} onClick={() => restoreInheritance()}>{mobileLayout ? '恢复继承' : '↶'}</button>
+      : <span className="prompt-fragment-delete" aria-hidden="true" />)
+      : <button type="button" className="prompt-fragment-delete" onClick={onDelete} aria-label={`删除${categoryLabel}第 ${index + 1} 项`}>{mobileLayout ? '删除词条' : '×'}</button>;
   return <article className={`prompt-fragment-row ${isCameraFragment ? "is-camera-control" : ""} ${toggleOnly ? "prompt-fragment-row--toggle-only" : ""} ${enabled ? "" : "is-disabled"} ${hasVisibleError ? "has-error" : visibleFragmentIssues.length ? "has-warning" : ""} ${dragPosition ? `is-drag-${dragPosition}` : ""}`.replace(/\s+/g, " ").trim()} data-fragment-id={fragment.id} data-prompt-type={type} aria-label={isCameraFragment ? "机位控制" : undefined} title={fragment.inheritance_source ?? (isCameraFragment ? "机位控制" : undefined)} onBlurCapture={(event) => {
     if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDeferEmptyError(false);
   }}>
@@ -768,14 +792,16 @@ function PromptFragmentRow({
           className={promptTextMissing && !deferEmptyError ? "is-missing" : ""} aria-keyshortcuts="F1"
           onDetails={entry => { dictionaryDetailsOpen.current = true; setDetailEntry(entry); }}
           onFocus={() => { if (!toggleOnly) setQueryFocused(true); }} onCaretChange={setQueryCaret}
-          onBlur={() => { if (toggleOnly || dictionaryDetailsOpen.current) return; setQueryFocused(false); commitQueryDraft(); closeQuerySearch(); void inferPromptTypeAfterUserEdit(queryDraft); }}
+          onBlur={() => { if (toggleOnly || dictionaryDetailsOpen.current) return; setQueryFocused(false); commitQueryDraft(); closeQuerySearch(); }}
           onCompositionStart={() => { queryComposingRef.current = true; setQueryComposing(true); closeQuerySearch(); }}
           onCompositionEnd={() => { queryComposingRef.current = false; setQueryComposing(false); }}
           onKeyDown={handleQueryKeyDown} onValueChange={(text, caret) => { setQueryCaret(caret); updateQueryDraft(text); }} />
       </div>
-      <button ref={weightTriggerRef} type="button" className="prompt-fragment-weight-button" disabled={toggleOnly && upstreamWeight === undefined} onPointerDown={(event) => event.stopPropagation()} onClick={toggleOnly && upstreamWeight === undefined ? undefined : toggleWeightMenu} title={fragment.inheritance ? Object.hasOwn(fragment.inheritance, 'weight') ? '权重已覆盖，点击修改或恢复继承' : '权重随上游，点击设置覆盖' : '点击修改权重'} aria-haspopup="dialog" aria-expanded={weightMenuOpen} aria-label={`${categoryLabel}第 ${index + 1} 项权重 ${promptWeightLabel(fragment.weight)}`}>{promptWeightLabel(fragment.weight)}{fragment.inheritance && Object.hasOwn(fragment.inheritance, 'weight') ? ' •' : ''}</button>
-      {weightMenuOpen && <div className="prompt-fragment-weight-menu" ref={weightMenuRef} role="dialog" aria-label={`${categoryLabel}第 ${index + 1} 项权重编辑`} onPointerDown={(event) => event.stopPropagation()}>
-        <strong>{fragment.inheritance ? '权重与继承' : '修改权重'}</strong>
+      <button ref={weightTriggerRef} type="button" className="prompt-fragment-weight-button" disabled={!mobileLayout && toggleOnly && upstreamWeight === undefined} onPointerDown={(event) => event.stopPropagation()} onClick={toggleWeightMenu} title={mobileLayout ? '词条选项' : fragment.inheritance ? Object.hasOwn(fragment.inheritance, 'weight') ? '权重已覆盖，点击修改或恢复继承' : '权重随上游，点击设置覆盖' : '点击修改权重'} aria-haspopup="dialog" aria-expanded={weightMenuOpen} aria-label={mobileLayout ? `${categoryLabel}第 ${index + 1} 项选项` : `${categoryLabel}第 ${index + 1} 项权重 ${promptWeightLabel(fragment.weight)}`}>{mobileLayout ? '···' : promptWeightLabel(fragment.weight)}{fragment.inheritance && Object.hasOwn(fragment.inheritance, 'weight') ? ' •' : ''}</button>
+      {weightMenuOpen && <div className="prompt-fragment-weight-menu" ref={weightMenuRef} role="dialog" aria-label={`${categoryLabel}第 ${index + 1} 项${mobileLayout ? '选项' : '权重编辑'}`} onPointerDown={(event) => event.stopPropagation()}>
+        <strong>{mobileLayout ? `${categoryLabel}第 ${index + 1} 项选项` : fragment.inheritance ? '权重与继承' : '修改权重'}</strong>
+        {mobileLayout && <div className="prompt-fragment-mobile-actions">{enabledControl}{deleteControl}</div>}
+        {(!toggleOnly || upstreamWeight !== undefined) && <>
         {upstreamWeight !== undefined && <div className="prompt-fragment-weight-upstream">
           <span>上游 <span className="prompt-fragment-weight-value">{promptWeightLabel(upstreamWeight)}</span></span>
           <button type="button" disabled={fragment.inheritance && !Object.hasOwn(fragment.inheritance, 'weight')} onClick={() => fragment.inheritance ? restoreInheritance('weight') : commitWeight(upstreamWeight)}>恢复上游权重</button>
@@ -784,23 +810,11 @@ function PromptFragmentRow({
         <div className="prompt-fragment-weight-input-row"><label><span>{upstreamWeight !== undefined ? '当前权重' : '权重'}</span><input autoFocus={!coarsePointer} type="number" min="0.2" max="10" step="0.1" value={weightDraft} aria-label={`${categoryLabel}第 ${index + 1} 项权重`} onChange={(event) => { setWeightDraft(event.target.value); setWeightError(""); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); commitWeight(); } else if (event.key === "Escape") { event.preventDefault(); setWeightMenuOpen(false); } }} /></label><div className="prompt-fragment-weight-menu-actions"><button type="button" className="is-primary" onClick={() => commitWeight()}>确定</button></div></div>
         {weightError && <small className="prompt-fragment-weight-error" role="alert">{weightError}</small>}
         <div className="prompt-fragment-weight-menu-actions prompt-fragment-weight-presets">{[0.5, 1, 1.5, 2, 3].map(weight => <button key={weight} type="button" onClick={() => commitWeight(weight)}>×{weight}</button>)}</div>
+        </>}
       </div>}
     </div>
-    <label className={`prompt-fragment-enabled ${enabled ? "is-on" : "is-off"}`} title={fragment.inheritance ? Object.hasOwn(fragment.inheritance, 'enabled') ? '开关已覆盖' : '开关随上游' : enabled ? "参与生成" : "已关闭，不参与生成"}>
-      <input type="checkbox" aria-label={`${categoryLabel}第 ${index + 1} 项参与生成`} checked={enabled} onChange={(event) => {
-        if (fragment.inheritance) onChange({ ...fragment, enabled: event.target.checked, inheritance: { ...fragment.inheritance, enabled: event.target.checked } });
-        else if (event.target.checked) {
-          const next = { ...fragment };
-          delete next.enabled;
-          onChange(next);
-        } else onChange({ ...fragment, enabled: false });
-      }} />
-      <span aria-hidden="true"><i /></span>
-    </label>
-    {toggleOnly ? (fragment.inheritance && Object.keys(fragment.inheritance).length > 0
-      ? <button type="button" className="prompt-fragment-delete prompt-fragment-reset" title="恢复继承的权重和开关" aria-label={`恢复${categoryLabel}第 ${index + 1} 项继承值`} onClick={() => restoreInheritance()}>↶</button>
-      : <span className="prompt-fragment-delete" aria-hidden="true" />)
-      : <button type="button" className="prompt-fragment-delete" onClick={onDelete} aria-label={`删除${categoryLabel}第 ${index + 1} 项`}>×</button>}
+    {!mobileLayout && enabledControl}
+    {!mobileLayout && deleteControl}
     {markerErrors.length > 0 && <div className="prompt-fragment-issues" role="alert">{markerErrors.map(message => <p className="is-error" key={message}>{message}</p>)}</div>}
     {visibleFragmentIssues.length > 0 && <div className="prompt-fragment-issues">{visibleFragmentIssues.map((issue, issueIndex) => <p className={issue.severity === "error" ? "is-error" : "is-warning"} key={`${issue.code ?? "issue"}-${issueIndex}`}><b>{issue.severity === "error" ? "错误" : "警告"}</b>{issueText(issue)}</p>)}</div>}
     {suggestionPanel}

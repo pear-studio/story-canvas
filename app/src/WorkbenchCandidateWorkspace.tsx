@@ -488,7 +488,7 @@ export function WorkbenchCandidateWorkspace({
     : null;
 
   return <>
-    <aside className="page-images" style={{ "--candidate-width": `${candidateWidth}px` } as React.CSSProperties}>
+    <aside className="page-images page-images--candidates" style={{ "--candidate-width": `${candidateWidth}px` } as React.CSSProperties}>
     <div className="current-media-stack">
       {mediaStatus === "loading" && <div className="candidate-media-state">正在读取当前页面媒体…</div>}
       {mediaStatus === "error" && <div className="candidate-media-state candidate-media-state--error"><span>{mediaError || "读取当前页面媒体失败"}</span>{onReloadMedia && <button type="button" className="button button--quiet" onClick={() => void onReloadMedia()}>重试</button>}</div>}
@@ -512,9 +512,12 @@ export function WorkbenchCandidateWorkspace({
     </div>
 
     {historyOpen && <Modal size="workspace" title="历史候选" subtitle={<>{ownerLabel ? `${ownerLabel} · ` : ""}{pageTitle} · {candidates.length} 张</>} onClose={() => setHistoryOpen(false)} dismissible={!fullscreen && !menu && !detail} className="candidate-history-modal" ariaLabel="历史候选">
+      {mediaStatus === "loading" && <p role="status">正在读取候选…</p>}
+      {mediaStatus === "error" && <p role="alert">{mediaError || "读取当前页面媒体失败"}</p>}
       {<div className="candidate-history-toolbar">
-        <p>{selectedIds.size ? `已选择 ${selectedIds.size} 张` : "拖动框选；Ctrl 加选，Shift 连选，双击查看大图"}</p>
+        <p>{selectedIds.size ? `已选择 ${selectedIds.size} 张` : <><span className="candidate-desktop-hint">拖动框选；Ctrl 加选，Shift 连选，双击查看大图</span><span className="candidate-mobile-hint">点按查看大图，长按打开操作菜单</span></>}</p>
         <div>
+          {onReloadMedia && <button type="button" className="button button--quiet" disabled={mediaStatus === "loading" || mutationBusy} onClick={() => void onReloadMedia()}>刷新候选</button>}
           <button type="button" className="button button--quiet" disabled={!ids.length || selectedIds.size === ids.length} onClick={() => setSelectedIds(new Set(ids))}>全选</button>
           <button type="button" className="button button--quiet" disabled={!selectedIds.size} onClick={() => { setSelectedIds(new Set()); selectionAnchor.current = ""; }}>取消选择</button>
           <button type="button" className="button button--danger" disabled={candidateOperationBusy || !removableIds(ids.filter((id) => selectedIds.has(id))).length} onClick={() => void deleteIds(ids.filter((id) => selectedIds.has(id)))}>删除所选</button>
@@ -539,6 +542,7 @@ export function WorkbenchCandidateWorkspace({
       {onDiscardAll && <button type="button" className="icon-button" aria-label="放弃本页全部修改" title="放弃本页全部修改" disabled={operationBusy || !pageDirty} onClick={() => onDiscardAll()}><UndoIcon /></button>}
       {onSaveAll && <button type="button" className="button button--quiet" disabled={operationBusy || !pageDirty} onClick={() => void onSaveAll()}>保存</button>}
       <GenerateSplitButton dirty={!factReady} count={generationCount} disabled={generationDisabled} reason={generationReason} onSubmit={submitGeneration} onCountChange={onGenerationCountChange} />
+      <button type="button" className="button button--quiet mobile-candidates-trigger" aria-label={`查看候选图，共 ${candidates.length} 张`} aria-haspopup="dialog" aria-expanded={historyOpen} onClick={() => setHistoryOpen(true)}>候选 {candidates.length}</button>
       {generationProblemsButton}
     </div>
   </>;

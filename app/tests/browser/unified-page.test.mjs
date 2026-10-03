@@ -10,8 +10,8 @@ before(async()=>{
  browser=await chromium.launch({headless:true,channel:process.env.BROWSER_CHANNEL||(process.platform==='win32'?'msedge':undefined)});
 });
 after(async()=>{await browser?.close();await server?.close();});
-async function open(t,query,setup){
- const page=await browser.newPage({viewport:{width:1400,height:1000}});page.setDefaultTimeout(8000);
+async function open(t,query,setup,options={}){
+ const page=await browser.newPage({viewport:{width:1400,height:1000},...options});page.setDefaultTimeout(8000);
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
  t.after(async()=>{assert.deepEqual(errors,[]);await page.close();});
  await page.route('**/api/projects/test/materials', route => route.fulfill({json:{materials:[{file:'reference.png',title:'角色参考',available:true,url:null}]}}));
@@ -206,12 +206,12 @@ test('场景搜索选择与标签显示沿用角色交互，替换时保持单�
  assert.equal(await page.getByTitle('选择场景',{exact:true}).isVisible(),true);
 });
 
-for (const width of [1400,390]) test('角色和场景默认只占两行，图片与编辑控件收起 '+width,async t=>{
+for (const width of [1400,390]) test('角色和场景默认收起，窄屏保留触屏手柄空间 '+width,async t=>{
  const page=await open(t,'kind=story&collapsed');await page.setViewportSize({width,height:1000});
  const rows=page.locator('.page-reference-rows');
  assert.equal(await rows.locator('.page-reference-row').count(),2);
  assert.equal(await rows.locator('.reference-disclosure[aria-expanded="true"]').count(),0);
- const size=await rows.boundingBox();assert.ok(size.height<=80, '两行总高度为 '+size.height);
+ const size=await rows.boundingBox();assert.ok(size.height<=(width<680?145:80), '引用区域总高度为 '+size.height);
  assert.equal(await rows.locator('img:visible').count(),0);
  assert.equal(await rows.locator('.page-reference-header .character-setting-chip').count(),2);
  assert.equal(await page.getByLabel('页面场景设定').isVisible(),true);
@@ -233,6 +233,49 @@ test('展开角色行后用拖拽改变引用顺序',async t=>{
  await page.mouse.move(to.x,to.y+to.height/2,{steps:8});await page.mouse.up();
  await page.getByRole('button',{name:'保存',exact:true}).click();await page.waitForFunction(()=>localStorage.getItem('saved-page'));
  assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem('saved-page')).content.characters.map(r=>r.character_id)),['bob','alice']);
+});
+
+test('手机触屏可跨行拖动角色，顺序随页面保存',async t=>{
+ const page=await open(t,'kind=story&collapsed',undefined,{viewport:{width:390,height:844},isMobile:true,hasTouch:true});
+ await page.evaluate(()=>{const meta=document.createElement('meta');meta.name='viewport';meta.content='width=device-width, initial-scale=1';document.head.append(meta);document.querySelector('#root > div').style.padding='8px';});
+ await page.getByTitle('选择角色',{exact:true}).click();
+ await page.locator('.reference-picker-menu label').filter({hasText:'鲍勃 · 白天'}).getByRole('checkbox').check();
+ await page.getByTitle('选择角色',{exact:true}).click();
+ // 让标签换行，验证真实 touch 输入不会被浏览器滚动接管。
+ await page.locator('.reference-chips').first().evaluate(e=>e.style.maxWidth='210px');
+ const handle=page.getByRole('button',{name:'拖动排序：鲍勃',exact:true});
+ await handle.scrollIntoViewIfNeeded();
+ const from=await handle.boundingBox();
+ const to=await page.getByRole('button',{name:'拖动排序：艾莲',exact:true}).boundingBox();
+ assert.ok(from.width>=44 && from.height>=44);
+ assert.ok(from.y>to.y,'标签应跨行');
+ const cdp=await page.context().newCDPSession(page);
+ const start={x:from.x+from.width/2,y:from.y+from.height/2};
+ await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[start]});
+ for(let step=1;step<=8;step++)await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:start.x+(to.x-start.x)*step/8,y:start.y+(to.y+to.height/2-start.y)*step/8}]});
+ await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+ await cdp.detach();
+ await page.setViewportSize({width:1400,height:1000});
+ await page.getByRole('button',{name:'保存',exact:true}).click();
+ await page.waitForFunction(()=>localStorage.getItem('saved-page'));
+ assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem('saved-page')).content.characters.map(r=>r.character_id)),['bob','alice']);
+});
+
+test('手机人数选择与无人物切换保存为原有人数词',async t=>{
+ const page=await open(t,'anima&collapsed',undefined,{viewport:{width:390,height:844},isMobile:true,hasTouch:true});
+ await page.evaluate(()=>{const meta=document.createElement('meta');meta.name='viewport';meta.content='width=device-width, initial-scale=1';document.head.append(meta);document.querySelector('#root > div').style.padding='8px';});
+ await page.getByLabel('girl 人数选择',{exact:true}).selectOption('2');
+ await page.getByLabel('boy 人数选择',{exact:true}).selectOption('1');
+ await page.setViewportSize({width:1400,height:1000});
+ await page.getByRole('button',{name:'保存',exact:true}).click();
+ await page.waitForFunction(()=>localStorage.getItem('saved-page'));
+ assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem('saved-page')).prompt.population.map(f=>f.tag)),['2girls','1boy']);
+ await page.setViewportSize({width:390,height:844});
+ await page.getByRole('checkbox',{name:'无人物',exact:true}).check();
+ await page.setViewportSize({width:1400,height:1000});
+ await page.getByRole('button',{name:'保存',exact:true}).click();
+ await page.waitForFunction(()=>JSON.parse(localStorage.getItem('saved-page')).prompt.population[0]?.tag==='no_humans');
+ assert.equal(await page.getByLabel('girl 人数选择',{exact:true}).inputValue(),'0');
 });
 
 test('引用文字默认生效，缩略图切换颜色，底部只读汇总随草稿变化并包含附图',async t=>{
