@@ -1,3 +1,4 @@
+import { compactSourcePool } from './prompt-source-pool.mjs';
 import { requestWorkbench } from '../workbench-client.mjs';
 import { schema, string, object, invalid, pagination } from './contract.mjs';
 import { pageEditHelp } from './page-edit-help.mjs';
@@ -69,7 +70,7 @@ async function batch(args,execution,saving) {
     delete result.read_hint;
     if (result.references) delete result.references.edit;
   }
-  return {read_hint:saving?undefined:'document 仅为本页词；references.characters 是实际引用；inherited_source_refs 指向 sources 中已应用本页调整的继承词，不要复制。角色增删先 page.editor.read(section:content) 再保存 characters；人数和对白不会解除引用。Anima 角色词优先用 person_groups 编辑；bindings 为0起始位置，diagnostics 提供归属和权重证据，不自动删词。',...(sourcePool.length?{sources:sourcePool}:{}),results,counts:results.reduce((counts,row)=>(counts[row.status]=(counts[row.status]??0)+1,counts),{}),...(recoveries.length?{recoveries}:{}),save:{operation:'prompt.batch.save',args:{project_id:args.project_id},items_parameter:'items',usage:'逐项取 target、expected_sha256、source_versions，加 changes；不要回传 document/references/继承展示。'}};
+  return {...(!saving?{read_hint:'document 仅为本页词；references.characters 是实际引用；inherited_source_refs 指向 sources 中已应用本页调整的继承词。含 base_ref 的来源先取该基准展示，再按 key 用自身 entries 完整替换同名条目；未列出的保持基准，最多一层。这是只读展示复用，不是上游默认值，不要复制回 document。角色增删先 page.editor.read(section:content) 再保存 characters；人数和对白不会解除引用。Anima 角色词优先用 person_groups 编辑；bindings 为0起始位置，diagnostics 提供归属和权重证据，不自动删词。'}:{}),...(sourcePool.length?{sources:compactSourcePool(sourcePool)}:{}),results,counts:results.reduce((counts,row)=>(counts[row.status]=(counts[row.status]??0)+1,counts),{}),...(recoveries.length?{recoveries}:{}),save:{operation:'prompt.batch.save',args:{project_id:args.project_id},items_parameter:'items',usage:'逐项取 target、expected_sha256、source_versions，加 changes；不要回传 document/references/继承展示。'}};
 }
 
 export const promptActions = {
@@ -77,6 +78,6 @@ export const promptActions = {
   'prompt.read':{summary:'读取页面或设定的单模型 Prompt 范围',parameters:schema(fields),details,helpTopics,example:{project_id:'demo',target:{kind:'page',id:'page-001'}},execute:(args,execution)=>post('read',args,execution)},
   'prompt.save':{summary:'修改已读取的 Prompt 范围，保留其余内容',parameters:schema({project_id:fields.project_id,...saveFields},['project_id','target','expected_sha256','changes']),details:saveRules,helpTopics,recover,execute:(args,execution)=>post('save',args,execution)},
   'prompt.sources':{example:{project_id:'demo',target:{kind:'page',id:'page-001'},source:'character:alice:default'},summary:'按需查看继承来源与稳定词条键',parameters:schema({...fields,source:string('省略只列来源；指定 character:<id>:<variant> 或 scene:<id>:<variant> 返回明细，也可读取将要新引用的来源')},['project_id','target']),details:'页面省略 source 只返回当前来源索引；指定来源返回真实文字、稳定key、权重／启用和 source_versions。角色／场景 target 需 scope:variant，只查询自身。页面可查询将要新引用的来源。Anima 页面写 inheritance[source][key]；设定子设定写 identity_overrides[key]，仅能覆盖 identity: 开头的基础词，自身新增词直接改 prompt。不从原词猜key；关闭词也返回，可在下层开启。新来源的 source_versions 合并进最初 prompt.read 的保存参数，保留原范围版本。此操作只读，不返回替换范围版本的保存参数。',helpTopics,execute:(args,execution)=>post('sources',args,execution)},
-  'prompt.batch.read':{summary:'读取最多16个 Prompt 范围及逐项保存参数',parameters:schema({project_id:fields.project_id,targets:items(target)}),details:`${details} 批量返回本次范围、角色引用，继承来源在 sources 中去重，各项 inherited_source_refs 引用它；各项指纹加 changes 即可保存。先完成 content 修改，再读取有关 Prompt。失败项单独处理。`,helpTopics,execute:(args,execution)=>batch(args,execution,false)},
+  'prompt.batch.read':{summary:'读取最多16个 Prompt 范围及逐项保存参数',parameters:schema({project_id:fields.project_id,targets:items(target)}),details:`${details} 批量返回本次范围、角色引用，继承来源在 sources 中去重，各项 inherited_source_refs 引用它；sources 的 base_ref 只复用展示，entries 按 key 替换完整有效条目（包括启用、权重和 consumed），不是删除其余条目；各项指纹加 changes 即可保存。先完成 content 修改，再读取有关 Prompt。失败项单独处理。`,helpTopics,execute:(args,execution)=>batch(args,execution,false)},
   'prompt.batch.save':{summary:'逐项保存 Prompt 范围，返回简短逐项回执',parameters:schema({project_id:fields.project_id,items:items(schema(saveFields,['target','expected_sha256','changes']))}),details:`${saveRules} 最多16项，各自是独立事务；来源冲突按 recovery_ids 查 recoveries 中的 prompt.sources 入口，同源同模型合并读取；范围冲突按 next 重读。冲突继续其他项，不回滚成功项。网络／服务错误记 unknown 并停止后续，先核实 unknown，不能整批重放。`,helpTopics,execute:(args,execution)=>batch(args,execution,true)},
 };

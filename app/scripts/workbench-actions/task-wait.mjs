@@ -8,7 +8,7 @@ const cursor = task => createHash('sha256').update(JSON.stringify({
 })).digest('hex').slice(0, 20);
 
 // 工具内串行轮询；模型只收到一次有界摘要。中止信号只结束读取，不发送任务控制请求。
-export async function waitForTasks({ targets, wait_ms = 60000, until = 'terminal' }, { signal, read, intervalMs = 2000 }) {
+export async function waitForTasks({ targets, wait_ms = 600000, until = 'terminal' }, { signal, read, intervalMs = 2000 }) {
   if (signal?.aborted) throw Object.assign(new Error('等待已取消；生成任务未取消。'), { code: 'wait_cancelled' });
   const deadline = AbortSignal.timeout(wait_ms || 5000);
   const combined = signal ? AbortSignal.any([signal, deadline]) : deadline;

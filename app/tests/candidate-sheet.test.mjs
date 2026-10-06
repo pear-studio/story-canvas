@@ -31,6 +31,12 @@ test('章节按单元顺序与组内索引排列，文字页保留，空章可�
   for(const p of entries)await writeFile(path.join(dir,'pages',p.page_id+'.content.json'),JSON.stringify({title:p.page_id,page_kind:'text',body:'测试文字'}));
   const snapshot=await captureCandidateSheet(dir,{project_id:'demo',chapter_id:'chapter'});
   assert.equal(snapshot.pages[0].page_key.page_id,'page-002');assert.equal(snapshot.pages.at(-1).page_key.page_id,'page-001');
+  const selected=await captureCandidateSheet(dir,{page_keys:[{page_id:'page-001'},{page_id:'page-002'}]});
+  assert.deepEqual(selected.pages.map(p=>p.page_number),[1,13]);
+  assert.deepEqual(selected.scope.page_keys,[{page_id:'page-002'},{page_id:'page-001'}]);
+  await assert.rejects(captureCandidateSheet(dir,{page_keys:[{page_id:'missing'}]}),e=>e.code==='sheet_page_not_found');
+  await assert.rejects(captureCandidateSheet(dir,{page_keys:[{page_id:'page-001'},{page_id:'page-001'}]}),e=>e.code==='duplicate_sheet_page');
+  await assert.rejects(captureCandidateSheet(dir,{page_keys:[],chapter_id:'chapter'}),e=>e.code==='invalid_sheet_scope');
   const result=await exportCandidateSheet(dir,dir,snapshot);
   assert.equal(result.pages,13);assert.equal(result.sheets.length,2);assert.equal(result.images,0);assert.equal(result.problem_count,0);
   const empty=await captureCandidateSheet(dir,{project_id:'demo',chapter_id:'empty'});

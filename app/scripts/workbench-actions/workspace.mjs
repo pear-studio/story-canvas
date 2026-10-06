@@ -1,3 +1,4 @@
+import { fixedWaitBudget } from './wait-budget.mjs';
 import { requestWorkbench, projectRoute } from '../workbench-client.mjs';
 import { schema, string, object, pagination, paginate, invalid } from './contract.mjs';
 import { project } from './navigation.mjs';
@@ -19,19 +20,26 @@ async function waitForSelection(args,execution={}) {
   if(record && args.until && args.until!=='all_terminal')throw invalid('批次等待只支持 all_terminal');
   const targets=record?.targets??args.targets;
   if(new Set(targets.map(t=>JSON.stringify([t.project_id,t.task_id,t.purpose??'candidate']))).size!==targets.length)throw invalid('targets 不能包含重复任务');
-  const result=await waitForTasks({...args,targets,until:record?'all_terminal':args.until},{signal:execution.signal,
-    read:async(identity,signal)=>pick(taskSummary((await requestWorkbench(taskPath(identity)+'&view=summary',{signal})).value.task),['status','item_counts','progress','current_page_key','pending_control','error','failures'])});
+  let budget;
+  if(args.wait_ms===undefined) {
+    try { const workspace=(await requestWorkbench('/api/tasks',{signal:execution.signal?AbortSignal.any([execution.signal,AbortSignal.timeout(5000)]):AbortSignal.timeout(5000)})).value;
+      budget=fixedWaitBudget(targets,workspace,record?'all_terminal':args.until);
+    } catch(error) { if(execution.signal?.aborted)throw Object.assign(new Error('等待已取消；生成任务未取消。'),{code:'wait_cancelled'}); budget={wait_ms:600000,basis:'queue_unavailable'}; }
+  }
+  const result=await waitForTasks({...args,wait_ms:args.wait_ms??budget.wait_ms,targets,until:record?'all_terminal':args.until},{signal:execution.signal,
+    read:async(identity,signal)=>pick(taskSummary((await requestWorkbench(taskPath(identity)+'&view=summary',{signal:AbortSignal.any([signal,AbortSignal.timeout(15000)])})).value.task),['status','item_counts','progress','current_page_key','pending_control','error','failures'])});
   const images=await waitResultImages(result,{request:requestWorkbench,signal:execution.signal});
+  if(budget){result.wait_budget=budget;if(result.wait)delete result.wait.args.wait_ms;}
   if(!record)return {...result,...images};
   const problems=result.tasks.filter(t=>t.error || ['failed','cancelled','incomplete'].includes(t.task?.status??t.status));
-  return {...images,batch_id:args.batch_id,reason:result.reason,elapsed_ms:result.elapsed_ms,quantity:generationQuantity(record),submission:submissionCounts(record),summary:result.summary,
+  return {...images,...(budget?{wait_budget:budget}:{}),batch_id:args.batch_id,reason:result.reason,elapsed_ms:result.elapsed_ms,quantity:generationQuantity(record),submission:submissionCounts(record),summary:result.summary,
     all_terminal:result.all_terminal,all_succeeded:result.all_succeeded && record.results.every(r=>r.status==='submitted'),
     ...(problems.length?{problems:problems.slice(0,5),problems_total:problems.length}:{}),
-    ...(!result.all_terminal?{wait:{operation:'task.wait',args:{batch_id:args.batch_id}}}:{}),
+    ...(!result.all_terminal?{wait:{operation:'task.wait',args:{batch_id:args.batch_id,...(args.wait_ms!==undefined?{wait_ms:args.wait_ms}:{})}}}:{}),
     inspect:{operation:'task.batch.read',args:{batch_id:args.batch_id}}};
 }
 function taskSummary(task) {
-  return {...pick(task,['id','purpose','status','project_id','project_title','created_at','started_at','completed_at','failed_at','error','progress','item_counts','current_page_key','current_page_title','page_count','pending_control']),
+  return {...pick(task,['id','purpose','status','project_id','project_title','created_at','started_at','completed_at','failed_at','error','render_profile','media_kind','progress','item_counts','current_page_key','current_page_title','page_count','pending_control']),
     failures:(task.items??[]).filter(item=>item.status==='failed').slice(0,5).map(item=>pick(item,['id','candidate_id','page_key','status','error']))};
 }
 async function findLora(id) {
@@ -116,9 +124,9 @@ export const workspaceActions = {
   },
   'task.wait': {
     summary:'等待单项或整批任务终态并核验结果数量',
-    parameters:schema({batch_id:string('generation.batch 的批次 ID；与 targets 二选一'),targets:{type:'array',minItems:1,maxItems:32,description:'手动选择任务；最多32项',items:schema({...taskIdentity,after_cursor:string('上次 wait 返回的 cursor；首次可省略')},['project_id','task_id'])},until:{type:'string',enum:['terminal','all_terminal','change'],description:'targets 默认 terminal；batch_id 固定 all_terminal'},wait_ms:{type:'integer',minimum:0,maximum:60000,description:'默认60000毫秒；0只读快照，不能超过60000'}},[]),
-    details:'批量生成后直接传 batch_id，不抄任务列表。一次最多等60秒，超时照 wait.args 续等，不用 Shell sleep、不重提生成。终态结果附带本任务图片绝对路径（总计最多12张、最多读取4个任务），用 read_image 查看；更多图片按返回的 task.results 分页入口查询，无需 candidate.list。图片查询失败不改变任务成功状态。批次返回计数和最多5项异常；逐项状态用 task.batch.read。all_terminal 表示任务已结束，all_succeeded 才表示全部提交且成功；失败、取消或未提交不算成功。targets 模式仍支持任一终态或进度变化。停止等待不取消任务；取消须 task.cancel。批次回执保存在 Saved，重启可用，清理 Saved 后按 task.list/history 找原任务。',
-    example:{targets:[{project_id:'demo',task_id:'render-example'}],wait_ms:60000},
+    parameters:schema({batch_id:string('generation.batch 的批次 ID；与 targets 二选一'),targets:{type:'array',minItems:1,maxItems:32,description:'手动选择任务；最多32项',items:schema({...taskIdentity,after_cursor:string('上次 wait 返回的 cursor；首次可省略')},['project_id','task_id'])},until:{type:'string',enum:['terminal','all_terminal','change'],description:'targets 默认 terminal；batch_id 固定 all_terminal'},wait_ms:{type:'integer',minimum:0,maximum:1800000,description:'省略用固定经验档：图片1页2分钟、2–4页5分钟、更多10分钟；视频1页20分钟、多页30分钟；0只读快照'}},[]),
+    details:'批量生成后直接传 batch_id，不抄任务列表。工具内每2秒读轻量状态，省略 wait_ms 用固定经验档位，包含排在目标前面的任务：图片1页2分钟、2–4页5分钟、更多10分钟；含视频或未知类型时1页20分钟、多页30分钟。不读取历史或拟合参数。查询队列失败回退10分钟；显式 wait_ms 优先。终态或读取错误立即返回。单次状态读取最多15秒。超时照 wait.args 续等，不用 Shell sleep、不重提生成。终态结果附带本任务图片绝对路径（总计最多12张、最多读取4个任务），用 read_image 查看；更多图片按返回的 task.results 分页入口查询，无需 candidate.list。图片查询失败不改变任务成功状态。批次返回计数和最多5项异常；逐项状态用 task.batch.read。all_terminal 表示任务已结束，all_succeeded 才表示全部提交且成功；失败、取消或未提交不算成功。targets 模式仍支持任一终态或进度变化。停止等待不取消任务；取消须 task.cancel。批次回执保存在 Saved，重启可用，清理 Saved 后按 task.list/history 找原任务。',
+    example:{targets:[{project_id:'demo',task_id:'render-example'}]},
     execute:waitForSelection,
   },
   'task.batch.read': {

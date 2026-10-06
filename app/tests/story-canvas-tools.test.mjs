@@ -180,13 +180,14 @@ test('task.wait 的工具契约限制数量与期限，传递取消信号且只�
   const f=await fixture(t,(_request,response)=>response.end(JSON.stringify({task:{id:'t1',status:'completed',purpose:'candidate',items:[]}})));
   const help=await f.tool.execute({operation:'help',target:'task.wait'});
   assert.match(help.details,/停止等待不取消任务/);
-  for(const args of [{targets:[]},{targets:[{task_id:'t1'}]},{targets:[{project_id:'p',task_id:'t1'}],wait_ms:60001}]){
+  for(const args of [{targets:[]},{targets:[{task_id:'t1'}]},{targets:[{project_id:'p',task_id:'t1'}],wait_ms:1800001}]){
     assert.equal((await failure(f.tool,{operation:'task.wait',args})).error,'invalid_arguments');
   }
   assert.equal(f.requests.length,0);
   const result=await f.tool.execute({operation:'task.wait',args:{targets:[{project_id:'p',task_id:'t1'}]}});
   assert.equal(result.reason,'terminal');assert.equal(f.requests[0].method,'GET');
-  assert.equal(f.requests[0].url,'/api/tasks/p/t1?purpose=candidate&view=summary');
+  assert.ok(f.requests.some(r=>r.url==='/api/tasks/p/t1?purpose=candidate&view=summary'));
+  assert.ok(f.requests.some(r=>r.url==='/api/tasks'));
   const blocked=await fixture(t,()=>{}),controller=new AbortController();
   const pending=blocked.tool.execute({operation:'task.wait',args:{targets:[{project_id:'p',task_id:'t1'}]}},{signal:controller.signal});
   setTimeout(()=>controller.abort(),30);
@@ -874,4 +875,17 @@ test('Prompt 校验错误直接修正，批量继承去重且保存参数无需�
  assert.equal(saved.counts.failed,2);assert.equal(saved.results[0].recovery.action,'correct_changes');assert.equal(saved.results[0].next,undefined);
  const one=await failure(f.tool,{operation:'prompt.save',args:{project_id:'demo',...items[0]}});
  assert.equal(one.recovery.action,'correct_changes');
+});
+
+test('批量读取跨页有效继承展示可复用，页面指纹和引用保持独立',async t=>{
+ const f=await fixture(t,({body},res)=>{
+  const entries=Array.from({length:8},(_,i)=>({key:'key-'+i,text:'appearance-'+i,enabled:!(body.target.id==='page-b'&&i===1),weight:1}));
+  res.end(JSON.stringify({target:body.target,document:{person:[]},inherited_sources:[{source:'character:alice:default',entries}],save:{args:{expected_sha256:body.target.id,source_versions:{alice:'hash'}}}}));
+ });
+ const targets=['page-a','page-b'].map(id=>({kind:'page',id,model_id:'anima'}));
+ const result=await f.tool.execute({operation:'prompt.batch.read',args:{project_id:'demo',targets}});
+ assert.equal(result.sources[1].base_ref,result.sources[0].ref);
+ assert.deepEqual(result.sources[1].entries,[{key:'key-1',text:'appearance-1',enabled:false,weight:1}]);
+ assert.deepEqual(result.results.map(r=>r.expected_sha256),['page-a','page-b']);
+ assert.deepEqual(result.results.map(r=>r.inherited_source_refs),[['source-1'],['source-2']]);
 });

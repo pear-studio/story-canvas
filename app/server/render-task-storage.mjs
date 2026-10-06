@@ -180,6 +180,7 @@ function createState(task, display, revision = 1) {
     project_title: String(display?.project_title ?? task.project),
     purpose: task.purpose,
     render_profile: task.render_profile,
+    media_kind: (task.render_profile==='minimax-h3'||task.items.some(item=>item.video_settings))?'video':'image',
     status: task.status,
     created_at: task.created_at ?? null,
     started_at: task.started_at ?? null,

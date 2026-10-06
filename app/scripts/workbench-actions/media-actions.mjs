@@ -7,10 +7,10 @@ const post = (summary, suffix, fields, options = {}) => endpoint(summary, 'POST'
 const target = { ...schema({ kind: { ...string('归属'), enum: ['character','scene','page'] }, id: string('角色/场景/页面 ID'), variant_id: string('角色和场景必须提供子设定 ID'), model_id: { ...string('角色和场景必须显式提供 qwen；页面省略，模型取自当前 render'), enum: ['qwen'] } }, ['kind','id']), description: '参考图仅支持 Qwen；角色和场景必须给 variant_id 和 model_id:qwen；页面模型由当前 render 决定，不能用此参数切换模型' };
 const reference = (summary, action, fields, required, body) => post(summary, 'reference-library', { target, ...fields }, { required: ['target', ...required], details: '先 reference.list 取得 entries 与 sha256；修改传 expected_sha256。参考图最多十张，候选提升后保存到 materials，不依赖临时输出。', body: a => ({ target:a.target, action, ...body(a) }) });
 export const mediaActions = {
-  'candidate.sheet': endpoint('按单元或章节顺序查看最新批次的全部画面','POST','/api/agent/candidate-sheet',{
-    sequence_id:string('单元 ID；与 chapter_id 恰好提供一个'),chapter_id:string('章节 ID；与 sequence_id 恰好提供一个'),
+  'candidate.sheet': endpoint('按指定页面、单元或章节查看最新批次画面','POST','/api/agent/candidate-sheet',{
+    sequence_id:string('单元 ID；与 chapter_id、page_keys 三选一'),chapter_id:string('章节 ID；与 sequence_id、page_keys 三选一'),page_keys:array('最多32个明确剧情页面；按正式顺序拼图，不按传入顺序',pageKey,32),
   },{project:true,required:[],body:a=>a,transform:r=>r.value,
-    details:'按正式章节/单元/页面顺序，展示每页最新创建生成任务的全部候选；候选按任务内顺序。不按目录时间挑图，不回退旧批次，不删除或生成图片。失败、未出图、已删除图片原位标注；文字页显示文字卡。每张最多12格，自动覆盖整个范围。返回 sheets 的图片绝对路径，依次用 read_image 查看；manifest 保存完整页序、任务和候选身份。结果是读取时快照，生成变化后重新调用。仅生成本机预览，不加载大模型，极简模式可用。'}),
+    details:'sequence_id、chapter_id、page_keys 恰好提供一项。page_keys 不接受重复或非剧情页面，显示网页全局页码。按正式章节/单元/页面顺序，展示每页最新创建生成任务的全部候选；候选按任务内顺序。不按目录时间挑图，不回退旧批次，不删除或生成图片。失败、未出图、已删除图片原位标注；文字页显示文字卡。每张最多12格，自动覆盖整个范围。返回 sheets 的图片绝对路径，依次用 read_image 查看；manifest 保存完整页序、任务和候选身份。结果是读取时快照，生成变化后重新调用。仅生成本机预览，不加载大模型，极简模式可用。'}),
   'page.render.read': endpoint('读取单页模型、画幅及可选值','POST','/api/agent/page-render/read',{page_key:pageKey},
     {project:true,body:a=>a,transform:r=>r.value,details:'返回该页完整 render 文件、模型/画幅选项及 page.render.set 保存参数。只影响当前页；项目默认设置用于新页。无需读取组装后的 Prompt。'}),
   'page.render.set': endpoint('独立设置单页模型或画幅','POST','/api/agent/page-render/set',{

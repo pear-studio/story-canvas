@@ -103,6 +103,7 @@ async function publicRenderTaskState(projectDirectory, projectId, state, { detai
     progress,
     ...(detail ? { items } : {}),
     render_profile: state.render_profile,
+    media_kind: state.media_kind ?? (state.render_profile==='minimax-h3'?'video':'image'),
     project_id: projectId,
     project_title: state.project_title,
     page_count: pages.length,

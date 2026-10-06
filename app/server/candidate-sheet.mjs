@@ -1,3 +1,4 @@
+import { storyPageNumbers } from '../shared/story-page-numbers.mjs';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -9,20 +10,30 @@ import { readPageMedia } from './page-media.mjs';
 
 // 事实读取边界内冻结阅读顺序；后续读取媒体和绘图不持有项目锁。
 export async function captureCandidateSheet(projectDirectory, input) {
-  if (Boolean(input.sequence_id) === Boolean(input.chapter_id)) throw new ApiError(400, 'invalid_sheet_scope', ['恰好指定 sequence_id 或 chapter_id']);
+  if ([input.sequence_id,input.chapter_id,input.page_keys].filter(v=>v!==undefined).length!==1) throw new ApiError(400,'invalid_sheet_scope',['sequence_id、chapter_id、page_keys 恰好指定一项']);
+  let selected;
+  if(input.page_keys!==undefined) {
+    if(!Array.isArray(input.page_keys)||!input.page_keys.length||input.page_keys.length>32||input.page_keys.some(p=>!p||typeof p.page_id!=='string'))throw new ApiError(400,'invalid_sheet_pages');
+    selected=new Set(input.page_keys.map(p=>p.page_id));
+    if(selected.size!==input.page_keys.length)throw new ApiError(400,'duplicate_sheet_page');
+  }
   const outline = JSON.parse(await readFile(path.join(projectDirectory, 'story/outline.json'), 'utf8'));
   const sequences = outline.chapters.filter(c => !input.chapter_id || c.id === input.chapter_id)
     .flatMap(c => c.sequences.filter(s => !input.sequence_id || s.id === input.sequence_id).map(s => ({...s, chapter_id:c.id})));
   if (!sequences.length && !(input.chapter_id && outline.chapters.some(c=>c.id===input.chapter_id))) throw new ApiError(404, 'sheet_scope_not_found');
   const index = await readPageIndex(projectDirectory);
+  const orderedChapters=outline.chapters.map(c=>({...c,sequences:c.sequences.map(s=>({...s,pages:index.pages.filter(p=>p.owner_kind==='story'&&p.sequence_id===s.id)}))}));
+  const numbers=storyPageNumbers(orderedChapters);
+  if(selected && [...selected].some(id=>!numbers.has(id)))throw new ApiError(404,'sheet_page_not_found',['page_keys 仅支持正式剧情页；有页面不存在或不属于剧情']);
   const pages = [];
   for (const sequence of sequences) for (const entry of index.pages.filter(p => p.owner_kind === 'story' && p.sequence_id === sequence.id)) {
+    if(selected&&!selected.has(entry.page_id))continue;
     const content = await readPageContent(projectDirectory, entry.page_id);
-    pages.push({page_key:{page_id:entry.page_id}, sequence_id:sequence.id, sequence_title:sequence.title,
+    pages.push({page_number:numbers.get(entry.page_id),page_key:{page_id:entry.page_id}, sequence_id:sequence.id, sequence_title:sequence.title,
       title:content.title ?? '', page_kind:content.page_kind ?? 'illustration',
       ...(content.page_kind === 'text' ? {text:content.body ?? '', display_title:content.display_title ?? ''} : {})});
   }
-  return {project_id:input.project_id, scope:input.sequence_id ? {sequence_id:input.sequence_id} : {chapter_id:input.chapter_id}, captured_at:new Date().toISOString(), pages};
+  return {project_id:input.project_id, scope:selected?{page_keys:pages.map(p=>p.page_key)}:input.sequence_id ? {sequence_id:input.sequence_id} : {chapter_id:input.chapter_id}, captured_at:new Date().toISOString(), pages};
 }
 
 export function latestPageTask(states, pageId) {
@@ -58,7 +69,7 @@ export async function renderCandidateSheet(cells) {
     }
     if (!body) body=await sharp(await textImage(cell.page_kind==='text' ? `${cell.display_title}\n${cell.text}` : `无画面：${statusText(cell.status)}`,width-40))
       .resize(width-24,height-160,{fit:'contain',background:'#eeeeee',withoutEnlargement:true}).png().toBuffer();
-    const label=`${cell.ordinal}. ${cell.title}\n${cell.page_key.page_id}${cell.candidate_ordinal ? ' / 候选 '+cell.candidate_ordinal : ''}\n${statusText(cell.status)}${cell.task_status ? ' · '+statusText(cell.task_status) : ''}`;
+    const label=`${cell.page_number??cell.ordinal}. ${cell.title}\n${cell.page_key.page_id}${cell.candidate_ordinal ? ' / 候选 '+cell.candidate_ordinal : ''}\n${statusText(cell.status)}${cell.task_status ? ' · '+statusText(cell.task_status) : ''}`;
     const caption=await sharp(await textImage(label,width-24)).resize(width-24,130,{fit:'inside',withoutEnlargement:true}).png().toBuffer();
     layers.push({input:caption,left:left+12,top:top+8});
     layers.push({input:body,left:left+12,top:top+148});
@@ -90,7 +101,7 @@ export async function exportCandidateSheet(projectRoot, projectDirectory, snapsh
   for(let offset=0;offset<cells.length;offset+=12) {
     const file=path.join(folder,`${sheets.length+1}.png`),part=cells.slice(offset,offset+12);
     await writeFile(file,await renderCandidateSheet(part));
-    sheets.push({file,first_page:part[0].ordinal,last_page:part.at(-1).ordinal});
+    sheets.push({file,first_page:part[0].page_number??part[0].ordinal,last_page:part.at(-1).page_number??part.at(-1).ordinal});
   }
   const problems=cells.filter(c=>!['available','text'].includes(c.status)||c.task_status&&c.task_status!=='completed');
   const manifest=path.join(folder,'manifest.json');

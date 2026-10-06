@@ -86,6 +86,7 @@ test("workspace投影保持活动摘要轻量并按task id精确追踪被裁掉�
     { id: activeId, title: "第一页", owner: "开场" },
   ]);
   assert.deepEqual(result.history, []);
+  assert.equal(result.tasks[0].media_kind,'image');
   assert.deepEqual(result.tracked, [{ id: completedId, status: "completed" }]);
   assert.deepEqual(result.missing_tracked_task_ids, []);
 });
@@ -94,6 +95,7 @@ test("列表只发摘要，独立详情接口返回单任务条目和共享批�
   const { root, projectDirectory } = await fixture(context);
   const id = "render-20260828T010203Z-33333333";
   const value = task(id);
+  value.render_profile='minimax-h3';
   value.items.push({ id: "item-002", page_key: pageKey, seed: 8, status: "queued" });
   value.snapshot.execution_units = [{ id: "unit-001", item_ids: ["item-001", "item-002"] }];
   await createRenderTask(projectDirectory, value, { project_title: "Demo", pages: [{ page_key: pageKey, title: "第一页", order: 1 }] });
@@ -102,6 +104,7 @@ test("列表只发摘要，独立详情接口返回单任务条目和共享批�
   const submission = { prompt_id: "comfy-1", stages: [{ phase: "remote_wait", item_id: null, status: "completed", duration_ms: 1200 }] };
   await writeFile(path.join(directory, "unit-001.json"), JSON.stringify(submission));
   const active = (await listWorkspaceRenderTasks(root)).tasks[0];
+  assert.equal(active.media_kind,'video');
   assert.equal(Object.hasOwn(active, "items"), false);
   assert.equal(Object.hasOwn(active, "snapshot"), false);
   assert.equal(Object.hasOwn(active.pages[0], "preview_urls"), false);
