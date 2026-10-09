@@ -12,7 +12,7 @@
 对比实验使用独立的 manifest、轴、预检、API、UI 和结果存储，不把对比轴混入普通候选任务。
 它的 preflight 与普通页面生成共同消费 `compilePageRenderTarget(PageKey)`：直接按当前页面 index、
 narrative 或角色页 goal、页面 Prompt、角色配置和有效生成配置冻结 target hash。完整 PageKey 必须精确
-匹配 Owner；不会建立中间页面格式，也不会从裸 page ID 猜测对比实验目标。
+定位项目内唯一页面；Owner 只决定目录归属，不进入页面身份。不会建立中间页面格式。
 
 冻结执行单元的输出现在由 `render-media.mjs` 的 output adapter 统一描述和解析。candidate 策略会
 冻结候选 storage、输出 kind、稳定 `candidate_id`/`file` 以及可选 promotion；PNG 的 `extra_pnginfo`
@@ -26,7 +26,7 @@ submit/collect 循环中添加分支。
 
 ## 设计约束
 
-- 一个项目只选择一个基础 `render_profile`，不建立 profile `extends` 或多层继承。
+- 页面保存独立的模型、`profile_id` 和画幅；项目默认仅在新页创建时复制，不建立 profile `extends` 或多层继承。
 - 项目只保存一层稀疏调整，不保存基础配置全量副本。
 - 可复用资产通过引用组合；不同资产不能用“后者覆盖前者”的方式解决重名，语义 ID 冲突直接报错。
 - 每个可调整集合项必须有稳定语义 ID；模型按角色、operation 按名称、输入来源按名称、LoRA 按稳定
@@ -45,8 +45,7 @@ submit/collect 循环中添加分支。
 ### 全局 Prompt
 
 每个 profile 保存一段全局 `prompt.text`，编译时放在各设定文字之前；项目 sparse override 的语义
-target 也是 `prompt.text`（整段替换），用户清空时编译直接省略。不再有独立 prompt-policies 文件、
-prefix/suffix、分类片段、权重或负向。
+target 也是 `prompt.text`（整段替换），用户清空时编译直接省略。这是 Qwen 的文本配置契约；Anima 仍有模型专用 prompt policy、分类词条、权重与负向，见[模型适配器](model-adapters.md)。
 
 ### 生成参数
 
@@ -73,7 +72,7 @@ prefix/suffix、分类片段、权重或负向。
 ### Workflow manifest
 
 每个 `library/workflows/<id>.api.json` 配套一个 `<id>.manifest.json`。当前 Qwen 候选工作流使用
-扁平 binding 名称保存固定节点路径，不声明 modifier。以下示例与
+扁平 binding 名称保存固定节点路径，并声明 `lora.model_only`。以下示例与
 `qwen-image-2-1-text.manifest.json` 保持一致：
 
 ```json
@@ -108,7 +107,7 @@ prefix/suffix、分类片段、权重或负向。
 ### Modifier
 
 modifier 是渲染计划编译模块内部的确定性实现，不为只有一种实现的行为额外建立公开 adapter。
-当前 Qwen 候选工作流不声明任何 modifier；负向槽由绑定写空字符串。
+当前 Qwen 候选工作流允许 `lora.model_only`；负向槽由绑定写空字符串。Anima 与 H3 的 LoRA 接入由各自 manifest 声明。
 
 workflow manifest 声明它能接入哪些 modifier；生成配置提供风格 LoRA。modifier 不能选择另一份
 workflow。

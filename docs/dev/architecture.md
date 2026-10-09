@@ -113,8 +113,8 @@ scheduler、RNG 与采样游标）冻结一个新 run 后按同一路径执行�
 - `readFacts`：对必须使用完整当前事实视图的读取执行前后 revision 检查，并最多完整重试一次；
 - `mutateTargetFacts`：网页核心事实保存与 Agent 会话共用的窄写入，只校验目标和必要依赖；
 - `mutateFacts`：校验浏览器 expected revision，成功通过响应头返回写后 revision；
-- `deriveFromFacts`：校验浏览器 expected revision，在当前事实下建立冻结的渲染或 LoRA run，允许 revision 不变；
-- `mutateDerived`：串行更新任务、候选、缓存、预览和 run，不改变项目 revision；允许
+- `deriveFromFacts`：校验浏览器 expected revision 的事实派生入口，允许 revision 不变；普通候选生成不使用此凭据，训练 run 使用独立 ETag；
+- `mutateDerived`：串行更新生成任务、候选、缓存和预览，不改变项目 revision；允许
   渲染在锁内读取提交时的最新事实并冻结持久任务，随后在锁外执行，也允许生成可重建缓存；不得写项目事实；
 
 `http-app.mjs` 是唯一 HTTP 总边界：它从 header 构造项目凭据、集中映射公开错误，并依次调用
@@ -188,9 +188,9 @@ Agent 使用“了解现状、分页、页面制作、Prompt 编写、主观探�
 - `PUT /api/projects/:id/workbench/lettering-settings`：以目标 SHA 原子保存项目排版预设和全部角色文字颜色；
 - 浏览器用单页窄契约编辑 narrative/goal，用独立入口编辑 Prompt，不提供全量 JSON 写入口；
 - `PUT /api/projects/:id/workbench/page-lettering`：校验对白稳定 ID 与归一化位置，只替换目标页文字布局；
-- 主候选预览默认通过 DOM 叠加文案并支持直接拖动；位置草稿仅在「嵌字」子菜单显式保存，不合成 PNG；
+- 主候选预览通过 DOM 叠加文案并支持直接拖动；内容与布局通过页面顶部「保存」提交，显式输出成品时才生成 PNG；
 - `POST /api/projects/:id/workbench/page-render-inspection`：以完整 PageKey 编译只读流程预览，可临时带入尚未保存的页面 Prompt 草稿；
-  返回正负 Prompt（负向恒空）、按 sections 来源分段、编号参考图、出场角色 variant、有效生成配置、候选 route、recipe、workflow、画布、审计和阻断，
+  返回模型对应的正负 Prompt（Qwen 负向恒空）、按 sections 来源分段、编号参考图、出场角色 variant、有效生成配置、候选 route、recipe、workflow、画布、审计和阻断，
   不生成 Prompt ID、不落盘、不创建任务，也不要求 expected revision；
 - `GET|POST /api/projects/:id/workbench/page-rewrite`：读取单页最终 Prompt 的原文、独立优化结果与过期状态；POST 用官方 t2i 提示词调用本机 ComfyUI 的 PE-T2I INT8 `TextGenerate`，完成后在事实锁内重新核对输入指纹并写入 `pages/<page_id>.rewrite.json`。不修改页面 Prompt 与上游设定，不向优化器发送参考图；选用优化结果出图时按实际传图顺序确定性补上编号与用途说明；
 - `POST /api/projects/:id/workbench/render`：完整 PageKey 单页候选生成入口；渲染读取提交时最新事实，
@@ -213,8 +213,8 @@ Agent 使用“了解现状、分页、页面制作、Prompt 编写、主观探�
   快照，或批量取得标签类别、频次和翻译证据；词库仅供独立查询与训练，不参与剧情页 Prompt 编译与审计；
 - `GET /api/lora-training/environment`：只读诊断固定 DiffSynth 训练器 commit、Python/Torch/CUDA、GPU、
   仓库内 runner 身份与模型清单逐文件状态；网页不能触发安装或升级；
-- `GET /api/lora-resources` 与详情、媒体接口：读取当前设备每个正式 LoRA 各自独立的完整本地
-  资源记录、身份诊断、预览和示例；
+- `GET /api/lora-resources` 与详情、媒体接口：汇总登记项目、仓库与本机的正式 LoRA 记录，返回归属、身份诊断、预览和示例；
+- `GET /api/local-model-previews/:filename`：读取本机普通模型清单所属的预览，不复制到公共目录；
 - `GET/POST/PUT /api/lora-training/datasets...`：独立管理数据集、分组、受限素材导入、
   非破坏性裁剪、同名 Caption 与图片集确认；
 - `GET/PUT /api/lora-training/tasks...`：读取和更新项目唯一训练设置与预检；
@@ -254,7 +254,7 @@ Qwen 使用 `prompt_name` 加各子设定一段自由文本与有序参考图；
 页面归属与生成引用分离：新建时默认填入所属设定，之后允许移除；移动归属不修改内容。
 三种归属共用页面编辑、生成、候选、嵌字及单页成品；系列导出只包含剧情目录。
 `lettering/dialogue-layouts.json` 只保存对白稳定 ID 的归一化位置与尺寸，不复制文本或单条样式。
-工作台只把布局叠加到当前预览候选图上，当前不合成输出文件。项目事实没有业务修订或批准字段，Git 承担
+工作台预览实时叠加布局，用户显式输出时生成嵌字与无字成品；制作记录冻结候选和排版，系列导出使用 PNG／动画 WebP 或离线 HTML。项目事实没有业务修订或批准字段，Git 承担
 持久版本历史。项目事实和材料进入 Git，Outputs/ 与 Saved/ 忽略且不随项目复制。
 每个渲染任务位于 `Saved/render/active|history/<task-id>/`；manifest 冻结输入，state 保存轻量状态，
 实际提交记录位于 `Saved/render/submissions/<task-id>/<unit-id>.json`；比较任务沿用
@@ -297,10 +297,15 @@ scheduler、RNG 与采样游标）；同一任务只保留最新一份完整恢�
 视为通用 LoRA，项目选择器与对比实验都可以直接使用。正式 LoRA 的目录整理与 `resource.json`
 登记不在浏览器中自动执行，由 Agent 在用户选定结果后手工完成。
 
-公开 Civitai LoRA 使用同一份 `resource.json` 契约，但登记在仓库的
-`library/resources/loras/<resource-id>/`，其来源、推荐参数和包括 NSFW 在内的选定预览图随仓库
-提交；权重仍不提交。服务端读取公开目录和 `app/data.local/lora-resources/` 并按资源 ID 合并，
-因此训练/私有资源不会污染公共资源，公开资源也不会因为当前设备没有权重而丢失配置。
+LoRA 使用同一份 `resource.json` 契约。通用画风可保留在仓库 `library/resources/loras/`；
+本机 slider 等记录保存在被忽略的 `app/data.local/lora-resources/`；角色及项目专用资源由唯一所属项目
+`resources/loras/` 持有，元数据和图片进入所属项目 Git。分类按用途，不以 NSFW 为标准；第三方资料沿用各自许可。
+服务端只读取已登记且可用项目，按 ID 合并，项目优先、仓库其次、本机最后。其他项目和独立实验读取相同 ID，
+不复制、不同步；临时项目副本继续读取原所属项目资源。移除所属项目登记后，其资源不再提供。
+归属迁移使用 `asset.transfer.plan/apply`，核对计划与指纹后移动记录和图片，权重仍在外部 `models_root`。
+
+小说语料由唯一所属项目 `writing-corpus/` 持有，进入其 Git，并以 `-text` 保持原文字节；
+`corpus:search --project` 显式选择语料所属项目。项目临时复制不复制语料库。
 
 普通生成与对比实验共用统一队列；单个训练 runtime 和单个对比实验分别阻止重复启动。
 训练和 ComfyUI 超分不纳入该队列，用户自行控制与队列生成并发时的显存占用。
@@ -390,10 +395,11 @@ Python 路径。共享地址命中当前主机名时以本机直连地址替代�
 
 ## 资源与项目视图
 
-全局资源目录采用“仓库登记 + 独立本地 LoRA 记录 + 本机发现”三层：登记项提供稳定 ID、模型
-结构家族、精确身份和来源；正式 LoRA 从各自的本地记录提供完整信息；发现项只说明
+资源目录汇总仓库、本机及登记项目的记录，再补充本机发现：普通模型读取 `library/resources/catalog.json`
+和被忽略的 `app/data.local/model-resources/catalog.json`，按 ID 或权重路径去重、仓库优先；LoRA 按上述三种归属读取。
+登记项提供稳定 ID、模型结构家族、精确身份和来源；发现项只说明
 `models_root` 中存在某个文件，家族保持“其他 / 未登记”，不自动猜测。生成侧当前登记
-Anima Basic 与 Qwen-Image-2.1 模型；LoRA 训练与资源记录仍按各自的训练契约保存家族信息。
+Anima Basic、Qwen-Image-2.1 与 H3 模型；LoRA 训练与资源记录仍按各自的训练契约保存家族信息。
 
 固定 Danbooru 标签与中文翻译快照位于 `library/prompt-dictionaries/`，清单记录上游、取得日期
 和 SHA-256。应用启动时读取仓库快照，不自动联网更新，也不把词库复制进故事项目。

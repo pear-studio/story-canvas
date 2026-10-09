@@ -26,13 +26,13 @@ overlay 的 `keywords`。Wiki 正文及中文正文均不进入关键词搜索�
 
 ```powershell
 # 首次全量抓取；中断后默认续传；已有完整快照时默认增量更新
-node app/scripts/dictionary-wiki-sync.mjs
+node <仓库根绝对路径>/app/scripts/dictionary-wiki-sync.mjs
 
 # 显式重新遍历（也可用于词表变化后重建）
-node app/scripts/dictionary-wiki-sync.mjs --full
+node <仓库根绝对路径>/app/scripts/dictionary-wiki-sync.mjs --full
 
 # 只取两批，保存进度供下次续传，暂不发布正式文件
-node app/scripts/dictionary-wiki-sync.mjs --max-pages 2
+node <仓库根绝对路径>/app/scripts/dictionary-wiki-sync.mjs --max-pages 2
 ```
 
 使用官方 `/wiki_pages.json` 批量 API，每批最多 1,000 条，按 `page=a<ID>` 顺序取下一批，
@@ -61,7 +61,7 @@ node app/scripts/dictionary-wiki-sync.mjs --max-pages 2
 {
   "rain": {
     "translation": "雨",
-    "categories": ["setting", "tone"],
+    "categories": ["setting"],
     "keywords": ["雨", "下雨", "雨天", "雨夜", "天气", "潮湿"]
   }
 }
@@ -71,7 +71,7 @@ node app/scripts/dictionary-wiki-sync.mjs --max-pages 2
 |---|---|---|
 | `translation` | 是 | 中文翻译，每条必写；zh.csv 仅作生成时的参考，overlay 值合并时优先。每条只保留一个确定的中文译名，不写 `A/B`、`A 或 B` 或多个并列译名。译名要简短、自解释且避免过度口语化或解释性长句（halterneck → "挂脖式上衣"而非"挂脖式"；`ear_piercing` → "耳洞"；`extra_ears` → "额外耳朵"）。这里的“一个译名”可以是短语，不要求只能有一个汉字。已有且大众熟悉的术语可以保留，即使不是最字面的翻译（如“绝对领域”“阿嘿颜”） |
 | `description` | 否 | 完整中文说明译文，填写时须为非空字符串；保留原文段落与标签、链接、图例引用。未翻译时省略，不填占位说明或摘要；该字段只覆盖读取与展示，不改写 Wiki 原文 |
-| `categories` | 是 | 非空数组，值域为页面 11 类 + 角色 7 类（见下）；一个词可挂多类 |
+| `categories` | 是 | 非空数组，值域为词库检索 6 类、补充语义 2 类与角色 7 类（见下）；一个词可挂多类 |
 | `keywords` | 是 | 数组 0~10 个，小写；以召回优先，允许适度宽泛、近邻和子类词，多搜出相关候选优于漏掉候选。仍不得加入明显无关、语义相反或会把词条指向另一对象的词；英文仅限中文难以覆盖的别名或常用概念，与别名重复的不得写入 |
 
 ### 标注质量标准
@@ -92,23 +92,22 @@ overlay 是面向中文搜索和分类建议的语义增强层，不追求把每
 
 ## 分类值域
 
-值域的事实来源是 `app/server/prompt-contract.mjs` 的 `PAGE_PROMPT_CATEGORIES`（页面 11 类）
-与 `CHARACTER_PROMPT_CATEGORIES`（角色 7 类）。分类调整时先改代码常量，再按下方重组流程更新 overlay。
+词库值域的事实来源是 `app/server/prompt-dictionary.mjs`：`PAGE_PROMPT_CATEGORIES` 为检索 6 类，
+`OVERLAY_CATEGORIES` 另加 `appearance`、`action` 与角色 7 类。分类调整时先改对应常量，再重组 overlay。
+词库分类仅用于搜索，不等于项目可写字段：Anima 页面契约位于 `app/server/models/anima/prompt-contract.mjs`，
+只允许 `population`、`person`、`setting`、`camera`、`avoid` 五类；Qwen 使用自由文本。
 
-### 页面分类
+### 词库检索与补充语义分类
 
 | 分类 | 判定标准 | 示例 |
 |---|---|---|
 | `entity` | 画面主体：人物、生物、物体本身 | sword、cat、fire |
+| `population` | 人数与人物构成 | solo、duo、multiple_girls |
+| `person` | 人物外观、动作与互动的综合检索 | blonde_hair、smile、running、hug |
 | `appearance` | 主体外观与表情：身体特征、面部状态 | blonde_hair、blue_eyes、blush、smile |
 | `action` | 动作与互动 | running、hug、holding、sitting |
 | `setting` | 场景与环境：地点、天气、时间背景 | rain、classroom、forest、night |
-| `layout` | 构图与画面组织：人物构成、空间关系 | solo、duo、multiple_girls |
 | `camera` | 镜头与视角 | close-up、from_below、depth_of_field、wide_shot |
-| `lighting` | 光线与光源 | backlight、sunset、lens_flare |
-| `tone` | 氛围与情绪基调 | dark、gloomy、scary、peaceful |
-| `effects` | 视觉特效与粒子 | motion_blur、speed_lines、sparkles、smoke |
-| `misc` | 难以归入以上：媒介、画风、元数据 | watercolor、monochrome、absurdres |
 | `avoid` | 通常作为负面词：质量问题、签名水印 | lowres、bad_anatomy、extra_fingers、watermark |
 
 ### 角色分类
@@ -123,7 +122,7 @@ overlay 是面向中文搜索和分类建议的语义增强层，不追求把每
 | `accessories` | 配饰 | hair_ornament、earrings、glasses |
 | `equipment` | 装备与道具 | sword、gun、shield |
 
-同一词在页面与角色语境下可以分属不同分类（sword 在页面是 `entity`，在角色页是 `equipment`），
+同一词在词库检索与角色语境下可以分属不同分类（sword 在词库是 `entity`，在角色页是 `equipment`），
 多分类即为此而设。判定有歧义时优先放语义更具体的分类，可用多分类表达重叠。
 
 ## 加载合并顺序
@@ -138,8 +137,7 @@ overlay 是面向中文搜索和分类建议的语义增强层，不追求把每
 搜索候选右侧的频率按钮打开该词详情，F1 打开当前候选；已添加标签保留说明入口。
 详情按词条信息、中文说明（有译文时）、原文说明的顺序展示，原文始终放在最后。
 界面保留原文标记和换行，不自动加载图例。
-浏览器缓存随 Wiki 文件变动刷新；渲染审计仍只用 CSV 判断标签身份和允许类别，说明更新
-不改变冻结生成配置的词库身份。
+浏览器词库缓存随 Wiki 文件变动刷新；词库查询、训练打标与渲染编译独立，词库说明不会改写项目 Prompt 或已冻结任务。
 
 overlay 加载时校验未知分类值、引用不存在的 `source_text` 和字段类型错误，
 任一失败即明确报错，不静默忽略。原始 JSON 的重复键在批次合并前检查，不能依赖
@@ -153,7 +151,7 @@ overlay 按 `source_text` 关联上游快照。当本机 `Config/local.json` 配
 
 分类是演化中的契约，调整时按以下顺序一次性完成，不留迁移框架：
 
-1. 改 `prompt-contract.mjs` 的对应分类常量与审计逻辑
+1. 改 `prompt-dictionary.mjs` 的查询／overlay 分类常量；若修改 Anima 可写分类，另行更新其模型契约与编译器
 2. 由 Agent 按新值域重组 overlay：批量移动、拆分或合并词条的 `categories`
 3. 同步本文件的分类表与示例
 4. 运行词库与审计相关测试
@@ -167,10 +165,10 @@ overlay 按 `source_text` 关联上游快照。当本机 `Config/local.json` 配
 
 ```bash
 # 取 general 类型按 post_count 降序的前 N 个词
-node app/scripts/dictionary-lookup.mjs --top 500 --out Saved/Agent/dictionary-reference/top500.json
+node <仓库根绝对路径>/app/scripts/dictionary-lookup.mjs --top 500 --out <仓库根绝对路径>/Saved/Agent/dictionary-reference/top500.json
 
 # 按指定词表输出参考（用于补标项目已用词）
-node app/scripts/dictionary-lookup.mjs --words Saved/Agent/dictionary-reference/words.txt --out Saved/Agent/dictionary-reference/ref.json
+node <仓库根绝对路径>/app/scripts/dictionary-lookup.mjs --words <仓库根绝对路径>/Saved/Agent/dictionary-reference/words.txt --out <仓库根绝对路径>/Saved/Agent/dictionary-reference/ref.json
 ```
 
 参考 JSON 每词含 `source_text`、`post_count`、`provider_type`、`zh`（zh.csv 已有翻译，仅供参考）、

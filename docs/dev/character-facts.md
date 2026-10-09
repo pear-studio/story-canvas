@@ -22,21 +22,20 @@ npm --prefix <仓库根>/app run character:fact -- visual read <project-id> <cha
 npm --prefix <仓库根>/app run character:fact -- visual save <完整草稿JSON文件|->
 ```
 
-视觉制作 Agent 编辑完整 Prompt。若 visual 已新增或删除 variant，`read` 会先把返回的正文归一化到
-当前 variant 集合：保留仍存在配置，给新 variant 补空文本与空参考图，移除已删除 variant。
-这一步允许完成必要的下游结构修复：
+Prompt Agent 使用 `prompt.read/save` 编辑设定基础或单个子设定；按当前模型返回完整范围与保存参数。
+新增子设定、引用及来源版本的要求由统一操作帮助维护，不回传整个 models 容器：
 
 ```powershell
-npm --prefix <仓库根>/app run character:fact -- prompt read <project-id> <character-id>
-npm --prefix <仓库根>/app run character:fact -- prompt save <完整草稿JSON文件|->
+node <仓库根>/app/scripts/story-canvas.mjs help prompt
+node <仓库根>/app/scripts/story-canvas.mjs prompt.read --args <读取参数JSON> --out <读取回执JSON>
+node <仓库根>/app/scripts/story-canvas.mjs prompt.save --args <保存参数JSON> --out <保存回执JSON>
 ```
 
-save 要求携带读取时的目标和依赖指纹。冲突后重新读取并判断，不自动覆盖。
+Prompt 保存使用读取回执的保存参数加 `changes`，旧 `character:fact prompt read/save` 返回升级指引。冲突后重新读取并判断，不自动覆盖。
 角色 visual 是上游，合法的 variant 变更可以造成
 下游悬空，并在结果中返回结构化 diagnostics。角色 Prompt 是下游，不允许未知 variant；Prompt 可暂缺部分 variant 并返回诊断。实际生成检查本次依赖是否完整。
 
-角色 `prompt save` 还返回 `audit`：按 `variants` 中各造型分别返回结果，不遍历关联页面。
-审计错误或不可用不改变保存成功；CLI 完整保留 `target_file`、`value`、`downstream_diagnostics` 和审计结果。详细状态见[Prompt 写入流程](../reference/prompt.md)。
+Prompt 保存后的审计只检查本次范围，不遍历关联页面；审计错误或不可用不改变保存成功。详细状态见[Prompt 写入流程](../reference/prompt.md)，返回字段以统一操作帮助为准。
 
 ## 创建与删除
 

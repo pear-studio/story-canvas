@@ -35,10 +35,10 @@ Codex 直接读取 `AGENTS.md` 和 `.agents/skills/`，无需额外同步。Clau
 ## 命令
 
 ```powershell
-node docs\agent\sync.mjs report
-node docs\agent\sync.mjs apply --dry-run
-node docs\agent\sync.mjs apply
-node docs\agent\sync.mjs doctor
+node <仓库根绝对路径>/docs/agent/sync.mjs report
+node <仓库根绝对路径>/docs/agent/sync.mjs apply --dry-run
+node <仓库根绝对路径>/docs/agent/sync.mjs apply
+node <仓库根绝对路径>/docs/agent/sync.mjs doctor
 ```
 
 - `report` 只读展示源技能、规则和投影状态；

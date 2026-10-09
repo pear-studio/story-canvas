@@ -186,8 +186,8 @@ Esc 只关闭最上层临时浮层；右键菜单在外部滚动时收起，内�
   子设定改名在角色页「子设定」区块直接编辑，保存时服务端原子联动更新 visual/prompt/角色视觉页/剧情
   narrative 的全部引用。
 - `PUT /api/projects/:id/workbench/page-content`：以完整 `PageKey` 和目标 `content_sha256` 保存单页内容。
-  剧情页完整替换 `title`、`scene_description`、`characters`、`dialogue`，角色视觉页完整替换 `title`、
-  `visual_goal`。画面内容的填写要求、20 字上限只属于创作规范；页面编辑器
+  图片页的三种归属共用 `title`、`scene_description`、`characters`、`dialogue`，不再保存 `visual_goal`。
+  画面内容的填写要求、20 字上限只属于创作规范；页面编辑器
   显示画面内容字数与超长提示，空白或超长均不阻止保存或生成。保存接口同时
   返回 `warnings` 和 `downstream_diagnostics`；warnings 包含超限字段的当前字数、20 字上限和中文精简建议，与 Agent `narrative save`
   使用相同规则；警告不写进项目事实。新增对白不能指定持久 ID，由服务端生成
@@ -200,7 +200,7 @@ Esc 只关闭最上层临时浮层；右键菜单在外部滚动时收起，内�
 - `GET /api/projects/:id/workbench/text-source-context?source_file=…&offset=…`：按语料相对路径与字节
   偏移返回原句 ±2 行上下文；source_file 必须解析在所属项目的 `writing-corpus/` 内。
 - 主预览默认以 DOM 叠加已保存文案，缺少布局时补默认位置；可直接拖动与调整尺寸，不请求合成 PNG。
-  草稿归属于页面，切换候选和后台刷新不重置草稿；保存位置按钮保留在「嵌字」子菜单。
+  草稿归属于页面，切换候选和后台刷新不重置草稿；文案与布局通过页面顶部「保存」一起提交。
 - `POST /api/projects/:id/workbench/render`：以完整 `PageKey` 发起单页候选任务，支持
   `count` 1 到 3 和可选 `seed`；服务端在当前事实下重新编译并冻结任务。
 - 两个 Prompt 写入均通过目标级 Interface 核对目标 SHA-256 与必要依赖，不因无关页面变化失败。冲突返回 409，
@@ -208,7 +208,7 @@ Esc 只关闭最上层临时浮层；右键菜单在外部滚动时收起，内�
 - `POST /api/projects/:id/workbench/candidate-detail`：以完整 `PageKey` 和 `candidate_id` 读取该候选冻结的
   Prompt、LoRA、seed、route、recipe 与 workflow 身份；不依赖任务里的陈旧绝对路径。
 - `DELETE /api/projects/:id/workbench/candidates/:candidateId`：以完整 `PageKey` 删除候选，尽力把仍存在的
-  任务历史条目标记为 discarded；历史更新失败不恢复已删除成果，活动任务的候选会被拒绝。
+  任务历史条目标记为 discarded；历史更新失败不恢复已删除成果，生成中也可删除已经发布的候选。
 - `DELETE /api/projects/:id/workbench/candidates`：批量接收 `candidate_ids`；或以 `generation_mismatch: true`
   清理与当前生成条件签名不符的全部候选（缺签名视为不符），可携带前端计数时使用的
   `expected_signature`，与服务端重算结果不一致时返回 409 `candidate_generation_signature_stale`；
@@ -226,7 +226,7 @@ Esc 只关闭最上层临时浮层；右键菜单在外部滚动时收起，内�
 这些修改使用显式保存；切换项目、页面或
 角色设定前必须处理未保存修改。
 
-页面 Prompt 与设定 Prompt 共用自由文本编辑控件和草稿转换模块。
+页面与设定共用各模型的编辑控件及草稿契约：Anima 使用分类词条、机位和 LoRA 继承，Qwen 使用自由文本和参考图，动态页使用 H3 独立输入。Agent Prompt 编辑使用统一 `prompt.read/save`，旧 Prompt 事实入口返回升级指引。
 
 Agent 的 Prompt 自主调整范围和 LoRA 授权要求仅约束 Agent 行为，不限制用户在工作台的直接编辑权。
 章节、sequence、页面归属、角色与子设定的增删和排序继续使用导航语义命令或 Agent 编辑入口；工作台

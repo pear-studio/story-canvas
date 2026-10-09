@@ -11,3 +11,6 @@ Anima Basic 与 Qwen-Image-2.1 使用相同尺寸；`app/shared/canvas-presets.j
 当前 Qwen profile 的候选 route 共用 `qwen-image-2-1-candidate` 配方（约 1MP、25 步）。配方不保存
 workflow 拓扑，也不描述整图派生、latent hires 或第二遍采样；这些能力当前没有开放。配方 ID 是项目
 调整、任务冻结和来源追踪使用的身份；修改参数时保留 ID，建立不同用途时使用新 ID。
+
+动态页配方 `minimax-h3-video` 由 H3 适配器结合页面质量档、时长与步数展开，不使用上述插画尺寸。
+视频默认 5 秒、20 步、24 fps，首版不输出音频；当前参数与尺寸档见[H3 动态页](../../docs/dev/video-pages.md)。

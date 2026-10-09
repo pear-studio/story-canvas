@@ -10,7 +10,7 @@ config/Prompt 的角色。`dialogue[].speaker` 表示对白归属，可以是未
 
 状态：已实现当前项目契约的底层 CLI、冲突边界和浏览器读取。
 
-narrative/Prompt/text-sources 的 read/save 返回完整正文和两个指纹，可通过 stdin 提交，无需文件草稿。
+narrative/text-sources 的 read/save 返回完整正文和两个指纹；Prompt 使用统一 `prompt.read/save` 范围接口。
 网页保存与 read/save 共用领域提交函数，服务不创建草稿或 sidecar。
 
 出处映射已不再用于默认创作流程，计划通过独立功能变更移除；以下仅记录当前仍存在的接口，不要求新文案维护映射。
@@ -48,24 +48,25 @@ npm --prefix <仓库根>/app run story:page -- narrative save <完整草稿JSON�
 npm --prefix <仓库根>/app run story:page -- text-sources read <project-id> <page-id>
 npm --prefix <仓库根>/app run story:page -- text-sources save <完整草稿JSON文件|->
 
-npm --prefix <仓库根>/app run story:page -- prompt read <project-id> <page-id>
-npm --prefix <仓库根>/app run story:page -- prompt save <完整草稿JSON文件|->
+node <仓库根>/app/scripts/story-canvas.mjs help prompt
+node <仓库根>/app/scripts/story-canvas.mjs prompt.read --args <读取参数JSON> --out <读取回执JSON>
+node <仓库根>/app/scripts/story-canvas.mjs prompt.save --args <保存参数JSON> --out <保存回执JSON>
 
 npm --prefix <仓库根>/app run story:page -- page create <project-id> <sequence-id>
 npm --prefix <仓库根>/app run story:page -- page delete <project-id> <page-id>
 ```
 
-read 返回完整草稿对象，save 接收该对象的 JSON 文件或 stdin；只修改 document，原样保留指纹。
-`save -` 从 stdin 读取草稿，read 的输出可以一条管道直接回写，无需落盘临时文件：
+非 Prompt 的 read 返回完整草稿对象，save 接收该对象的 JSON 文件或 stdin；只修改 document，原样保留指纹。
+Agent 使用 `--out` 保存草稿，输入输出分开，不通过 shell 管道搬运 JSON：
 
-```bash
-npm --prefix <仓库根>/app run story:page -- narrative read <project-id> <page-id> \
-  | <修改 document 的命令> \
-  | npm --prefix <仓库根>/app run story:page -- narrative save -
+```powershell
+npm --prefix <仓库根>/app run story:page -- narrative read <project-id> <page-id> --out <草稿绝对路径JSON>
+# 只修改草稿 document，保留读取时的指纹
+npm --prefix <仓库根>/app run story:page -- narrative save <草稿绝对路径JSON> --out <保存回执绝对路径JSON>
 ```
 
-直接 `node app/scripts/story-page.mjs ...` 调用时 argv 不带 `--`。命令失败时错误 JSON 输出在
-stderr、退出码为 1、stdout 为空；管道中消费 stdout 前先检查退出码。读取格式合法但不存在的
+直接 `node <仓库根绝对路径>/app/scripts/story-page.mjs ...` 调用时 argv 不带 `--`。命令失败时错误 JSON 输出在
+stderr、退出码为 1、stdout 为空；使用回执前先检查退出码。读取格式合法但不存在的
 页面返回 `story_page_not_found`（422），格式非法返回 `invalid_story_page_id`（422）。
 
 完整 outline、index 以及局部 synopsis/chapter/sequence 均使用相同协议。局部 chapter/sequence 只包含

@@ -181,7 +181,7 @@ Windows 生成端保留上面的完整本机配置，首次以管理员身份运
 配置远程生成[Tailscale][管理员].bat
 ```
 
-该脚本只读取 `config.local.json` 中的本机直连端口，将 `127.0.0.1:<端口>` 发布为 Tailnet 内统一的 `:8188`，
+该脚本只读取 `Config/local.json` 中的本机直连端口，将 `127.0.0.1:<端口>` 发布为 Tailnet 内统一的 `:8188`，
 不启动 ComfyUI。Serve 后台配置会保留，重启后随 Tailscale 恢复；只有首次配置、本机端口变化或映射被移除时才需要运行。
 Windows 如需在用户尚未登录时保持 Tailscale 在线，应启用 Tailscale 的 Run unattended。
 
@@ -292,13 +292,13 @@ uv pip check --python $materialPython
 所在系统猜测远程 ComfyUI 的路径格式，也不把反斜杠写回项目事实。
 
 配置还声明 `architecture_family`，支持能力由 `operations` 下存在的 input route 明确表达，不再
-保存重复的 `capabilities`。当前生成侧支持 Anima Basic 和 Qwen-Image-2.1，分别加载 `diffusion_models`、
+保存重复的 `capabilities`。当前插画生成支持 Anima Basic 和 Qwen-Image-2.1，动态页使用 H3，分别加载 `diffusion_models`、
 `text_encoders` 与 `vae` 中的精确模型。当前 `qwen-image-2-1` 配置声明
 文生图（`empty_latent`）与参考图（`reference_image`）两条候选 route；未声明的操作或输入会收到明确错误。
 `anima-base-v1` 只声明文生图候选 route，使用 Anima 主模型、qwen_3_06b_base 文本编码器及 Qwen VAE。
 页面按自己的 render.profile_id/canvas 诊断与生成；项目默认只影响新页。
 
-工作台的“资源 → 基模”和“资源 → LoRA”会合并 `library/resources/catalog.json` 中的人工登记项、
+工作台的“资源 → 基模”和“资源 → LoRA”会合并 `library/resources/catalog.json` 与 `app/data.local/model-resources/catalog.json` 中的普通模型登记项、
 `library/resources/loras/` 中通用画风 LoRA 的完整记录、登记项目 `resources/loras/` 中角色资源、`app/data.local/lora-resources/` 中本机正式
 LoRA 记录，再补充 `models_root` 标准子目录中发现的本机文件和训练 checkpoint。基模页把主模型与
 文本编码器、VAE 等配套组件分开显示；LoRA 页把正式资源与未登记本机文件分开显示。模型结构家族由 Agent 入库时
@@ -321,7 +321,7 @@ LoRA 记录，再补充 `models_root` 标准子目录中发现的本机文件和
 ## ComfyUI 生命周期
 
 本机生成环境要求配置 `comfy_cli`；`comfyui_root` 是 comfy-cli workspace，`app/comfyui-endpoints.json` 是由 Git 同步的跨设备地址优先级，
-`config.local.json` 的 `comfyui_urls` 只保存当前设备自己的直连地址。共享地址命中当前主机名时会被本机直连地址替代，不重复检测自己的 Tailscale 入口。
+`Config/local.json` 的 `comfyui_urls` 只保存当前设备自己的直连地址。共享地址命中当前主机名时会被本机直连地址替代，不重复检测自己的 Tailscale 入口。
 只有同时配置 `comfy_cli` 和 `comfyui_root` 的本机实例由工作台管理生命周期。工作台性能面板只对该实例提供
 显式启动和关闭；服务不会在日常启动时
 自动安装、更新或运行 `doctor`。需要安装或更新时由用户或 Agent 显式调用 API：
@@ -374,10 +374,10 @@ comfy-cli 的后台 PID 在进程异常退出后可能被 Windows 复用，导�
 <English tag/alias>,<Translation>
 ```
 
-仓库固定快照位于 `library/prompt-dictionaries/`，默认直接用于编辑候选、确定性审计和生成
-门禁，并在清单中记录来源、日期与 SHA-256。`config.local.json` 可以显式指定本机 CSV
-覆盖路径；覆盖文件缺失时不会静默回退仓库快照，环境诊断会给出警告，工作台仍可编辑
-草稿，但正式生成会因无法完成词库审计而阻断。
+仓库固定快照位于 `library/prompt-dictionaries/`，用于标签检索、训练打标参考和可选词库审计，
+清单记录来源、日期与 SHA-256。`Config/local.json` 可以显式指定本机 CSV 覆盖路径；
+覆盖文件缺失时不静默回退仓库快照，词库查询不可用，环境诊断给出警告。
+页面编译与生成不依赖运行时 CSV；Prompt 结构、引用和配置检查仍按各模型契约执行。
 
 ## 可选 LoRA 训练环境
 

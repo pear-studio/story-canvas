@@ -106,17 +106,18 @@ npm --prefix <仓库根>/app run story:page -- outline read <project-id>
 npm --prefix <仓库根>/app run story:page -- index read <project-id>
 npm --prefix <仓库根>/app run story:page -- narrative read <project-id> <page-id>
 npm --prefix <仓库根>/app run story:page -- text-sources read <project-id> <page-id>
-npm --prefix <仓库根>/app run story:page -- prompt read <project-id> <page-id>
+node <仓库根>/app/scripts/story-canvas.mjs help prompt
+node <仓库根>/app/scripts/story-canvas.mjs prompt.read --args <读取参数JSON> --out <读取回执JSON>
+node <仓库根>/app/scripts/story-canvas.mjs prompt.save --args <保存参数JSON> --out <保存回执JSON>
 
 npm --prefix <仓库根>/app run character:fact -- profile read <project-id> <character-id>
 npm --prefix <仓库根>/app run character:fact -- visual read <project-id> <character-id>
-npm --prefix <仓库根>/app run character:fact -- prompt read <project-id> <character-id>
 npm --prefix <仓库根>/app run character:fact -- page-index read <project-id>
 npm --prefix <仓库根>/app run character:fact -- page-goal read <project-id> <page-id>
-npm --prefix <仓库根>/app run character:fact -- page-prompt read <project-id> <page-id>
 ```
 
-read 返回 `{ project_id, target_id, document, expected_sha256, expected_context_sha256 }`。
+非 Prompt 的 read 返回 `{ project_id, target_id, document, expected_sha256, expected_context_sha256 }`。
+Prompt 使用 `prompt.read` 回执的保存参数加 `changes`，不回传整个 models 容器；旧 Prompt 事实入口返回升级指引。
 只修改 document，身份和指纹保持读取时的值；将完整对象通过普通 JSON 文件或 stdin 交给 save。
 
 ```powershell
@@ -145,7 +146,7 @@ npm --prefix <仓库根>/app run character:fact -- page delete <project-id> <pag
 
 ## 渲染与本机派生结果
 
-渲染读取提交时最新的项目事实，不携带项目 revision，也不接受临时 Prompt 或 Seed 覆盖：
+渲染读取提交时最新的项目事实，不携带项目 revision，不接受临时 Prompt 覆盖；受控对照可显式传 `--seed`，种子只冻结到任务与候选，不写回页面：
 
 ```powershell
 npm --prefix <仓库根>/app run visual:produce -- render page <project-id> <page-id> [--count 1..3]
@@ -190,7 +191,7 @@ npm --prefix <仓库根>/app run project:create -- create <完整草稿JSON文�
 
 每个候选目录包含 `image.png`、小型 `result.json` 和按需读取的 `generation.json`。
 先在 Saved/staging 准备全部文件，再原子发布目录，最后更新运行状态。列表、数量、详情和删除
-从 generated 读取。清理任务历史不影响成果；任务仍活动时禁止删除候选及其页面或所引用角色。
+从 `Outputs/pages/` 读取。清理任务历史不影响成果；生成期间也可删除已发布候选，页面或所引用角色的结构删除仍受活动任务保护。
 generation 保存完整冻结任务快照及实际提交的 workflow/extra_data/prompt_id，历史未记录的请求明确
 标为 unavailable。result 保存图片与 generation 的 SHA-256，清理前校验成果字节。
 

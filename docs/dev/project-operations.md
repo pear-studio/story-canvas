@@ -11,8 +11,8 @@
 - `readFacts`：在一致的磁盘 revision 下读取项目事实；读取前后 revision 不一致时最多重试一次。
 - `mutateTargetFacts`：目标及必要依赖由领域入口检查的窄事实写入，不要求全项目 expected revision；成功返回当前 revision。
 - `mutateFacts`：修改项目事实或持久输入，必须携带 `x-story-canvas-expected-revision`。
-- `deriveFromFacts`：按当前事实建立冻结的渲染或训练任务，也必须携带 expected revision。
-- `mutateDerived`：修改任务、候选、媒体和缓存等可重建派生结果，不要求项目 revision。
+- `deriveFromFacts`：需要浏览器项目凭据的事实派生操作，必须携带 expected revision；不代表所有生成入口都要求该凭据。
+- `mutateDerived`：修改任务、候选、媒体和缓存等派生结果，不要求项目 revision；普通候选提交也通过此边界读取最新事实并冻结任务，不修改创作事实。
 - `copyProject`、`renameProject`：项目生命周期操作，必须携带源项目 expected revision。
 - `state`：读取事实 revision；`GET /api/projects/:id/revision` 使用文件变化通知驱动的缓存，
   不变时不重复扫描。事实读写的并发校验仍读取实时磁盘签名，不依赖此缓存。
@@ -36,7 +36,7 @@
 材料与生成配置同时准备同版本项目事实，统一应用后才推进写入版本，不能让独立旧缓存
 借用根工作台的新 revision。媒体投影的查询与缓存不进入事实 revision 扫描，不推进写入版本。
 
-LoRA 工具页使用独立的 `/api/lora-training` 与 ETag / If-Match，不参与项目快照、复制或重命名。
+LoRA 训练事实使用独立的 `/api/lora-training`、`TrainingOperations` 与 ETag / If-Match，不使用剧情项目 revision。训练项目的复制、提升及重命名由共同项目库生命周期入口执行。
 
 revision 缓存按需观察已读取项目，覆盖独立 Agent CLI 写入；候选、任务、缓存和输出变化不使
 事实缓存失效。服务关闭或项目移动时释放观察资源，文件通知不可用时查询回退到实时磁盘签名。

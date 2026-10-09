@@ -14,7 +14,7 @@ H3 默认裁剪版 INT8 ConvRot，不加载 LoRA；实验模型可在本机资�
 
 新增或修改生成配置时：
 
-1. 在 `library/resources/catalog.json` 登记模型精确身份，并在 profile 中引用相同路径与 SHA-256；
+1. 在仓库或本机普通模型清单登记精确身份，并在 profile 中引用相同路径与 SHA-256；登记范围见[资源目录](../resources/README.md)，本机登记不自动创建 profile；
 2. 复用或新增 `library/render-recipes/` 中的稳定资产；
 3. 为每个实际支持的 operation/input source 显式声明唯一 route；
 4. 按模型资源规范补齐安全预览图；

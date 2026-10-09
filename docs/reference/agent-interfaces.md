@@ -114,7 +114,7 @@ node <仓库根>/app/scripts/visual-production.mjs context page <project-id> v3/
     `prompt_name`、`current_text`（上游当前文本）、`override`（本页整段覆盖，`null` 表示跟随上游）、
     `effective_text`、`reference_images` 和 `selected_image_ids`；
   - `page: { text, reference_images }`：本页文本与可带 `purpose` 的本页附图；
-  - `final`：当前实际编译的 `{ positive, negative, images, sections }`；负向恒为空字符串，
+  - `final`：当前实际编译的 `{ positive, negative, images, sections }`；Qwen 负向恒为空字符串，
     images 是编号后的最终参考图序列。配置冲突或无法编译时 `final` 为 null，不冒充有效结果。
 - `status: complete` 表示读取和审计可完成，不代表没有内容错误或本机可以生成；同时阅读 `audit` 和 `diagnostics`。缺少有效配置等依赖时为 `incomplete`。事实文件损坏、引用对象缺失等无法读取的情况直接返回明确错误。
 
@@ -134,7 +134,7 @@ node <仓库根>/app/scripts/workbench-api.mjs POST /api/projects/<project-id>/w
 
 ## read/save 契约
 
-read 返回的整个 JSON 就是 save 的请求体：`{ project_id, target_id, document, expected_sha256, expected_context_sha256 }`。
+以下是非 Prompt 的事实契约；Prompt 按前文统一范围接口执行。read 返回的整个 JSON 就是 save 的请求体：`{ project_id, target_id, document, expected_sha256, expected_context_sha256 }`。
 项目级对象的 target_id 为 null；仅修改 document，保留读取时的身份与两个指纹。
 草稿可以留在内存，也可以保存成普通文件跨轮次继续编辑；服务不管理其位置或生命周期。
 草稿文件统一放在 `Saved/Agent/<任务名>/`，用 `--out` 落盘、文件路径提交：
@@ -154,7 +154,7 @@ HTTP 均为 POST：
 
 - `/api/agent/facts/:domain/:kind/read`：body 为 `{ project_id, target_id? }`，通过一致性事实读取返回草稿和指纹；
 - `/api/agent/facts/:domain/:kind/save`：body 为 read 返回的完整 JSON，要求两个指纹；
-- 场景事实使用 `domain=scene` 与 `profile`、`visual`、`prompt` 三种 kind，target_id 为场景 ID；
+- 场景事实使用 `domain=scene` 与 `profile`、`visual`，target_id 为场景 ID；Prompt 使用统一 `prompt.read/save`，旧 kind=prompt 返回升级指引；
   当前没有 scene/index 事实，场景列表与顺序由 `/api/projects/:id/workbench/scenes` 的 GET/PUT 维护。
 - 页面 `text_overrides`／`reference_overrides` 的 key 必须匹配当前引用：切换子设定或移除引用时删除
   对应 key，残留 key 保存被拒绝。override 不随上游更新，恢复继承就是删除 key。

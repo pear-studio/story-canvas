@@ -18,8 +18,8 @@ description: 仅当用户在当前请求中明确要求使用 agent-sync 时触�
 在写入前运行：
 
 ```powershell
-node docs\agent\sync.mjs report
-node docs\agent\sync.mjs apply --dry-run
+node <仓库根绝对路径>/docs/agent/sync.mjs report
+node <仓库根绝对路径>/docs/agent/sync.mjs apply --dry-run
 ```
 
 确认所有计划操作只涉及根目录 `CLAUDE.md`、`.claude/skills/` 和同步状态文件。
@@ -36,8 +36,8 @@ node docs\agent\sync.mjs apply --dry-run
 修改后执行：
 
 ```powershell
-node docs\agent\sync.mjs apply
-node docs\agent\sync.mjs doctor
+node <仓库根绝对路径>/docs/agent/sync.mjs apply
+node <仓库根绝对路径>/docs/agent/sync.mjs doctor
 ```
 
 再使用标准技能校验器检查所有变更过的技能。只汇报有效变化和发现的冲突，不粘贴

@@ -14,9 +14,8 @@
 新增对白临时 ID 同时映射到正式对白、布局和出处。
 失效引用可保留并保存以便修复；切换子设定或移除引用时删除对应 override key。
 
-Agent 窄入口使用 `POST /api/agent/facts/page/content|prompt|text-sources/read|save`。
-现有 character:fact 的 page-goal/page-prompt 命令调用同一领域实现，page-goal 的正文现在是完整 content，
-不再保存 visual_goal 文件。page-index 只编辑角色归属投影，保留其他归属。
+Agent 内容窄入口使用 `POST /api/agent/facts/page/content|text-sources/read|save`；Prompt 使用统一 `prompt.read/save`，旧 prompt 事实入口返回升级指引。
+现有 character:fact 的 page-goal 正文是完整 content，不再保存 visual_goal 文件；page-prompt 已由统一 Prompt 范围入口替代。page-index 只编辑角色归属投影，保留其他归属。
 
 ## 创建、模板与删除
 
@@ -26,7 +25,7 @@ Agent 窄入口使用 `POST /api/agent/facts/page/content|prompt|text-sources/re
 - 角色：`{ owner_kind: "character", character_id, variant_id }`；
 - 场景：`{ owner_kind: "scene", scene_id, variant_id }`。
 
-模板一次性复制标题、画面说明与 Prompt（`{ "text": "..." }`），不保留 live template link。
+模板一次性复制标题、画面说明与当前模型 Prompt，不保留 live template link。
 无模板创建最小内容和空 Prompt。文字页仅允许归入剧情单元。
 
 页面删除归档 `pages/<page-id>.{content,prompt,text-sources}.json` 和 `Outputs/pages/<page-id>/`，

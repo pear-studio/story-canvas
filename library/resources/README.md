@@ -32,8 +32,8 @@ SHA-256 确定精确身份；`preview.images` 归模型资源所有，可以被�
 
 正式 LoRA 必须至少包含一张 `previews` 预览图或一张带完整生成条件的 `examples` 示例图；项目
 生成设置会使用这些图片作为选择卡片，并同时展示触发词、标签、适用底座、推荐权重和采样建议。
-公开 LoRA 图片保存在对应的 `library/resources/loras/<resource-id>/previews/` 中，与配置一同提交；
-本地训练或私有 LoRA 图片仍保存在 `app/data.local/lora-resources/<resource-id>/`。两者都由 LoRA
+仓库 LoRA 图片保存在对应的 `library/resources/loras/<resource-id>/previews/` 中，与配置一同提交；
+项目 LoRA 图片随唯一所属项目的 `resources/loras/<resource-id>/` 进入其 Git，本机 LoRA 图片保存在被忽略的 `app/data.local/lora-resources/<resource-id>/`。三种归属都由 LoRA
 资源 API 提供，不复制到 `app/public/resource-previews/`。
 
 ## 中文浏览信息与选择器
@@ -57,21 +57,23 @@ Agent 根据已有来源整理这三个字段；不根据预览图推断未说�
   默认过滤条件。每张图在资源记录中保存来源 `source` 和 Civitai 的 `nsfw_level`（若网站提供）。
 - 每张图片记录本地文件、无障碍 `alt`、来源页 `source` 和可选的 `nsfw_level`，不把内容级别丢失在
   下载日志中。
-- 图片属于可提交的 library 资产；项目候选、导出结果等生成媒体仍不提交。
+- 预览按资源归属管理：仓库资源进入工具 Git，项目资源进入所属项目 Git，本机资源单独备份；项目候选、导出结果等生成媒体仍不提交。第三方图片沿用来源许可。
 
 ## 工具
 
-在 `app/` 目录运行：
+普通仓库模型的预览使用以下脚本（`<仓库根>` 为绝对路径）；它只维护 `library/resources/catalog.json` 和公共模型预览，不维护 LoRA 或本机模型清单：
 
 ```powershell
 # 下载指定 Civitai 模型版本的图片并写回资源目录
-node scripts/fetch-resource-preview.mjs --resource <resource-id> --civitai-model <模型id> --version <版本id> --write-catalog --proxy http://127.0.0.1:10808
+node <仓库根>/app/scripts/fetch-resource-preview.mjs --resource <resource-id> --civitai-model <模型id> --version <版本id> --write-catalog --proxy http://127.0.0.1:10808
 
 # 检查资源引用、文件命名与孤儿图
-node scripts/fetch-resource-preview.mjs --check
-node scripts/fetch-resource-preview.mjs --check --prune
+node <仓库根>/app/scripts/fetch-resource-preview.mjs --check
+node <仓库根>/app/scripts/fetch-resource-preview.mjs --check --prune
 ```
 
 API key 从 `Config/local.json` 的 `civitai_api_key` 读取，不会回显。缺少 `--write-catalog`
 时，脚本只下载图片并打印可写入的 `preview` 块。删除资源时同步移除其预览图，或在确认范围后
 使用 `--check --prune` 清理。
+该下载脚本固定获取 `nsfw=None` 的普通模型预览，不代表 LoRA 归属分类规则。
+LoRA 的预览与示例由 Agent 按用户选定来源整理到实际归属目录并更新 `resource.json`；本机模型预览由本机清单引用。

@@ -8,7 +8,7 @@ description: 管理 StoryCanvas 使用的本机或远程 ComfyUI、comfy-cli wor
 先阅读 `docs/reference/setup.md`，再读取目标 `render_profile` 和有关工作流。本机路径只在
 `Config/local.json`，`Saved/` 只保存应用日志和状态。
 
-先读取进入 Git 的 `app/comfyui-endpoints.json` 与当前设备 `config.local.json` 中的本机直连
+先读取进入 Git 的 `app/comfyui-endpoints.json` 与当前设备 `Config/local.json` 中的本机直连
 `comfyui_urls`，再按工作台当前选择的地址区分运行方式：
 
 - 共享地址命中当前主机名时由工作台以本机直连地址替代，不检测自己的 Tailscale 入口。
@@ -40,7 +40,7 @@ description: 管理 StoryCanvas 使用的本机或远程 ComfyUI、comfy-cli wor
 - 使用 `.partial` 临时文件，校验通过后再改名；不静默覆盖同名不同文件。
 - 安装或启用自定义节点后记录来源、精确提交版本和状态。
 - 生成配置引用的模型发生变化时，直接更新该 `render_profile` 的身份记录。
-- 新增模型后按 `library/resources/README.md` 用脚本把安全级预览图和来源写入资源目录；
+- 新增模型后按 `library/resources/README.md` 登记来源、身份与预览，通用资源可留在仓库，实验资源保存在本机清单；LoRA 支持仓库、本机和唯一所属项目，其他项目通过同一 ID 读取，不复制记录；
   `render_profile` 只引用模型精确身份，不拥有预览图。
 - 外部安装路径只写入本地配置，不写入可提交文件或目录链接。
 

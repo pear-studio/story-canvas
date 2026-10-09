@@ -59,7 +59,7 @@ Agent 的独立 Caption 审计另存为 `captioning/audit.json`，只记录已�
 
 以下路径均以 `/api/lora-training` 为前缀：
 
-- `GET /datasets/:datasetId`：读取数据集、素材详情和 Caption 投影。
+- `GET /datasets/:datasetId`：读取数据集、素材详情和 Caption 投影；实际 Caption 位于各素材目录的 `caption.txt`。
 - `POST /datasets/:datasetId/caption-runs`：运行基础 Prompt；默认请求体使用 `{ "mode": "missing" }`。单图覆盖使用 `{ "mode": "single", "item_id": "item-...", "confirm_overwrite": true }`；服务端拒绝数据集级覆盖。
 - `GET /datasets/:datasetId/captioning`：读取三态 Caption 投影与汇总数量。
 - `GET /datasets/:datasetId/caption-audit`：按当前有效训练集合读取 `audited`、`pending` 和 `blocked` 审计投影。
@@ -73,14 +73,13 @@ Agent 的独立 Caption 审计另存为 `captioning/audit.json`，只记录已�
 
 ### 并发与媒体
 
-数据集详情和训练方案详情的响应头 `ETag` 表示当前事实版本。更新数据集、素材、Caption、方案，
-以及冻结预览或启动 run 时，在 `If-Match` 中带上对应详情读取的 ETag。数据集版本只覆盖自己的素材与确认事实，
-方案版本覆盖自己的 plan 和所引用的数据集；关联素材变化后需重新读取，训练启动仍重新预检并冻结实际输入。新建数据集／方案、停止和删除 run 不要求 ETag。
+数据集详情和训练设置详情的响应头 `ETag` 表示同一训练项目的当前事实版本；datasets 与 tasks 视图使用相同 ID 和共享 ETag。
+更新素材、Caption、设置及启动 run 时，在 `If-Match` 中带上最新详情读取的 ETag；素材或设置变化后重新读取，训练启动仍重新预检并冻结实际输入。创建训练项目、停止和删除 run 不要求 ETag。tasks 不提供独立方案创建接口。
 缺少版本返回 428，版本冲突返回 409；工作台保留草稿，由用户刷新后重新修改，Agent 不自动覆盖。
 这些接口不使用项目 revision，也不进入项目锁。训练页的「刷新」独立读取训练事实。
 素材地址为 `/api/lora-training/media/datasets/<dataset-id>/...`，不依赖项目媒体入口。
 
-新建接口 `/datasets` 返回的 ETag 属于集合请求范围，不能直接用来更新新建的数据集；创建后先 `GET /datasets/:datasetId` 获取该数据集的 ETag。方案同理。后续同一数据集请求使用最近成功响应的 ETag；遇到 `training_revision_conflict` 时重新读取并判断差异，不只替换版本后重放旧请求。
+新建接口 `/datasets` 返回的 ETag 属于集合请求范围，不能直接用来更新新建的训练项目；创建后先 `GET /datasets/:datasetId` 获取项目 ETag。后续该项目请求使用最近成功响应的 ETag；遇到 `training_revision_conflict` 时重新读取并判断差异，不只替换版本后重放旧请求。
 
 导入素材使用 `POST /datasets/:datasetId/assets` 的 multipart 请求，包含 `group_id`、`files`，可用 `source:<文件名>` 保存各图来源。裁剪预览传 `item_id`、`crop: { x, y, width, height }`、`upscale: false`；裁剪可用归一化坐标，服务端按原图转换为像素。应用时传相同处理参数及预览返回的 `preview_id`。完整画幅且不超分的图片无需调用后处理，否则返回 `lora_postprocess_no_changes`。
 
@@ -121,7 +120,7 @@ LoRA 与优化器（rank、LR 与高级项中的梯度累积；Alpha、Micro Bat
 统一「保存配置」之后才能预检。设置页只读展示有效 Batch 与本轮图片处理量（`max_train_steps × 梯度累积`，
 例如 2000 更新 × 累积 4 = 8000 张次）。
 
-方案将 `training_recipe.overrides` 中的训练参数与 `run_defaults` 一起保存。新建方案将预设参数具体化，运行时不再读取上轮值覆盖方案。
+项目唯一当前设置将 `training_recipe.overrides` 中的训练参数与 `run_defaults` 一起保存。创建训练项目时建立默认设置，运行时不读取上轮值覆盖当前设置。
 预设仅显式应用到草稿，先展示变化；步数、随机种子及本机设置不受应用预设影响。优化器仍由预设固定。
 启动区展示与上轮的参数差异，数据集内容不因此被判定相同。
 
@@ -130,8 +129,8 @@ LoRA 与优化器（rank、LR 与高级项中的梯度累积；Alpha、Micro Bat
 请求若携带参数且与保存值不同，返回 `unsaved_lora_training_settings`，要求先保存；不会创建仅本轮生效的隐藏覆盖。
 存储格式调整时，只对当前受管方案做一次性人工整理；不维护自动迁移、版本兼容层或迁移工具。历史 run 快照、素材和权重保持原样。
 本次训练备注为可选的 `run_settings.note` 字符串，随运行清单冻结并在记录详情显示，不写入方案，也不自动沿用上轮备注。
-同一训练方向的参数微调默认更新当前方案，历史输入由各次运行快照保留；只有用户明确要求独立方向时
-才新建方案，不为每轮实验复制方案或数据集。
+同一训练方向的参数微调更新当前设置，历史输入由各次运行快照保留；只有用户明确要求独立方向时
+才新建训练项目，不为每轮实验复制项目或素材。
 对比实验由全局独立工具提供，支持页面一次性导入和自由文本输入。正式 LoRA 由 Agent 按需手工整理和登记。
 
 ### 训练条件比较

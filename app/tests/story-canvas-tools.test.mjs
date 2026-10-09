@@ -46,6 +46,18 @@ async function failure(tool, input) {
   assert.fail('必须保持工具失败状态');
 }
 
+test('单页与批量生成将 rewrite 优化稿来源原样提交，错误来源在发送前拒绝',async t=>{
+ const f=await fixture(t,(req,res)=>res.end(JSON.stringify({task:{task_id:`render-${req.body.page_key.page_id}`,status:'queued'}})));
+ const args={project_id:'demo',page_key:{page_id:'page-001'},prompt_source:'rewrite'};
+ await f.tool.execute({operation:'generation.run',args});
+ const batch=await f.tool.execute({operation:'generation.batch',args:{project_id:'demo',page_keys:[{page_id:'page-002'},{page_id:'page-003'}],prompt_source:'rewrite'}});
+ assert.equal(batch.counts.submitted,2);
+ assert.equal(f.requests.length,3);
+ assert.ok(f.requests.every(req=>req.url==='/api/projects/demo/workbench/render'&&req.body.prompt_source==='rewrite'));
+ assert.equal((await failure(f.tool,{operation:'generation.run',args:{...args,prompt_source:'rewritten'}})).error,'invalid_arguments');
+ assert.equal(f.requests.length,3);
+});
+
 test('常见参数错误直接给出字段路径与最小例子，不发送请求',async t=>{
  const f=await fixture(t);
  const owner={owner_kind:'story',sequence_id:'unit-1',after_page_key:{page_id:'page-001'}};

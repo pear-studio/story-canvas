@@ -10,7 +10,7 @@
 
 新增角色子设定先经用户同意，再单独生成验证图，用户验收后才能用于页面。验证页只补展示所需的姿态和镜头，不重复完整角色描述。已验收且未变的配置复用。
 
-准备 Prompt 时核对当前确认稿、实际角色配置及有效生成配置。页面与设定 Prompt 都是自由文本整段，镜头用简短语言直接写进本页描述；契约见 [Prompt 编写与审计](prompt.md)。
+准备 Prompt 时核对当前确认稿、实际角色配置及有效生成配置。Anima 使用分类词条、权重、负向和机位；Qwen 使用自由文本、引用及有序参考图；H3 使用独立动作文字与视频参数。契约见 [Prompt 编写与审计](prompt.md) 和 [H3 动态页](../dev/video-pages.md)。
 
 ## 编译预览与生成
 
@@ -21,13 +21,13 @@ npm --prefix <仓库根绝对路径>/app run visual:produce -- preview page <pro
 npm --prefix <仓库根绝对路径>/app run visual:produce -- render page <project-id> <page-id> --count 3 --wait
 ```
 
-preview 返回最终正负向（负向恒空）、sections 来源、审计与配置诊断。当前 inspection.generation_signature 与候选 result.json 的 generation_signature 相同，说明候选对应当前生成条件。渲染从提交时的最新稳定事实冻结，不携带项目 revision，不接受临时 Prompt 覆盖。固定种子 --seed 仅用于受控对照。
+preview 返回模型对应的最终正负向（Qwen 负向恒空）、sections 来源、审计与配置诊断。当前 inspection.generation_signature 与候选 result.json 的 generation_signature 相同，说明候选对应当前生成条件。渲染从提交时的最新稳定事实冻结，不携带项目 revision，不接受临时 Prompt 覆盖。固定种子 --seed 仅用于受控对照。
 
 render 默认排队后返回；需要等待结果时加 --wait。任务返回完整 task_directory 与 candidate_paths，直接按路径查看，不拼文件名。当前范围内已准备好的独立页面可并发提交，依赖当前结果的改法不得预排；切换方案前确认旧任务已冻结。
 
 ## 默认检查与一次修正
 
-每页默认生成三张，逐张检查严重问题，全部保留给用户，不筛选或自动删除。额外人物、主体错误、严重肢体错位等属于严重问题；一般构图偏好、审美差异和轻微瑕疵不触发自动重试。
+插画原型默认生成三张，逐张检查严重问题，全部保留给用户，不筛选或自动删除。H3 动态页默认一段视频，不套用三张图片的重试规则；具体流程见动态页文档。额外人物、主体错误、严重肢体错位等属于严重问题；一般构图偏好、审美差异和轻微瑕疵不触发自动重试。
 
 三张中至少两张严重出错，可在当前事实范围内修正一次 Prompt，再生成三张。第二批仍有问题就说明后交付，不继续补样，也不为凑可用图降低目标。不要删除失败批次来隐藏问题。用户明确的数量、范围和专项试验预算优先。
 

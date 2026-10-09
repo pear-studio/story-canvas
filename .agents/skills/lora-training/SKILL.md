@@ -6,11 +6,11 @@ description: 为 StoryCanvas 一次完成 LoRA 数据集准备、Caption 审计�
 # LoRA 训练
 
 先读 `docs/reference/lora-training.md`；需要决定标签时再读
-`docs/reference/lora-activation-tags.md`。然后读取仓库根目录的
-登记的训练项目 `project.json`、`settings.json` 与工作台返回的预检信息。安装或修复训练器、
+`docs/reference/lora-activation-tags.md`。然后读取登记的训练项目
+`project.json`、`settings.json` 与工作台返回的预检信息。安装或修复训练器、
 模型和 GPU 环境时同时使用 `comfyui-runtime`，并按 `docs/reference/setup.md` 操作。
 
-按用户当前委托选择范围。只要求裁剪、分组或导入时，按 `docs/reference/lora-training.md` 的“筛选后的图片整理”完成并验证图片，不自动建立训练方案、标注、超分或执行预检；此时没有方案无需读取 plan。网上搜寻补图使用 `lora-material-sourcing`，不把补素材默认解释为生成合成图片。
+按用户当前委托选择范围。只要求裁剪、分组或导入时，按 `docs/reference/lora-training.md` 的“筛选后的图片整理”完成并验证图片，不自动扩展到训练设置、标注、手动超分或预检；导入入口自身的训练图准备按当前实现执行。网上搜寻补图使用 `lora-material-sourcing`，不把补素材默认解释为生成合成图片。
 
 当前训练路线为 Qwen-Image-2.1（BF16）。训练 Caption 原样使用，标签或自然语言均可，不强制转换格式，
 不自动增删触发词。Caption 审计是面向标签式 Caption 的独立历史功能（快照 scope 固定），不等于
@@ -25,7 +25,7 @@ Caption 确认门槛；训练前的硬门槛是当前图片哈希与 Caption 哈
 
 1. 将 `project.json.description` 当作数据集的训练目标，读取其中“要复现的身份特征”和“允许变化
    的因素”。工作台可以把字段显示为“训练目标”，不为此新增一套目标 Schema。训练任务仍单独决定
-   底座、Prompt family、预设和参数；数据集可以被多个训练任务复用。
+   底座、Prompt family、预设和参数；一个训练项目持有一份素材集合和唯一当前设置，历史 run 保留各自快照。
 2. 有效训练图片必须同时满足 `item.enabled === true` 和所属分组 `group.enabled === true`。审计和
    预检都以这个集合为准；禁用分组中的图片不参与本次审计，重新启用后再按图片 hash 判断是否需要审计。
 3. 读取数据集详情并记录 ETag。Caption 和审计快照通过对应训练 HTTP 接口的 `mutateFacts`
@@ -73,9 +73,9 @@ Caption 保存接口不触碰审计快照，因此用户手工调整 Caption 不
 
 ### 每张新图片或图片变化后的检查规范
 
-Agent 必须查看图片、当前 `.txt`、自动基础 Prompt 和 `raw_tags`，然后按以下顺序处理：
+Agent 必须查看图片、素材目录当前 `caption.txt`、自动基础 Prompt 和 `raw_tags`，然后按以下顺序处理：
 
-1. **文件和内容**：图片存在且可解码；同名 Caption 存在且非空；Caption 与当前图片是一一对应关系。
+1. **文件和内容**：图片存在且可解码；素材目录的 `caption.txt` 存在且非空；Caption 与当前图片是一一对应关系。
    图片无法读取、Caption 缺失或图片主体无法判断时，不标记该 hash 为已审计，并在结果中报告阻断原因。
 2. **可见性准确**：逐项检查当前 Caption 中的角色、外观、服装、饰品、动作、镜头、背景和其他具体标签。
    明确没有出现在图片中的标签删除；明确可见且对训练目标有用但缺失的标签补上；不因为追求标签数量
@@ -104,17 +104,17 @@ Agent 必须查看图片、当前 `.txt`、自动基础 Prompt 和 `raw_tags`，
 
 ## 准备任务
 
-1. 先建立或选择独立数据集，在其中确定核心概念、素材来源、分组用途、变化覆盖与偏差风险；
-   激活标签默认可留空，不生成随机字符串。再建立引用该数据集的训练任务并确认确切底座。
+1. 先建立或选择登记的训练项目，在其中确定核心概念、素材来源、分组用途、变化覆盖与偏差风险；
+   激活标签默认可留空，不生成随机字符串。修改该项目唯一当前设置并确认确切底座。
    当前训练底座为 Qwen-Image-2.1（官方原始 BF16 权重，逐文件身份见
    `library/lora-training/qwen-image21-models.json`）。
 2. 用户要求以生成图片补充素材时，编写 Prompt、调用现有生成能力、预筛并把选定图片加入数据集；不要假装
    工作台有“一键生成候选素材”。保留原图，裁剪使用工作台的非破坏性派生项。
 3. 图片集合确定并保存后，按激活标签指南结合目标、素材和模型家族决定无专用标签、规范角色
-   标签、可读概念标签或多个子概念标签，再批量写或调整每张图片旁的同名 `.txt`。标签只写入
+   标签、可读概念标签或多个子概念标签，再通过 Caption 接口批量写或调整各素材的 `caption.txt`。标签只写入
    实际包含对应概念的图片；Caption 写清需要变化的角色、服装、动作、镜头与背景，避免错误
    绑定。Tagger 只能辅助，必须清理错误、冲突和不一致标签。
-4. 训练任务只保存数据集引用、底座与参数。修改
+4. `settings.json` 只保存当前底座、recipe 与运行预算，不重复保存数据集引用。修改
    高级参数时，在会话中留下简短理由；不要传入 shell
    命令或绕过工作台的结构化参数。
 5. 执行预检并处理阻断项，把任务准备到“可训练”。用户明确授权后，通过工作台结构化接口发起一轮或多轮训练；
@@ -138,19 +138,20 @@ Agent 必须查看图片、当前 `.txt`、自动基础 Prompt 和 `raw_tags`，
 
 - 读取不可变 `manifest.json`、可变 `status.json`、日志与比较条件后再判断；不要从文件名
   猜底座、参数或 checkpoint 身份。
-- 可以分析随 step 变化的稳定性、过拟合迹象和测试 Prompt 表现，并建议标记任意数量
-  checkpoint；用户点击“保存为 LoRA”后才会固化正式资源。不要自动决定唯一最佳结果，也不要
-  静默删除未标记 checkpoint。
-- 正式 LoRA 的完整信息以 `app/data.local/lora-resources/<resource-id>/resource.json` 为准；
+- 可以分析随 step 变化的稳定性、过拟合迹象和测试 Prompt 表现，建议用于比较的 checkpoint；
+  用户选定结果并授权后，由 Agent 手工登记正式资源，网页不提供“保存为 LoRA”按钮。
+  不自动决定唯一最佳结果，也不静默删除 checkpoint。
+- 正式 LoRA 的完整信息以实际归属目录中的 `resource.json` 为准：所属项目 `resources/loras/<resource-id>/`、
+  仓库 `library/resources/loras/<resource-id>/` 或本机 `app/data.local/lora-resources/<resource-id>/`；详见 `library/resources/README.md`。
   SafeTensors 内嵌元数据只能作备份。检查底座、激活标签及用途、推荐权重、采样参数或示例时先读该记录，
   不从文件名猜测，也不依赖另一份 LoRA 记录。
 - 删除 checkpoint 或 run 不会删除已经保存的正式 LoRA。需要清理正式资源时必须单独确认确切
-  记录和权重范围；需要迁移同一份正式二进制时，同时复制该资源目录与记录中
-  `file.relative_path` 指向的权重。
+  记录和权重范围；本机归属调整用 `asset.transfer.plan/apply` 移动记录与图片，不移动权重，不建立重复副本。
+  跨设备迁移同一份二进制时，携带所属记录和 `file.relative_path` 指向的权重。
 - 恢复只使用工作台验证的最近完整恢复状态（恢复包身份见 run 状态与 `resume/latest.json`）。
   普通训练错误不能当作恢复包损坏反复重启。
 - 同一项目跨设备继续工作时，优先使用保存 checkpoint 时写入项目的训练约定建立复现任务。
   复现任务锁定数据集内容、确切底座、训练器版本和训练语义参数；精确续训还要求 DiffSynth commit、
   runner 与模型逐文件身份一致，不满足时另开从头训练；产出权重不要求与来源 SHA-256 相同。
   确实要迁移同一份二进制时，再显式
-  复制用户指定的权重与本地资源记录；不要建立项目间文件引用。
+  复制用户指定的权重与所属资源记录到目标设备；本机其他项目通过同一资源 ID 读取唯一所属记录，不复制。

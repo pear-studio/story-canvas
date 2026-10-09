@@ -14,7 +14,7 @@
 
 ## 命令
 
-生成一至三张候选，缺省为一张：
+此便捷 CLI 生成一至三张候选，缺省为一张；普通插画创作须显式 `--count 3`。工作台 HTTP／统一语义 `generation.run` 缺省为插画三张、H3 动态页一个视频：
 
 ```powershell
 npm --prefix <仓库根>/app run visual:produce -- render page <project-id> <page-id> [--count 1..3] [--seed N] [--wait]
@@ -44,7 +44,7 @@ Resolver 通过 `pages/index.json` 与项目内唯一 page_id 定位页面。Pag
 归属不决定生成输入；归属失效的页面仍可编辑、修复和生成，实际参与生成的角色／场景子设定引用失效时阻止生成。
 
 三种归属统一读取 content、页面 Prompt、明确引用的角色和场景子设定，页面之间不继承。
-最终文本按全局文字、逐角色段、场景段、附图用途和本页描述确定性组合，负向恒空。
+最终输入按模型适配器编译。Qwen 按全局文字、逐角色段、场景段、附图用途和本页描述组合，负向恒空；Anima 编译词条、机位、继承 LoRA 与负向；H3 使用独立动作文字和视频参数。
 移除引用需同时删除对应 override key，残留 key 保存被拒绝；画外对白不会自动引入人物。
 移动页面归属不改写引用、Prompt、候选或成品。已有任务始终消费冻结快照。
 
@@ -59,7 +59,7 @@ Resolver 通过 `pages/index.json` 与项目内唯一 page_id 定位页面。Pag
 ## 工作台流程预览
 
 `POST /api/projects/:id/workbench/page-render-inspection` 使用完整 PageKey 读取当前页面和角色事实，复用当前
-Prompt compiler、有效生成配置和 route 解析，返回 Positive、Negative（恒空）、按 sections 来源分段、
+Prompt compiler、有效生成配置和 route 解析，返回 Positive、Negative（Qwen 恒空）、按 sections 来源分段、
 编号参考图、出场角色及 variant、画布、候选 route、recipe、workflow、Prompt 审计和结构化阻断。它是只读预览，
 不建立渲染任务，也不要求项目 expected revision。
 

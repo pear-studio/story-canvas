@@ -5,7 +5,7 @@ description: 为 StoryCanvas 设计单元分页草案，用户确认后维护页
 
 # 单元分页与文案
 
-按 docs/creative/guide.md 读取当前单元上下文、用户内容与基础文案，补读相关角色配置。维护 story/pages/index.json 与 narrative；不代写角色配置或 Prompt。
+按 docs/creative/guide.md 读取当前单元上下文、用户内容与基础文案，补读相关角色配置。维护 pages/index.json 中的剧情归属与页面 content；不代写角色配置或 Prompt。
 
 ## 先提交草案
 
