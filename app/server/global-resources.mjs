@@ -1,6 +1,6 @@
 import { registeredProjectPath, listRegisteredProjects, registerProject, unregisterProject, readProjectRegistry } from "./project-registry.mjs";
 import { createHash } from "node:crypto";
-import { access, readFile, readdir, stat } from "node:fs/promises";
+import { access, lstat, readFile, readdir, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { isSafeLoraFilename } from "./lora-config.mjs";
@@ -11,6 +11,7 @@ import { diagnoseModelFile, diagnoseRenderProfile } from "./render-profile-diagn
 import { inspectRenderProfile } from "./render-profile-inspection.mjs";
 import { readVisualPageTemplates } from "./visual-page-templates.mjs";
 import { readWorkflowDefinition } from "./workflow-definition.mjs";
+import { ApiError, isWithin } from "./http-support.mjs";
 
 const renderProfileIdPattern = /^[a-z0-9][a-z0-9-]*$/;
 const modelDiscoveryRoots = [
@@ -279,8 +280,28 @@ async function listFilesBelow(root, relativeRoot, kind, limit = 2000) {
 }
 
 export async function readResourceCatalog(projectRoot) {
-  const catalog = await readJsonFile(path.join(projectRoot, "library", "resources", "catalog.json"), { optional: true });
-  return catalog?.version === 1 && Array.isArray(catalog.models) ? catalog : { version: 1, models: [] };
+  const models = [];
+  for (const [relative, storage] of [["library/resources/catalog.json", "repository"], ["app/data.local/model-resources/catalog.json", "local"]]) {
+    const catalog = await readJsonFile(path.join(projectRoot, relative), { optional: true });
+    if (catalog?.version !== 1 || !Array.isArray(catalog.models)) continue;
+    for (const model of catalog.models) {
+      if (models.some(existing => existing.id === model.id || existing.relative_path === model.relative_path)) continue;
+      const preview = storage === "local" && model.preview ? { images: model.preview.images.map(image => ({ ...image, src: image.src.replace(/^\/resource-previews\//, "/api/local-model-previews/") })) } : model.preview;
+      models.push({ ...model, storage, ...(preview ? { preview } : {}) });
+    }
+  }
+  return { version: 1, models };
+}
+
+export async function openLocalModelPreview(projectRoot, filename) {
+  if (!/^[a-z0-9-]+\.(jpg|jpeg|png|webp)$/.test(filename)) throw new ApiError(400, "invalid_local_model_preview");
+  const directory = path.join(projectRoot, "app/data.local/model-resources/previews");
+  const target = path.join(directory, filename);
+  const info = await lstat(target).catch(error => { if (error.code === "ENOENT") return null; throw error; });
+  if (!info?.isFile() || info.isSymbolicLink()) throw new ApiError(404, "local_model_preview_not_found");
+  const [rootReal, directoryReal, targetReal] = await Promise.all([realpath(projectRoot), realpath(directory), realpath(target)]);
+  if (!isWithin(rootReal, directoryReal) || !isWithin(directoryReal, targetReal)) throw new ApiError(422, "unsafe_local_model_preview");
+  return { target, info };
 }
 
 export function profileResourcePaths(profile) {

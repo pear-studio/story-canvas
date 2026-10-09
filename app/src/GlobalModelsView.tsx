@@ -26,7 +26,7 @@ function baseResourceItem(model: GlobalModelResource): ResourceCatalogItem {
     relativePath: model.relative_path,
     sizeBytes: model.size_bytes,
     status: model.status,
-    recordLabel: model.registered ? "已登记" : "未登记",
+    recordLabel: model.registered ? model.storage === "local" ? "本机登记" : "仓库登记" : "未登记",
     previewImages: model.preview?.images ?? [],
     details: [
       { label: "文件", value: model.relative_path },

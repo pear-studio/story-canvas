@@ -15,6 +15,19 @@ import { createCharacterPage } from "../server/character-page-facts.mjs";
 
 import { createStoryCanvasServer } from "../server/index.mjs";
 import { handleRuntimeRequest } from "../server/runtime-http.mjs";
+
+test("本机模型预览经 API 读取，不需要公共目录副本", async context => {
+  const { origin } = await startCurrentProjectServer(context, { createProject: false, beforeServer: async ({ projectRoot }) => {
+    const directory = path.join(projectRoot, "app/data.local/model-resources/previews");
+    await mkdir(directory, { recursive: true });
+    await writeFile(path.join(directory, "experiment.jpg"), "local-preview");
+  } });
+  const response = await fetch(origin + "/api/local-model-previews/experiment.jpg");
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("content-type"), "image/jpeg");
+  assert.equal(await response.text(), "local-preview");
+  assert.equal((await fetch(origin + "/api/local-model-previews/missing.jpg")).status, 404);
+});
 import { enqueueGenerationTask, generationQueueFile, generationReference, readGenerationQueue } from "../server/generation-queue.mjs";
 import { MEDIA_VARIANT_WIDTHS, warmMediaVariants } from "../server/media-variants.mjs";
 import { createRenderTask, listProjectRenderTaskStates, readRenderTaskState, updateRenderTask } from "../server/render-task-storage.mjs";

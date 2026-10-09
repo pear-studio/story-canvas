@@ -115,6 +115,9 @@ npm --prefix <仓库根>/app run setup
 环境诊断默认从 `models_root/captioning/<captioner-id>/` 校验模型包，不再回退到工具目录。若显式填写 `lora_training.captioning.model_root`，它必须与命令 `args` 中实际使用的模型包目录一致，并遵循上述分类规范。
 
 - 工具 Git 只保存模型清单、来源、SHA-256、配置示例和受管安全预览。权重不进入工具或项目 Git，也不放在 `app/data.local/`、Python 环境、项目 `captioning/` 或 `Saved/` 中。项目 `captioning/` 保存的是审核事实，不是打标模型。
+- 正式通用模型清单位于 `library/resources/catalog.json`；实验或备用模型的本机清单位于
+  `app/data.local/model-resources/catalog.json`，预览由同目录的 `previews/` 持有。两者共用
+  资源格式与工作台读取入口；本机清单和 LoRA 本机登记目录需要单独备份，不进入工具 Git。
 - 设备实际路径只写入 `Config/local.json` 及外部 ComfyUI 自己的路径配置。上方 JSON 是示例，使用时把 `D:/Models/ComfyUI` 替换为实际 `models_root`。打标命令的 `args` 当前不展开 `${models_root}`，应填写实际绝对文件路径。
 - ComfyUI 通过 `extra_model_paths.yaml` 映射所需分类；不能因根目录已配置，就假定所有分类都已映射。MUSIQ、IS-Net 和打标器直接读取模型库，不要求 ComfyUI 注册这些分类。
 - Hugging Face、Torch 等下载缓存不作为正式权重的唯一安装位置。需要的 tokenizer 等辅助缓存可保留或重新获取，但不与已登记模型包混为一谈；新增下载按清单校验后安装到上述分类。

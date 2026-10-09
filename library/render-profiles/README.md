@@ -4,7 +4,8 @@
 模型与 LoRA 使用稳定语义 ID 的对象映射；operation 和输入来源使用固定 route，不再保存
 重复的能力布尔值，也不通过数组下标定位可调整项。
 
-当前剧情生成只有 `qwen-image-2-1` 一个 profile，使用 Qwen-Image-2.1 自由文本整段 Prompt。
+当前插画生成有 `anima-base-v1` 与 `qwen-image-2-1`，动态页使用 `minimax-h3`。
+H3 默认裁剪版 INT8 ConvRot，不加载 LoRA；实验模型可在本机资源清单保留，不自动成为生成配置。
 每个 profile 直接声明 `dit`、`text_encoder`、`vae` 三份模型、`prompt.text` 全局文字、候选 route
 和候选 recipe；编译器、Render Plan 与任务快照都只面对同一份 `operations`。
 

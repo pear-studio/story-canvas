@@ -12,7 +12,7 @@ import { renderTaskIdPattern } from "./render-task-id.mjs";
 import { controlGenerationTask } from "./generation-lifecycle.mjs";
 import { generationReference, readGenerationQueue, reorderGenerationQueue } from "./generation-queue.mjs";
 import { listWorkspaceRenderHistory, listWorkspaceRenderTasks, readWorkspaceTaskDetail, readWorkspaceTaskResults } from "./render-task-workspace.mjs";
-import { dictionaryStatus, readGlobalResources } from "./global-resources.mjs";
+import { dictionaryStatus, openLocalModelPreview, readGlobalResources } from "./global-resources.mjs";
 import { requireProjectDirectoryName } from "./project-contracts.mjs";
 import { loraTrainingModule } from "./lora-training-module.mjs";
 import {
@@ -28,6 +28,7 @@ import {
   readJsonBody,
   readOptionalJsonBody,
   sendJson,
+  sendFile,
 } from "./http-support.mjs";
 
 function trackedTaskQuery(searchParams) {
@@ -110,6 +111,12 @@ export async function handleRuntimeRequest({
   }
   if (request.method === "GET" && decodedPath === "/api/resources") {
     sendJson(response, 200, await readGlobalResources(projectRoot, config));
+    return true;
+  }
+  const localModelPreviewMatch = /^\/api\/local-model-previews\/(.+)$/.exec(decodedPath);
+  if (request.method === "GET" && localModelPreviewMatch) {
+    const media = await openLocalModelPreview(projectRoot, localModelPreviewMatch[1]);
+    sendFile(response, { ...media, contentType: imageContentType(media.target) }, { headers: { "x-content-type-options": "nosniff" } });
     return true;
   }
   if (request.method === "GET" && decodedPath === "/api/tasks/history") {

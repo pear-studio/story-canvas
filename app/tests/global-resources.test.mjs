@@ -5,8 +5,35 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { readGlobalResources } from "../server/global-resources.mjs";
+import { openLocalModelPreview, readGlobalResources, readResourceCatalog } from "../server/global-resources.mjs";
 import { validateLoraResource } from "../server/lora-resources.mjs";
+
+test("普通模型本机清单保留身份与预览，仓库同 ID 或路径优先", async context => {
+  const root = await mkdtemp(path.join(tmpdir(), "story-canvas-local-models-"));
+  context.after(() => rm(root, { recursive: true }));
+  const repository = { id: "main-model", name: "正式模型", kind: "dit", relative_path: "diffusion_models/main.safetensors" };
+  const local = { id: "experiment", name: "实验模型", kind: "dit", relative_path: "diffusion_models/experiment.safetensors", sha256: "a".repeat(64), source: "https://example.com/model", preview: { images: [{ src: "/resource-previews/experiment.jpg", alt: "实验预览" }] } };
+  const localRoot = path.join(root, "app/data.local/model-resources");
+  await mkdir(path.join(root, "library/resources"), { recursive: true });
+  await mkdir(path.join(localRoot, "previews"), { recursive: true });
+  await writeFile(path.join(root, "library/resources/catalog.json"), JSON.stringify({ version: 1, models: [repository] }));
+  await writeFile(path.join(localRoot, "catalog.json"), JSON.stringify({ version: 1, models: [{ ...repository, name: "旧本机副本" }, { ...repository, id: "other-id" }, local] }));
+  await writeFile(path.join(localRoot, "previews/experiment.jpg"), "image");
+  const catalog = await readResourceCatalog(root);
+  assert.equal(catalog.models.length, 2);
+  assert.equal(catalog.models[0].name, "正式模型");
+  assert.equal(catalog.models[0].storage, "repository");
+  assert.equal(catalog.models[1].storage, "local");
+  assert.equal(catalog.models[1].sha256, local.sha256);
+  assert.equal(catalog.models[1].preview.images[0].src, "/api/local-model-previews/experiment.jpg");
+  const media = await openLocalModelPreview(root, "experiment.jpg");
+  assert.equal(await readFile(media.target, "utf8"), "image");
+  await assert.rejects(openLocalModelPreview(root, "../catalog.json"), error => error.code === "invalid_local_model_preview");
+  await assert.rejects(openLocalModelPreview(root, "missing.jpg"), error => error.code === "local_model_preview_not_found");
+  registerFixtureProjects(root);
+  const result = await readGlobalResources(root);
+  assert.equal(result.models.find(model => model.id === "experiment").storage, "local");
+});
 
 test("LoRA 中文浏览信息经全局资源投影保留，原始名称与标签不变", async context => {
   const root = await mkdtemp(path.join(tmpdir(), "story-canvas-lora-browse-"));

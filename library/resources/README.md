@@ -3,6 +3,12 @@
 `catalog.json` 是仓库内维护的通用模型浏览元数据来源。模型文件仍以 `relative_path` 与
 SHA-256 确定精确身份；`preview.images` 归模型资源所有，可以被模型页和生成配置共同读取。
 
+普通模型的本机登记使用被忽略的 `app/data.local/model-resources/catalog.json`，沿用同一
+`resource-catalog.schema.json`。对应预览放在该目录的 `previews/`，清单 `src` 仍使用
+`/resource-previews/<文件名>`；读取时转换为本机预览 API，不要求复制进公共目录。
+工作台汇总仓库与本机清单，按 ID 和权重路径去重，仓库记录优先；模型身份、来源与预览
+随本机资源目录一起备份。权重始终保留在外部 `models_root`，本机清单不创建生成配置。
+
 公开发布的 LoRA 也属于仓库资源：每个 LoRA 各自保存一份
 `library/resources/loras/<resource-id>/resource.json` 以及 `previews/` 图片。该记录是 LoRA
 完整说明的事实来源，直接包含底座、触发词、建议权重与采样参数、训练摘要、来源、预览和完整
