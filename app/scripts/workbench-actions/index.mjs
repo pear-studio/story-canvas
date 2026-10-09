@@ -30,6 +30,7 @@ const utilityHelp = {
 };
 function revision() {
   const hash=createHash('sha256');
+  hash.update(readFileSync(new URL('../../shared/prompt-weight-presets.mjs',import.meta.url)));
   for(const file of readdirSync(new URL('./',import.meta.url)).filter(f=>f.endsWith('.mjs')).sort()) hash.update(file).update(readFileSync(new URL(file,import.meta.url)));
   hash.update(readFileSync(new URL('../workbench-client.mjs',import.meta.url)));
   return `v3-${hash.digest('hex').slice(0,12)}`;

@@ -774,6 +774,8 @@ test("真实 CLI 经服务创建与管理项目，支持 stdin 事实提交，�
   const scripts = path.join(projectRoot, "app/scripts");
   await mkdir(scripts, { recursive: true });
   for (const file of ["workbench-client.mjs", "workbench-api.mjs", "create-project.mjs", "story-page.mjs", "character-fact.mjs", "manage-project.mjs", "visual-production.mjs", "agent-fact.mjs", "story-canvas.mjs", "workbench-actions"]) await cp(path.join(source, file), path.join(scripts, file), {recursive:true});
+  await mkdir(path.join(projectRoot, "app/shared"), { recursive: true });
+  await cp(path.resolve(source, "../shared/prompt-weight-presets.mjs"), path.join(projectRoot, "app/shared/prompt-weight-presets.mjs"));
   await mkdir(path.join(projectRoot, "app/server"), { recursive: true });
   await cp(path.resolve(source, "../server/page-key.mjs"), path.join(projectRoot, "app/server/page-key.mjs"));
   await cp(path.resolve(source, "../server/file-replace.mjs"), path.join(projectRoot, "app/server/file-replace.mjs"));

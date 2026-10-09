@@ -12,7 +12,7 @@ async function fixture(t, responder = () => assert.fail('不应发送请求')) {
   const root = await mkdtemp(path.join(testsRoot, 'dsh-tools-'));
   assert.equal(path.dirname(root), path.resolve(testsRoot));
   t.after(() => rm(root, { recursive: true, force: true }));
-  for (const file of ['.dsh/presets/story-canvas/story-canvas-tools.mjs', 'app/scripts/workbench-actions', 'app/scripts/workbench-client.mjs', 'app/scripts/story-canvas.mjs', 'app/server/page-key.mjs', 'app/server/file-replace.mjs']) {
+  for (const file of ['.dsh/presets/story-canvas/story-canvas-tools.mjs', 'app/scripts/workbench-actions', 'app/scripts/workbench-client.mjs', 'app/scripts/story-canvas.mjs', 'app/server/page-key.mjs', 'app/server/file-replace.mjs', 'app/shared/prompt-weight-presets.mjs']) {
     await mkdir(path.dirname(path.join(root, file)), { recursive: true });
     await cp(path.join(repositoryRoot, file), path.join(root, file), { recursive: true });
   }

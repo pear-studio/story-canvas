@@ -1,4 +1,5 @@
 import { floatingLayerHost, useFloatingLayer } from "./floating-layer";
+import { promptWeightPresets } from "../shared/prompt-weight-presets.mjs";
 import { FloatingPanel } from "./FloatingPanel";
 import { InlinePromptInput, type InlinePromptHandle } from "./InlinePromptInput";
 import { useDismissableLayer } from "./use-dismissable-layer";
@@ -809,7 +810,7 @@ function PromptFragmentRow({
         {fragment.inheritance && Object.hasOwn(fragment.inheritance, 'enabled') && <div className="prompt-fragment-weight-upstream"><span>开关已覆盖 · 上游{upstreamEnabled ? '启用' : '关闭'}</span><button type="button" onClick={() => restoreInheritance('enabled')}>恢复开关继承</button></div>}
         <div className="prompt-fragment-weight-input-row"><label><span>{upstreamWeight !== undefined ? '当前权重' : '权重'}</span><input autoFocus={!coarsePointer} type="number" min="0.2" max="10" step="0.1" value={weightDraft} aria-label={`${categoryLabel}第 ${index + 1} 项权重`} onChange={(event) => { setWeightDraft(event.target.value); setWeightError(""); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); commitWeight(); } else if (event.key === "Escape") { event.preventDefault(); setWeightMenuOpen(false); } }} /></label><div className="prompt-fragment-weight-menu-actions"><button type="button" className="is-primary" onClick={() => commitWeight()}>确定</button></div></div>
         {weightError && <small className="prompt-fragment-weight-error" role="alert">{weightError}</small>}
-        <div className="prompt-fragment-weight-menu-actions prompt-fragment-weight-presets">{[0.5, 1, 1.5, 2, 3].map(weight => <button key={weight} type="button" onClick={() => commitWeight(weight)}>×{weight}</button>)}</div>
+        <div className="prompt-fragment-weight-menu-actions prompt-fragment-weight-presets">{promptWeightPresets.map(weight => <button key={weight} type="button" onClick={() => commitWeight(weight)}>×{weight}</button>)}</div>
         </>}
       </div>}
     </div>

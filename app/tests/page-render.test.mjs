@@ -668,6 +668,8 @@ test("Prompt 语义 CLI 读写三种目标并返回审计，旧 CLI 给出迁移
   await mkdir(path.join(fixture.repositoryRoot, "app", "scripts"), { recursive: true });
   await symlink(path.join(sourceRepositoryRoot, "app", "server"), path.join(fixture.repositoryRoot, "app", "server"), "junction");
   for (const script of ["story-page.mjs", "character-fact.mjs", "story-canvas.mjs", "workbench-actions"]) await cp(path.join(sourceRepositoryRoot, "app", "scripts", script), path.join(fixture.repositoryRoot, "app", "scripts", script), { recursive: true });
+  await mkdir(path.join(fixture.repositoryRoot, "app/shared"), { recursive: true });
+  await cp(path.join(sourceRepositoryRoot, "app/shared/prompt-weight-presets.mjs"), path.join(fixture.repositoryRoot, "app/shared/prompt-weight-presets.mjs"));
   await serveCliFixture(context, fixture);
   const cli = path.join(fixture.repositoryRoot, 'app/scripts/story-canvas.mjs');
   const inputFile = path.join(fixture.repositoryRoot, 'prompt-input.json'), outputFile = path.join(fixture.repositoryRoot, 'prompt-output.json');
