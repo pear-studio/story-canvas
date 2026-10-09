@@ -46,7 +46,7 @@ export default function GlobalModelsView({ resources, kind }: { resources: Globa
   if (!resources) return <UtilityPage title={title} description="正在读取本机模型目录与登记信息。"><div className="empty-card">正在扫描…</div></UtilityPage>;
   if (kind === "lora") {
     const entries = resources.models.filter((model) => model.kind === "lora").map(loraResourceItem);
-    const registered = entries.filter((item) => item.recordLabel === "仓库登记" || item.recordLabel === "本机登记");
+    const registered = entries.filter((item) => item.registered);
     const raw = entries.filter((item) => !registered.includes(item));
     return <UtilityPage title="LoRA" description={`已登记资源与本机 LoRA${resources.models_root ? "" : " · 未配置 models_root"}`}>
       <div className="resource-page-sections"><section><header><div><h3>已登记</h3><p>具有完整资源说明、预览与生成建议。</p></div><span>{registered.length} 项</span></header><ResourceCatalogGrid items={registered} empty="暂无已登记 LoRA。" /></section><section><header><div><h3>未登记的本机文件</h3><p>包含训练 checkpoint；可以使用，但没有完整资源说明。</p></div><span>{raw.length} 项</span></header>{raw.length ? <ResourceCompactList items={raw} /> : <div className="empty-card">暂无未登记 LoRA。</div>}</section></div>

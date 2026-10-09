@@ -14,6 +14,8 @@ Agent 日常操作需要本地工作台服务在线；命令与 API 统一说明
 ├─ render-profile.override.json
 ├─ materials/
 │  └─ index.json
+├─ writing-corpus/        # 本项目持有的小说原文、摘录和提取规则
+├─ resources/loras/       # 本项目持有的 LoRA 元数据和预览，权重仍在 models_root
 ├─ characters/
 │  ├─ index.json
 │  └─ <character-id>.{profile,visual,prompt}.json
@@ -40,21 +42,24 @@ Agent 日常操作需要本地工作台服务在线；命令与 API 统一说明
 └─ .gitattributes
 ```
 
-项目由 `Config/projects.json` 显式登记，ID 是本机接口句柄，目录可以在工具仓库外。项目之间不建立文件引用。对比实验位于工具 `Saved/comparison-results/`，执行状态在 `Saved/comparisons/`，拼图在 `Saved/comparison-reviews/`。参见[本地项目管理](local-projects.md)。
+项目由 `Config/projects.json` 显式登记，ID 是本机接口句柄，目录可以在工具仓库外。LoRA 元数据和图片由一个所属项目持有，其他项目通过资源 ID 从登记的所属项目读取；不复制，不同步。语料检索显式指定所属项目。对比实验位于工具 `Saved/comparison-results/`，执行状态在 `Saved/comparisons/`，拼图在 `Saved/comparison-reviews/`。参见[本地项目管理](local-projects.md)。
 
 ## Agent 临时工作
 
 Agent 临时工作统一位于仓库根 `Saved/Agent/<任务名>/`，同一任务复用目录，容纳临时脚本、素材中转、API 请求与回包及临时审阅页，不进入 Git。`Saved/Tests/` 仅供应用、测试和工具自动生成临时文件，不作为 Agent 手工工作目录。正式素材导入数据集或项目材料，正式生成成果保留在系统管理的 `Outputs/`；临时目录在任务结束并核对依赖后清理。
 
-## 全局文案资产（library/）
+## 项目语料与全局文案方法
 
-- `library/writing-corpus/<源>/原文/` 保存文案改写的参考语料（小说原文 txt），是**参考输入**，
-  进 Git；`.gitattributes` 对 `library/writing-corpus/**` 设置 `-text` 冻结字节，
+- `<所属项目>/writing-corpus/<源>/原文/` 保存小说原文、摘录和提取规则，是**参考输入**，
+  进入所属项目 Git；项目 `.gitattributes` 对 `writing-corpus/**` 设置 `-text` 冻结字节，
   text-sources 的字节偏移依赖语料字节不变；
 - `library/writing-policies/` 保存跨项目的文案方法文档（如 `copy-from-corpus.md`），
   story-editing 技能引用；
-- 语料检索用 `app/scripts/corpus-search.mjs`（`corpus:search`），输出语料相对路径与字节偏移，
+- 语料检索用 `app/scripts/corpus-search.mjs --project <所属项目ID>`（`corpus:search`），输出语料相对路径与字节偏移，
   供 text-sources 映射使用。
+
+语料和项目 LoRA 在复制临时项目时不重复复制；LoRA 仍从唯一所属项目读取，语料命令仍指定原所属项目。提升、重命名保留整个所属资料树。原所属项目需要继续登记，移除登记后相关资源不再提供元数据和预览。
+现有完整资料通过 `asset.transfer.plan/apply` 迁移归属，计划核对文件 SHA，提交拒绝来源变化或目标冲突；不直接写项目 JSON。
 
 ## 持久事实
 

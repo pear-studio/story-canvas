@@ -1,18 +1,22 @@
 #!/usr/bin/env node
-// 文案语料检索器。语料根：library/writing-corpus/<源>/原文/（进 Git，-text 冻结字节）。
+// 文案语料检索器。语料根：所属项目/writing-corpus/<源>/原文/。
 // 用法：
 //   node scripts/corpus-search.mjs q '<正则>' [条数]   检索女性台词（启发式过滤男性台词）
 //   node scripts/corpus-search.mjs n '<正则>' [条数]   检索旁白段落
 //   node scripts/corpus-search.mjs --selfcheck         自检：抽已知句检索自身并读回偏移核验
-//   node scripts/corpus-search.mjs --corpus <源名> ... 指定语料源（默认 大芋泥啵啵）
+//   node scripts/corpus-search.mjs --project <所属项目ID> --corpus <源名> ... --out <回执文件>
 // 每条命中输出：语料相对路径、UTF-8 字节偏移、±2 行上下文。
 // 偏移语义与服务端 text-sources 核验一致：从文件头起的 UTF-8 字节偏移。
-import { readdirSync, readFileSync, openSync, readSync, closeSync } from 'node:fs';
+import { readdirSync, readFileSync, openSync, readSync, closeSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { registeredProjectPath } from '../server/project-registry.mjs';
+import { writingCorpusRoot } from '../server/writing-corpus.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const corpusRootDefault = path.join(repoRoot, 'library', 'writing-corpus');
+let corpusRootDefault;
+const output = [];
+const print = (...values) => output.push(values.join(' '));
 
 // 男性台词特征 / 女性语气特征（沿用原 /tmp/corpus.mjs 启发式）
 const MALE = /给老子|老子|本大爷|你这(婊|骚|母|臭|贱)|肏死你|我踏马|操你|妈的|给爷|大爷我|给我(趴|撅|跪|舔)|臭婊子/;
@@ -22,13 +26,13 @@ const QUOTE_TEST = /「[^」]*」|"[^"]*"|“[^”]*”|『[^』]*』/;
 
 function parseArgs(argv) {
   const args = [...argv];
-  let corpusName = '大芋泥啵啵';
-  const ci = args.indexOf('--corpus');
-  if (ci !== -1) {
-    corpusName = args[ci + 1];
-    args.splice(ci, 2);
-  }
-  return { corpusName, rest: args };
+  const option = name => { const index = args.indexOf(name); if(index < 0) return undefined; const value = args[index + 1]; if (!value || value.startsWith('--')) throw new Error(`${name} 缺少值`); args.splice(index, 2); return value; };
+  const projectId = option('--project'), corpusName = option('--corpus'), out = option('--out');
+  if (!projectId) throw new Error('必须用 --project 指定语料所属项目；不自动扫描其他项目');
+  corpusRootDefault = writingCorpusRoot(registeredProjectPath(repoRoot, projectId));
+  const sources = readdirSync(corpusRootDefault, { withFileTypes: true }).filter(entry => entry.isDirectory() && !entry.isSymbolicLink()).map(entry => entry.name);
+  if (!corpusName && sources.length !== 1) throw new Error('请用 --corpus 指定语料源');
+  return { corpusName: corpusName ?? sources[0], rest: args, out };
 }
 
 function corpusDirOf(corpusName) {
@@ -131,15 +135,15 @@ function search(corpusName, kind, pattern, limit) {
       hits.push({ book, ...e, buffer });
     }
   }
-  console.log(`命中 ${hits.length} 条（显示 ${Math.min(limit, hits.length)}）\n`);
+  print(`命中 ${hits.length} 条（显示 ${Math.min(limit, hits.length)}）\n`);
   for (const h of hits.slice(0, limit)) {
     const rel = `${corpusName}/原文/${h.book}`;
     const shown = h.text.length > 220 ? h.text.slice(0, 220) + '…' : h.text;
-    console.log(`[${rel}]`);
-    console.log(`offset: ${h.offset}`);
-    console.log(`句子: ${shown}`);
-    console.log(contextAround(h.buffer, h.offset, Buffer.byteLength(h.text, 'utf8')));
-    console.log('');
+    print(`[${rel}]`);
+    print(`offset: ${h.offset}`);
+    print(`句子: ${shown}`);
+    print(contextAround(h.buffer, h.offset, Buffer.byteLength(h.text, 'utf8')));
+    print('');
   }
 }
 
@@ -174,17 +178,19 @@ function selfcheck(corpusName) {
     console.error('自检失败：无可抽样条目');
     process.exit(1);
   }
-  console.log(`自检通过：${checked} 本书抽样句均可按偏移读回。`);
+  print(`自检通过：${checked} 本书抽样句均可按偏移读回。`);
 }
 
-const { corpusName, rest } = parseArgs(process.argv.slice(2));
+const { corpusName, rest, out } = parseArgs(process.argv.slice(2));
 if (rest[0] === '--selfcheck') {
   selfcheck(corpusName);
 } else {
   const [kind, pattern, n] = rest;
   if (!['q', 'n'].includes(kind) || !pattern) {
-    console.error('用法：corpus-search.mjs <q|n> \'<正则>\' [条数] | --selfcheck [--corpus <源名>]');
+    console.error('用法：corpus-search.mjs --project <所属项目ID> [--corpus <源名>] <q|n> \'<正则>\' [条数] | --selfcheck [--out <回执文件>]');
     process.exit(2);
   }
   search(corpusName, kind, pattern, Number(n) || 20);
 }
+if (out) { mkdirSync(path.dirname(path.resolve(out)), { recursive: true }); writeFileSync(path.resolve(out), output.join('\n') + '\n'); console.log(`回执：${path.resolve(out)}`); }
+else console.log(output.join('\n'));

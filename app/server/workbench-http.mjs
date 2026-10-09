@@ -372,7 +372,7 @@ export async function handleWorkbenchRequest({
     const sourceFile = requestUrl.searchParams.get("source_file");
     const rawOffset = requestUrl.searchParams.get("offset");
     const offset = rawOffset === null ? NaN : Number(rawOffset);
-    const result = await readFacts(textSourceContextMatch[1], () => readWritingCorpusContext(projectRoot, sourceFile, offset));
+    const result = await readFacts(textSourceContextMatch[1], ({ projectDirectory }) => readWritingCorpusContext(projectDirectory, sourceFile, offset));
     sendOperation(200, result);
     return true;
   }

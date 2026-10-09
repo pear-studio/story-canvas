@@ -200,7 +200,7 @@ export async function savePage(root,projectId,value) {
     assertValid(validateStoryPageTextSourcesDocument(textSources));
     const heartIds=new Set(content.dialogue.filter(item=>item.mode==='heart').map(item=>item.id));
     if(Object.keys(textSources).some(id=>heartIds.has(id)))fail('invalid_text_source_reference',['爱心条目不记录原文参考']);
-    if(value.text_sources!==undefined)for(const[id,entry]of Object.entries(textSources)){if(id==='$schema')continue;await verifyWritingCorpusSentence(root,{sourceFile:entry.source_file,offset:entry.offset,sentence:entry.original_sentence,label:id});}
+    if(value.text_sources!==undefined)for(const[id,entry]of Object.entries(textSources)){if(id==='$schema')continue;await verifyWritingCorpusSentence(directory,{sourceFile:entry.source_file,offset:entry.offset,sentence:entry.original_sentence,label:id});}
     writes.push({relative:pageRelativePath(pageId,'text-sources'),before:oldSources,after:textSources});
   }
   const auditPrepared=await preparePromptWriteAudit(root);

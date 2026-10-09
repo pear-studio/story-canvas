@@ -1,5 +1,11 @@
 # Agent 直接操作工作台
 
+项目资料归属迁移使用 `asset.transfer.plan` / `asset.transfer.apply`：input 包含
+`kind: lora|corpus`、`source_storage: repository|local`、`storage: project|local`；
+LoRA 指定资源 `id`，项目目标指定登记的 `project_id`。先检查 plan 的逐文件 SHA 与目标，再用同次
+input/fingerprint apply。源变化、目标冲突或已有项目归属拒绝提交；整个目录原样移动，不移动模型权重。
+小说检索使用 `node <仓库绝对路径>/app/scripts/corpus-search.mjs --project <所属项目ID> [--corpus <源>] ... --out <回执文件>`。
+
 日常事实写入、项目创建与生命周期、生成和候选操作由正在运行的本地 Node.js 服务执行，不需要打开网页。
 命令从 `Config/local.json` 的 `port` 连接本机服务，缺省为 3000；连接失败返回 `workbench_unavailable`，
 不自动切换为离线写入，不自动重放失败请求。

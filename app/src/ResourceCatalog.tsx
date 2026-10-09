@@ -58,6 +58,7 @@ export type LoraResourceEntry = {
   size_bytes?: number | null;
   repository_record?: boolean;
   storage?: string;
+  owner_project_id?: string;
   resource: LoraResourceDefinition;
 };
 
@@ -97,7 +98,7 @@ export function loraResourceCatalogItem(entry: LoraResourceEntry): ResourceCatal
     relativePath: resource.file.relative_path,
     sizeBytes: entry.size_bytes ?? resource.file.size_bytes,
     status: entry.status,
-    recordLabel: repositoryRecord ? "仓库登记" : "本机登记",
+    recordLabel: entry.owner_project_id ? `项目：${entry.owner_project_id}` : repositoryRecord ? "仓库登记" : "本机登记",
     previewImages: loraResourcePreviewImages(resource),
     tags: resource.activation.tags,
     details: [

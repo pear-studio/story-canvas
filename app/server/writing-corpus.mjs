@@ -3,10 +3,10 @@ import path from "node:path";
 
 import { ApiError } from "./http-support.mjs";
 
-// 语料根：<仓库根>/library/writing-corpus/（进 Git，-text 冻结字节）。
+// 语料由所属项目持有；调用者传已解析的项目目录。
 // 偏移语义与 scripts/corpus-search.mjs 一致：从文件头起的 UTF-8 字节偏移。
 export function writingCorpusRoot(projectRoot) {
-  return path.join(path.resolve(projectRoot), "library", "writing-corpus");
+  return path.join(path.resolve(projectRoot), "writing-corpus");
 }
 
 function corpusRelativePath(root, target) {

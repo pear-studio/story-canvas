@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { watch } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
+import { projectOwnedAssetDirectories } from "./project-storage-layout.mjs";
 
 export const EXPECTED_PROJECT_REVISION_HEADER = "x-story-canvas-expected-revision";
 export const PROJECT_REVISION_HEADER = "x-story-canvas-revision";
@@ -19,7 +20,7 @@ export function isProjectFactChange(filename) {
   if (!filename) return true;
   const relative = String(filename).replaceAll("\\", "/");
   return fixedFactFiles.some((file) => file === relative || file.startsWith(`${relative}/`))
-    || ["story", "characters", "scenes", "pages", "materials", "finished"].some((directory) =>
+    || ["story", "characters", "scenes", "pages", "materials", "finished", ...projectOwnedAssetDirectories].some((directory) =>
       relative === directory || relative.startsWith(`${directory}/`) || directory.startsWith(`${relative}/`));
 }
 
@@ -65,6 +66,9 @@ async function collectFactMetadata(directory, projectDirectory, entries, accept)
 
 async function readDiskSignature(projectDirectory) {
   const entries = [];
+  for (const directory of projectOwnedAssetDirectories) {
+    await collectFactMetadata(path.join(projectDirectory, directory), projectDirectory, entries, () => true);
+  }
   await collectFactMetadata(path.join(projectDirectory, "finished"), projectDirectory, entries, relative => relative.endsWith(".json"));
   for (const relative of fixedFactFiles) {
     const info = await optionalStat(path.join(projectDirectory, ...relative.split("/")));

@@ -8,6 +8,8 @@ import test from "node:test";
 
 import { freezeComparisonLoraSources, normalizeFrozenComparisonLora } from "../server/comparison-lora-identity.mjs";
 import { readSafeTensorsMetadata } from "../server/safetensors-metadata.mjs";
+import { registerProject } from "../server/project-registry.mjs";
+import { planAssetTransfer, commitAssetTransfer } from "../server/project-assets.mjs";
 
 async function temporaryProject(t) {
   const root = await mkdtemp(path.join(tmpdir(), "story-canvas-comparison-lora-"));
@@ -103,6 +105,22 @@ test("正式 LoRA 通过真实 resource reader 后冻结 resource 身份并核�
   assert.deepEqual(frozen.base_models[0], { kind: "base_model", name: "Base", identity_status: "declared", relative_path: null, sha256: null, size_bytes: null, source: null });
   assert.deepEqual(frozen.activation, { trigger_words: ["formal_trigger"], tags: ["style"] });
   assert.deepEqual(frozen.metadata, { format: "pt", source: "formal" });
+});
+
+test("项目持有的 LoRA 可按原资源 ID 冻结到独立实验，所属项目删除后冻结输入不变", async t => {
+  const { root, modelsRoot } = await temporaryProject(t);
+  const fixture = await writeFormalResource(root, modelsRoot);
+  const owner = path.join(root, "owner");
+  await mkdir(owner);
+  await writeFile(path.join(owner, "project.json"), JSON.stringify({ title: "所属项目" }));
+  registerProject(root, { id: "owner", type: "story", path: owner });
+  const input = { kind: "lora", id: fixture.resourceId, source_storage: "repository", storage: "project", project_id: "owner" };
+  const plan = await planAssetTransfer(root, input);
+  await commitAssetTransfer(root, input, plan.fingerprint);
+  const [frozen] = await freezeComparisonLoraSources({ repositoryRoot: root, config: { models_root: modelsRoot }, sources: [{ id: "owned", kind: "resource", resource_id: fixture.resourceId }] });
+  await rm(owner, { recursive: true });
+  assert.equal(frozen.sha256, fixture.file.sha256);
+  assert.deepEqual(normalizeFrozenComparisonLora(frozen), frozen);
 });
 
 test("正式 resource 的 architecture unknown、非 plain identity 和 size mismatch 都被拒绝", async (t) => {

@@ -198,7 +198,7 @@ Esc 只关闭最上层临时浮层；右键菜单在外部滚动时收起，内�
 - `GET /api/projects/:id/workbench/page-text-sources/:pageId`：读取某页 text-sources 草稿
   （document + 目标与上游指纹）；`DELETE` 同路径删除单条映射，body 携带 `dialogue_id` 与两个指纹。
 - `GET /api/projects/:id/workbench/text-source-context?source_file=…&offset=…`：按语料相对路径与字节
-  偏移返回原句 ±2 行上下文；source_file 必须解析在 `library/writing-corpus/` 内。
+  偏移返回原句 ±2 行上下文；source_file 必须解析在所属项目的 `writing-corpus/` 内。
 - 主预览默认以 DOM 叠加已保存文案，缺少布局时补默认位置；可直接拖动与调整尺寸，不请求合成 PNG。
   草稿归属于页面，切换候选和后台刷新不重置草稿；保存位置按钮保留在「嵌字」子菜单。
 - `POST /api/projects/:id/workbench/render`：以完整 `PageKey` 发起单页候选任务，支持

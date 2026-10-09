@@ -334,7 +334,7 @@ export async function commitTextSources(projectRoot, context, readDocument, kind
   if (referenceErrors.length) fail("invalid_text_source_reference", referenceErrors);
   for (const [dialogueId, entry] of Object.entries(edited)) {
     if (dialogueId === "$schema") continue;
-    await verifyWritingCorpusSentence(projectRoot, {
+    await verifyWritingCorpusSentence(project.projectDirectory, {
       sourceFile: entry.source_file,
       offset: entry.offset,
       sentence: entry.original_sentence,

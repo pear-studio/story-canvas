@@ -12,6 +12,7 @@
 | 工具 `workspace/` | 工作台新建或复制的临时项目 | 忽略，不自动删除，不初始化 Git |
 | 工具 `Saved/` | 缓存、日志、实例状态、对比实验、Agent 临时工作 | 忽略，任务空闲后可清理 |
 | 正式剧情项目 | 设置、剧情、角色、Prompt、`materials/` | 项目 Git |
+| 项目所属资料 | `writing-corpus/`、`resources/loras/` 元数据与图片 | 只在所属项目保存一份，进入其 Git，其他项目显式读取 |
 | 正式训练项目 | `project.json`、`settings.json`、`assets/`、`captioning/`、必要参考资料 | 项目 Git |
 | 项目 `Outputs/`、`Training/` | 剧情图片、训练冻结输入与结果 | 忽略，随项目单独备份 |
 | 项目 `Saved/` | 执行副本、缓存、临时状态 | 忽略，任务空闲后可清理 |

@@ -11,7 +11,7 @@ import { validateLoraResource } from "../server/lora-resources.mjs";
 test("LoRA 中文浏览信息经全局资源投影保留，原始名称与标签不变", async context => {
   const root = await mkdtemp(path.join(tmpdir(), "story-canvas-lora-browse-"));
   context.after(() => rm(root, { recursive: true }));
-  const resource = JSON.parse(await readFile(new URL("../../library/resources/loras/lora-e16e862063a6e466/resource.json", import.meta.url), "utf8"));
+  const resource = JSON.parse(await readFile(new URL("../../library/resources/loras/lora-6ecff93984c1b084/resource.json", import.meta.url), "utf8"));
   const directory = path.join(root, "library/resources/loras", resource.id);
   await mkdir(directory, { recursive: true });
   await writeFile(path.join(directory, "resource.json"), JSON.stringify(resource));
@@ -26,9 +26,9 @@ test("LoRA 中文浏览信息经全局资源投影保留，原始名称与标签
   const result = await readGlobalResources(root);
   const model = result.models.find(model => model.id === resource.id);
   assert.equal(model.name, resource.name);
-  assert.equal(model.lora_metadata.name_zh, "肌肉感调节");
+  assert.equal(model.lora_metadata.name_zh, resource.name_zh);
   assert.equal(model.lora_metadata.summary_zh, resource.summary_zh);
-  assert.equal(model.lora_metadata.purpose, "外观调节");
+  assert.equal(model.lora_metadata.purpose, resource.purpose);
   assert.deepEqual(model.lora_metadata.activation.tags, resource.activation.tags);
 });
 

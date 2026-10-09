@@ -296,7 +296,7 @@ uv pip check --python $materialPython
 页面按自己的 render.profile_id/canvas 诊断与生成；项目默认只影响新页。
 
 工作台的“资源 → 基模”和“资源 → LoRA”会合并 `library/resources/catalog.json` 中的人工登记项、
-`library/resources/loras/` 中公开 LoRA 的完整记录、`app/data.local/lora-resources/` 中本机正式
+`library/resources/loras/` 中通用画风 LoRA 的完整记录、登记项目 `resources/loras/` 中角色资源、`app/data.local/lora-resources/` 中本机正式
 LoRA 记录，再补充 `models_root` 标准子目录中发现的本机文件和训练 checkpoint。基模页把主模型与
 文本编码器、VAE 等配套组件分开显示；LoRA 页把正式资源与未登记本机文件分开显示。模型结构家族由 Agent 入库时
 显式填写，不自动识别；未登记文件可以正常保留和使用，训练目录内的权重明确显示为 checkpoint。公开 LoRA
@@ -305,7 +305,8 @@ LoRA 记录，再补充 `models_root` 标准子目录中发现的本机文件和
 公开 LoRA 的 `resource.json`、来源信息和预览图属于仓库资源，可以进入 Git；权重仍属于当前设备，
 不进入 Git。本机正式 LoRA 的记录和图片保存在 `app/data.local/lora-resources/`，也不进入 Git；
 未登记训练 checkpoint 只保存在 `models_root/loras/training/`。
-迁移任一 LoRA 时，都要同时复制对应记录目录和记录中 `file.relative_path` 指向的权重；每份记录都
+本机迁移资源归属通过 `asset.transfer.plan/apply` 移动记录目录，不移动或复制 `models_root` 权重。
+迁移到另一设备时，需同时携带记录目录和记录中 `file.relative_path` 指向的权重；每份记录都
 包含自己的完整信息，不要求目标设备已有其他 LoRA 记录。SafeTensors 内嵌元数据仅作备份，不能替代
 `resource.json`。
 

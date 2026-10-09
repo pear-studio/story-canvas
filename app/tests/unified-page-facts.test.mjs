@@ -84,7 +84,7 @@ test('移除场景引用时删除旧场景覆盖，并与新对白同时保存',
  assert.deepEqual(result.prompt.reference_overrides,{});
 });
 test('新对白出处映射到正式ID，heart出处被拒绝且不落盘',async t=>{
- const f=await fixture(t),request=await f.request();const corpus=path.join(f.root,'library/writing-corpus');await mkdir(corpus,{recursive:true});await writeFile(path.join(corpus,'test.txt'),'你好');
+ const f=await fixture(t),request=await f.request();const corpus=path.join(f.directory,'writing-corpus');await mkdir(corpus,{recursive:true});await writeFile(path.join(corpus,'test.txt'),'你好');
  request.content.dialogue=[{id:'draft-dialogue-0',mode:'speech',speaker:'npc',text:'你好'}];request.text_sources={'draft-dialogue-0':{source_file:'test.txt',offset:0,original_sentence:'你好'}};request.expected_text_sources_sha256=hashCanonicalJson({});
  const result=await savePage(f.root,'test',request);const sources=JSON.parse(await readFile(path.join(f.directory,'pages/page-001.text-sources.json'),'utf8'));assert.deepEqual(Object.keys(sources),[result.content.dialogue[0].id]);
  const next=await f.request();next.content.dialogue[0].mode='heart';delete next.content.dialogue[0].speaker;await assert.rejects(savePage(f.root,'test',next),error=>error.code==='invalid_text_source_reference');assert.equal((await readPageContent(f.directory,'page-001')).dialogue[0].mode,'speech');

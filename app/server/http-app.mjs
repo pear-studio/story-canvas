@@ -17,6 +17,7 @@ import { createLoraTrainingOperations } from "./lora-training-operations.mjs";
 import { handleLoraTrainingRequest } from "./lora-training-http.mjs";
 import { handleComparisonRequest } from "./comparison-http.mjs";
 import { handleProjectRequest } from "./project-http.mjs";
+import { createAssetTransferHandler } from "./project-assets.mjs";
 import { handleRuntimeRequest } from "./runtime-http.mjs";
 import { handleWorkbenchRequest } from "./workbench-http.mjs";
 import { handleFinishedRequest } from "./finished-http.mjs";
@@ -68,6 +69,7 @@ export function createHttpRequestHandler({
   distRoot,
 }) {
   const trainingOperations = createLoraTrainingOperations(projectRoot);
+  const handleAssetTransferRequest = createAssetTransferHandler(projectRoot);
   const logPerformance = createPerformanceLog(projectRoot);
   return async (request, response) => {
     try {
@@ -141,6 +143,7 @@ export function createHttpRequestHandler({
       };
 
       if (await handleAgentRequest(shared)) return;
+      if (await handleAssetTransferRequest(shared)) return;
       if (await handleRuntimeRequest({
         ...shared,
         serverInstanceId,

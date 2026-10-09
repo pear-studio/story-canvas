@@ -130,7 +130,7 @@ async function createFixture(context) {
     variants: [{ id: "uniform", name: "制服", description: "穿制服。" }],
   });
   await writeJson(path.join(projectDirectory, "characters", "ellen.prompt.json"), characterPrompt());
-  const corpusFile = path.join(repositoryRoot, "library", "writing-corpus", "测试源", "原文", "book-a.txt");
+  const corpusFile = path.join(projectDirectory, "writing-corpus", "测试源", "原文", "book-a.txt");
   await mkdir(path.dirname(corpusFile), { recursive: true });
   await writeFile(corpusFile, corpusText, "utf8");
   registerFixtureProjects(repositoryRoot); return { repositoryRoot, projectDirectory, pagesDirectory, projectId, corpusFile };
@@ -223,7 +223,7 @@ test("source_file 绝对路径、.. 逃逸与符号链接被拒绝", async (cont
   const fixture = await createFixture(context);
   const outside = path.join(fixture.repositoryRoot, "workspace", "outside.txt");
   await writeFile(outside, corpusText, "utf8");
-  const linkTarget = path.join(fixture.repositoryRoot, "library", "writing-corpus", "测试源", "原文", "linked");
+  const linkTarget = path.join(fixture.projectDirectory, "writing-corpus", "测试源", "原文", "linked");
   await symlink(path.dirname(outside), linkTarget, process.platform === "win32" ? "junction" : "dir");
   for (const sourceFile of ["/etc/passwd", "../outside.txt", "测试源/原文/../../outside.txt", "测试源/原文/linked/outside.txt", "测试源/原文/missing.txt"]) {
     const draft = await readTextSourcesDraft(fixture.repositoryRoot, fixture.projectId, "page-001");
@@ -322,14 +322,14 @@ test("页面复制逐字节复制 text-sources，源页面无映射时容忍", a
 
 test("语料上下文按行返回命中行 ±2 行", async (context) => {
   const fixture = await createFixture(context);
-  const context2 = await readWritingCorpusContext(fixture.repositoryRoot, CORPUS_SOURCE, corpusOffset(SENTENCE_PLAIN));
+  const context2 = await readWritingCorpusContext(fixture.projectDirectory, CORPUS_SOURCE, corpusOffset(SENTENCE_PLAIN));
   assert.equal(context2.hit_line, 4);
   assert.deepEqual(context2.lines.map((line) => line.number), [2, 3, 4, 5, 6], "语料末尾的换行产生空行 6");
   assert.equal(context2.lines.find((line) => line.hit).text, SENTENCE_PLAIN);
-  const first = await readWritingCorpusContext(fixture.repositoryRoot, CORPUS_SOURCE, corpusOffset(corpusLines[0]));
+  const first = await readWritingCorpusContext(fixture.projectDirectory, CORPUS_SOURCE, corpusOffset(corpusLines[0]));
   assert.deepEqual(first.lines.map((line) => line.number), [1, 2, 3], "文件头不足 -2 行时截断");
   await assert.rejects(
-    () => readWritingCorpusContext(fixture.repositoryRoot, CORPUS_SOURCE, Buffer.byteLength(corpusText, "utf8") + 1),
+    () => readWritingCorpusContext(fixture.projectDirectory, CORPUS_SOURCE, Buffer.byteLength(corpusText, "utf8") + 1),
     (error) => error?.code === "text_source_offset_mismatch",
   );
 });

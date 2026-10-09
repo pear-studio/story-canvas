@@ -46,7 +46,7 @@ const groups=[
   {id:'page',title:'页面与模板',prefixes:['page.']},
   {id:'facts',title:'正文、Prompt 与语料',prefixes:['facts.','prompt.','corpus.','story.context']},
   {id:'generation',title:'生成配置、LoRA 与出图',prefixes:['generation.']},
-  {id:'resources',title:'资源目录与词库',prefixes:['resource.','dictionary.']},
+  {id:'resources',title:'资源目录与词库',prefixes:['resource.','dictionary.','asset.']},
   {id:'materials',title:'材料、参考图与创作约定',prefixes:['material.','reference.','agreement.','media.']},
   {id:'candidates',title:'候选图查询与清理',prefixes:['candidate.']},
   {id:'finished',title:'文字布局与成品',prefixes:['lettering.','finished.']},

@@ -52,7 +52,7 @@ const resourceId = { resource_id: string('resource.lora.list 返回的 ID') };
 async function loras() {
   const list = await get('/api/lora-resources');
   return { errors: list.errors, items: [
-    ...list.resources.map(({ resource, status, reason }) => ({ id: resource.id, name: resource.name, registered: true, status, reason, architecture_family: resource.architecture.family, relative_path: resource.file.relative_path })),
+    ...list.resources.map(({ resource, status, reason, storage, owner_project_id }) => ({ id: resource.id, name: resource.name, registered: true, status, reason, storage, owner_project_id, architecture_family: resource.architecture.family, relative_path: resource.file.relative_path })),
     ...list.raw.map(({ id, name, relative_path }) => ({ id, name, relative_path, registered: false, architecture_family: 'unknown' })),
   ] };
 }
@@ -70,7 +70,7 @@ export const workspaceActions = {
       const found = await findLora(args.resource_id), resource = found.resource;
       if (!resource) return {...pick(found,['id','name','relative_path','sha256','status','reason']),registered:false,architecture_family:'unknown',weight:1,trigger_words:[]};
       return {resource_id:resource.id,registered:true,...pick(resource,['name','name_zh','purpose']),file:resource.file,architecture:resource.architecture,
-        ...pick(found,['status','reason','actual_sha256','size_bytes']),weight:resource.recommended_generation?.weight,trigger_words:resource.activation?.trigger_words ?? []};
+        ...pick(found,['status','reason','actual_sha256','size_bytes','storage','owner_project_id']),weight:resource.recommended_generation?.weight,trigger_words:resource.activation?.trigger_words ?? []};
     },
   },
   'resource.lora.details': {

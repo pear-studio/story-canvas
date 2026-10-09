@@ -19,7 +19,7 @@ text-sources 保存文案条目的语料出处映射（dialogue_id → `{ source
 是可选的参考索引：无条目即自写，heart 条目挂出处被拒绝。保存时按语料文件字节偏移核验原句真实存在
 （拒绝对路径、`..` 逃逸、符号链接与偏移不符），不做相似度校验；上游指纹是该页 narrative，
 narrative 变化后旧草稿保存返回冲突。narrative 保存后对 text-sources 的悬空引用与 heart 挂出处返回
-`downstream_diagnostics` 警告，不阻止写入。语料根为 `library/writing-corpus/`，
+`downstream_diagnostics` 警告，不阻止写入。语料根为所属项目的 `writing-corpus/`，
 检索工具见 `app/scripts/corpus-search.mjs`，方法见 `library/writing-policies/copy-from-corpus.md`。
 
 剧情页 narrative 使用 `scene_description` 简单白描画面中应有的事实，不自由发挥，不添加创意、
