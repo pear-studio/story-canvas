@@ -1,0 +1,49 @@
+{
+  "$schema": "../schemas/render-profile.schema.json",
+  "id": "minimax-h3",
+  "name": "MiniMax H3（裁剪版）",
+  "description": "裁剪版 H3 INT8 ConvRot，不加载 LoRA；24 fps，无音频导出和超分。",
+  "tags": [
+    "动态页",
+    "图生视频"
+  ],
+  "architecture_family": "minimax-h3",
+  "models": {
+    "dit": {
+      "filename": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+      "relative_path": "diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+      "sha256": "e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a",
+      "source": "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/e5eb578a89295337b8ff433a035929ce0279e0b6/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors"
+    },
+    "text_encoder": {
+      "filename": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+      "relative_path": "text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+      "sha256": "35a88d51044231fe332301d7a62aa81e3f2cba62febeb446e2c1e3e0ef76f2c6",
+      "source": "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/e5eb578a89295337b8ff433a035929ce0279e0b6/text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors"
+    },
+    "vae": {
+      "filename": "minimax_h3_video_vae_fp16.safetensors",
+      "relative_path": "vae/minimax_h3_video_vae_fp16.safetensors",
+      "sha256": "7c1f131492e7eddacaac9069a61b81bdd39de5cc96561e677c5eab1cdce5e522",
+      "source": "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/e5eb578a89295337b8ff433a035929ce0279e0b6/vae/minimax_h3_video_vae_fp16.safetensors"
+    }
+  },
+  "prompt": {
+    "text": ""
+  },
+  "operations": {
+    "candidates": {
+      "routes": {
+        "empty_latent": {
+          "workflow": "minimax-h3-i2v",
+          "recipe": "minimax-h3-video"
+        },
+        "reference_image": {
+          "workflow": "minimax-h3-i2v",
+          "recipe": "minimax-h3-video"
+        }
+      }
+    }
+  },
+  "style_loras": {}
+}

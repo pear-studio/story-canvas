@@ -3,12 +3,12 @@ import { requestWorkbench } from '../workbench-client.mjs';
 import { schema, string, object, invalid, pagination } from './contract.mjs';
 import { pageEditHelp, promptWeightGuidance } from './page-edit-help.mjs';
 
-const target = schema({kind:{...string('目标类型'),enum:['page','character','scene']},id:string('页面、角色或场景 ID'),model_id:{...string('anima 或 qwen；页面省略用活动模型，设定必须提供'),enum:['anima','qwen']},scope:{...string('仅角色／场景必填：基础或单个子设定'),enum:['base','variant']},variant_id:string('scope:variant 必填；其他情况省略')},['kind','id']);
+const target = schema({kind:{...string('目标类型'),enum:['page','character','scene']},id:string('页面、角色或场景 ID'),model_id:{...string('anima 或 qwen；页面省略用活动模型，设定必须提供'),enum:['anima','qwen','h3']},scope:{...string('仅角色／场景必填：基础或单个子设定'),enum:['base','variant']},variant_id:string('scope:variant 必填；其他情况省略')},['kind','id']);
 const sourceVersions = object('读取回执中的来源版本；新引用先用 prompt.sources 查询，再合并进此对象');
 const fields = {project_id:string('项目 ID'),target};
 const saveFields = {target,expected_sha256:string('prompt.read 原样返回的范围版本'),source_versions:sourceVersions,changes:object('窄范围的修改；对象递归合并、数组整项替换、null删除键')};
 const details = promptWeightGuidance+' 页面默认读取活动模型的本页 Prompt，target 不填 scope；角色／场景必须明确 model_id、scope:base 或 scope:variant + variant_id。返回 document 和直接可用的 save.args。document 不带 models/$schema 外壳；Anima base 为 {identity}，Qwen base 为 {prompt_name}，variant 为单个子设定对象。同时返回实际角色引用和继承词；document 仍只含本次可写范围，继承展示不得写回。不展开最终组装全文。';
-const saveRules = promptWeightGuidance+' Anima 页面可用 changes.person_groups:[{character_id,entries}] 替换指定角色的本页 person 词；character_id:null 为未绑定组，组内条目不填 character_id，[]清空该组。不能和 person 同传；其他组原顺序不变，新增词放到该组最后原槽位之后，无原槽位则追加末尾。计划必须基于本次读据正文，不给旧数组换新指纹。 使用原读取回执的 save.args 加 changes。对象递归合并；数组完整替换，[]清空；null删除键以恢复继承。不能写入 models/$schema 外壳或其他范围。Anima 本页词条不带 id；共享词改字／排序保留 id，新增省略 id，由服务端生成。数组替换时保留未修改词。相关上游或本范围变化报409，重读判断，不仅换指纹。单项成功返回更新后的窄 document；批量返回 target、expected_sha256、source_versions，不重复回显正文和操作外壳；诊断与 saved 分开。切换场景、子设定或 standalone→settings 前，用 prompt.sources 读取新来源，再将 source_versions 合入原保存参数；不能替换原 expected_sha256。LoRA新增、删除或替换须经用户同意。';
+const saveRules = promptWeightGuidance+' Anima 页面可用 changes.person_groups:[{character_id,entries}] 替换指定角色的本页 person 词；character_id:null 为未绑定组，组内条目不填 character_id，[]清空该组。不能和 person 同传；其他组原顺序不变，新增词放到该组最后原槽位之后，无原槽位则追加末尾。计划必须基于本次读据正文，不给旧数组换新指纹。 使用原读取回执的 save.args 加 changes。对象递归合并；数组完整替换，[]清空；null删除键以恢复继承。不能写入 models/$schema 外壳或其他范围。Anima 本页词条不带 id；共享词改字／排序保留 id，新增省略 id，由服务端生成。数组替换时保留未修改词。相关上游或本范围变化报409，重读判断，不仅换指纹。单项成功只返回版本、changed_fields和诊断，不回显 document 或继承展开；核验正文按需 prompt.read；批量返回 target、expected_sha256、source_versions，不重复回显正文和操作外壳；诊断与 saved 分开。切换场景、子设定或 standalone→settings 前，用 prompt.sources 读取新来源，再将 source_versions 合入原保存参数；不能替换原 expected_sha256。LoRA新增、删除或替换须经用户同意。';
 const helpTopics = Object.fromEntries(Object.entries(pageEditHelp).filter(([key])=>key!=='dialogue'));
 const post = async (action,args,execution={}) => (await requestWorkbench(`/api/agent/prompt/${action}`,{method:'POST',body:args,signal:execution.signal})).value;
 const sourceErrors = new Set(['prompt_source_conflict','prompt_source_read_required']);
@@ -47,7 +47,7 @@ async function batch(args,execution,saving) {
         if(!entry){entry={id:`recovery-${recoveries.length+1}`,source:next.args.source,message:recovery.message,next,affected_targets:[]};recoveries.push(entry);recoveryGroups.set(group,entry);}
         entry.affected_targets.push(row.target);return entry.id;
       });
-      results.push({target:row.target,status:uncertain?'unknown':'failed',error:{code:error.code??'request_failed',message:error.message,...(!recoveryIds.length?{details:error.details}:{})},
+      results.push({target:row.target,status:uncertain?'unknown':'failed',error:{code:error.code??'request_failed',message:error.message,...(!recoveryIds.length && error.details!==undefined?{details:error.details}:{})},
         ...(recoveryIds.length?{recovery_ids:recoveryIds}:{recovery,...(recovery.next?{next:recovery.next}:{})})});
       if (uncertain || execution.signal?.aborted) { results.push(...rows.slice(results.length).map(({target})=>({target,status:'not_executed'}))); break; }
     }
@@ -76,7 +76,11 @@ async function batch(args,execution,saving) {
 export const promptActions = {
   'prompt.check':{summary:'分页检查项目 Prompt 的引用、绑定与重复线索',parameters:schema({project_id:fields.project_id,chapter_id:string('限定章节'),sequence_id:string('限定单元'),model_id:{...string('省略逐页活动模型；不检查其他分支'),enum:['anima','qwen']},...pagination},['project_id']),details:'按正式页面索引分页，默认20页最多50页。返回本分页问题计数、每页最多3个样例及详情入口；继续 next_offset 直到 null，失败页和 incomplete 不能当通过。未绑定、相同文字只是核对线索，不自动删词；不同角色或权重不能合并。各页为独立观察，不是全项目快照或保存凭证。修改前 prompt.read，基于该正文生成 changes。',execute:(args,execution)=>post('check',args,execution)},
   'prompt.read':{summary:'读取页面或设定的单模型 Prompt 范围',parameters:schema(fields),details,helpTopics,example:{project_id:'demo',target:{kind:'page',id:'page-001'}},execute:(args,execution)=>post('read',args,execution)},
-  'prompt.save':{summary:'修改已读取的 Prompt 范围，保留其余内容',parameters:schema({project_id:fields.project_id,...saveFields},['project_id','target','expected_sha256','changes']),details:saveRules,helpTopics,recover,execute:(args,execution)=>post('save',args,execution)},
+  'prompt.save':{summary:'修改已读取的 Prompt 范围，保留其余内容',parameters:schema({project_id:fields.project_id,...saveFields},['project_id','target','expected_sha256','changes']),details:saveRules,helpTopics,recover,execute:async(args,execution)=>{
+    const value=await post('save',args,execution);
+    return {saved:value.saved,target:value.target,save:value.save,changed_fields:Object.keys(args.changes),
+      ...Object.fromEntries(['audit','diagnostics','warnings','downstream_diagnostics'].filter(k=>value[k]!==undefined).map(k=>[k,value[k]]))};
+  }},
   'prompt.sources':{example:{project_id:'demo',target:{kind:'page',id:'page-001'},source:'character:alice:default'},summary:'按需查看继承来源与稳定词条键',parameters:schema({...fields,source:string('省略只列来源；指定 character:<id>:<variant> 或 scene:<id>:<variant> 返回明细，也可读取将要新引用的来源')},['project_id','target']),details:'页面省略 source 只返回当前来源索引；指定来源返回真实文字、稳定key、权重／启用和 source_versions。角色／场景 target 需 scope:variant，只查询自身。页面可查询将要新引用的来源。Anima 页面写 inheritance[source][key]；设定子设定写 identity_overrides[key]，仅能覆盖 identity: 开头的基础词，自身新增词直接改 prompt。不从原词猜key；关闭词也返回，可在下层开启。新来源的 source_versions 合并进最初 prompt.read 的保存参数，保留原范围版本。此操作只读，不返回替换范围版本的保存参数。',helpTopics,execute:(args,execution)=>post('sources',args,execution)},
   'prompt.batch.read':{summary:'读取最多16个 Prompt 范围及逐项保存参数',parameters:schema({project_id:fields.project_id,targets:items(target)}),details:`${details} 批量返回本次范围、角色引用，继承来源在 sources 中去重，各项 inherited_source_refs 引用它；sources 的 base_ref 只复用展示，entries 按 key 替换完整有效条目（包括启用、权重和 consumed），不是删除其余条目；各项指纹加 changes 即可保存。先完成 content 修改，再读取有关 Prompt。失败项单独处理。`,helpTopics,execute:(args,execution)=>batch(args,execution,false)},
   'prompt.batch.save':{summary:'逐项保存 Prompt 范围，返回简短逐项回执',parameters:schema({project_id:fields.project_id,items:items(schema(saveFields,['target','expected_sha256','changes']))}),details:`${saveRules} 最多16项，各自是独立事务；来源冲突按 recovery_ids 查 recoveries 中的 prompt.sources 入口，同源同模型合并读取；范围冲突按 next 重读。冲突继续其他项，不回滚成功项。网络／服务错误记 unknown 并停止后续，先核实 unknown，不能整批重放。`,helpTopics,execute:(args,execution)=>batch(args,execution,true)},

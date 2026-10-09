@@ -5,8 +5,11 @@ import * as animaPage from './models/anima/story-files.mjs';
 import * as animaSetting from './models/anima/character-files.mjs';
 import * as qwenPrompt from './models/qwen/prompt-contract.mjs';
 
+import * as h3 from './models/h3/prompt.mjs';
+
 // 模型拥有 Prompt 和能力；候选/队列只消费编译结果。显式注册，不扫描或运行外部插件。
 const adapters = Object.freeze({
+  h3: Object.freeze({id:'h3',architecture:'minimax-h3',label:'MiniMax H3',defaultProfile:'minimax-h3',capabilities:Object.freeze({references:true,rewrite:false,video:true}),emptyPrompt:h3.emptyPrompt,compilePrompt:h3.compilePrompt,validatePagePrompt:h3.validatePrompt,preparePagePrompt:p=>structuredClone(p),validateSettingPrompt:()=>['H3 不使用角色设定输入'],prepareSettingPrompt:p=>p,validateProfilePrompt(v){if(typeof v?.text!=='string')throw Error('H3 prompt.text 必须是字符串');},async resolveProfilePrompt(_r,p){return {prompt:p.prompt,identity:{}};},async resolveEffectivePrompt(_r,b){return structuredClone(b.source_identity);},sourceIdentityFields:[],validateSourceIdentity(){}}),
   anima: Object.freeze({
     id: 'anima', architecture: 'anima', label: 'Anima Basic', defaultProfile: 'anima-base-v1',
     capabilities: Object.freeze({ references: false, rewrite: false }),

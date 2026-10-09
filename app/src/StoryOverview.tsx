@@ -133,6 +133,7 @@ function LatestCandidatePreview({ projectId, pageId, title }: { projectId: strin
   const root = useRef<HTMLButtonElement>(null);
   const [url, setUrl] = useState<string | null>();
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [originalVideo, setOriginalVideo] = useState(false);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     const element = root.current;
@@ -153,7 +154,9 @@ function LatestCandidatePreview({ projectId, pageId, title }: { projectId: strin
           if (request.signal.aborted) return;
           if (result) {
             revision = result.revision;
-            setUrl(result.media.candidates[0]?.url ?? null);
+            const candidate=result.media.candidates[0];
+            setUrl(candidate?.video_url ?? candidate?.url ?? null);
+            setOriginalVideo(candidate?.media_kind==='video');
           }
           setFailed(false);
         } catch {
@@ -169,7 +172,7 @@ function LatestCandidatePreview({ projectId, pageId, title }: { projectId: strin
   }, [projectId, pageId]);
   return <><button type="button" className="story-page-thumbnail" ref={root} aria-label={`查看图片：${title}`} disabled={!url || failed} onClick={() => { if (url) setLightboxUrl(url); }}>
     {url && !failed ? <img src={mediaVariantUrl(url, 320)} alt={`${title}最新候选图`} loading="lazy" onError={() => setFailed(true)} /> : <span>{failed ? "缩略图暂不可用" : url === undefined ? "加载缩略图…" : "暂无候选图"}</span>}
-  </button>{lightboxUrl && <ZoomableImageLightbox src={lightboxUrl} alt={`${title}最新候选图`} footer={title} onClose={() => setLightboxUrl(null)} />}</>;
+    </button>{lightboxUrl && <ZoomableImageLightbox src={lightboxUrl} originalVideo={originalVideo} alt={`${title}最新候选图`} footer={title} onClose={() => setLightboxUrl(null)} />}</>;
 }
 
 function StoryPageCard({ projectId, page, number, busy, letteringStyle, canvasAspect, onOpen }: {

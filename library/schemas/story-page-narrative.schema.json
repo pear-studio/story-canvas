@@ -4,22 +4,62 @@
   "$defs": {
     "text_layout": {
       "type": "object",
-      "required": ["title_font_size", "body_font_size", "title_align", "body_align", "position"],
+      "required": [
+        "title_font_size",
+        "body_font_size",
+        "title_align",
+        "body_align",
+        "position"
+      ],
       "properties": {
-        "title_font_size": {"type": "integer", "minimum": 12, "maximum": 192},
-        "body_font_size": {"type": "integer", "minimum": 12, "maximum": 192},
-        "title_align": {"enum": ["left", "center", "right"]},
-        "body_align": {"enum": ["left", "center", "right"]},
-        "position": {"enum": ["upper", "center", "lower"]}
+        "title_font_size": {
+          "type": "integer",
+          "minimum": 12,
+          "maximum": 192
+        },
+        "body_font_size": {
+          "type": "integer",
+          "minimum": 12,
+          "maximum": 192
+        },
+        "title_align": {
+          "enum": [
+            "left",
+            "center",
+            "right"
+          ]
+        },
+        "body_align": {
+          "enum": [
+            "left",
+            "center",
+            "right"
+          ]
+        },
+        "position": {
+          "enum": [
+            "upper",
+            "center",
+            "lower"
+          ]
+        }
       },
       "additionalProperties": false
     },
-    "story_id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+    "story_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
     "character": {
       "type": "object",
-      "required": ["character_id", "variant_id"],
+      "required": [
+        "character_id",
+        "variant_id"
+      ],
       "properties": {
-        "character_id": { "$ref": "#/$defs/story_id" },
+        "character_id": {
+          "$ref": "#/$defs/story_id"
+        },
         "variant_id": {
           "$ref": "#/$defs/story_id",
           "description": "必填；角色 visual/prompt 中的造型 id。"
@@ -29,63 +69,220 @@
     },
     "dialogue": {
       "type": "object",
-      "required": ["id", "mode", "text"],
+      "required": [
+        "id",
+        "mode",
+        "text"
+      ],
       "properties": {
-        "id": { "type": "string", "pattern": "^dialogue-[a-f0-9]{12}$" },
-        "mode": { "enum": ["narration", "speech", "thought", "heart"] },
+        "id": {
+          "type": "string",
+          "pattern": "^dialogue-[a-f0-9]{12}$"
+        },
+        "mode": {
+          "enum": [
+            "narration",
+            "speech",
+            "thought",
+            "heart"
+          ]
+        },
         "speaker": {
           "$ref": "#/$defs/story_id",
           "description": "对白归属角色；可为未出现在本页画面中的项目角色，或 npc。"
         },
-        "text": { "type": "string", "pattern": "\\S" },
+        "text": {
+          "type": "string",
+          "pattern": "\\S"
+        },
         "position": {
-          "enum": ["top", "bottom"],
+          "enum": [
+            "top",
+            "bottom"
+          ],
           "description": "仅旁白可用：字幕条位于画面顶部或底部；缺省为 bottom。"
         }
       },
       "allOf": [
         {
-          "if": { "properties": { "mode": { "enum": ["speech", "thought"] } }, "required": ["mode"] },
-          "then": { "properties": { "speaker": true }, "required": ["speaker"] }
+          "if": {
+            "properties": {
+              "mode": {
+                "enum": [
+                  "speech",
+                  "thought"
+                ]
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "properties": {
+              "speaker": true
+            },
+            "required": [
+              "speaker"
+            ]
+          }
         },
         {
-          "if": { "properties": { "mode": { "const": "narration" } }, "required": ["mode"] },
-          "then": { "not": { "properties": { "speaker": true }, "required": ["speaker"] } }
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "narration"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "not": {
+              "properties": {
+                "speaker": true
+              },
+              "required": [
+                "speaker"
+              ]
+            }
+          }
         },
         {
-          "if": { "properties": { "mode": { "enum": ["speech", "thought", "heart"] } }, "required": ["mode"] },
-          "then": { "not": { "properties": { "position": true }, "required": ["position"] } }
+          "if": {
+            "properties": {
+              "mode": {
+                "enum": [
+                  "speech",
+                  "thought",
+                  "heart"
+                ]
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "not": {
+              "properties": {
+                "position": true
+              },
+              "required": [
+                "position"
+              ]
+            }
+          }
         },
         {
-          "if": { "properties": { "mode": { "const": "thought" } }, "required": ["mode"] },
-          "then": { "properties": { "speaker": { "not": { "const": "npc" } } } }
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "thought"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "properties": {
+              "speaker": {
+                "not": {
+                  "const": "npc"
+                }
+              }
+            }
+          }
         }
       ],
       "additionalProperties": false
     }
   },
   "type": "object",
-  "required": ["$schema", "title", "scene_description", "characters", "dialogue"],
+  "required": [
+    "$schema",
+    "title",
+    "scene_description",
+    "characters",
+    "dialogue"
+  ],
   "properties": {
-    "$schema": { "const": "https://storyvisualizer.local/schemas/story-page-narrative.schema.json" },
-    "title": { "type": "string", "pattern": "\\S" },
-    "page_kind": { "const": "text", "description": "可选；text 表示无画面文字页（标题/转场/作者说明），不生成候选图，characters 与 dialogue 必须为空。" },
-    "body": { "type": "string", "description": "仅文字页使用：黑屏正文，可为空字符串。" },
-    "display_title": {"type": "string", "description": "仅文字页使用：显示标题，缺省或空字符串不显示；独立于目录名称 title。"},
-    "text_layout": {"$ref": "#/$defs/text_layout", "description": "仅文字页使用：独立字号、对齐和整组位置；缺省为 62/28、居中对齐与居中位置。"},
-    "scene_description": { "type": "string", "description": "画面内容：尽可能简单地白描画面中应有的事实，不自由发挥，不添加创意、表现意图或设计感。创作规范要求填写且不超过20字（含标点）；空白或超长不阻止保存或生成。" },
+    "$schema": {
+      "const": "https://storyvisualizer.local/schemas/story-page-narrative.schema.json"
+    },
+    "title": {
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "page_kind": {
+      "enum": [
+        "text",
+        "video"
+      ]
+    },
+    "body": {
+      "type": "string",
+      "description": "仅文字页使用：黑屏正文，可为空字符串。"
+    },
+    "display_title": {
+      "type": "string",
+      "description": "仅文字页使用：显示标题，缺省或空字符串不显示；独立于目录名称 title。"
+    },
+    "text_layout": {
+      "$ref": "#/$defs/text_layout",
+      "description": "仅文字页使用：独立字号、对齐和整组位置；缺省为 62/28、居中对齐与居中位置。"
+    },
+    "scene_description": {
+      "type": "string",
+      "description": "画面内容：尽可能简单地白描画面中应有的事实，不自由发挥，不添加创意、表现意图或设计感。创作规范要求填写且不超过20字（含标点）；空白或超长不阻止保存或生成。"
+    },
     "characters": {
       "type": "array",
       "description": "画面中实际出现并参与 render character config/Prompt 的角色；不包含仅有画外对白的角色。",
-      "items": { "$ref": "#/$defs/character" }
+      "items": {
+        "$ref": "#/$defs/character"
+      }
     },
-    "dialogue": { "type": "array", "items": { "$ref": "#/$defs/dialogue" } }
+    "dialogue": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/dialogue"
+      }
+    }
   },
   "allOf": [
     {
-      "if": { "properties": { "page_kind": { "const": "text" } }, "required": ["page_kind"] },
-      "then": { "properties": { "characters": { "type": "array", "maxItems": 0 }, "dialogue": { "type": "array", "maxItems": 0 } } },
-      "else": { "properties": { "body": false, "display_title": false, "text_layout": false } }
+      "if": {
+        "properties": {
+          "page_kind": {
+            "const": "text"
+          }
+        },
+        "required": [
+          "page_kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "characters": {
+            "type": "array",
+            "maxItems": 0
+          },
+          "dialogue": {
+            "type": "array",
+            "maxItems": 0
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "body": false,
+          "display_title": false,
+          "text_layout": false
+        }
+      }
     }
   ],
   "additionalProperties": false

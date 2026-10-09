@@ -7,7 +7,7 @@ export type FinishedPage = {
   page_id: string; page_key: PageKey; title: string; chapter_id: string; chapter_title: string; sequence_title: string;
   status: "missing" | "files_missing" | "stale" | "ready"; job: FinishedJob | null;
   candidate_id: string | null; candidate_count: number | null; batch_skip_reason: string | null;
-  record: { sha256: string; candidate_id: string | null; width: number; height: number; bytes: number | null; created_at: string; lettered_url: string | null; clean_url: string | null } | null;
+  record: { media_kind?: "image" | "video"; poster_url?: string; sha256: string; candidate_id: string | null; width: number; height: number; bytes: number | null; created_at: string; lettered_url: string | null; clean_url: string | null } | null;
 };
 const base = (id: string) => `/api/projects/${encodeURIComponent(id)}/finished`;
 export const deleteFinishedPage = async (id: string, page: FinishedPage) => responseJson(await mutateTargetFacts(base(id), { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ page_key: page.page_key, expected_sha256: page.record!.sha256 }) }));

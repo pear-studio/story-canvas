@@ -29,6 +29,7 @@ async function projectCandidate(record, projectDirectory, projectId) {
     file: record.file,
     absolute_file: expectedFile,
     url: mediaUrl(projectId, record.file),
+    ...(record.media_kind==='video' ? {media_kind:'video',video:record.video,video_file:record.video_file,video_url:mediaUrl(projectId,record.video_file),review_file:record.review_file,review_url:mediaUrl(projectId,record.review_file),absolute_video:path.resolve(projectDirectory,record.video_file),absolute_review:path.resolve(projectDirectory,record.review_file)} : {}),
     task_id: record.task_id,
     seed: Number.isSafeInteger(record.seed) ? record.seed : null,
     generated_at: record.generated_at ?? null,

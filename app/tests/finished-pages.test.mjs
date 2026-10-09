@@ -2,10 +2,12 @@ import {writeQwenFixtureJson,qwenDocument} from './helpers/qwen-fixture.mjs';
 import { defaultTextPageLayout } from "../shared/text-page-layout.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { writeFile, readFile, rm, stat, unlink, cp } from "node:fs/promises";
+import { writeFile, readFile, rm, stat, unlink, cp, mkdir } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { createServer } from "node:http";
+import { createHash } from "node:crypto";
+import { createPage } from "../server/page-facts.mjs";
 import { fixture, key, json, candidateId } from "./helpers/finished-fixture.mjs";
 import { candidateFileRelativePath } from "../server/candidate-storage.mjs";
 import { PAGES_INDEX_SCHEMA_ID } from "../server/pages-store.mjs";
@@ -13,6 +15,72 @@ import { deleteFinishedPage, planFinishedBatch, prepareFinishedPage, readFinishe
 import { savePageContent, readProjectWorkbenchView } from "../server/project-workbench.mjs";
 import { handleFinishedRequest } from "../server/finished-http.mjs";
 import { listWorkspaceRenderTasks, listWorkspaceRenderHistory, readWorkspaceTaskDetail, readWorkspaceTaskResults } from "../server/render-task-workspace.mjs";
+
+test('插画和动态页缺失或错误候选 ID 返回400，且不创建输出任务',async t=>{
+  const f=await fixture(t);
+  const video=await createPage(f.root,'demo',{owner_kind:'story',sequence_id:'sequence'},{pageKind:'video'});
+  for(const page_key of [key,video.page_key])for(const candidate_id of [undefined,'wrong-id']){
+    await assert.rejects(prepareFinishedPage(f.root,'demo',f.directory,{page_key,candidate_id}),error=>{
+      assert.equal(error.status,400);assert.equal(error.code,'invalid_candidate_id');assert.equal(error.details.field,'candidate_id');return true;
+    });
+    await assert.rejects(readFile(path.join(f.directory,'Saved','finished',`${page_key.page_id}.json`)),{code:'ENOENT'});
+  }
+});
+
+test("动态成品原样复制、不超分；混排 ZIP 与 HTML 导出动画 WebP 一次，替换及删除清理封面", async t => {
+  const f = await fixture(t);
+  await f.run(await f.prepare());
+  const video = await createPage(f.root, "demo", { owner_kind:"story", sequence_id:"sequence" }, { pageKind:"video" });
+  const file = candidateFileRelativePath(video.page_key, candidateId);
+  await cp(path.dirname(f.file), path.dirname(path.join(f.directory,file)), {recursive:true});
+  // 媒体解码已由生成接收层及本机实测覆盖；这里用不被图片处理器接受的字节验证直出与导出边界。
+  const bytes=Buffer.from("fixture-mp4-payload");
+  const videoFile=file.replace(/image\.png$/, "video.mp4");
+  await writeFile(path.join(f.directory,videoFile), bytes);
+  await json(path.join(f.directory,file.replace(/image\.png$/, "result.json")), {version:1,status:"available",page_key:video.page_key,candidate_id:candidateId,file,task_id:"render-test",media_kind:"video",video_file:videoFile,video_sha256:createHash("sha256").update(bytes).digest("hex"),video:{width:128,height:192,fps:24,frames:73,actual_duration:73/24,audio_streams:0}});
+  const prepare=()=>f.operations.mutateDerived("demo",()=>prepareFinishedPage(f.root,"demo",f.directory,{page_key:video.page_key,candidate_id:candidateId})).then(result=>result.value);
+  const run=prepared=>f.run(prepared,{upscale:()=>assert.fail("视频不应超分"),render:()=>assert.fail("视频不应嵌字")});
+  assert.equal((await run(await prepare())).status,"completed");
+  const first=await readFinishedRecord(f.directory,video.page_id);
+  assert.deepEqual(await readFile(path.join(f.directory,first.outputs.clean)),bytes);
+  assert.equal(first.outputs.clean,first.outputs.lettered);
+  assert.equal(first.upscale,undefined);
+  // 准备生成接收层转换后的缓存，导出测试无需本机 Python 或 GPU。
+  const pixels = Buffer.alloc(128 * 192 * 3 * 2);
+  for (let i = 0; i < 128 * 192 * 2; i++) pixels[i * 3 + (i < 128 * 192 ? 0 : 2)] = 255;
+  const animation = await sharp(pixels, {raw:{width:128,height:384,pageHeight:192,channels:3}}).webp({lossless:true,loop:0,delay:[41,42]}).toBuffer();
+  const info = await stat(path.join(f.directory, first.outputs.clean));
+  const cacheId = createHash('sha1').update(`animation-v1:${first.outputs.clean}:${info.size}:${info.mtimeMs}:${info.ctimeMs}:1024`).digest('hex');
+  await mkdir(path.join(f.directory, 'Saved/media-cache'), {recursive:true});
+  await writeFile(path.join(f.directory, 'Saved/media-cache', `${cacheId}.webp`), animation);
+  const server=createServer(async(request,response)=>{try{await handleFinishedRequest({request,response,decodedPath:new URL(request.url,"http://local").pathname,projectRoot:f.root,readFacts:f.operations.readFacts});}catch(error){response.writeHead(error.status??500);response.end(error.message);}});
+  await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));
+  t.after(()=>new Promise(resolve=>server.close(resolve)));
+  const send=(preview,variant)=>fetch(`http://127.0.0.1:${server.address().port}/api/projects/demo/finished/export`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({variant,preview})});
+  for (const variant of ['lettered','clean','both']) {
+    const archive=await send(false,variant);assert.equal(archive.status,200);
+    const zip=Buffer.from(await archive.arrayBuffer());
+    const names=[];let offset=0;
+    while((offset=zip.indexOf(Buffer.from([0x50,0x4b,0x01,0x02]),offset))!==-1){const length=zip.readUInt16LE(offset+28);names.push(zip.subarray(offset+46,offset+46+length).toString());offset+=46+length;}
+    assert.deepEqual(names, [...(variant==='clean'?[]:['嵌字版/001.png']),...(variant==='lettered'?[]:['无字版/001.png']),'动态页/002.webp']);
+    assert.ok(zip.includes(animation));assert.ok(!zip.includes(bytes));
+    const response=await send(true,variant);assert.equal(response.status,200);const html=await response.text();
+    assert.doesNotMatch(html,/<video|data:video\/mp4/);
+    const embedded=[...html.matchAll(/data:image\/webp;base64,([A-Za-z0-9+/=]+)/g)].map(m=>Buffer.from(m[1],'base64'));
+    assert.equal(embedded.length,variant==='both'?3:2);
+    assert.equal(embedded.filter(b=>b.equals(animation)).length,1);
+    const metadata=await sharp(embedded.find(b=>b.equals(animation)),{animated:true}).metadata();
+    assert.equal(metadata.width,128);assert.equal(metadata.pages,2);assert.equal(metadata.loop,0);assert.deepEqual(metadata.delay,[41,42]);
+    assert.equal(Number(response.headers.get("x-export-total")),Buffer.byteLength(html));
+  }
+  assert.equal((await run(await prepare())).status,"completed");
+  for(const relative of [first.outputs.clean,first.poster])await assert.rejects(readFile(path.join(f.directory,relative)),{code:"ENOENT"});
+  const current=await readFinishedRecord(f.directory,video.page_id);
+  const listed=(await readFinishedPages(f.root,"demo",f.directory)).pages.find(page=>page.page_id===video.page_id);
+  await f.operations.mutateTargetFacts("demo",()=>deleteFinishedPage(f.directory,{page_key:video.page_key,expected_sha256:listed.record.sha256}));
+  for(const relative of [current.outputs.clean,current.poster])await assert.rejects(readFile(path.join(f.directory,relative)),{code:"ENOENT"});
+  assert.deepEqual(await readFile(path.join(f.directory,videoFile)),bytes);
+});
 
 test("成品阶段进入全局任务、详情与历史，结果引用当前成品", async t => {
   const f = await fixture(t);

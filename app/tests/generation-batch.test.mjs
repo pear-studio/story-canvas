@@ -9,6 +9,11 @@ async function submitGenerationBatch(args,options) {
 const args={project_id:'demo',page_keys:[1,2,3,4,5].map(n=>({page_id:`page-00${n}`})),count:3};
 const accepted=id=>({value:{task:{task_id:`render-${id}`}}});
 
+test('混合默认数量由后端逐页返回，回执统计实际候选数',async()=>{
+  let i=0;const result=await submitGenerationBatch({project_id:'demo',page_keys:args.page_keys.slice(0,2)},{submit:async a=>({value:{task:{task_id:'render-'+a.page_key.page_id,count:++i===1?3:1}}})});
+  assert.equal(result.quantity.images_per_page,null);assert.equal(result.quantity.images_submitted,4);assert.match(result.message,/共 4 个候选/);
+});
+
 test('单页三张明确区分任务数与图片数，数量也写入批次记录',async()=>{
   const result=await submitGenerationBatch({...args,page_keys:[args.page_keys[0]]},{submit:async()=>accepted('one')});
   assert.deepEqual(result.quantity,{pages:1,tasks_submitted:1,images_per_page:3,images_requested:3,images_submitted:3});

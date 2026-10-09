@@ -1,3 +1,4 @@
+import { inspectVideoBytes } from './video-media.mjs';
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
@@ -111,6 +112,8 @@ export async function readGenerationCandidateRecords(projectDirectory, { pageKey
 // 三个文件准备完才发布整个目录。重复收集只接受已发布的同一任务成果，不覆盖图片。
 // 批量搬移（如存储迁移的临时副本）传 warm: false：预热目标路径随后会被改名，写入即浪费。
 export async function publishCandidateResult(projectDirectory, task, item, image, { submission = null, evidence = null, warm = true } = {}) {
+  const video = item.video_settings ? await inspectVideoBytes(image,projectDirectory,item.video_settings) : null;
+  if(video)image=video.poster;
   if (!isCompletePng(image)) throw new Error("候选输出不是完整 PNG");
   const existing = await readCandidateResult(projectDirectory, item.page_key, item.candidate_id);
   if (existing) {
@@ -134,13 +137,20 @@ export async function publishCandidateResult(projectDirectory, task, item, image
   await resolveProjectMediaTarget(projectDirectory, path.relative(projectDirectory, staging).replaceAll("\\", "/") + "/image.png", { createParent: true });
   try {
     const generationText = JSON.stringify(detail, null, 2) + "\n";
+    if(video){
+      result.media_kind='video';result.video={...video.metadata,...item.video_settings};result.video_file=file.replace(/image\.png$/,'video.mp4');result.review_file=file.replace(/image\.png$/,'review.jpg');result.video_sha256=createHash('sha256').update(video.bytes).digest('hex');
+      await writeFile(path.join(staging,'video.mp4'),video.bytes,{flag:'wx'});await writeFile(path.join(staging,'review.jpg'),video.review,{flag:'wx'});
+    }
     result.image_sha256 = createHash("sha256").update(image).digest("hex");
     result.generation_sha256 = createHash("sha256").update(generationText).digest("hex");
     await writeFile(path.join(staging, "image.png"), image, { flag: "wx" });
     await writeFile(path.join(staging, "result.json"), JSON.stringify(result, null, 2) + "\n", { flag: "wx" });
     await writeFile(path.join(staging, "generation.json"), generationText, { flag: "wx" });
     await rename(staging, destination);
-    if (warm) warmMediaVariants(projectDirectory, file);
+    if (warm) {
+      warmMediaVariants(projectDirectory, file);
+      if (video) warmMediaVariants(projectDirectory, result.video_file);
+    }
     return result;
   } finally { await rm(staging, { recursive: true, force: true }); }
 }

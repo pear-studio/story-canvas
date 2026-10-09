@@ -10,7 +10,8 @@ export function normalizePromptTarget(value, activeModel) {
   const { kind,id,scope,variant_id } = value;
   if (!['page','character','scene'].includes(kind) || typeof id !== 'string' || !id.trim()) throw new ApiError(400,'invalid_prompt_target');
   const model_id = value.model_id ?? (kind === 'page' ? activeModel : undefined);
-  if (!['anima','qwen'].includes(model_id)) throw new ApiError(400,'invalid_prompt_model',['设定必须明确 model_id；页面可省略以使用当前模型']);
+  if (!['anima','qwen','h3'].includes(model_id)) throw new ApiError(400,'invalid_prompt_model',['设定必须明确 model_id；页面可省略以使用当前模型']);
+  if(kind!=='page'&&model_id==='h3')throw new ApiError(400,'invalid_prompt_model',['H3 仅用于动态页']);
   if (kind === 'page') {
     if (scope !== undefined || variant_id !== undefined) throw new ApiError(400,'invalid_prompt_target',['页面不接受 scope 或 variant_id']);
     return {kind,id,model_id};

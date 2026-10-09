@@ -142,7 +142,8 @@
     "architecture_family": {
       "enum": [
         "qwen-image-2-1",
-        "anima"
+        "anima",
+        "minimax-h3"
       ]
     },
     "models": {

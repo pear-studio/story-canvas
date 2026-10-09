@@ -1,12 +1,14 @@
+import { mediaReviewHint } from './media-review.mjs';
 import { requestWorkbench } from '../workbench-client.mjs';
 import { pageEditHelp } from './page-edit-help.mjs';
 import { schema, string, object, array, boolean, pagination, paginate } from './contract.mjs';
 import {saveOperationRecord,readOperationRecord} from './operation-records.mjs';
 import { endpoint, projectId, pageKey, projectPath, encode, localImage, downloadArtifact } from './http-action.mjs';
 const post = (summary, suffix, fields, options = {}) => endpoint(summary, 'POST', a => projectPath(a, `workbench/${suffix}`), fields, { project: true, ...options });
-const target = { ...schema({ kind: { ...string('归属'), enum: ['character','scene','page'] }, id: string('角色/场景/页面 ID'), variant_id: string('角色和场景必须提供子设定 ID'), model_id: { ...string('角色和场景必须显式提供 qwen；页面省略，模型取自当前 render'), enum: ['qwen'] } }, ['kind','id']), description: '参考图仅支持 Qwen；角色和场景必须给 variant_id 和 model_id:qwen；页面模型由当前 render 决定，不能用此参数切换模型' };
-const reference = (summary, action, fields, required, body) => post(summary, 'reference-library', { target, ...fields }, { required: ['target', ...required], details: '先 reference.list 取得 entries 与 sha256；修改传 expected_sha256。参考图最多十张，候选提升后保存到 materials，不依赖临时输出。', body: a => ({ target:a.target, action, ...body(a) }) });
+const target = { ...schema({ kind: { ...string('归属'), enum: ['character','scene','page'] }, id: string('角色/场景/页面 ID'), variant_id: string('角色和场景必须提供子设定 ID'), model_id: { ...string('角色和场景必须显式提供 qwen；页面省略，模型取自当前 render'), enum: ['qwen'] } }, ['kind','id']), description: '参考图支持 Qwen 和动态页 H3；角色和场景必须给 variant_id 和 model_id:qwen；页面模型由当前 render 决定，不能用此参数切换模型' };
+const reference = (summary, action, fields, required, body) => post(summary, 'reference-library', { target, ...fields }, { required: ['target', ...required], details: '先 reference.list 取得 entries 与 sha256；修改传 expected_sha256。Qwen 最多十张；H3 仅一张，导入会替换当前输入并记录来源。候选提升后保存到 materials，不依赖临时输出。', body: a => ({ target:a.target, action, ...body(a) }) });
 export const mediaActions = {
+  'page.video.source':post('查询动态页默认前页及可导入候选','video-source',{page_key:pageKey,source_page_key:pageKey},{required:['page_key'],body:a=>({page_key:a.page_key,source_page_key:a.source_page_key}),transform:r=>r.value,details:'默认查正式剧情顺序中前一张插画页，跳过文字和动态页；可给 source_page_key 查其他插画页。无候选时不回退、不选图。导入用 reference.list/save，target 为动态页，page_key 为来源页；候选复制到 materials 并保存来源。H3 Prompt 用 prompt.read/save：中文 text、duration 3–15 秒、loop、quality preview/standard、steps 8–50；默认5秒20步，24fps，无音频无超分。生成前 generation.page.inspect，随后 generation.run、task.wait、candidate.list、finished.output。'}),
   'candidate.sheet': endpoint('按指定页面、单元或章节查看最新批次画面','POST','/api/agent/candidate-sheet',{
     sequence_id:string('单元 ID；与 chapter_id、page_keys 三选一'),chapter_id:string('章节 ID；与 sequence_id、page_keys 三选一'),page_keys:array('最多32个明确剧情页面；按正式顺序拼图，不按传入顺序',pageKey,32),
   },{project:true,required:[],body:a=>a,transform:r=>r.value,
@@ -31,7 +33,7 @@ export const mediaActions = {
   'reference.delete': reference('删除指定参考图引用', 'delete', { expected_sha256:string('读取时 sha256'), id:string('参考图 ID') }, ['expected_sha256','id'], a=>({expected_sha256:a.expected_sha256,id:a.id})),
   'reference.reorder': reference('调整参考图顺序', 'reorder', { expected_sha256:string('读取时 sha256'), ids:array('全部参考图 ID，不能缺项或重复') }, ['expected_sha256','ids'], a=>({expected_sha256:a.expected_sha256,ids:a.ids})),
   'candidate.list': post('分页读取单张候选与可直接读图的路径', 'page-media', { page_key:pageKey,task_id:string('可选：仅某个生成任务的候选'),...pagination }, {required:['page_key'],freshMedia:true,body:a=>({page_key:a.page_key}),
-    transform:(r,a)=>({page_key:a.page_key,...paginate(r.value.media.candidates.filter(c=>!a.task_id||c.task_id===a.task_id).map(({candidate_id,task_id,absolute_file,generated_at})=>({candidate_id,task_id,absolute_file,generated_at})),a)}),
+    transform:(r,a)=>({page_key:a.page_key,...paginate(r.value.media.candidates.filter(c=>!a.task_id||c.task_id===a.task_id).map(({candidate_id,task_id,absolute_file,generated_at,media_kind,video,absolute_video,absolute_review})=>({candidate_id,task_id,absolute_file,generated_at,...(media_kind==='video'?{media_kind,video,absolute_video,absolute_review,review_hint:mediaReviewHint}:{})})),a)}),
     details:'图片必须通过本操作或 candidate.sheet/task.results 查询，不用 glob 扫描 Outputs。每个 candidate_id/目录只是一张图，不是一批。task_id 相同才是同次生成。用返回的 absolute_file 读图，不猜路径。按批次查询/清理用 candidate.batches 和 candidate.cleanup.preview/apply。'}),
   'candidate.batches': post('按生成任务分组查询一页候选批次','candidate-batches/read',{page_key:pageKey,...pagination},{required:['page_key'],body:a=>({page_key:a.page_key}),
     transform:(r,a)=>({page_key:a.page_key,candidate_count:r.value.groups.reduce((n,g)=>n+g.available_count,0),...paginate(r.value.groups.map(({candidates,...g})=>g),a)}),
@@ -57,7 +59,13 @@ export const mediaActions = {
   'candidate.delete': endpoint('删除指定候选','DELETE',a=>projectPath(a,'workbench/candidates'),{page_key:pageKey,candidate_ids:array('明确授权删除的候选 ID')},{project:true,body:a=>({page_key:a.page_key,candidate_ids:a.candidate_ids}),example:{project_id:'demo',page_key:{page_id:'page-001'},candidate_ids:['candidate-11111111-1111-4111-8111-111111111111']},details:'不可恢复；只删除用户授权的候选，不自动挑选。生成中也可删除已发布候选。逐张尝试，deleted_candidate_ids 是成功项；failed_candidates 是失败项。文件占用已短时重试，不用 sleep 等待或重放成功项，可继续其他工作。'}),
   'candidate.scan': post('检查最多八页的候选是否符合当前生成条件','story-candidate-refresh',{page_keys:array('剧情页面身份',pageKey,8)},{body:a=>({action:'inspect',page_keys:a.page_keys})}),
   'candidate.clean': post('清理已确认的候选集合','story-candidate-refresh',{page_key:pageKey,scope:{...string('清理范围'),enum:['mismatch','all']},candidate_ids:array('扫描后确认的候选 ID'),expected_signature:string('mismatch 必须提供 scan 的 signature')},{required:['page_key','scope','candidate_ids'],body:a=>({action:'clean',page_key:a.page_key,scope:a.scope,candidate_ids:a.candidate_ids,expected_signature:a.expected_signature}),details:'仅删除确认集合与当前扫描集合的交集。mismatch 必须携带 expected_signature，变化返回409。'}),
-  'generation.page.inspect': post('检查页面最终模型输入与依赖，不运行模型','page-render-inspection',{page_key:pageKey},{body:a=>({page_key:a.page_key})}),
+  'generation.page.inspect': post('检查页面最终模型输入与依赖，不运行模型','page-render-inspection',{page_key:pageKey,detail:{type:'boolean',description:'默认精简实际输入；true 展开模型与工作流依赖'}},{required:['page_key'],body:a=>({page_key:a.page_key}),transform:(r,a)=>{
+    if(a.detail)return r;
+    const i=r.value.inspection;
+    return {page_key:i.page_key,title:i.title,ready:i.ready,parameters:i.execution_parameters??i.generation.parameters,
+      profile:i.render.profile?.name??null,prompt:i.prompt,loras:i.generation.loras,blockers:i.blockers,warnings:i.warnings,
+      detail:{operation:'generation.page.inspect',args:{...a,detail:true}}};
+  },details:'默认仅显示实际执行参数、Prompt、引用和问题；detail:true 查询完整模型及工作流依赖。视频参数与冻结工作流共用计算。ready 表示输入依赖检查通过，不保证运行时在线。'}),
   'generation.rewrite.read': endpoint('读取页面 Prompt 重写结果与进度','GET',a=>projectPath(a,'workbench/page-rewrite'),{page_key:pageKey},{project:true,query:a=>({page_key:JSON.stringify(a.page_key)}),details:'只读取已有结果；启动重写由生成插件提供。'}),
   'lettering.settings.read': endpoint('读取项目文字样式和指纹','GET',a=>projectPath(a,'workbench/lettering-settings'),{}, {project:true,transform:r=>r.value,details:'返回可编辑 settings 与 expected_sha256；只修改 settings。'}),
   'lettering.settings.save': endpoint('保存项目文字样式','PUT',a=>projectPath(a,'workbench/lettering-settings'),{settings:object('read 返回的完整 settings'),expected_sha256:string('读取时指纹')},{project:true,body:a=>({settings:a.settings,expected_sha256:a.expected_sha256})}),
@@ -69,7 +77,7 @@ export const mediaActions = {
   'finished.inspect': endpoint('查看单页成品记录、链接与删除指纹','GET',a=>projectPath(a,'finished'),{page_key:pageKey},{project:true,query:a=>({page_id:a.page_key?.page_id}),transform:r=>r.value,details:'仅返回指定页面完整成品信息；列表用 finished.list。'}),
   'finished.jobs': endpoint('查看成品输出任务','GET',a=>projectPath(a,'finished/jobs'),{}, {project:true}),
   'finished.delete': endpoint('删除一个成品记录','DELETE',a=>projectPath(a,'finished'),{page_key:pageKey,expected_sha256:string('finished.inspect 返回的 record.sha256')},{project:true,body:a=>({page_key:a.page_key,expected_sha256:a.expected_sha256}),details:'删除成品需用户授权，不删除源候选。'}),
-  'finished.export': {summary:'导出已有成品 ZIP 或 HTML 阅读页',parameters:schema({...projectId,variant:{...string('导出版本'),enum:['lettered','clean','both']},chapter_id:string('可选章节'),preview:boolean('true 导出HTML，否则ZIP')},['project_id','variant']),details:'只导出已完成的成品，不生成或超分。文件放 Saved/Agent/workbench-artifacts，返回绝对路径。',execute:a=>downloadArtifact(projectPath(a,'finished/export'),{method:'POST',body:{variant:a.variant,chapter_id:a.chapter_id,preview:a.preview},extension:a.preview?'html':'zip'})},
+  'finished.export': {summary:'导出已有成品 ZIP 或 HTML 阅读页',parameters:schema({...projectId,variant:{...string('静态图片版本；动态页不嵌字且只导出一份'),enum:['lettered','clean','both']},chapter_id:string('可选章节'),preview:boolean('true 导出HTML，否则ZIP')},['project_id','variant']),details:'只导出已完成的成品，不运行生成模型或超分。动态页统一导出最大宽度1024px的动画WebP，不放大；ZIP保留静态PNG，HTML内嵌静态和动态WebP。不导出MP4。文件放 Saved/Agent/workbench-artifacts，返回绝对路径。',execute:a=>downloadArtifact(projectPath(a,'finished/export'),{method:'POST',body:{variant:a.variant,chapter_id:a.chapter_id,preview:a.preview},extension:a.preview?'html':'zip'})},
   'media.download': {summary:'将项目媒体下载为本地审阅文件',parameters:schema({...projectId,relative_path:string('工作台媒体返回的项目相对路径，不猜测') }),details:'下载现有图片到 Saved/Agent/workbench-artifacts 后可用 read_image 查看；不改项目文件。',execute:a=>downloadArtifact(projectPath(a,`media/${a.relative_path.split('/').map(encode).join('/')}`))},
 };
 for(const name of ['page.editor.read','page.editor.save'])mediaActions[name].helpTopics=pageEditHelp;

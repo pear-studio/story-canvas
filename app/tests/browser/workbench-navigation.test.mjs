@@ -144,6 +144,34 @@ async function setup(t, { character = false, mobile = false, visualPages = false
   return { page, renders, switchTo };
 }
 
+test('手机顶部保持单行，工具按需展开且切页自动收起', async t => {
+  const {page}=await setup(t,{mobile:true});
+  for(const width of [360,390,430]){
+    await page.setViewportSize({width,height:844});
+    const header=await page.locator('.topbar').boundingBox();
+    assert.ok(header.height<=58,`顶部高度 ${header.height}`);
+    assert.equal(await page.getByRole('combobox',{name:'搜索项目内容'}).isVisible(),false);
+    for(const locator of ['.navigation-drawer-toggle','.project-switcher','.image-privacy-toggle','.topbar-tools-toggle']){
+      const rect=await page.locator('.topbar '+locator).boundingBox();
+      assert.ok(rect.x>=0&&rect.x+rect.width<=width);
+    }
+  }
+  await page.getByRole('button',{name:'更多工具'}).click();
+  const search=page.getByRole('combobox',{name:'搜索项目内容'});
+  await search.fill('页面a');await search.press('Enter');
+  await page.waitForFunction(()=>new URLSearchParams(location.search).get('page')==='a');
+  assert.equal(await search.isVisible(),false);
+  await page.getByRole('button',{name:'更多工具'}).click();
+  await page.locator('.hardware-status-menu > summary').click();
+  assert.equal(await page.locator('.hardware-popover').isVisible(),true);
+  await page.getByRole('button',{name:'更多工具'}).click();
+  await page.waitForFunction(()=>!document.querySelector('.hardware-status-menu').open);
+  assert.equal(await page.locator('.hardware-popover').isVisible(),false);
+  await page.setViewportSize({width:1500,height:1000});
+  assert.equal(await search.isVisible(),true);
+  assert.equal(await page.getByRole('button',{name:'更多工具'}).isVisible(),false);
+});
+
 for (const mobile of [false, true]) test(`优化刷新后继续显示进度并读取成功或失败终态 ${mobile ? '手机' : '桌面'}`, async t => {
   const { page } = await setup(t, { mobile, generationSettings: true });
   let progress = { phase: 'generating', started_at: Date.now() - 200000, elapsed_ms: 200000, tokens: 620 };

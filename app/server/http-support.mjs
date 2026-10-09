@@ -34,6 +34,7 @@ const contentTypes = new Map([
 ]);
 const mediaDirectories = new Set(["Outputs", "materials"]);
 const imageTypes = new Map([
+  [".mp4", "video/mp4"],
   [".jpeg", "image/jpeg"],
   [".jpg", "image/jpeg"],
   [".png", "image/png"],
@@ -276,7 +277,8 @@ export async function serveProjectMedia(response, projectRoot, projectId, relati
   if (variantWidth && immutableOutput) {
     try {
       media = await ensureMediaVariant(projectDirectory, media, relativePath, variantWidth);
-    } catch {
+    } catch (error) {
+      if (media.contentType === 'video/mp4') throw new ApiError(503, 'video_preview_failed', {message:error.message});
       // 变体生成失败时回退原图
     }
   }

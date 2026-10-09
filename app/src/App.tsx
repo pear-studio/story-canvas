@@ -1,3 +1,5 @@
+import { storyPageNumbers } from '../shared/story-page-numbers.mjs';
+import {VideoPageWorkspace} from './VideoPageWorkspace';
 import {usePageRewrite} from './models/qwen/usePageRewrite';
 import { ProjectDirectoryDialog, type RegisteredProject } from "./ProjectDirectoryDialog";
 import { ProjectListEntry } from "./ProjectListEntry";
@@ -42,6 +44,7 @@ import { ResourceDetailsButton, ResourcePicker, ResourcePreview, loraResourceCat
 import { Modal } from "./Modal";
 import { rawLoraResourceDefinition, useProjectLoraResources, type LoraResourceList } from "./use-lora-resources";
 import RuntimeStatusBar, { type TaskControlResult } from "./RuntimeStatusBar";
+import { TopbarTools } from "./TopbarTools";
 import { TaskDetailDialog, TaskHistory, TaskResultViewer, type TaskPreview } from "./TaskViews";
 import type { GlobalTask } from "./runtime-status";
 import { stabilizeComfyRuntimeProbe } from "./comfy-runtime-status";
@@ -437,7 +440,7 @@ function StoryNavigation({ view, candidateCounts, selectedKey, revealKeys, revea
   const { collapsed, toggle } = useNavigationCollapse(view.project.id, "story", revealKeys, view.outline.chapters.flatMap(chapter => [`chapter:${chapter.id}`, ...chapter.sequences.map(sequence => `sequence:${sequence.id}`)]), revealRequest);
   const longPress = useLongPressContextMenu();
   const reorder = useNavigationReorder(onDrop);
-  const pageNumbers = new Map(view.outline.chapters.flatMap(c => c.sequences.flatMap(s => s.pages)).map((page, index) => [page.page_id, index + 1]));
+  const pageNumbers = storyPageNumbers(view.outline.chapters);
   return <div className="hierarchy-navigation" aria-label="系列章节与页面" {...longPress.captureProps}>
     {view.outline.chapters.map((chapter) => { const chapterKey = `chapter:${chapter.id}`; const chapterOpen = !collapsed.has(chapterKey); return <section className="tree-group" key={chapter.id}>
       <div className={["tree-group-heading", navigationDropClass(reorder, "chapter", chapter.id)].filter(Boolean).join(" ")} data-nav-kind="chapter" data-nav-id={chapter.id} data-long-press-context-menu onPointerDown={(event) => longPress.start(event, (point) => onRequestMenu(point, `章节 · ${chapter.title}`, chapterMenuItems(chapter)))} onContextMenu={(event) => onRequestMenu(event, `章节 · ${chapter.title}`, chapterMenuItems(chapter))}><NavigationReorderHandle label={chapter.title} source={{ kind: "chapter", id: chapter.id, group: null, title: chapter.title }} reorder={reorder} />{chapter.sequences.length > 0 && <NavigationDisclosureButton expanded={chapterOpen} label={`章节“${chapter.title}”`} onClick={() => toggle(chapterKey)} />}<button type="button" aria-selected={overviewTarget?.kind === "chapter" && overviewTarget.id === chapter.id} className={`tree-toggle ${overviewTarget?.kind === "chapter" && overviewTarget.id === chapter.id ? "is-active" : ""}`} onClick={() => onOpenOverview({ kind: "chapter", id: chapter.id })}><small className="navigation-kind">章节</small><span>{chapter.title}</span></button><small className="navigation-child-count">{chapter.sequences.length} 情节单元</small></div>
@@ -1413,6 +1416,7 @@ export default function StoryWorkbench({ initialImagesHidden, imagePrivacyStorag
     return [
       { id: `create-sequence-after-${sequence.id}`, label: "新增单元", onSelect: () => { const chapter = view?.outline.chapters.find(c => c.sequences.some(s => s.id === sequence.id)); if (chapter) createSequence(chapter, sequence.id); } },
       { id: `create-story-page-${sequence.id}`, label: "新增页面", onSelect: () => createStoryPage(sequence) },
+      {id:`create-video-${sequence.id}`,label:"新增动态页",onSelect:()=>void performNavigationAction("create-story-page",{sequence_id:sequence.id,page_kind:"video"},"动态页已创建")},
       { id: `create-story-text-page-${sequence.id}`, label: "新增文字页", onSelect: () => void performNavigationAction("create-story-page", { sequence_id: sequence.id, page_kind: "text" }, "文字页已创建") },
       { id: `delete-sequence-${sequence.id}`, label: "删除情节单元", hint: sequence.pages.length ? "需先删除其中的页面" : undefined, disabled: sequence.pages.length > 0, danger: true, onSelect: () => void (async () => { if (await confirm({ kind: "warning", title: "删除情节单元", message: `删除“${sequence.title}”？`, danger: true })) await performNavigationAction("delete-sequence", { sequence_id: sequence.id }, "情节单元已删除"); })() },
     ];
@@ -1422,6 +1426,7 @@ export default function StoryWorkbench({ initialImagesHidden, imagePrivacyStorag
     return [
       { id: `move-${page.page_id}`, label: "移动页面", onSelect: () => setMovingPage(page) },
       { id: `create-story-page-after-${page.page_id}`, label: "新增页面", onSelect: () => { const sequence = view?.outline.chapters.flatMap(c => c.sequences).find(s => s.pages.some(p => p.page_id === page.page_id)); if (sequence) createStoryPage(sequence, page.page_id); } },
+      {id:`create-video-after-${page.page_id}`,label:"在此页后新增动态页",onSelect:()=>void performNavigationAction("create-story-page",{sequence_id:page.sequence_id,page_kind:"video",after_page_id:page.page_id},"动态页已创建")},
       { id: `duplicate-story-page-${page.page_id}`, label: "复制页面", onSelect: () => void performNavigationAction("duplicate-page", { page_id: page.page_id }, "页面已复制") },
       { id: `delete-story-page-${page.page_id}`, label: "删除页面", danger: true, onSelect: () => void (async () => { if (await confirm({ kind: "warning", title: "删除剧情页", message: `删除“${page.title}”？`, danger: true })) await performNavigationAction("delete-page", { page_id: page.page_id }, "剧情页已删除"); })() },
     ];
@@ -1734,9 +1739,11 @@ export default function StoryWorkbench({ initialImagesHidden, imagePrivacyStorag
           <button type="button" aria-current={activeTab.startsWith("resource-") ? "page" : undefined} onClick={() => { close(); void openTab("resource-base"); }}><b>资源</b></button>
         </div>
       </>}</Popover>
+      <TopbarTools resetKey={`${projectId}:${activeTab}:${selectedKey}`} online={runtimeOnline} activeCount={runtimeTasks.tasks.filter(task=>task.status==='running'||task.status==='queued').length}>
       {!globalArea && <div className="navigation-history" aria-label="浏览历史"><button type="button" aria-label="后退" title={historyLabel(-1) ? `后退到：${historyLabel(-1)}` : '后退'} disabled={historyRef.current.index <= 0} onClick={() => void travelNavigation(-1)}>←</button><button type="button" aria-label="前进" title={historyLabel(1) ? `前进到：${historyLabel(1)}` : '前进'} disabled={historyRef.current.index >= historyRef.current.entries.length - 1} onClick={() => void travelNavigation(1)}>→</button></div>}
       {!globalArea && view && <NavigationSearch key={projectId} view={view} onPage={page => void choosePage(page)} onCharacter={(character, setting) => void chooseCharacter(character, setting)} onScene={id => void chooseScene(id)} />}
       {<RuntimeStatusBar projectTitle={workspaceTitle} online={runtimeOnline} hardware={runtimeHardware} tasks={runtimeTasks} onHardwareChange={setRuntimeHardware} onQueueRevision={(revision) => { runtimeTaskQueueRevision.current = Math.max(runtimeTaskQueueRevision.current ?? 0, revision); }} onOpenTask={setSelectedTask} onPreview={setTaskPreview} onControlled={applyTaskControl} />}
+      </TopbarTools>
       <button type="button" className={`button image-privacy-toggle ${imagesHidden ? "is-active" : ""}`} aria-pressed={imagesHidden} title="短按切换；隐藏时长按临时透视（F9 同样支持）" onPointerDown={(event) => { if (event.button !== 0) return; ignoreNextPrivacyClick.current = true; event.currentTarget.setPointerCapture(event.pointerId); beginImagePrivacyHold("button"); }} onPointerUp={() => finishImagePrivacyHold("button", true)} onPointerCancel={() => { ignoreNextPrivacyClick.current = false; finishImagePrivacyHold("button", false); }} onClick={() => { if (ignoreNextPrivacyClick.current) { ignoreNextPrivacyClick.current = false; return; } setImagesHidden((current) => !current); }}>{imagesPeeking ? "正在透视" : imagesHidden ? "图片已隐藏" : "隐藏图片"}</button>
     </header>
     {error && !globalArea && <div className="project-write-banner project-write-banner--error" role="alert"><span>{error}</span><button type="button" onClick={() => void refresh()}>重试</button></div>}
@@ -1823,6 +1830,7 @@ export default function StoryWorkbench({ initialImagesHidden, imagePrivacyStorag
           : activeTab === "project-materials" ? <ProjectMaterialsView projectId={projectId} />
 
 
+          : activeLocation?.page.page_kind==='video' ? <VideoPageWorkspace key={projectId+activeLocation.page.page_id} projectId={projectId} page={activeLocation.page} pages={view.outline.chapters.flatMap(c=>c.sequences.flatMap(s=>s.pages))} breadcrumb={activeLocation.breadcrumb} onReload={reload}/>
           : activeLocation && isEditablePage(activeLocation.page) && activeLocation.page.render_capabilities ? <PageWorkspace pageOrder={activeLocation.page.kind === "story" ? locations.filter(item => item.page.kind === "story").findIndex(item => item.key === activeLocation.key) + 1 : activeOwnerLocations.findIndex(item => item.key === activeLocation.key) + 1} editorTab={navigation.editorTab} onEditorTabChange={tab => navigate({ ...navigationRef.current, editorTab: tab }, true)} onOpenLetteringSettings={() => void openTab("project-lettering")} onOpenPromptOverview={() => void openPromptOverview(activeLocation.page)} projectId={projectId} location={{...activeLocation, page:activeLocation.page}} ownerPages={activeOwnerLocations} characters={view.characters} scenes={view.scenes?.scenes ?? []} renderCapabilities={activeLocation.page.render_capabilities} defaultRenderProfile={activeLocation.page.render?.profile_id??view.project.default_render_profile} canvas={activeLocation.page.render?.canvas??view.project.canvas} letteringStyle={view.project.lettering_settings} taskCollection={runtimeTasks} busy={loading} editorWidth={editorWidth} candidateWidth={candidateWidth} onEditorWidthChange={setEditorWidth} onCandidateWidthChange={setCandidateWidth} onPageChanged={(page, replacement) => { if (projectRequestGuard.current.isProjectCurrent(renderedProjectScope)) setView((current) => current ? replaceWorkbenchPage(current, page, replacement) : current); }} onReload={reload} onTrackedTasksChange={updateTrackedRuntimeTasks} />
           : activeTab === "characters" && activeCharacter && isEditableSetting(activeCharacter) ? (<SettingView key={`character:${activeCharacter.id}`} projectId={projectId} character={activeCharacter} initialSettingId={activeCharacterSettingId} busy={loading} onSaved={(result) => { if (!projectRequestGuard.current.isProjectCurrent(renderedProjectScope)) return; setView((current) => current ? { ...current, characters: current.characters.map((entry) => entry.id === activeCharacter.id ? { ...entry, ...result } : entry) } : current); void reload(true); }} onSettingChange={(next) => navigate(openNavigationCharacter(navigationRef.current, activeCharacter.id, next))} />)
             : <div className="empty-state"><h3>当前没有页面</h3><p>Agent 写入页面事实后会显示在这里。</p></div>}</section>

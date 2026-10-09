@@ -1,0 +1,95 @@
+.video-page-workspace { min-width: 0; }
+.video-page-columns { display: grid; grid-template-columns: minmax(340px, 44%) minmax(0, 1fr); gap: 14px; align-items: start; }
+.video-page-editor { min-width: 0; }
+.video-page-editor .workspace-header { flex-wrap: wrap; gap: 8px; }
+.video-page-editor .workspace-header__meta { font-size: var(--text-meta); }
+.video-page-editor .inline-title-trigger { white-space: normal; overflow-wrap: anywhere; text-align: left; }
+.video-editor-section { padding: 16px 2px; border-bottom: 1px solid var(--line); }
+.video-editor-section .section-header { align-items: center; }
+.video-input-summary { margin-top: 12px; display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 12px; align-items: center; }
+.video-input-summary img { display: block; width: 90px; height: 120px; object-fit: contain; border-radius: 8px; background: #edf1ed; }
+.video-input-summary b { display: block; font-size: var(--text-label); overflow-wrap: anywhere; }
+.video-input-summary small, .video-input-summary p, .video-field-hint { color: var(--muted); font-size: var(--text-meta); line-height: 1.6; }
+.video-input-summary small { display: block; margin-top: 5px; }
+.video-input-summary p { margin: 8px 0 0; }
+.video-action-input { display: block; width: 100%; margin-top: 12px; min-height: 112px; resize: vertical; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: white; color: var(--ink); font: var(--text-body)/1.65 "Noto Sans SC", system-ui, sans-serif; }
+.video-settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+.video-field { min-width: 0; display: grid; gap: 6px; font-size: var(--text-label); }
+.video-field input, .video-field select { width: 100%; min-width: 0; height: 38px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: white; color: var(--ink); }
+.video-field small { color: var(--muted); font-size: var(--text-meta); line-height: 1.5; }
+.video-action-input:focus, .video-field input:focus { outline: 2px solid var(--green-soft); border-color: var(--green); }
+.video-loop { min-height: 48px; margin: 12px 0; display: flex; align-items: center; gap: 9px; font-size: var(--text-label); cursor: pointer; }
+.video-loop input { flex: none; margin: 0; }
+.video-loop small { display: block; margin-top: 4px; color: var(--muted); font-size: var(--text-meta); }
+.video-disclosure { border: 1px solid var(--line); border-radius: 8px; background: #f7f9f7; }
+.video-disclosure > summary { padding: 10px; cursor: pointer; font-size: var(--text-label); }
+.video-advanced > summary { display: flex; align-items: center; gap: 8px; }
+.video-advanced > summary::before { content: '›'; color: var(--muted); }
+.video-advanced[open] > summary::before { transform: rotate(90deg); }
+.video-advanced > summary span { margin-left: auto; color: var(--muted); font-size: var(--text-meta); }
+.video-advanced .video-settings { margin: 0; padding: 4px 10px 10px; }
+.video-seed { grid-column: 1 / -1; }
+.video-desktop-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; padding: 12px 2px 2px; flex-wrap: wrap; }
+.video-desktop-actions > small { margin-right: auto; color: var(--muted); font-size: var(--text-meta); }
+.video-page-preview.page-images { display: block; padding: 12px; min-width: 0; }
+.video-page-results { min-width: 0; display: grid; gap: 12px; }
+.video-page-results .section-header { align-items: center; }
+.video-candidate-player { display: block; width: 100%; max-height: calc(100dvh - 260px); min-height: 180px; object-fit: contain; background: #152329; border-radius: 9px; }
+.video-candidate-preview { display: block; width: 100%; min-width: 0; padding: 0; border: 0; background: transparent; cursor: zoom-in; }
+.video-result-meta { margin: 0; color: var(--muted); font-size: var(--text-meta); overflow-wrap: anywhere; }
+.video-result-actions { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.video-result-actions a { display: inline-flex; align-items: center; justify-content: center; color: var(--ink); text-decoration: none; }
+.video-result-actions .button--danger { margin-left: auto; }
+.video-empty-state { display: grid; align-content: center; justify-items: center; min-height: 320px; padding: 24px; border: 1px dashed var(--line); border-radius: 9px; color: var(--muted); background: #f4f7f4; }
+.video-empty-state b { font-size: var(--text-body); }
+.video-empty-state p { font-size: var(--text-label); text-align: center; }
+.video-source-candidates, .video-candidate-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
+.video-source-candidates { margin: 16px 0; }
+.video-source-candidates button, .video-candidate-list button { min-width: 0; padding: 6px; display: grid; gap: 6px; border: 1px solid var(--line); border-radius: 8px; background: white; cursor: pointer; }
+.video-candidate-list button.is-selected { border-color: var(--green); box-shadow: inset 0 0 0 1px var(--green); background: var(--green-soft); }
+.video-source-candidates img, .video-candidate-list img { width: 100%; height: 130px; object-fit: contain; border-radius: 5px; }
+.video-source-candidates small, .video-candidate-list small { color: var(--muted); font-size: var(--text-meta); overflow-wrap: anywhere; }
+.video-review-image { display: block; width: 100%; padding: 0 8px 8px; }
+.video-message { margin: 12px 0 0; padding: 9px 10px; border: 1px solid #c5d1c9; border-radius: 8px; color: var(--green); background: var(--green-soft); font-size: var(--text-label); overflow-wrap: anywhere; }
+.video-message--error { color: var(--red); border-color: #e1c5c1; background: var(--red-soft); }
+.video-source-modal .modal__body { padding: 16px 18px; }
+.video-preview-modal .modal__body { padding: 14px; }
+
+/* 鼠标桌面沿用工作台的双栏独立滚动，不把输入表单拉成整页。 */
+@media (min-width: 1161px) and (pointer: fine) {
+  .video-page-workspace, .video-page-columns { height: 100%; min-height: 0; }
+  .video-page-columns { align-items: stretch; }
+  .video-page-editor, .video-page-preview.page-images { height: 100%; min-height: 0; overflow-y: auto; scrollbar-width: thin; overscroll-behavior: contain; }
+  .video-page-preview.page-images { position: static; }
+}
+
+/* 紧凑工作台共用“候选”弹窗与底部页面操作条，编辑正文不常驻视频。 */
+@media (max-width: 1160px) {
+  .video-page-columns { grid-template-columns: minmax(0, 1fr); }
+  .video-desktop-actions { display: none; }
+  .video-page-workspace { padding-bottom: 24px; }
+  .video-mobile-actions { gap: 7px; }
+  .video-mobile-actions > .button { padding-inline: 11px; font-size: var(--text-label); white-space: nowrap; }
+  .video-preview-modal .video-candidate-player { max-height: 55dvh; min-height: 160px; }
+}
+
+/* 手机减少嵌套边框，输入字号和点击区域独立适配触屏。 */
+@media (max-width: 680px) {
+  .video-page-editor.document-editor { padding: 0; border: 0; }
+  .video-page-editor .workspace-header { display: flex; }
+  .video-page-editor .workspace-header__meta { white-space: normal; }
+  .video-page-editor .workspace-breadcrumb { flex-wrap: wrap; }
+  .video-editor-section { padding: 14px 0; }
+  .video-input-summary { grid-template-columns: 72px minmax(0, 1fr); gap: 10px; }
+  .video-input-summary img { width: 72px; height: 96px; }
+  .video-action-input { font-size: 16px; min-height: 128px; }
+  .video-field input, .video-field select { min-height: 44px; font-size: 16px; }
+  .video-loop, .video-disclosure > summary, .video-editor-section .section-header .button { min-height: 44px; }
+  .video-advanced > summary { flex-wrap: wrap; }
+  .video-advanced > summary span { margin-left: 0; }
+  .video-result-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .video-result-actions .button { min-height: 44px; padding-inline: 5px; font-size: var(--text-label); }
+  .video-result-actions .button--danger { margin-left: 0; }
+  .video-mobile-actions > .button { min-height: 44px; padding-inline: 9px; }
+  .is-drawer-navigation:has(.page-turn-navigation) .video-mobile-actions { bottom: calc(70px + env(safe-area-inset-bottom)); }
+}

@@ -41,6 +41,52 @@ test("任务图片入口只返回本任务已完成且仍存在的图片，保�
   assert.deepEqual(await readWorkspaceTaskResults(root, "demo", id), [expected[1]]);
 });
 
+test('任务视频结果同时返回封面和可播放地址，成品预览不把 MP4 当图片', async context => {
+  const { root, projectDirectory } = await fixture(context);
+  const id='render-20261005T010203Z-12345678';
+  const candidate='candidate-11111111-1111-4111-8111-111111111111';
+  const prefix=`Outputs/pages/page-001/${candidate}`;
+  const value=task(id);
+  value.items=[{id:'video',page_key:pageKey,candidate_id:candidate,seed:7,status:'available',file:`${prefix}/image.png`}];
+  await createRenderTask(projectDirectory,value,{project_title:'Demo',pages:[]});
+  await mkdir(path.join(projectDirectory,prefix),{recursive:true});
+  await writeFile(path.join(projectDirectory,prefix,'image.png'),'poster');
+  await writeFile(path.join(projectDirectory,prefix,'video.mp4'),'video');
+  await writeFile(path.join(projectDirectory,prefix,'result.json'),JSON.stringify({version:1,candidate_id:candidate,page_key:pageKey,file:`${prefix}/image.png`,status:'available',media_kind:'video',video:{fps:24},video_file:`${prefix}/video.mp4`,review_file:`${prefix}/review.jpg`}));
+  const [result]=await readWorkspaceTaskResults(root,'demo',id);
+  assert.equal(result.media_kind,'video');
+  assert.equal(result.url,`/api/projects/demo/media/${prefix}/image.png`);
+  assert.equal(result.video_url,`/api/projects/demo/media/${prefix}/video.mp4`);
+  await mkdir(path.join(projectDirectory,'Saved/finished'),{recursive:true});
+  await mkdir(path.join(projectDirectory,'finished'),{recursive:true});
+  await writeFile(path.join(projectDirectory,'Saved/finished/page-001.json'),JSON.stringify({id:'finished-video',page_id:'page-001',status:'completed'}));
+  await writeFile(path.join(projectDirectory,'finished/page-001.json'),JSON.stringify({page_kind:'video',poster:`${prefix}/image.png`,outputs:{lettered:`${prefix}/video.mp4`},video:{fps:24}}));
+  const [finished]=await readWorkspaceTaskResults(root,'demo','finished-video','finished');
+  assert.equal(finished.url,result.url);
+  assert.equal(finished.video_url,result.video_url);
+  assert.equal(finished.media_kind,'video');
+});
+
+test('历史按结束时间分页，跨候选和成品稳定排序，后提交先完成不会挤掉旧任务', async context => {
+  const {root,projectDirectory}=await fixture(context);
+  const slow='render-20260828T010203Z-11111111', fast='render-20260828T010204Z-22222222', failed='render-20260828T010205Z-33333333';
+  for(const [id,status,time] of [[slow,'completed','2026-08-28T02:00:00Z'],[fast,'completed','2026-08-28T01:05:00Z'],[failed,'failed','2026-08-28T01:30:00Z']]){
+    await createRenderTask(projectDirectory,task(id),{project_title:'Demo',pages:[]});
+    await updateRenderTask(projectDirectory,id,current=>{current.status=status;current[status==='failed'?'failed_at':'completed_at']=time;});
+  }
+  await mkdir(path.join(projectDirectory,'Saved/finished'),{recursive:true});
+  await writeFile(path.join(projectDirectory,'Saved/finished/page-001.json'),JSON.stringify({id:'finished-one',page_id:'page-001',status:'completed',created_at:'2026-08-28T00:00:00Z',completed_at:'2026-08-28T01:45:00Z'}));
+  const first=await listWorkspaceRenderHistory(root,{limit:2});
+  assert.deepEqual(first.history.map(x=>x.id),[slow,'finished-one']);
+  const late='render-20260828T010201Z-44444444';
+  await createRenderTask(projectDirectory,task(late),{project_title:'Demo',pages:[]});
+  await updateRenderTask(projectDirectory,late,current=>{current.status='completed';current.completed_at='2026-08-28T03:00:00Z';});
+  const second=await listWorkspaceRenderHistory(root,{limit:2,before:first.next_cursor});
+  assert.deepEqual(second.history.map(x=>x.id),[failed,fast]);
+  assert.equal(second.next_cursor,null);
+  assert.equal((await listWorkspaceRenderHistory(root)).history[0].id,late);
+});
+
 function task(id) {
   return {
     version: 2,

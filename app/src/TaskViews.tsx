@@ -7,15 +7,19 @@ import { mergeTaskHistory, type GlobalTask, type RuntimePageKey } from "./runtim
 import { formatTaskDuration, formatTaskMoment, taskPageLabel } from "./task-summary";
 import ZoomableImageLightbox from "./ImageLightbox";
 import { mediaVariantUrl } from "./media-variant";
+import { taskHistoryMoment } from "../shared/task-history.mjs";
 import "./tasks.css";
 
-export type TaskImage = { id: string; url: string };
+export type TaskImage = { id: string; url: string; media_kind?: "image" | "video"; video_url?: string };
 export type TaskPreview = { images: TaskImage[]; index: number; title: string };
 export type OpenTaskPreview = (preview: TaskPreview) => void;
 
 export function TaskResultViewer({ preview, onClose }: { preview: TaskPreview; onClose: () => void }) {
   const [index, setIndex] = useState(preview.index);
   const image = preview.images[index];
+  const previous = index > 0 ? () => setIndex(index - 1) : undefined;
+  const next = index + 1 < preview.images.length ? () => setIndex(index + 1) : undefined;
+  if (image.media_kind === "video" && image.video_url) return <ZoomableImageLightbox src={image.video_url} originalVideo alt={`${preview.title} · 动态预览`} footer={`${preview.title} · ${index + 1} / ${preview.images.length} · 动态预览`} onPrevious={previous} onNext={next} onClose={onClose} />;
   return <ZoomableImageLightbox src={image.url} alt={`${preview.title} · 第 ${index + 1} 张`} footer={`${preview.title} · ${index + 1} / ${preview.images.length}`} onPrevious={index > 0 ? () => setIndex(index - 1) : undefined} onNext={index + 1 < preview.images.length ? () => setIndex(index + 1) : undefined} onClose={onClose} />;
 }
 
@@ -41,7 +45,8 @@ function TaskResultStrip({ task, enabled, onPreview }: { task: GlobalTask; enabl
   }, [enabled, task.project_id, task.id, task.purpose, task.status, task.item_counts.available, task.item_counts.discarded, retry]);
   return <div className="task-results">
     {images.length > 0 && <div className="task-results__strip">{images.map((image, index) => <button type="button" key={image.id} className="task-results__image" aria-label={`全屏查看第 ${index + 1} 张生成结果`} onClick={() => onPreview({ images, index, title: task.pages[0] ? taskPageLabel(task.pages[0]) : task.project_title })}>
-      <img src={mediaVariantUrl(image.url, 320)} alt={`第 ${index + 1} 张生成结果`} loading="lazy" draggable={false} onError={() => setImages(current => current.filter(item => item.id !== image.id))} />
+      <img src={mediaVariantUrl(image.video_url ?? image.url, 320)} alt={`第 ${index + 1} 张生成结果`} loading="lazy" draggable={false} onError={() => setImages(current => current.filter(item => item.id !== image.id))} />
+      {image.media_kind === "video" && <span className="task-results__video">▶ 视频</span>}
     </button>)}</div>}
     <div className="task-results__status" aria-live="polite">{loading ? <span className="task-spinner" role="status" aria-label="加载结果" /> : error ? <button type="button" className="button" title={error} onClick={() => setRetry(value => value + 1)}>图片读取失败 · 重试</button> : !images.length ? (task.item_counts.available > 0 || task.item_counts.discarded > 0 ? "图片已删除或不可用" : "尚未生成图片") : null}</div>
   </div>;
@@ -63,7 +68,7 @@ export function TaskCard({ task, now = Date.now(), onOpen, onPreview, previewsEn
   const title = task.pages[0] ? taskPageLabel(task.pages[0]) : "未关联页面";
   return <article className={`task-card task-card--${task.status}`}>
     <button type="button" className="task-card__open" onClick={() => onOpen(task)}>
-      <span className="task-card__meta"><span title={task.project_title}>{task.project_title}</span><time>{formatTaskMoment(task.created_at)}</time></span>
+      <span className="task-card__meta"><span title={task.project_title}>{task.project_title}</span><time dateTime={taskHistoryMoment(task) ?? undefined} title={active ? "提交时间" : "结束时间"}>{formatTaskMoment(taskHistoryMoment(task))}</time></span>
       <span className="task-card__main"><span className="task-card__title" title={title}>{task.purpose === "comparison" && <small>对比</small>}{task.purpose === "finished" && <small>成品</small>}<b>{title}</b><span>×{task.item_counts.total}</span>{task.pages.length > 1 && <small>{task.pages.length} 页</small>}</span><span className="task-card__result">{task.purpose === "finished" ? finishedJobLabel(task.stage) : taskStatusLabel(task.status)}{active && task.status === "running" ? ` ${done}/${task.item_counts.total}` : ""}<span> · {taskElapsed(task, now)}</span></span></span>
     </button>
     <TaskResultStrip task={task} enabled={previewsEnabled} onPreview={onPreview} />

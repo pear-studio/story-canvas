@@ -56,7 +56,7 @@ async function editor(t, { viewport = false } = {}) {
   return { page, input, options: page.locator("button[role=option]") };
 }
 
-test("手机词条与操作同排，二级菜单可改权重、开关和删除", async t => {
+test("手机词条常驻权重且同排显示，二级菜单保留开关和删除", async t => {
   const { page, input } = await editor(t);
   await page.evaluate(() => { document.querySelector('#host').style.cssText = 'width:100%;margin-top:0'; });
   for (const width of [360, 390, 430]) {
@@ -65,20 +65,29 @@ test("手机词条与操作同排，二级菜单可改权重、开关和删除",
     await trigger.waitFor();
     assert.equal(await page.getByRole('checkbox').count(), 0);
     const bounds = await input.boundingBox();
-    assert.ok(bounds.width > width - 140, `正文应充分利用 ${width}px 宽度：${bounds.width}`);
+    assert.ok(bounds.width > width - 190, `正文应充分利用 ${width}px 宽度：${bounds.width}`);
+    const weight = page.getByRole('button', { name: /^场景第 1 项权重 / });
+    const weightBounds = await weight.boundingBox();
+    assert.ok(Math.max(bounds.y, weightBounds.y) < Math.min(bounds.y + bounds.height, weightBounds.y + weightBounds.height), '正文与权重同排');
+    await weight.click();
+    const weightRect = await page.getByRole('dialog').boundingBox();
+    assert.ok(weightRect.x >= 0 && weightRect.x + weightRect.width <= width);
+    await page.keyboard.press('Escape');
     const triggerBounds = await trigger.boundingBox();
     assert.ok(Math.max(bounds.y, triggerBounds.y) < Math.min(bounds.y + bounds.height, triggerBounds.y + triggerBounds.height), '正文与选项同排');
     await trigger.click();
     const menu = page.getByRole('dialog');
+    assert.equal(await menu.getByRole('spinbutton').count(), 0);
     const rect = await menu.boundingBox();
     assert.ok(rect.x >= 0 && rect.x + rect.width <= width && rect.y >= 0 && rect.y + rect.height <= 700);
     await page.keyboard.press('Escape');
     assert.equal(await menu.count(), 0);
   }
   const trigger = page.getByRole('button', { name: '场景第 1 项选项', exact: true });
-  await trigger.click();
+  await page.getByRole('button', { name: /^场景第 1 项权重 / }).click();
   await page.getByRole('button', { name: '×1.5', exact: true }).click();
   assert.equal(JSON.parse(await page.locator('output').textContent()).setting[0].weight, 1.5);
+  assert.match(await page.getByRole('button', { name: /^场景第 1 项权重 / }).textContent(), /1\.5/);
   await trigger.click();
   await page.locator('.prompt-fragment-mobile-actions .prompt-fragment-enabled').click();
   assert.equal(JSON.parse(await page.locator('output').textContent()).setting[0].enabled, false);

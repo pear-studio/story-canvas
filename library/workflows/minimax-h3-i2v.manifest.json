@@ -1,0 +1,31 @@
+{
+  "$schema": "../schemas/workflow-manifest.schema.json",
+  "id": "minimax-h3-i2v",
+  "template": "minimax-h3-i2v.api.json",
+  "architecture_families": [
+    "minimax-h3"
+  ],
+  "operations": [
+    "candidates"
+  ],
+  "input_sources": [
+    "empty_latent",
+    "reference_image"
+  ],
+  "modifiers": ["lora.model_only"],
+  "bindings": {
+    "dit": "1.inputs.unet_name",
+    "text_encoder": "2.inputs.clip_name",
+    "vae": "3.inputs.vae_name",
+    "reference_image": "5.inputs.image",
+    "positive_prompt": "6.inputs.prompt",
+    "width": "6.inputs.width",
+    "height": "6.inputs.height",
+    "length": "6.inputs.length",
+    "seed": "8.inputs.noise_seed",
+    "sampler": "9.inputs.sampler_name",
+    "scheduler": "10.inputs.scheduler",
+    "steps": "10.inputs.steps",
+    "filename_prefix": "20.inputs.filename_prefix"
+  }
+}

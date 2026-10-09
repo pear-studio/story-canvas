@@ -165,7 +165,7 @@ test("文字页允许 page_kind/body 且要求角色与文案为空", () => {
   delete withoutBody.body;
   assert.deepEqual(validateStoryPageNarrativeDocument(withoutBody), []);
   const badKind = { ...narrative, page_kind: "cover" };
-  assert.ok(validateStoryPageNarrativeDocument(badKind).some((error) => error.includes("page_kind 目前只支持 text")));
+  assert.ok(validateStoryPageNarrativeDocument(badKind).some((error) => error.includes("未知页面格式")));
   const bodyOnNormal = { ...narrative, body: "作者的话。" };
   delete bodyOnNormal.page_kind;
   assert.ok(validateStoryPageNarrativeDocument(bodyOnNormal).some((error) => error.includes("body 仅文字页使用")));

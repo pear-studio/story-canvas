@@ -23,6 +23,7 @@ export type Scene = WorkbenchCharacter;
 export type PageOwner = { page_id: string; owner_kind: 'story' | 'character' | 'scene'; sequence_id?: string; character_id?: string; scene_id?: string; variant_id?: string };
 export type PageReferenceEntry = ReferenceEntry & { purpose?: string };
 export type PagePrompt = {
+  duration?:number;loop?:boolean;quality?:'preview'|'standard';steps?:number;
   lora_overrides?: import("../shared/lora-inheritance.mjs").LoraOverrides;
   loras?: Array<{filename:string;sha256:string;weight:number;trigger?:string;enabled?:boolean}>;
   trigger_sources?: {style:string[];characters:Record<string,string[]>;scenes:Record<string,string[]>};
@@ -50,6 +51,7 @@ export type CharacterPromptDocument = {
   variants: Record<string, CharacterPromptVariant>;
 };
 export type Candidate = {
+  media_kind?:'video';video_url?:string;review_url?:string;video?:{width:number;height:number;frames:number;fps:number;duration_seconds:number;loop:boolean};
   candidate_id: string;
   file: string;
   url: string;
@@ -74,8 +76,8 @@ export type TextSourceContext = {
 };
 export type WorkbenchPage = {
   project_loras?: PagePrompt['loras'];
-  model_id: 'anima' | 'qwen';
-  render?: {version:1;model_id:'anima'|'qwen';profile_id:string;canvas:string};
+  model_id: 'anima' | 'qwen' | 'h3';
+  render?: {version:1;model_id:'anima'|'qwen'|'h3';profile_id:string;canvas:string};
   render_sha256?: string;
   model_prompts?: {models?:Record<string,PagePrompt>};
   render_capabilities?: ProjectWorkbenchView['render_capabilities'];
@@ -96,7 +98,7 @@ export type WorkbenchPage = {
   prompt_context_sha256?: string | null;
   characters?: Array<{ character_id: string; variant_id: string }>;
   dialogue?: Array<{ id: string; mode: "narration" | "speech" | "thought" | "heart"; speaker?: string; text: string; position?: "top" | "bottom" }>;
-  page_kind?: "text" | null;
+  page_kind?: "text" | "video" | null;
   body?: string;
   display_title?: string;
   text_layout?: TextPageLayout;
@@ -271,7 +273,7 @@ export type StoryPageContentDraft = {
   scene_description: string;
   characters: Array<{ character_id: string; variant_id: string }>;
   dialogue: Array<{ id?: string; mode: "narration" | "speech" | "thought" | "heart"; speaker?: string; text: string; position?: "top" | "bottom" }>;
-  page_kind?: "text" | null;
+  page_kind?: "text" | "video" | null;
   body?: string;
   display_title?: string;
   text_layout?: TextPageLayout;

@@ -8,9 +8,12 @@ function countsFor(results) {
 }
 export function generationQuantity(record) {
   const perPage=record.images_per_page;
+  const submitted=record.results.filter(row=>row.status==='submitted');
+  const actualCounts=submitted.map(row=>row.count??perPage);
+  const actualTotal=actualCounts.every(Number.isInteger)?actualCounts.reduce((n,c)=>n+c,0):null;
   return {pages:record.results.length,tasks_submitted:record.results.filter(row=>row.status==='submitted').length,
     images_per_page:perPage??null,images_requested:perPage===undefined?null:record.results.length*perPage,
-    images_submitted:perPage===undefined?null:record.results.filter(row=>row.status==='submitted').length*perPage};
+    images_submitted:actualTotal};
 }
 function receiptFailure(error,batch_id,record,phase) {
   const {results,targets}=record;
@@ -23,7 +26,7 @@ function receiptFailure(error,batch_id,record,phase) {
 export async function submitGenerationBatch({project_id,page_keys,...settings},{submit,signal,recover,persist=saveOperationRecord}) {
   if(new Set(page_keys.map(page=>page.page_id)).size!==page_keys.length)throw invalid('page_keys 不能包含重复页面');
   const results=page_keys.map(page_key=>({page_key,status:'not_submitted'})),targets=[];
-  const record={project_id,created_at:new Date().toISOString(),images_per_page:settings.count??3,results,targets};
+  const record={project_id,created_at:new Date().toISOString(),images_per_page:settings.count,results,targets};
   let batch_id;
   try{batch_id=await persist('generation',record);}
   catch(error){return receiptFailure(error,undefined,record,'initialize');}
@@ -48,11 +51,11 @@ export async function submitGenerationBatch({project_id,page_keys,...settings},{
     }
     try {
       const response=await submit({project_id,page_key,...settings},{signal});
-      const task=response.value?.task;
+      const task=response.value?.task ?? response;
       if(!task?.task_id)throw Object.assign(new Error('未取得任务 ID，提交结果不确定'),{code:'missing_task_receipt'});
       const target={project_id,task_id:task.task_id};
       targets.push(target);
-      results[index]={page_key,status:'submitted',task_id:task.task_id};
+      results[index]={page_key,status:'submitted',task_id:task.task_id,count:task.count??settings.count,...(response.cleanup?{cleanup:response.cleanup}:{})};
     } catch(error) {
       // 仅明确的客户端拒绝可判断未提交；断线、超时和 5xx 必须核查队列。
       const rejected=error.status>=400 && error.status<500 && ![408,499].includes(error.status);
@@ -63,7 +66,8 @@ export async function submitGenerationBatch({project_id,page_keys,...settings},{
     catch(error){return receiptFailure(error,batch_id,record,'after_submit');}
   }
   const counts=countsFor(results);
-  return {batch_id,quantity:generationQuantity(record),message:`已提交 ${counts.submitted} 个页面任务，每页 ${record.images_per_page} 张，共 ${counts.submitted*record.images_per_page} 张；counts 按任务计数，等待原任务即可。`,counts,inspect:{operation:'task.batch.read',args:{batch_id}},...(targets.length?{wait:{operation:'task.wait',args:{batch_id}}}:{}),
+  const cleanupIssues=results.filter(r=>r.cleanup&&r.cleanup.status!=='completed');
+  return {batch_id,...(cleanupIssues.length?{cleanup_issues:cleanupIssues.map(r=>({page_key:r.page_key,task_id:r.task_id,cleanup:r.cleanup})),cleanup_hint:'新任务已提交，只等待原任务；核验剩余旧候选，不重放生成。'}:{}),quantity:generationQuantity(record),message:record.images_per_page===undefined?`已提交 ${counts.submitted} 个页面任务，共 ${generationQuantity(record).images_submitted??'待核验'} 个候选；各页采用自己的默认数量，等待原任务即可。`:`已提交 ${counts.submitted} 个页面任务，每页 ${record.images_per_page} 张，共 ${generationQuantity(record).images_submitted} 张；counts 按任务计数，等待原任务即可。`,counts,inspect:{operation:'task.batch.read',args:{batch_id}},...(targets.length?{wait:{operation:'task.wait',args:{batch_id}}}:{}),
     ...(counts.rejected||counts.unknown?{issues:results.filter(r=>['rejected','unknown'].includes(r.status)).slice(0,5)}:{}),
     ...(counts.rejected||counts.unknown||counts.not_submitted?{recovery:'已提交项只等待原任务；rejected 修正后仅重提该页；unknown 先用 task.list / task.history 核对，不能直接重提；not_submitted 尚未发送。不要重放整批。'}:{})};
 }

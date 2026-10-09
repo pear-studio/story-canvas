@@ -1,3 +1,4 @@
+import { generationFailureMessage } from './generation-failure.mjs';
 import { registeredProjectPath, listRegisteredProjects, registerProject, unregisterProject, readProjectRegistry } from "./project-registry.mjs";
 import path from "node:path";
 import { readdir, readFile } from "node:fs/promises";
@@ -38,7 +39,7 @@ const terminal = new Set(["completed", "failed", "incomplete", "cancelled"]);
 const key = ref => `${ref.project_id}\0${ref.purpose}\0${ref.task_id}`;
 
 async function failTask(projectRoot, taskId, purpose, error) {
-  if (purpose === "candidate") return markRenderTaskProcessFailed(projectRoot, taskId, error.message);
+  if (purpose === "candidate") return markRenderTaskProcessFailed(projectRoot, taskId, generationFailureMessage(error));
   return failComparisonExperiment(projectRoot, taskId, error);
 }
 

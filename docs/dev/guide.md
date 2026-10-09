@@ -26,11 +26,16 @@
   `lora-training.mjs` 仅提供脚本和领域测试的稳定导出入口。浏览器页面位于
   `app/src/LoraTrainingView.tsx`，独立入口为 `/api/lora-training`，事实保存在登记的独立训练项目；版本清单和预设位于 `library/lora-training/`；
 - 剧情文案使用稳定 ID 和明确表达语义；工作台按项目统一样式保存归一化文字布局，在当前候选预览上通过 DOM 直接拖动文字，支持选定候选后超分、嵌字和系列成品导出，见 [成品输出](finished-pages.md)。
+- H3 动态页通过 `VideoPageWorkspace.tsx` 编辑单图输入、时长和循环，与剧情页面混排；生成与候选共用已有队列，内部保留 MP4 原片，预览、单页下载与成品导出使用 WebP，见 [H3 动态页](video-pages.md)。
 
 ## 代码位置
 
+手机顶部（≤680px）默认只显示目录、项目、图片隐私与更多工具，一行约 56px。
+搜索、浏览历史和运行状态通过“更多工具”展开，切换页面后自动收起；状态组件继续挂载更新。
+入口显示服务离线或进行中任务数量，桌面保持原有常驻工具。
+
 手机宽度（≤680px）的页面 Prompt 减少嵌套留白，正文使用 16px 字号；每条的拖动手柄、正文与选项按钮同排，
-权重、参与生成和删除通过每条的“···”选项打开，共用现有浮层定位与关闭行为。继承词条在菜单中提供恢复继承。
+权重在正文旁常驻显示，点击数值即可修改；参与生成和删除通过每条的“···”选项打开，共用现有浮层定位与关闭行为。继承词条在菜单中提供恢复继承。
 手机人数使用原生选择框，角色引用独占一行并提供触屏拖动手柄。
 紧凑页面（≤1160px）的候选图通过底部生成操作栏的“候选”入口打开，正文不常驻预览或缩略条；
 候选面板保留刷新、查看大图和长按操作。该宽度下隐藏页面的输出成品与查看成品按钮。
@@ -94,7 +99,7 @@
 | `app/server/runtime-http.mjs` | 健康、硬件、任务、ComfyUI、全局资源、LoRA 资源和 Prompt 词库 HTTP Adapter |
 | `app/server/project-http.mjs` | 项目列表、生命周期、材料、生成设置和项目媒体 HTTP Adapter |
 | `app/server/agent-http.mjs` | Agent 文件式 read/save 与无文件 read/save HTTP Adapter |
-| `app/server/agent-directory.mjs` | Agent 分页目录摘要：在事实读取边界内查询章节、单元、设定、子设定、页面与模板，不载入 Prompt 和媒体 |
+| `app/server/agent-directory.mjs` | Agent 分页目录摘要：在事实读取边界内查询章节、单元、设定、子设定、页面与模板；页面只读本分页内容文件取标题，显示编号与网页共用，不载入 Prompt 和媒体 |
 | `app/scripts/workbench-actions/` | 统一 Agent 工具的领域操作：参数、帮助和执行一起维护，自动汇总分组目录 |
 | `app/server/prompt-edit-context.mjs` | 一致性事实读取内组合可写草稿和只读引用文字、override、图片选择、有效配置及最终编译，不诊断本机模型 |
 | `app/shared/prompt-inheritance.mjs` / `prompt-source-view.mjs` | 共用继承条目解释、启用／模型消费状态、引用选择与有来源证据的问题投影 |

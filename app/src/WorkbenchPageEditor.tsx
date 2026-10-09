@@ -99,7 +99,7 @@ export type WorkbenchPageContentDraft = {
   scene_description: string;
   characters?: Array<{ character_id: string; variant_id: string }>;
   dialogue?: WorkbenchDialogueDraft[];
-  page_kind?: "text" | null;
+  page_kind?: "text" | "video" | null;
   body?: string;
   display_title?: string;
   text_layout?: TextPageLayout;
@@ -662,7 +662,7 @@ export default function WorkbenchPageEditor({
   const [promptDiscardCount, setPromptDiscardCount] = useState(0);
   const references = useReferencedSettings(projectId, page.page_id, directoryCharacters, directoryScenes, promptDraft.composition === 'standalone' ? [] : (contentDraft.characters ?? []).map(ref=>ref.character_id), promptDraft.composition === 'standalone' ? undefined : promptDraft.scene_id);
   const {characters, scenes} = references;
-  const incomingSourceVersions = readPromptSourceVersions(page.model_id, characters, scenes);
+  const incomingSourceVersions = readPromptSourceVersions(page.model_id==='h3'?'qwen':page.model_id, characters, scenes);
   const sourceVersions = useRef(incomingSourceVersions);
   const persistedPrompt = promptDraft;
   const [promptPhase, setPromptPhase] = useState<SavePhase>("saved");

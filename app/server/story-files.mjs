@@ -141,8 +141,8 @@ export function validateStoryPageNarrativeDocument(narrative) {
   if (!isRecord(narrative)) return ["narrative 必须是 JSON 对象"];
   checkExactKeys(narrative, ["$schema", "title", "scene_description", "characters", "dialogue", "page_kind", "body", "display_title", "text_layout"], "narrative", errors);
   if (narrative.$schema !== STORY_PAGE_NARRATIVE_SCHEMA_ID) errors.push("narrative.$schema 不匹配");
-  const isTextPage = narrative.page_kind !== undefined;
-  if (isTextPage && narrative.page_kind !== "text") errors.push("narrative.page_kind 目前只支持 text");
+  const isTextPage = narrative.page_kind === "text";
+  if (narrative.page_kind !== undefined && !["text","video"].includes(narrative.page_kind)) errors.push("未知页面格式");
   if (narrative.body !== undefined && (!isTextPage || typeof narrative.body !== "string")) errors.push("narrative.body 仅文字页使用，必须是字符串");
   if (narrative.display_title !== undefined && (!isTextPage || typeof narrative.display_title !== "string")) errors.push("narrative.display_title 仅文字页使用，必须是字符串");
   if (narrative.text_layout !== undefined) {

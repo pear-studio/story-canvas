@@ -1,4 +1,5 @@
 import path from "node:path";
+import {readVideoSource} from './video-source.mjs';
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 
@@ -84,6 +85,12 @@ export async function handleWorkbenchRequest({
   workbenchRenderLauncher,
   generationScheduler = null,
 }) {
+  const videoSourceRoute=/^\/api\/projects\/([^/]+)\/workbench\/video-source$/.exec(decodedPath);
+  if(request.method==='POST'&&videoSourceRoute) {
+    const body=await readJsonBody(request),id=videoSourceRoute[1];
+    sendOperation(200,await readFacts(id,({projectDirectory})=>readVideoSource(projectRoot,id,projectDirectory,body)));
+    return true;
+  }
   const candidateBatchRoute=/^\/api\/projects\/([^/]+)\/workbench\/candidate-batches\/(read|preview|apply)$/.exec(decodedPath);
   if(request.method==='POST' && candidateBatchRoute) {
     const [,projectId,action]=candidateBatchRoute,body=await readJsonBody(request);

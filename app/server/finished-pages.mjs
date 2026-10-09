@@ -1,9 +1,10 @@
 import { defaultTextPageLayout } from "../shared/text-page-layout.mjs";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, rmdir, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rmdir, stat, unlink, writeFile } from "node:fs/promises";
+import { replaceFileWithRetry } from "./file-replace.mjs";
 import path from "node:path";
 import sharp from "sharp";
-import { candidateFileRelativePath, readCandidateGeneration, readGenerationCandidateRecords, requireCandidateId } from "./candidate-storage.mjs";
+import { candidateFileRelativePath, readCandidateResult, readCandidateGeneration, readGenerationCandidateRecords, requireCandidateId } from "./candidate-storage.mjs";
 import { readProjectWorkbenchView } from "./project-workbench.mjs";
 import { encodePageKey } from "./page-key.mjs";
 import { resolveExistingProjectMedia } from "./render-media.mjs";
@@ -25,7 +26,7 @@ async function optionalJson(file) { try { return JSON.parse(await readFile(file,
 async function writeJson(file, value) {
   await mkdir(path.dirname(file), { recursive: true });
   const temp = `${file}.${randomUUID()}.tmp`;
-  try { await writeFile(temp, JSON.stringify(value, null, 2) + "\n"); await rename(temp, file); }
+  try { await writeFile(temp, JSON.stringify(value, null, 2) + "\n"); await replaceFileWithRetry(temp, file); }
   finally { await unlink(temp).catch(() => {}); }
 }
 function pageId(key) { encodePageKey(key); return key.page_id; }
@@ -36,6 +37,7 @@ export function orderedFinishedPages(view) {
   return view.outline.chapters.flatMap(chapter => chapter.sequences.flatMap(sequence => sequence.pages.map(page => ({ page, chapter_id: chapter.id, chapter_title: chapter.title, sequence_title: sequence.title }))));
 }
 function letteringSnapshot(view, page, canvas = page.render?.canvas ?? view.project.canvas) {
+  if(page.page_kind==='video')return {page_kind:'video',canvas};
   const settings = structuredClone(view.project.lettering_settings);
   if (page.page_kind === "text") return { page_kind: "text", display_title: page.display_title ?? "", body: page.body ?? "", text_layout: structuredClone(page.text_layout ?? defaultTextPageLayout), settings: { font_family: settings.font_family }, canvas };
   const speakers = new Set((page.dialogue ?? []).map(line => line.speaker).filter(Boolean));
@@ -63,7 +65,7 @@ export async function readFinishedPages(repositoryRoot, projectId, directory, { 
       batch_skip_reason: candidates?.length === 0 ? "没有候选图" : candidates && candidates.length > 1 ? `有 ${candidates.length} 张候选，请只保留一张` : null,
       status: !record ? "missing" : !available ? "files_missing" : stale ? "stale" : "ready",
       job: jobs.find(job => job.page_id === page.page_id) ?? null,
-      record: record ? { sha256: hashCanonicalJson(record), candidate_id: record.candidate_id ?? null, width: record.width, height: record.height, created_at: record.created_at,
+      record: record ? { media_kind:record.page_kind==='video'?'video':'image', poster_url:record.poster ? `/api/projects/${encodeURIComponent(projectId)}/media/${record.poster}` : null, sha256: hashCanonicalJson(record), candidate_id: record.candidate_id ?? null, width: record.width, height: record.height, created_at: record.created_at,
         bytes: available ? (await stat(files[0].target)).size : null,
         lettered_url: available ? url("lettered") : null, clean_url: available ? url("clean") : null } : null });
   }
@@ -76,7 +78,7 @@ export async function deleteFinishedPage(directory, value) {
   const record = await readFinishedRecord(directory, id);
   if (!record || hashCanonicalJson(record) !== value.expected_sha256) fail("本页成品已变化，请刷新后再删除");
   await unlink(recordPath(directory, id));
-  for (const relative of Object.values(record.outputs)) {
+  for (const relative of new Set([...Object.values(record.outputs),...(record.poster?[record.poster]:[])])) {
     if (!relative.startsWith(`Outputs/finished/${id}/`)) continue;
     const media = await resolveExistingProjectMedia(directory, relative);
     if (media) { await unlink(media.target); await rmdir(path.dirname(media.target)).catch(() => {}); }
@@ -133,12 +135,25 @@ export async function prepareFinishedPage(repositoryRoot, projectId, directory, 
     await writeJson(jobPath(directory, id), job);
     return { job, snapshot, sourceBuffer: null, reuse: null, expected: hashCanonicalJson(old), old, textPage: dimensions };
   }
-  requireCandidateId(value.candidate_id);
+  try { requireCandidateId(value.candidate_id); }
+  catch { throw Object.assign(new Error('插画页和动态页输出成品必须提供有效 candidate_id；先查询 candidate.list 取得候选 ID。'), {
+    status:400, code:'invalid_candidate_id', details:{field:'candidate_id',page_kind:page.page_kind,page_key:page.page_key},
+  }); }
   if (queuedJob) {
     const candidates = await readGenerationCandidateRecords(directory, { pageKey: page.page_key });
     if (candidates.length !== 1 || candidates[0].candidate_id !== value.candidate_id) fail("候选已变化，请只保留一张候选后重新制作");
   }
   const source = await resolveExistingProjectMedia(directory, candidateFileRelativePath(page.page_key, value.candidate_id));
+  if(page.page_kind==='video') {
+    if(!source)fail('候选封面缺失');
+    const candidate=await readCandidateResult(directory,page.page_key,value.candidate_id);
+    if(candidate?.media_kind!=='video')fail('请选择视频候选');
+    const video=await resolveExistingProjectMedia(directory,candidate.video_file);if(!video)fail('视频文件缺失');
+    const sourceBuffer=await readFile(video.target);if(sha(sourceBuffer)!==candidate.video_sha256)fail('视频文件已改变');
+    const snapshot={page_key:page.page_key,page_kind:'video',candidate_id:value.candidate_id,source_sha256:candidate.video_sha256,video:candidate.video,lettering:letteringSnapshot(view,page)};
+    await writeJson(jobPath(directory,id),job);
+    return {job,snapshot,sourceBuffer,posterBuffer:await readFile(source.target),video:true,expected:hashCanonicalJson(old),old};
+  }
   const reuse = old?.candidate_id === value.candidate_id && old.upscale.name === finishedModel.name
     && old.upscale.sha256 === finishedModel.sha256 ? await resolveExistingProjectMedia(directory, old.outputs.clean) : null;
   if (!source && !reuse) fail("候选底图已不存在；请根据成品记录重新生成候选，再输出成品");
@@ -167,9 +182,19 @@ export async function runFinishedPage({ repositoryRoot, projectId, directory, pr
   upscale = upscaleFinishedImage, render = (...args) => import("./finished-render.mjs").then(module => module.renderFinishedImage(...args)) }) {
   const { job, snapshot } = prepared;
   let outputs = null;
+  let newPoster = null;
   let published = false;
   const update = async (status, error = null) => { job.status = status; job.error = error; const now = new Date().toISOString(); job.started_at ??= now; if (status === "completed") job.completed_at = now; if (status === "failed") job.failed_at = now; await writeJson(jobPath(directory, job.page_id), job); };
   try {
+    if(prepared.video) {
+      await update('publishing');const prefix=`Outputs/finished/${job.page_id}/${job.id}`;
+      outputs={clean:prefix+'/video.mp4',lettered:prefix+'/video.mp4'};
+      const poster=prefix+'/poster.png';newPoster=poster;await mkdir(path.join(directory,prefix),{recursive:true});
+      await writeFile(path.join(directory,outputs.clean),prepared.sourceBuffer);await writeFile(path.join(directory,poster),prepared.posterBuffer);
+      const record={$schema:'https://storyvisualizer.local/schemas/finished-page.schema.json',...snapshot,width:snapshot.video.width,height:snapshot.video.height,created_at:new Date().toISOString(),outputs,poster};
+      await mutateTargetFacts(projectId,()=>publishFinishedPage(repositoryRoot,projectId,directory,prepared,record));published=true;await update('completed');
+      warmMediaVariants(directory, outputs.clean);
+    } else {
     await update(prepared.reuse || prepared.textPage ? "lettering" : "upscaling");
     const cleanBuffer = prepared.textPage
       ? await sharp({ create: { width: prepared.textPage.width, height: prepared.textPage.height, channels: 3, background: { r: 0, g: 0, b: 0 } } }).png().toBuffer()
@@ -196,10 +221,12 @@ export async function runFinishedPage({ repositoryRoot, projectId, directory, pr
     published = true;
     for (const relative of Object.values(outputs)) warmMediaVariants(directory, relative);
     await update("completed");
+    }
   } catch (error) { await update("failed", error.message); }
   // 只清理本次失败产物或已被成功替换的两个文件，不递归清理生成目录。
   const obsolete = published ? prepared.old?.outputs : outputs;
-  for (const relative of Object.values(obsolete ?? {})) {
+  const obsoletePoster=published?prepared.old?.poster:newPoster;
+  for (const relative of new Set([...Object.values(obsolete ?? {}),...(obsoletePoster?[obsoletePoster]:[])])) {
     if (!relative.startsWith(`Outputs/finished/${job.page_id}/`)) continue;
     const media = await resolveExistingProjectMedia(directory, relative).catch(() => null);
     if (media) { await unlink(media.target).catch(() => {}); await rmdir(path.dirname(media.target)).catch(() => {}); }

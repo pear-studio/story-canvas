@@ -1,3 +1,4 @@
+import path from 'node:path';
 import yazl from "yazl";
 import { readFile, stat } from "node:fs/promises";
 import { ApiError, readJsonBody } from "./http-support.mjs";
@@ -68,7 +69,9 @@ export async function handleFinishedRequest({ request, response, decodedPath, pr
       for (const [index, page] of pages.entries()) {
         if (!page.record?.lettered_url) continue;
         const record = await readFinishedRecord(projectDirectory, page.page_id);
-        for (const kind of kinds) entries.push({ index, kind, relative: record.outputs[kind], width: record.width, height: record.height });
+        const video = record.page_kind === 'video';
+        // 动态页没有嵌字／无字两个版本，混合导出只收录一次。
+        for (const kind of video ? [kinds[0]] : kinds) entries.push({ index, kind, relative: record.outputs[kind], width: record.width, height: record.height, media_kind: video ? 'video' : 'image' });
       }
       if (!entries.length) throw new ApiError(409, "finished_export_empty");
       return { projectDirectory, entries };
@@ -80,12 +83,11 @@ export async function handleFinishedRequest({ request, response, decodedPath, pr
     for (const entry of entries) {
       const media = await resolveExistingProjectMedia(projectDirectory, entry.relative);
       if (!media) throw new ApiError(409, "finished_export_file_missing");
-      if (preview) {
-        const compressed = await ensureMediaVariant(projectDirectory, { target: media.target, info: await stat(media.target) }, entry.relative, 1024);
-        files.push({ target: compressed.target, size: (await stat(compressed.target)).size, width: entry.width, height: entry.height });
-      } else {
-        files.push({ name: `${entry.kind === "lettered" ? "嵌字版" : "无字版"}/${String(entry.index + 1).padStart(3, "0")}.png`, target: media.target, size: (await stat(media.target)).size });
-      }
+      const exported = preview || entry.media_kind === 'video'
+        ? await ensureMediaVariant(projectDirectory, { target: media.target, info: await stat(media.target) }, entry.relative, 1024)
+        : media;
+      const folder = entry.media_kind === 'video' ? '动态页' : entry.kind === 'lettered' ? '嵌字版' : '无字版';
+      files.push({ name: `${folder}/${String(entry.index + 1).padStart(3, "0")}${path.extname(exported.target)}`, target: exported.target, size: (await stat(exported.target)).size, width: entry.width, height: entry.height });
     }
     if (preview) {
       const head = finishedReaderHead(`${projectId}-预览`);

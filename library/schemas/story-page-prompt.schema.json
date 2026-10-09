@@ -19,6 +19,9 @@
         },
         "qwen": {
           "$ref": "#/$defs/qwen"
+        },
+        "h3": {
+          "$ref": "#/$defs/h3"
         }
       },
       "additionalProperties": false
@@ -532,6 +535,79 @@
         },
         "additionalProperties": false
       }
+    },
+    "h3": {
+      "type": "object",
+      "required": [
+        "text",
+        "composition",
+        "duration",
+        "loop",
+        "quality",
+        "steps"
+      ],
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "composition": {
+          "const": "standalone"
+        },
+        "duration": {
+          "type": "number",
+          "minimum": 3,
+          "maximum": 15
+        },
+        "loop": {
+          "type": "boolean"
+        },
+        "quality": {
+          "enum": [
+            "preview",
+            "standard"
+          ]
+        },
+        "steps": {
+          "type": "integer",
+          "minimum": 8,
+          "maximum": 50
+        },
+        "reference_images": {
+          "type": "array",
+          "maxItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "file",
+              "title"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "file": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "purpose": {
+                "type": "string"
+              },
+              "origin": {
+                "type": "object"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "loras": {
+          "type": "array",
+          "maxItems": 0
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

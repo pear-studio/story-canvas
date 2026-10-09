@@ -4,11 +4,12 @@ export function validateReferenceEntries(entries, { allowPurpose = false } = {})
   if (!Array.isArray(entries)) return ['reference_images 必须是数组'];
   const errors = [];
   if (new Set(entries.map(e => e?.id)).size !== entries.length) errors.push('参考图 ID 重复');
-  const allowedKeys = allowPurpose ? ['id', 'file', 'title', 'purpose'] : ['id', 'file', 'title'];
+  const allowedKeys = allowPurpose ? ['id', 'file', 'title', 'purpose', 'origin'] : ['id', 'file', 'title'];
   for (const e of entries) if (!e || !referenceIdPattern.test(e.id ?? '')
     || typeof e.title !== 'string' || !e.title.trim() || e.title.length > 200
     || !/^reference-[a-f0-9-]+\.png$/.test(e.file ?? '')
     || (allowPurpose && e.purpose !== undefined && (typeof e.purpose !== 'string' || !e.purpose.trim() || e.purpose.length > 200))
+    || (e.origin !== undefined && (!allowPurpose || !/^page-(?:[a-f0-9]{12}|[0-9]{3})$/.test(e.origin?.page_id??'') || !/^candidate-[a-f0-9-]{36}$/.test(e.origin?.candidate_id??'') || Object.keys(e.origin).some(k=>!['page_id','candidate_id'].includes(k))))
     || Object.keys(e).some(k => !allowedKeys.includes(k))) errors.push('参考图条目无效');
   return errors;
 }

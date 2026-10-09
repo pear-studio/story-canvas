@@ -22,6 +22,7 @@ export function candidateGenerationDetail(task, item) {
     ? snapshot?.source_identity?.recipes?.[executionUnit.recipe.source_id] ?? null
     : null;
   return {
+    ...(item.video_settings ? {media_kind:'video',video_settings:structuredClone(item.video_settings)} : {}),
     page_key: structuredClone(item.page_key),
     candidate_id: item.candidate_id,
     status: "available",

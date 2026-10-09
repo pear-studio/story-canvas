@@ -1,6 +1,7 @@
 import { registeredProjectPath, listRegisteredProjects, registerProject, unregisterProject, readProjectRegistry } from "./project-registry.mjs";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
+import {readCandidateResult} from './candidate-storage.mjs';
 import { resolveExistingProjectMedia } from "./render-media.mjs";
 import { listFinishedJobs, finishedTaskSummary } from "./finished-jobs.mjs";
 
@@ -8,11 +9,11 @@ import { listComparisonExperimentViews, readComparisonExperimentView, readCompar
 import { encodePageKey } from "./page-key.mjs";
 import { requireProjectDirectoryName } from "./project-contracts.mjs";
 import { readGenerationQueue } from "./generation-queue.mjs";
+import { compareTaskHistory, taskHistoryKey } from "../shared/task-history.mjs";
 import { renderTaskIdPattern } from "./render-task-id.mjs";
 import {
   isActiveRenderTaskState,
   listProjectRenderTaskStates,
-  listRenderHistoryTaskIds,
   readRenderTaskState,
   readRenderTask,
   renderTaskProgressFile,
@@ -73,6 +74,7 @@ async function publicRenderTaskState(projectDirectory, projectId, state, { detai
     task: state.id,
     url: item.file && item.status === "available" ? mediaUrl(projectId, item.file) : null,
     render_profile: state.render_profile,
+    media_kind: state.media_kind ?? (state.render_profile==='minimax-h3'?'video':'image'),
     candidate_storage_migration_required: false,
   }));
   const currentItem = items.find((item) => item.status === "running")
@@ -120,13 +122,6 @@ function comparisonCellItemStatus(status) {
   if (status === "failed" || status === "incomplete") return "failed";
   if (status === "cancelled") return "cancelled";
   return status === "running" ? "running" : "queued";
-}
-
-function renderTaskHistoryCreatedAt(taskId) {
-  const match = /^render-(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z(?:-|$)/.exec(taskId);
-  if (!match) return null;
-  const [, year, month, day, hour, minute, second] = match;
-  return `${year}-${month}-${day}T${hour}:${minute}:${second}.000Z`;
 }
 
 /** Convert comparison's independent cell storage into the same task summary used by the root status bar. */
@@ -184,7 +179,8 @@ export async function readWorkspaceTaskResults(projectRoot, projectId, taskId, p
     const job = (await listFinishedJobs(projectDirectory)).find(job => job.id === taskId);
     if (!job) throw Object.assign(new Error("任务不存在"), { status: 404 });
     const record = job.status === "completed" ? await readJsonOptional(path.join(projectDirectory, "finished", `${job.page_id}.json`)) : null;
-    items = record ? [{ id: job.id, file: record.outputs.lettered, url: mediaUrl(projectId, record.outputs.lettered) }] : [];
+    items = record ? [{ id: job.id, file: record.poster ?? record.outputs.lettered, url: mediaUrl(projectId, record.poster ?? record.outputs.lettered),
+      ...(record.page_kind === 'video' ? {media_kind:'video', video:record.video, video_url:mediaUrl(projectId,record.outputs.lettered), absolute_video:path.resolve(projectDirectory,record.outputs.lettered)} : {}) }] : [];
   } else if (purpose === "comparison") {
     const record = await readComparisonExperimentView(projectDirectory, taskId);
     items = record.status.cells.filter(cell => cell.status === "completed").map(cell => ({
@@ -202,7 +198,9 @@ export async function readWorkspaceTaskResults(projectRoot, projectId, taskId, p
   }
   const images = await Promise.all(items.map(async item => {
     const media=await resolveExistingProjectMedia(projectDirectory,item.file);
-    return media?{id:item.id,url:item.url,absolute_file:media.target,...(item.candidate_id?{candidate_id:item.candidate_id}:{}),...(item.page_key?{page_key:item.page_key}:{})}:null;
+    const result=item.candidate_id?await readCandidateResult(projectDirectory,item.page_key,item.candidate_id):null;
+    const video=result?.media_kind==='video'?{media_kind:'video',video:result.video,video_url:mediaUrl(projectId,result.video_file),absolute_video:path.resolve(projectDirectory,result.video_file),absolute_review:path.resolve(projectDirectory,result.review_file)}:item.media_kind==='video'?{media_kind:item.media_kind,video:item.video,video_url:item.video_url,absolute_video:item.absolute_video}:{};
+    return media?{id:item.id,url:item.url,absolute_file:media.target,...video,...(item.candidate_id?{candidate_id:item.candidate_id}:{}),...(item.page_key?{page_key:item.page_key}:{})}:null;
   }));
   return images.filter(Boolean);
 }
@@ -263,7 +261,7 @@ export async function listWorkspaceRenderTasks(projectRoot, {
     if (leftOrder !== undefined || rightOrder !== undefined) return (leftOrder ?? Number.MAX_SAFE_INTEGER) - (rightOrder ?? Number.MAX_SAFE_INTEGER);
     return String(left.created_at ?? left.id).localeCompare(String(right.created_at ?? right.id), "en");
   });
-  history.sort((left, right) => String(right.completed_at ?? right.failed_at ?? right.created_at ?? right.id).localeCompare(String(left.completed_at ?? left.failed_at ?? left.created_at ?? left.id), "en"));
+  history.sort(compareTaskHistory);
   for (const [projectId, taskIds] of trackedByProject) {
     if (!visitedProjects.has(projectId)) missingTrackedTaskIds.push(...taskIds);
   }
@@ -276,45 +274,44 @@ export async function listWorkspaceRenderTasks(projectRoot, {
   };
 }
 
-// 历史按提交顺序翻页。只枚举目录名，再读取本页 state；不加载整段历史或 manifest。
+// 历史按结束时间翻页；只读取轻量 state，不加载冻结 manifest、候选或提交详情。
 export async function listWorkspaceRenderHistory(projectRoot, { before = null, limit = 30, projectId: filterProjectId = null } = {}) {
   const entries = listRegisteredProjects(projectRoot, "story").filter(entry => entry.available && (!filterProjectId || entry.id === filterProjectId));
   const references = [];
-  const comparisonSummaries = new Map();
+  const summaries = new Map();
   for (const entry of entries) {
-    for (const taskId of await listRenderHistoryTaskIds(entry.path)) {
-      // The render task ID already contains the submission timestamp.  Use it
-      // as the stable history key so pagination only reads the selected page,
-      // rather than opening every candidate state on every request.
-      const cursor = `${renderTaskHistoryCreatedAt(taskId) ?? taskId}/candidate/${taskId}/${entry.id}`;
-      if (!before || cursor < before) references.push({ projectId: entry.id, taskId, cursor });
+    for (const state of await listProjectRenderTaskStates(entry.path, { scope:'history' })) {
+      if (!terminalStatuses.has(state.status)) continue;
+      const cursor = taskHistoryKey({...state,project_id:entry.id});
+      if (!before || cursor < before) references.push({ projectId:entry.id,taskId:state.id,cursor,state });
     }
     const projectFacts = await readJsonOptional(path.join(entry.path, "project.json"));
     const projectTitle = typeof projectFacts?.title === "string" && projectFacts.title.trim() ? projectFacts.title : entry.id;
     for (const job of await listFinishedJobs(entry.path)) {
       if (!terminalStatuses.has(job.status)) continue;
-      const cursor = `${job.created_at}/finished/${job.id}/${entry.id}`;
-      comparisonSummaries.set(`${entry.id}\0${job.id}`, finishedTaskSummary(job, entry.id, projectTitle));
+      const summary=finishedTaskSummary(job, entry.id, projectTitle);
+      const cursor = taskHistoryKey(summary);
+      summaries.set(`${entry.id}\0${job.id}`, summary);
       if (!before || cursor < before) references.push({ projectId: entry.id, taskId: job.id, cursor, kind: "finished" });
     }
   }
   for (const record of filterProjectId ? [] : await listComparisonExperimentViews(projectRoot)) {
     if (!terminalStatuses.has(record.status.status) && record.status.status !== "incomplete") continue;
-    const cursor = `${record.manifest.created_at}/comparison/${record.id}`;
-    comparisonSummaries.set(`null\0${record.id}`, publicComparisonTask(null, record));
+    const summary=publicComparisonTask(null, record);
+    const cursor = taskHistoryKey(summary);
+    summaries.set(`null\0${record.id}`, summary);
     if (!before || cursor < before) references.push({ projectId: null, taskId: record.id, cursor, kind: "comparison" });
   }
   references.sort((left, right) => left.cursor < right.cursor ? 1 : left.cursor > right.cursor ? -1 : 0);
   const selected = references.slice(0, limit);
   const history = [];
-  for (const { projectId, taskId, kind } of selected) {
+  for (const { projectId, taskId, kind, state } of selected) {
     if (kind === "comparison" || kind === "finished") {
-      const summary = comparisonSummaries.get(`${projectId}\0${taskId}`);
+      const summary = summaries.get(`${projectId}\0${taskId}`);
       if (summary) history.push(summary);
       continue;
     }
     const projectDirectory = registeredProjectPath(projectRoot, projectId);
-    const state = await readRenderTaskState(projectDirectory, taskId).catch(() => null);
     if (state && terminalStatuses.has(state.status)) history.push(await publicRenderTaskState(projectDirectory, projectId, state));
   }
   return { history, next_cursor: references.length > selected.length ? selected.at(-1).cursor : null };

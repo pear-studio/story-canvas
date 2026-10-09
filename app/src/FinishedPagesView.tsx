@@ -96,14 +96,15 @@ export function FinishedPagesView({ projectId, onOpenPage }: { projectId: string
       <button className="finished-help" aria-label="成品状态说明" title="成品状态说明" onClick={() => setPanel("help")}>ⓘ</button>
     </div>
     <div className="finished-toolbar">
-      <div className="finished-browse-actions"><button className="button" disabled={!images.length} onClick={() => setReaderPages(images.map(page => ({ src: new URL(mediaVariantUrl(page.record!.lettered_url!, 1024), window.location.origin).href, number: filtered.indexOf(page) + 1, width: page.record!.width, height: page.record!.height })))}><FinishedIcon kind="read" />阅读预览</button>
+      <div className="finished-browse-actions"><button className="button" disabled={!images.length} onClick={() => setReaderPages(images.map(page => ({ src: new URL(mediaVariantUrl(page.record!.lettered_url!, 1024), window.location.origin).href, ...(page.record!.media_kind==='video' ? {original_src:new URL(page.record!.lettered_url!, window.location.origin).href} : {}), number: filtered.indexOf(page) + 1, width: page.record!.width, height: page.record!.height, media_kind: page.record!.media_kind })))}><FinishedIcon kind="read" />阅读预览</button>
         <button className="button button--primary finished-export-button" disabled={exportProgress !== null || !images.length} onClick={() => setPanel("export")}><FinishedIcon kind="export" />{exportProgress === "packing" ? "打包中…" : exportProgress ? `导出 ${exportProgress.total ? `${Math.min(99, Math.floor(exportProgress.received / exportProgress.total * 100))}%` : "…"}` : "导出"}</button>
       </div>
       <button className="button finished-batch-button" disabled={batching || anyBusy || !filtered.length} onClick={() => { setForce(false); setPanel("batch"); }}><FinishedIcon kind="make" />{batching ? "正在提交…" : anyBusy ? `制作中 · ${busyCount} 页` : "批量制作"}</button>
     </div>
     {!pages.length && !error && <p>{loading ? "正在读取成品…" : "暂无剧情页面。"}</p>}
     <div className="finished-grid">{filtered.map((page, index) => <FinishedCard key={page.page_id} page={page} index={index} deleting={deleting === page.page_id} onPreview={() => setPreview({ id: page.page_id })} onDelete={() => void remove(page)} onOpen={() => onOpenPage(page.page_key)} />)}</div>
-    {current?.record && preview && <ZoomableImageLightbox src={current.record.lettered_url!} alt={`${number(current)} 嵌字版`}
+    {current?.record?.media_kind === "video" && preview && <ZoomableImageLightbox src={current.record.lettered_url!} originalVideo alt={`${number(current)} · 动态成品`} footer={`${number(current)} · 动态成品`} onPrevious={previewIndex > 0 ? () => setPreview({id:images[previewIndex-1].page_id}) : undefined} onNext={previewIndex+1 < images.length ? () => setPreview({id:images[previewIndex+1].page_id}) : undefined} onClose={() => setPreview(null)} />}
+    {current?.record && current.record.media_kind !== "video" && preview && <ZoomableImageLightbox src={current.record.lettered_url!} alt={`${number(current)} 嵌字版`}
       footer={<span>{number(current)} · 嵌字版 · {current.record.width} × {current.record.height}{current.record.bytes !== null && ` · ${bytesLabel(current.record.bytes)}`}</span>}
       hint="查看当前范围成品 · 滚轮缩放 · 拖动查看细节"
       onPrevious={previewIndex > 0 ? () => setPreview({ ...preview, id: images[previewIndex - 1].page_id }) : undefined}
@@ -115,16 +116,17 @@ export function FinishedPagesView({ projectId, onOpenPage }: { projectId: string
       <dt>尚未制作</dt><dd>没有成品制作记录，需要首次输出。</dd><dt>内容过时</dt><dd>当前唯一候选、文案或排版与成品不一致，需重新制作。导出前未更新时仍使用旧版成品。</dd>
       <dt>成品文件缺失</dt><dd>有制作记录，但当前设备缺少对应成品文件。该状态优先于内容过时显示。</dd>
     </dl></Modal>}
-    {panel === "export" && <Modal title="导出成品" subtitle={chapter ? chapters.find(([id]) => id === chapter)?.[1] : "全项目"} onClose={() => setPanel(null)} footer={<button className="button button--primary" disabled={!images.length} onClick={() => void download()}>{light ? "导出预览 HTML" : "导出图片 ZIP"}</button>}>
-      <div className="finished-options"><fieldset><legend>文件格式</legend><label><input type="radio" name="finished-format" checked={!light} onChange={() => setLight(false)} />图片 ZIP</label><label><input type="radio" name="finished-format" checked={light} onChange={() => setLight(true)} />轻量 HTML</label></fieldset>
-        <label>图片版本<select value={variant} onChange={event => setVariant(event.target.value)}><option value="lettered">嵌字版</option><option value="clean">无字版</option><option value="both">两个版本</option></select></label>
-        <p>{images.length} 页 · {light ? "1024px 压缩图，支持垂直与水平阅读" : "原始分辨率 PNG"}{!light && variant === "lettered" && ` · ${bytesLabel(images.reduce((sum, page) => sum + (page.record?.bytes ?? 0), 0))}`}</p>
+    {panel === "export" && <Modal title="导出成品" subtitle={chapter ? chapters.find(([id]) => id === chapter)?.[1] : "全项目"} onClose={() => setPanel(null)} footer={<button className="button button--primary" disabled={!images.length} onClick={() => void download()}>{light ? "导出预览 HTML" : "导出媒体 ZIP"}</button>}>
+      <div className="finished-options"><fieldset><legend>文件格式</legend><label><input type="radio" name="finished-format" checked={!light} onChange={() => setLight(false)} />媒体 ZIP</label><label><input type="radio" name="finished-format" checked={light} onChange={() => setLight(true)} />轻量 HTML</label></fieldset>
+        {images.some(page => page.record?.media_kind !== 'video') && <label>图片版本<select value={variant} onChange={event => setVariant(event.target.value)}><option value="lettered">嵌字版</option><option value="clean">无字版</option><option value="both">两个版本</option></select></label>}
+        <p>{images.length} 页 · {light ? "静态图和动态 WebP，最大宽度 1024px，支持混合阅读" : "静态 PNG 原尺寸 · 动态 WebP 最大宽度 1024px"}</p>
+        {images.some(page => page.record?.media_kind === 'video') && <p>动态页不嵌字，只导出一份 WebP，不放大画面。</p>}
         {(missing + filesMissing > 0 || stale > 0) && <p>{missing + filesMissing} 页缺少成品文件，将跳过；{stale} 页内容过时，将导出旧版。</p>}
       </div>
     </Modal>}
     {panel === "batch" && <Modal title="批量制作" subtitle={chapter ? chapters.find(([id]) => id === chapter)?.[1] : "全项目"} busy={batching} onClose={() => setPanel(null)} footer={<button className="button button--primary" disabled={batching || anyBusy || !targets.length} onClick={() => void batchOutput()}>{batching ? "正在提交…" : `开始制作 · ${targets.length} 页`}</button>}>
       <div className="finished-options"><fieldset className="finished-batch-options"><legend>制作方式</legend><label><input type="radio" name="finished-batch" checked={!force} onChange={() => setForce(false)} />仅制作尚未制作、内容过时或文件缺失的页面</label><label><input type="radio" name="finished-batch" checked={force} onChange={() => setForce(true)} />重新制作全部</label></fieldset>
-        <p>采用每页当前唯一候选；零张或多张候选的插画页跳过，文字页直接制作。候选未变时复用超分底图。</p>
+        <p>采用每页当前唯一候选；零张或多张候选的插画／动态页跳过，文字页直接制作。动态页原尺寸输出，无音频、无超分；插画候选未变时复用超分底图。</p>
         <ul className="finished-batch-list">{targets.map(page => <li key={page.page_id}><span>{number(page)} · {page.title}</span><small>{page.status === "missing" ? "尚未制作" : page.status === "stale" ? "内容过时" : page.status === "files_missing" ? "成品文件缺失" : "重新制作"}</small></li>)}</ul>
         {!pendingPages.length && <p>当前范围无需更新。可以选择重新制作全部。</p>}
         {skipped.length > 0 && <><b>以下 {skipped.length} 页将跳过</b><ul className="finished-batch-list">{skipped.map(page => <li key={page.page_id}><button className="finished-page-link" onClick={() => { setPanel(null); onOpenPage(page.page_key); }}>{number(page)} · {page.title}</button><small>{page.batch_skip_reason}</small></li>)}</ul></>}
@@ -143,7 +145,7 @@ function FinishedCard({ page, index, deleting, onPreview, onDelete, onOpen }: { 
   const openMenu = (point: { clientX: number; clientY: number }) => { if (record) setMenu({ x: point.clientX, y: point.clientY }); };
   return <article className="finished-card" {...longPress.captureProps}>
     <div data-long-press-context-menu onPointerDown={event => longPress.start(event, openMenu)} onContextMenu={event => { event.preventDefault(); openMenu(event); }}>
-      {url ? <button onClick={onPreview} className="finished-image"><img src={mediaVariantUrl(url, 320)} loading="lazy" alt={`${label} 嵌字版`} /></button> : <div className="finished-image finished-placeholder">{record ? "成品文件缺失" : "尚未制作"}</div>}
+      {url ? <button onClick={onPreview} className="finished-image"><img src={mediaVariantUrl(record?.media_kind==='video' ? url : (record?.poster_url ?? url), 320)} loading="lazy" alt={`${label} ${record?.media_kind === 'video' ? '动态成品' : '嵌字版'}`} /></button> : <div className="finished-image finished-placeholder">{record ? "成品文件缺失" : "尚未制作"}</div>}
     </div>
     <div className="finished-card-body">
       <h3><button className="finished-page-link" title={description} onClick={onOpen}>{label}</button></h3>

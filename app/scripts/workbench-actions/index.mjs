@@ -16,6 +16,7 @@ import { comparisonActions } from './comparison.mjs';
 import { trainingActions } from './training.mjs';
 import { executionActions } from './execution.mjs';
 import { workbenchRestrictions } from './access-policy.mjs';
+import { videoHelp } from './video-help.mjs';
 import { invalid, validate, schema, string, object } from './contract.mjs';
 const actions = {};
 for (const catalog of [projectActions,structureActions,settingActionsCatalog,pageActions,factActions,promptActions,projectSettingsActions,workspaceActions,mediaActions,pageBatchActions,dictionaryActions,managementActions,comparisonActions,trainingActions,executionActions]) {
@@ -68,7 +69,8 @@ export async function executeWorkbench(input, execution={}) {
       if(input.args!==undefined && Object.keys(input.args).length) throw invalid('help 使用 target，不接受非空 args');
       if(input.topic&&!input.target)throw invalid('topic 需要操作名 target');
       const directory=catalog(denied);
-      if(!input.target) return {groups:directory.map(({operations,...group})=>({...group,operations_count:operations.length,disabled_count:operations.filter(o=>o.availability==='disabled').length})),usage:'help + target分类ID 查看该类操作和必填参数签名；target操作名 查看参数。disabled 操作被当前限制插件禁用，请交给具备该能力的 Agent。'};
+      if(!input.target) return {groups:directory.map(({operations,...group})=>({...group,operations_count:operations.length,disabled_count:operations.filter(o=>o.availability==='disabled').length})),workflows:[{target:'video',summary:'动态页导入、编辑、生成与成品的完整用法'}],usage:'help + target分类ID 查看该类操作和必填参数签名；target操作名 查看参数；target:video 一次取得动态页流程与参数。disabled 操作被当前限制插件禁用，请交给具备该能力的 Agent。'};
+      if(input.target==='video'){if(input.topic)throw invalid('video 流程不支持 topic');return videoHelp(actions,definition=>availability(definition,denied));}
       const group=directory.find(g=>g.id===input.target);if(group){if(input.topic)throw invalid('topic 需要操作名，不能是分类');return group;}
       const definition=Object.hasOwn(definitions,input.target)?definitions[input.target]:null;
       if(!definition)throw Object.assign(new Error('未知帮助入口，请查分类目录'),{code:'unknown_operation'});

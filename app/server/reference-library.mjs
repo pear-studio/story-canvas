@@ -19,7 +19,7 @@ async function holder(root, projectId, draft, target) {
   const modelId = target.kind === 'page'
     ? (await readPageRenderSettings((await resolveProjectLocation(root,projectId)).projectDirectory,target.id)).model_id
     : target.model_id;
-  if (modelId !== 'qwen') throw new ApiError(422, 'reference_model_unsupported');
+  if (!['qwen','h3'].includes(modelId)) throw new ApiError(422, 'reference_model_unsupported');
   const document = draft.document.models[modelId];
   const value = target.kind === 'page' ? document : document?.variants[target.variant_id];
   if (!value) throw new ApiError(404, 'reference_setting_not_found');
@@ -48,6 +48,7 @@ export async function mutateReferenceLibrary(root, directory, projectId, value) 
     if (value.candidate_id) {
       const result = await readCandidateResult(directory, value.page_key, value.candidate_id);
       if (!result) throw new ApiError(404, 'candidate_not_found');
+      if(result.media_kind==='video')throw new ApiError(422,'illustration_source_required');
       const media = await resolveExistingProjectMedia(directory, result.file);
       if (!media) throw new ApiError(404, 'candidate_image_missing');
       bytes = await readFile(media.target);
@@ -61,7 +62,9 @@ export async function mutateReferenceLibrary(root, directory, projectId, value) 
     const title = String(value.title || existing?.title || '参考图').slice(0, 200);
     await saveMaterial(directory, projectId, { file: newFile, title, encoding: 'base64', content: content.toString('base64') });
     const next = { id: existing?.id ?? `ref-${randomUUID()}`, file: newFile, title };
-    target.reference_images = existing ? entries.map(e => e.id === existing.id ? next : e) : [...entries, next];
+    const render = value.target.kind==='page' ? await readPageRenderSettings(directory,value.target.id) : null;
+    if(render?.model_id==='h3') { target.reference_images=[]; if(value.candidate_id) next.origin={page_id:value.page_key.page_id,candidate_id:value.candidate_id}; }
+    target.reference_images = render?.model_id==='h3' ? [next] : existing ? entries.map(e => e.id === existing.id ? next : e) : [...entries, next];
   } else throw new ApiError(400, 'invalid_reference_action');
   try {
     await saveFactDraft(root, { ...args, document: draft.document, expectedSha256: draft.expected_sha256,

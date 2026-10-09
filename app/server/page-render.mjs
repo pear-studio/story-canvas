@@ -82,6 +82,7 @@ function compileTask({ resolved, projectDirectory, projectId, taskId, count, see
     return {
       id: `${itemPrefix}.candidate-${String(index + 1).padStart(3, "0")}`,
       ...storageIdentity,
+      ...(compiled.video_settings ? {video_settings:structuredClone(compiled.video_settings)} : {}),
       absolute_file: path.resolve(candidateFilePath(projectDirectory, resolved.page_key, storageIdentity.candidate_id)),
       task: taskId,
       page_key: structuredClone(resolved.page_key),
@@ -194,9 +195,10 @@ export async function compileAndPersistWorkbenchRenderTask(
   if (Object.keys(value).some((key) => !allowed.has(key)) || !value.page_key) fail("invalid_workbench_render_request", [], 400);
   const operation = value.operation ?? "candidates";
   if (operation !== "candidates") fail("invalid_workbench_render_request", [], 400);
+  const project=await resolveProjectLocation(path.resolve(projectRoot),projectId);
   return compileAndPersistExactPageRenderTask(projectRoot, projectId, value.page_key, {
     ...options,
-    count: value.count ?? 1,
+    count: value.count ?? ((await readFile(path.join(project.projectDirectory,`pages/${value.page_key.page_id}.content.json`),'utf8').then(JSON.parse)).page_kind==='video'?1:3),
     seed: value.seed ?? null,
     promptSource: value.prompt_source ?? "original",
   });

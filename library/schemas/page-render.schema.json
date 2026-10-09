@@ -15,7 +15,8 @@
     "model_id": {
       "enum": [
         "anima",
-        "qwen"
+        "qwen",
+        "h3"
       ]
     },
     "profile_id": {

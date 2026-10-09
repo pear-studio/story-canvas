@@ -4,7 +4,7 @@ import { isEditingShortcutTarget } from "./workbench-shortcuts";
 import { mediaVariantUrl } from "./media-variant";
 
 export type ImageOverlayTarget = { element: HTMLDivElement; canvas: string };
-export default function ZoomableImageLightbox({ src, alt, footer, fullResolutionOnly = false, hint = "滚轮缩放 · 拖动查看细节", onPrevious, onNext, onClose, onOverlayTarget }: { src: string; alt: string; footer: ReactNode; fullResolutionOnly?: boolean; hint?: string; onPrevious?: () => void; onNext?: () => void; onClose: () => void; onOverlayTarget?: (target: ImageOverlayTarget | null) => void }) {
+export default function ZoomableImageLightbox({ src, alt, footer, originalVideo = false, fullResolutionOnly = false, hint = "滚轮缩放 · 拖动查看细节", onPrevious, onNext, onClose, onOverlayTarget }: { src: string; alt: string; footer: ReactNode; originalVideo?: boolean; fullResolutionOnly?: boolean; hint?: string; onPrevious?: () => void; onNext?: () => void; onClose: () => void; onOverlayTarget?: (target: ImageOverlayTarget | null) => void }) {
   const lightboxRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
@@ -25,6 +25,7 @@ export default function ZoomableImageLightbox({ src, alt, footer, fullResolution
   const [originalLoaded, setOriginalLoaded] = useState(false);
   // 默认显示 1024 压缩变体加快加载；不支持变体的媒体路由会忽略 w 参数回退原图。
   const displaySrc = showOriginal ? src : mediaVariantUrl(src, 1024);
+  const playingOriginal = originalVideo && showOriginal;
   useEffect(() => {
     if (overlayElement && natural.width && natural.height) onOverlayTarget?.({ element: overlayElement, canvas: `${natural.width}:${natural.height}` });
     return () => onOverlayTarget?.(null);
@@ -145,14 +146,17 @@ export default function ZoomableImageLightbox({ src, alt, footer, fullResolution
       <button type="button" className="image-lightbox__arrow image-lightbox__arrow--previous" aria-label="上一张" disabled={!onPrevious} onClick={onPrevious}>‹</button>
       <button type="button" className="image-lightbox__arrow image-lightbox__arrow--next" aria-label="下一张" disabled={!onNext} onClick={onNext}>›</button>
     </>}
-    <div ref={stageRef} className={`image-lightbox__media zoomable-image-stage ${dragging ? "is-dragging" : ""}`.trim()} onClick={event => {
+    <div ref={stageRef} className={`image-lightbox__media zoomable-image-stage ${playingOriginal ? 'image-lightbox__media--video' : ''} ${dragging ? "is-dragging" : ""}`.trim()} onClick={event => {
       const start = clickStart.current; const bounds = imageRef.current?.getBoundingClientRect();
       if (!start || !bounds || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 5) return;
       if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) onClose();
-    }} onWheel={handleWheel} onPointerDown={beginDrag} onPointerMove={updateDrag} onPointerUp={endDrag} onPointerCancel={endDrag}>
-      <img ref={imageRef} src={displaySrc} alt={alt} draggable={false} data-full-resolution={showOriginal ? "true" : undefined} className={natural.width ? undefined : "is-loading"} onLoad={event => { setNatural({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight }); if (showOriginal && event.currentTarget.getAttribute("src") === src) setOriginalLoaded(true); }} style={natural.width ? { width: baseWidth * zoom, height: baseHeight * zoom, left: Math.round((stageSize.width - baseWidth * zoom) / 2 + pan.x), top: Math.round((stageSize.height - baseHeight * zoom) / 2 + pan.y) } : undefined} />
+    }} onWheel={playingOriginal ? undefined : handleWheel} onPointerDown={playingOriginal ? undefined : beginDrag} onPointerMove={playingOriginal ? undefined : updateDrag} onPointerUp={playingOriginal ? undefined : endDrag} onPointerCancel={playingOriginal ? undefined : endDrag}>
+      {playingOriginal ? <video key={src} className="image-lightbox__original-video" src={src} aria-label="原图视频" controls autoPlay muted loop playsInline preload="metadata" onLoadedMetadata={() => setOriginalLoaded(true)} /> : <img ref={imageRef} src={displaySrc} alt={alt} draggable={false} data-full-resolution={showOriginal ? "true" : undefined} className={natural.width ? undefined : "is-loading"} onLoad={event => { setNatural({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight }); if (showOriginal && event.currentTarget.getAttribute("src") === src) setOriginalLoaded(true); }} style={natural.width ? { width: baseWidth * zoom, height: baseHeight * zoom, left: Math.round((stageSize.width - baseWidth * zoom) / 2 + pan.x), top: Math.round((stageSize.height - baseHeight * zoom) / 2 + pan.y) } : undefined} />}
       {onOverlayTarget && natural.width > 0 && <div ref={setOverlayElement} className="image-lightbox__lettering" style={{ width: baseWidth * zoom, height: baseHeight * zoom, left: Math.round((stageSize.width - baseWidth * zoom) / 2 + pan.x), top: Math.round((stageSize.height - baseHeight * zoom) / 2 + pan.y) }} />}
     </div>
-    <div className="image-lightbox__footer"><div className="image-lightbox__info">{footer}</div><div className="image-lightbox__zoom"><button type="button" disabled={zoom <= 1} onClick={() => changeZoom(zoom / 1.2)} aria-label="缩小图片">−</button><output>{Math.round(zoom * fit * 100)}%</output><button type="button" disabled={zoom >= maxZoom} onClick={() => changeZoom(zoom * 1.2)} aria-label="放大图片">＋</button><button type="button" onClick={() => changeZoom(1 / (fit || 1))}>原始大小（1:1）</button><button type="button" disabled={zoom === 1 && pan.x === 0 && pan.y === 0} onClick={resetView}>适合窗口</button>{fullResolutionOnly ? <span>完整像素</span> : <button type="button" title={showOriginal ? "再次点击返回压缩图" : undefined} onClick={() => { setOriginalLoaded(false); setShowOriginal(!showOriginal); }}>{showOriginal ? (originalLoaded ? "已显示原图" : "原图加载中…") : "查看原图"}</button>}</div><small className="image-lightbox__desktop-hint">Esc 退出 · {(onPrevious || onNext) && "← → 翻页 · "}{hint}</small></div>
+    <div className="image-lightbox__footer"><div className="image-lightbox__info">{footer}</div><div className="image-lightbox__zoom">
+      {!playingOriginal && <><button type="button" disabled={zoom <= 1} onClick={() => changeZoom(zoom / 1.2)} aria-label="缩小图片">−</button><output>{Math.round(zoom * fit * 100)}%</output><button type="button" disabled={zoom >= maxZoom} onClick={() => changeZoom(zoom * 1.2)} aria-label="放大图片">＋</button><button type="button" onClick={() => changeZoom(1 / (fit || 1))}>原始大小（1:1）</button><button type="button" disabled={zoom === 1 && pan.x === 0 && pan.y === 0} onClick={resetView}>适合窗口</button></>}
+      {fullResolutionOnly ? <span>完整像素</span> : <button type="button" title={showOriginal ? "再次点击返回压缩图" : undefined} onClick={() => { setOriginalLoaded(false); setShowOriginal(!showOriginal); }}>{showOriginal ? (originalLoaded ? (originalVideo ? "返回动图预览" : "已显示原图") : "原图加载中…") : "查看原图"}</button>}
+    </div><small className="image-lightbox__desktop-hint">Esc 退出 · {(onPrevious || onNext) && "← → 翻页 · "}{playingOriginal ? '暂停或拖动进度条查看原图' : hint}</small></div>
   </div>, document.body);
 }

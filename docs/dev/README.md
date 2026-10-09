@@ -21,6 +21,8 @@
 
 - [成品输出](finished-pages.md)：选定候选超分、嵌字、当前成品记录、替换与系列 ZIP 导出。
 
+- [H3 动态页](video-pages.md)：图生视频页面、候选导入、时长与循环、视频候选、混合阅读和 Agent／DSH 接口。
+
 - [Agent 直接操作工作台](../reference/agent-interfaces.md)：在线命令、stdin 与 read/save、现有 HTTP 能力与返回契约。
 
 - [项目操作执行](project-operations.md)：已实现。所有项目路由共享

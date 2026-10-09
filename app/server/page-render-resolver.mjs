@@ -222,10 +222,11 @@ async function loadPageSnapshot(projectDirectory, pageId, exactPageKey, renderOv
     readJsonFact(projectDirectory, "characters/index.json"),
   ]);
   const content = assertDocument(contentSource, validateStoryPageNarrativeDocument);
+  if((content.page_kind==='video')!==(modelId==='h3'))fail('page_video_model_mismatch');
   const promptDocument = assertDocument(promptSource, validateStoryPagePromptDocument);
   const pagePrompt = modelPrompt(promptDocument, modelId);
   if (!pagePrompt) fail('page_model_input_missing', [modelId]);
-  const standalone = modelId === 'qwen' && pagePrompt.composition === 'standalone';
+  const standalone = ['qwen','h3'].includes(modelId) && pagePrompt.composition === 'standalone';
   const characterIndex = assertDocument(characterIndexSource, validateCharacterIndexDocument);
   const references = content.characters;
   const sources = [...identity.sources, contentSource, promptSource, characterIndexSource];

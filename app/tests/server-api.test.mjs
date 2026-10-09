@@ -849,8 +849,12 @@ test("真实 CLI 经服务创建与管理项目，支持 stdin 事实提交，�
   const promptSaved = JSON.parse(await cliInput('story-canvas.mjs',['prompt.save','--args','-','--out',savedFile],JSON.stringify({...promptDraft.save.args,changes:{person:[{description:'范围文件提交的提示词。'}]}})));
   assert.ok(promptSaved.bytes > 0);
   const savedPrompt = JSON.parse(await readFile(savedFile,'utf8'));
-  assert.equal(savedPrompt.document.person[0].description,'范围文件提交的提示词。');
-  assert.equal(savedPrompt.document.person[0].id,undefined);
+  assert.equal(savedPrompt.document,undefined);
+  assert.deepEqual(savedPrompt.changed_fields,['person']);
+  await cliInput('story-canvas.mjs',['prompt.read','--args','-','--out',promptFile],JSON.stringify(contextPack.edit.args));
+  const verifiedPrompt=JSON.parse(await readFile(promptFile,'utf8'));
+  assert.equal(verifiedPrompt.document.person[0].description,'范围文件提交的提示词。');
+  assert.equal(verifiedPrompt.document.person[0].id,undefined);
   const queued = JSON.parse(await cli("visual-production.mjs", "render", "page", "cli-story", "v3/" + page.page_id, "--count", "2", "--seed", "42"));
   assert.equal(queued.status, "queued");
   assert.deepEqual(submitted, { page_key: { page_id: page.page_id }, operation: "candidates", count: 2, seed: 42 });

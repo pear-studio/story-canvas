@@ -65,15 +65,16 @@ export async function createPage(root,projectId,owner,{templateId=null,afterPage
   if(bundle.blocked)fail('render_profile_override_conflict');
   const render=pageSettingsFromDefaults(projectDocument,profileModelAdapter(bundle.effective_profile).id);
   await assertPageOwner(directory,owner);
-  if(pageKind!==null&&pageKind!=='text')fail('invalid_page_kind');
-  if(pageKind==='text'&&templateId!==null)fail('invalid_page_kind',['文字页不支持模板']);
-  if(pageKind==='text'&&owner.owner_kind!=='story')fail('text_page_story_only');
+  if(pageKind!==null&&!['text','video'].includes(pageKind))fail('invalid_page_kind');
+  if(['text','video'].includes(pageKind)&&templateId!==null)fail('invalid_page_kind',['文字页不支持模板']);
+  if(['text','video'].includes(pageKind)&&owner.owner_kind!=='story')fail('text_page_story_only');
   const index=await readPageIndex(directory), next=clone(index),id=await newPageId(directory,index);
   let content={$schema:STORY_PAGE_NARRATIVE_SCHEMA_ID,title:owner.owner_kind==='story'?'未命名页面':'验证图',scene_description:owner.owner_kind==='story'?'待补充画面内容。':'',characters:[],dialogue:[]};
   let prompt={$schema:STORY_PAGE_PROMPT_SCHEMA_ID,text:''};
   const reference=owner.owner_kind==='character'?{character_id:owner.character_id,variant_id:owner.variant_id}:characterId?{character_id:characterId,variant_id:variantId}:null;
   if(reference)content.characters.push(reference);
   if(owner.owner_kind==='scene'){prompt.scene_id=owner.scene_id;prompt.scene_variant_id=owner.variant_id;}
+  if(pageKind==='video'){content.page_kind='video';content.title='未命名动态页';render.model_id='h3';render.profile_id='minimax-h3';}
   if(pageKind==='text')Object.assign(content,{page_kind:'text',body:'',display_title:'',text_layout:clone(defaultTextPageLayout)});
   if(templateId!==null){
     const catalog=await readVisualPageTemplates(root);if(catalog.errors.length)fail('page_template_invalid',catalog.errors);
@@ -99,7 +100,7 @@ export async function movePage(root,projectId,pageId,owner,{beforePageId=null,af
   const {projectDirectory:directory}=await projectAt(root,projectId);await assertPageOwner(directory,owner);
   const index=await readPageIndex(directory),source=index.pages.find(page=>page.page_id===pageId);if(!source)fail('page_not_found',[pageId]);
   const content=await readPageContent(directory,pageId);
-  if(content.page_kind==='text'&&owner.owner_kind!=='story')fail('text_page_story_only');
+  if(['text','video'].includes(content.page_kind)&&owner.owner_kind!=='story')fail('text_page_story_only');
   if(beforePageId!==null && afterPageId!==null)fail('invalid_page_position',['before_page_id 与 after_page_id 只能提供一个']);
   if(beforePageId===pageId || afterPageId===pageId){if(!sameOwner(source,owner))fail('page_anchor_not_found',[beforePageId]);return {page_id:pageId,...owner};}
   const next=clone(index);next.pages=next.pages.filter(page=>page.page_id!==pageId);insertEntry(next,{page_id:pageId,...owner},{beforePageId,afterPageId});

@@ -1,7 +1,9 @@
+import { h3ExecutionParameters } from './models/h3/execution-parameters.mjs';
 import { referenceImageFilename } from "./reference-image.mjs";
 import { profileModelAdapter } from './model-adapters.mjs';
 import { createHash } from "node:crypto";
 import path from "node:path";
+import {videoTiming} from './models/h3/prompt.mjs';
 
 import { encodePageKey } from "./page-key.mjs";
 import { freezeRenderPlanRegistries, resolveRenderUnitPlan } from "./render-plan-route.mjs";
@@ -26,7 +28,7 @@ const frozenSnapshotFields = new Set([
 ]);
 const frozenItemFields = new Set([
   "id", "task", "page_key", "seed", "candidate_id", "file", "positive_prompt", "negative_prompt", "prompt_parts",
-  "loras", "status", "reference_images",
+  "loras", "status", "reference_images", "video_settings",
   "render_route", "prompt_id", "generated_at", "discarded_at", "absolute_file",
 ]);
 function clone(value) { return structuredClone(value); }
@@ -178,15 +180,16 @@ function promptItemBindingFingerprint(item) {
     prompt_parts: item?.prompt_parts ?? null,
     loras: item?.loras ?? null,
     reference_images: item?.reference_images ?? [],
+    video_settings: item?.video_settings ?? null,
   });
 }
 
 export function currentPromptContractIdentity() {
   return {
-    version: 7,
+    version: 8,
     sha256: hashJson({
       prompt_format: "story-models-v1",
-      model_inputs: ['anima','qwen'],
+      model_inputs: ['anima','qwen','h3'],
     }),
   };
 }
@@ -260,7 +263,7 @@ function prepareModelAndClip(workflow, profile, loras = [], clipSkip = 1) {
   if (cache) { cache[1].inputs.model = modelSource; modelSource = [cache[0], 0]; }
   for (const node of Object.values(workflow)) {
     if (["CLIPTextEncode", "TextEncodeQwenImage21"].includes(node.class_type)) node.inputs.clip = clipSource;
-    if (node.class_type === "KSampler") node.inputs.model = modelSource;
+    if (["KSampler", "BasicGuider", "BasicScheduler"].includes(node.class_type)) node.inputs.model = modelSource;
   }
   return { modelSource, clipSource };
 }
@@ -308,7 +311,8 @@ export function buildWorkflow(definition, profile, recipe, item) {
     width: dimensions.width,
     height: dimensions.height,
     seed: item.seed,
-    steps: recipe.steps,
+    steps: item.video_settings?.steps ?? recipe.steps,
+    length: item.video_settings?.frames,
     cfg: recipe.cfg,
     sampler: recipe.sampler,
     scheduler: recipe.scheduler,
@@ -331,6 +335,15 @@ export function buildWorkflow(definition, profile, recipe, item) {
   for (const [name, value] of Object.entries(values)) {
     const binding = bindings[name];
     if (binding && value != null) setPath(workflow, binding, value);
+  }
+  if (profile.architecture_family === 'minimax-h3') {
+    const video=item.video_settings;
+    if(!video || item.reference_images?.length!==1)throw Error('H3 缺少冻结视频参数和输入图');
+    const input=item.reference_images[0];
+    const effective = h3ExecutionParameters(video, input, dimensions);
+    Object.assign(workflow['6'].inputs, effective.dimensions);
+    if(video.loop)workflow['6'].inputs.last_frame=['5',0];
+    return workflow;
   }
   if (item.reference_images?.length) {
     if (item.reference_images.length > 10) throw new Error("最多支持 10 张参考图");
@@ -441,6 +454,10 @@ export function compileFrozenExecutionUnits({ items, purpose, snapshot, profile,
       ? buildBatchWorkflow(definition, profile, recipe, [runtimeItem, ...unit.items.slice(1)])
       : buildWorkflow(definition, profile, recipe, runtimeItem);
     const outputNodeId = workflowOutputNodeId(definition);
+    if(runtimeItem.video_settings) {
+      recipe.steps=runtimeItem.video_settings.steps;
+      recipe.dimensions={width:api['6'].inputs.width,height:api['6'].inputs.height,final_width:api['6'].inputs.width,final_height:api['6'].inputs.height};
+    }
     const recipeSnapshot = snapshot.recipes[route.recipe_instance_id];
     const plan = {
       id: unitId,
@@ -610,6 +627,12 @@ export function validateFrozenRenderTask(task) {
     throw new Error("冻结渲染任务的条目 ID 集合无效");
   }
   for (const item of task.items) {
+    if(task.snapshot.profile.architecture_family==='minimax-h3') {
+      const v=item.video_settings;
+      if(!v||Object.keys(v).some(k=>!['requested_seconds','frames','fps','duration_seconds','loop','quality','steps'].includes(k)))throw Error('H3 冻结视频参数缺失或包含未知字段');
+      const timing=videoTiming(v.requested_seconds);
+      if(Object.entries(timing).some(([k,val])=>v[k]!==val)||typeof v.loop!=='boolean'||!['preview','standard'].includes(v.quality)||!Number.isInteger(v.steps)||v.steps<8||v.steps>50)throw Error('H3 冻结视频参数无效');
+    } else if(item.video_settings)throw Error('静态模型不能携带视频参数');
     // absolute_file is local display convenience only. Candidate identity remains
     // page_key + candidate_id + canonical relative file, so project moves do not
     // invalidate or redirect an otherwise valid task.

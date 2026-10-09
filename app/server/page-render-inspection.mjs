@@ -1,3 +1,4 @@
+import { h3ExecutionParameters } from './models/h3/execution-parameters.mjs';
 import { diagnoseRenderProfile, diagnoseResolvedLoras } from "./render-profile-diagnostics.mjs";
 import { inspectRenderProfile } from "./render-profile-inspection.mjs";
 import { compilePageRenderInspectionContext } from "./page-render-resolver.mjs";
@@ -166,7 +167,10 @@ export async function inspectPageRender({
         ?? null,
   } : null;
 
+  const videoParameters = compiled?.video_settings ? h3ExecutionParameters(compiled.video_settings,
+    context.reference_images?.[0], context.candidate_recipe?.dimensions ?? context.candidate_recipe?.resolutions?.[context.project.canvas]) : null;
   return {
+    ...(videoParameters ? {execution_parameters:videoParameters} : {}),
     generation_signature: inspectionGenerationSignature(context),
     version: 1,
     page_key: structuredClone(context.snapshot.page_key),
@@ -198,7 +202,7 @@ export async function inspectPageRender({
     },
     generation: generationDetailsProjection({
       profile: context.active_profile,
-      recipe: context.candidate_recipe,
+      recipe: videoParameters ? {...context.candidate_recipe,...videoParameters} : context.candidate_recipe,
       prompt: {
         positive: compiled?.positive_prompt ?? "",
         negative: compiled?.negative_prompt ?? "",

@@ -5,6 +5,7 @@ import { cp, mkdir, mkdtemp, rm, writeFile, appendFile, readFile } from 'node:fs
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
+import { validate } from '../scripts/workbench-actions/contract.mjs';
 const repositoryRoot = fileURLToPath(new URL('../../', import.meta.url));
 async function fixture(t, responder = () => assert.fail('不应发送请求')) {
   const testsRoot = path.join(repositoryRoot, 'Saved', 'Tests');
@@ -180,6 +181,7 @@ test('task.wait 的工具契约限制数量与期限，传递取消信号且只�
   const f=await fixture(t,(_request,response)=>response.end(JSON.stringify({task:{id:'t1',status:'completed',purpose:'candidate',items:[]}})));
   const help=await f.tool.execute({operation:'help',target:'task.wait'});
   assert.match(help.details,/停止等待不取消任务/);
+  assert.equal(help.parameters.properties.wait_ms.maximum,1800000);
   for(const args of [{targets:[]},{targets:[{task_id:'t1'}]},{targets:[{project_id:'p',task_id:'t1'}],wait_ms:1800001}]){
     assert.equal((await failure(f.tool,{operation:'task.wait',args})).error,'invalid_arguments');
   }
@@ -193,6 +195,30 @@ test('task.wait 的工具契约限制数量与期限，传递取消信号且只�
   setTimeout(()=>controller.abort(),30);
   await assert.rejects(pending,error=>JSON.parse(error.message).error==='wait_cancelled');
   assert.ok(blocked.requests.every(request=>request.method==='GET'));
+});
+
+test('动态页快速入口的所有例子符合当前参数，标出候选与授权要求，不发请求',async t=>{
+  const f=await fixture(t);
+  const guide=await f.tool.execute({operation:'help',target:'video'});
+  const operations=new Map(guide.operations.map(value=>[value.operation,value]));
+  for(const step of guide.steps)for(const call of step.calls)validate(operations.get(call.operation).parameters,call.args);
+  assert.ok(operations.has('reference.save'));assert.ok(operations.has('finished.output'));
+  assert.match(guide.steps.at(-1).instruction,/用户授权/);assert.match(guide.steps.at(-1).instruction,/candidate_id/);
+  assert.equal(operations.get('task.wait').parameters.properties.wait_ms.maximum,1800000);
+  assert.equal(f.requests.length,0);
+});
+
+test('Prompt 批量保存成功和无 details 的失败均返回无损 JSON，不误报保存失败',async t=>{
+  const f=await fixture(t,({body},response)=>{
+    if(body.target.id==='bad'){response.statusCode=400;return response.end(JSON.stringify({error:'invalid_prompt',message:'字段错误'}));}
+    response.end(JSON.stringify({saved:true,target:body.target,save:{args:{expected_sha256:'new-hash',source_versions:{}}}}));
+  });
+  const input={operation:'prompt.batch.save',args:{project_id:'demo',items:['good','bad'].map(id=>({target:{kind:'page',id,model_id:'h3'},expected_sha256:'old-hash',changes:{duration:3}}))}};
+  const result=await f.tool.execute(input);
+  assert.deepEqual(result,JSON.parse(JSON.stringify(result)));
+  assert.equal(Object.hasOwn(result,'read_hint'),false);
+  assert.equal(Object.hasOwn(result.results[1].error,'details'),false);
+  assert.deepEqual(result.counts,{saved:1,failed:1});assert.equal(result.results[0].expected_sha256,'new-hash');
 });
 test('统一目录逐项可发现，help 不执行请求，未知入口返回合法目录', async t => {
   const { tool, requests } = await fixture(t);
@@ -253,7 +279,7 @@ test('批量生成实际走单页接口，返回可执行整批核验入口；�
   const result=await f.tool.execute({operation:'generation.batch',args:{project_id:'demo',page_keys:[{page_id:'page-001'},{page_id:'page-002'},{page_id:'page-003'}]}});
   assert.equal(result.counts.submitted,2);assert.equal(result.counts.rejected,1);
   assert.equal(result.issues[0].recovery.next.operation,'page.editor.read');
-  assert.ok(f.requests.every(r=>r.url==='/api/projects/demo/workbench/render' && r.body.count===3));
+  assert.ok(f.requests.every(r=>r.url==='/api/projects/demo/workbench/render' && r.body.count===undefined));
   const done=await f.tool.execute(result.wait);assert.equal(done.all_succeeded,false);assert.equal(done.summary.total,2);
   assert.equal(done.submission.rejected,1);assert.equal(done.tasks,undefined);
   const detail=await f.tool.execute(result.inspect);assert.equal(detail.items.length,3);assert.equal(detail.items[1].status,'rejected');
@@ -456,9 +482,10 @@ test('统一工具经真实 HTTP Adapter 完成结构、设定及三类页面生
   assert.equal((await failure(f.tool,{operation:'prompt.read',args:{project_id:'demo',target:{...promptTarget,model_id:'anima'}}})).error,'prompt_model_missing');
   const branch=localPrompt.document;
   const changedPrompt=await run(localPrompt.save.operation,{...localPrompt.save.args,changes:{text:'局部 Prompt'}});
-  assert.equal(changedPrompt.document.text,'局部 Prompt');
+  assert.equal(changedPrompt.document,undefined);
+  assert.equal((await run('prompt.read',{target:promptTarget})).document.text,'局部 Prompt');
   assert.deepEqual(JSON.parse(await readFile(promptFile,'utf8')).models.anima,otherPrompt);
-  assert.deepEqual(changedPrompt.document.reference_images,branch.reference_images);
+  assert.deepEqual((await run('prompt.read',{target:promptTarget})).document.reference_images,branch.reference_images);
   const emptyChange=await failure(f.tool,{operation:changedPrompt.save.operation,args:{...changedPrompt.save.args,changes:{}}});assert.equal(emptyChange.status,400);
   await run(updated.save.operation,{...updated.save.args,changes:{title:'上游内容变化'}});
   const upstream=await failure(f.tool,{operation:changedPrompt.save.operation,args:{...changedPrompt.save.args,changes:{text:'陈旧依赖'}}});
@@ -724,7 +751,7 @@ test('完整能力只有一份，限制按 Agent 生效且执行前拦截，撤�
   release();
   assert.equal((await f.tool.execute({operation:'help',target:'generation.run'},{agent:lite})).availability,'enabled');
   await f.tool.execute({operation:'generation.run',args:{project_id:'demo',page_key:{page_id:'page-001'}}},{agent:lite});
-  assert.deepEqual(f.requests.at(-1).body,{page_key:{page_id:'page-001'},count:3});
+  assert.deepEqual(f.requests.at(-1).body,{page_key:{page_id:'page-001'}});
 });
 
 test('训练封装经真实后端完成创建、导入、Caption、裁剪与恢复，不隐式加载模型', async t=>{

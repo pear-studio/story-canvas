@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 const idPattern = /^[a-z0-9][a-z0-9-]*$/;
-const architectureFamilies = new Set(["anima", "qwen-image-2-1"]);
+const architectureFamilies = new Set(["anima", "qwen-image-2-1", "minimax-h3"]);
 const operations = new Set(["candidates"]);
 const inputSources = new Set(["empty_latent", "reference_image"]);
 const modifiers = new Set(["lora.model_only"]);
@@ -15,10 +15,10 @@ const bindingNames = new Set([
   "seed", "steps", "cfg", "sampler", "scheduler",
   "final_width", "final_height",
   "second_pass_seed", "second_pass_steps", "second_pass_cfg", "second_pass_sampler", "second_pass_scheduler",
-  "denoise", "filename_prefix", "reference_image",
+  "denoise", "filename_prefix", "reference_image", "length",
 ]);
 const bindingInputNames = new Map([
-  ["reference_image", "image"], ["dit", "unet_name"], ["text_encoder", "clip_name"], ["vae", "vae_name"],
+  ["length", "length"], ["reference_image", "image"], ["dit", "unet_name"], ["text_encoder", "clip_name"], ["vae", "vae_name"],
   ["positive_prompt", "text"], ["negative_prompt", "text"],
   ["width", "width"], ["height", "height"], ["seed", "seed"], ["steps", "steps"], ["cfg", "cfg"],
   ["sampler", "sampler_name"], ["scheduler", "scheduler"], ["final_width", "width"], ["final_height", "height"],
@@ -74,7 +74,8 @@ function assertBindingPath(template, name, dottedPath) {
   if (typeof dottedPath !== "string" || !/^[A-Za-z0-9_-]+\.inputs\.[A-Za-z0-9_]+$/.test(dottedPath)) throw new Error(`工作流绑定 ${name} 不是节点输入叶子：${String(dottedPath)}`);
   const [nodeId, inputsKey, inputName] = dottedPath.split(".");
   if ([nodeId, inputName].some((part) => unsafePathParts.has(part))) throw new Error(`工作流绑定 ${name} 包含不安全路径`);
-  const expectedInput = template[nodeId]?.class_type === "TextEncodeQwenImage21" && ["positive_prompt", "negative_prompt"].includes(name) ? (name === "positive_prompt" ? "prompt" : "negative_prompt") : bindingInputNames.get(name);
+  const h3Input = template[nodeId]?.class_type === 'MiniMaxH3ImageToVideo' && name==='positive_prompt' ? 'prompt' : template[nodeId]?.class_type === 'RandomNoise' && name==='seed' ? 'noise_seed' : null;
+  const expectedInput = h3Input ?? (template[nodeId]?.class_type === "TextEncodeQwenImage21" && ["positive_prompt", "negative_prompt"].includes(name) ? (name === "positive_prompt" ? "prompt" : "negative_prompt") : bindingInputNames.get(name));
   if (expectedInput !== inputName) {
     throw new Error(`工作流绑定 ${name} 必须指向 inputs.${bindingInputNames.get(name)}`);
   }
@@ -145,6 +146,11 @@ export function validateWorkflowDefinition(definition) {
     assertBindingPath(template, name, dottedPath);
   }
 
+  if(manifest.architecture_families.includes('minimax-h3')) {
+    requireBindings(manifest,['positive_prompt','filename_prefix','dit','text_encoder','vae','width','height','length','seed','steps','sampler','scheduler','reference_image'],'H3');
+    for(const [name,type] of [['positive_prompt','MiniMaxH3ImageToVideo'],['width','MiniMaxH3ImageToVideo'],['height','MiniMaxH3ImageToVideo'],['length','MiniMaxH3ImageToVideo'],['seed','RandomNoise'],['steps','BasicScheduler'],['scheduler','BasicScheduler'],['sampler','KSamplerSelect'],['filename_prefix','SaveVideo'],['dit','UNETLoader'],['text_encoder','CLIPLoader'],['vae','VAELoader'],['reference_image','LoadImage']])requireBindingNodeType(template,manifest,name,[type]);
+    requireNodeType(template,manifest,'SamplerCustomAdvanced','H3 采样');requireNodeType(template,manifest,'CreateVideo','H3 视频');return definition;
+  }
   requireBindings(manifest, ["positive_prompt", "negative_prompt", "filename_prefix"], "基础生成");
   const qwen = manifest.architecture_families.includes("qwen-image-2-1");
   const encoderTypes = qwen ? ["TextEncodeQwenImage21"] : ["CLIPTextEncode"];

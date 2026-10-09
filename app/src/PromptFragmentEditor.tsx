@@ -322,10 +322,11 @@ function PromptFragmentRow({
   const dictionaryDetailsOpen = useRef(false);
   const [deferEmptyError, setDeferEmptyError] = useState(() => !fragment.prompt_text.trim());
   const [weightMenuOpen, setWeightMenuOpen] = useState(false);
+  const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
   const [mobileLayout, setMobileLayout] = useState(() => window.matchMedia("(max-width: 680px)").matches);
   useEffect(() => {
     const media = window.matchMedia("(max-width: 680px)");
-    const update = () => { setMobileLayout(media.matches); setWeightMenuOpen(false); };
+    const update = () => { setMobileLayout(media.matches); setWeightMenuOpen(false); setActionsMenuOpen(false); };
     media.addEventListener("change", update);
     return () => media.removeEventListener("change", update);
   }, []);
@@ -338,6 +339,9 @@ function PromptFragmentRow({
   const weightTriggerRef = useRef<HTMLButtonElement | null>(null);
   const weightMenuRef = useRef<HTMLDivElement | null>(null);
   useFloatingLayer(weightMenuRef, weightMenuOpen ? weightTriggerRef.current : null);
+  const actionsTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const actionsMenuRef = useRef<HTMLDivElement | null>(null);
+  useFloatingLayer(actionsMenuRef, actionsMenuOpen ? actionsTriggerRef.current : null);
   const queryComposingRef = useRef(false);
   const searchRequestSerial = useRef(0);
   const pagingRequestSerial = useRef(0);
@@ -391,6 +395,7 @@ function PromptFragmentRow({
   }, [fragment.weight, weightMenuOpen]);
 
   useDismissableLayer({ open: weightMenuOpen, ref: weightMenuRef, triggerRef: weightTriggerRef, onClose: () => setWeightMenuOpen(false) });
+  useDismissableLayer({ open: actionsMenuOpen, ref: actionsMenuRef, triggerRef: actionsTriggerRef, onClose: () => setActionsMenuOpen(false) });
 
   useEffect(() => {
     const query = completion.query;
@@ -798,10 +803,14 @@ function PromptFragmentRow({
           onCompositionEnd={() => { queryComposingRef.current = false; setQueryComposing(false); }}
           onKeyDown={handleQueryKeyDown} onValueChange={(text, caret) => { setQueryCaret(caret); updateQueryDraft(text); }} />
       </div>
-      <button ref={weightTriggerRef} type="button" className="prompt-fragment-weight-button" disabled={!mobileLayout && toggleOnly && upstreamWeight === undefined} onPointerDown={(event) => event.stopPropagation()} onClick={toggleWeightMenu} title={mobileLayout ? '词条选项' : fragment.inheritance ? Object.hasOwn(fragment.inheritance, 'weight') ? '权重已覆盖，点击修改或恢复继承' : '权重随上游，点击设置覆盖' : '点击修改权重'} aria-haspopup="dialog" aria-expanded={weightMenuOpen} aria-label={mobileLayout ? `${categoryLabel}第 ${index + 1} 项选项` : `${categoryLabel}第 ${index + 1} 项权重 ${promptWeightLabel(fragment.weight)}`}>{mobileLayout ? '···' : promptWeightLabel(fragment.weight)}{fragment.inheritance && Object.hasOwn(fragment.inheritance, 'weight') ? ' •' : ''}</button>
-      {weightMenuOpen && <div className="prompt-fragment-weight-menu" ref={weightMenuRef} role="dialog" aria-label={`${categoryLabel}第 ${index + 1} 项${mobileLayout ? '选项' : '权重编辑'}`} onPointerDown={(event) => event.stopPropagation()}>
-        <strong>{mobileLayout ? `${categoryLabel}第 ${index + 1} 项选项` : fragment.inheritance ? '权重与继承' : '修改权重'}</strong>
-        {mobileLayout && <div className="prompt-fragment-mobile-actions">{enabledControl}{deleteControl}</div>}
+      <button ref={weightTriggerRef} type="button" className="prompt-fragment-weight-button" disabled={toggleOnly && upstreamWeight === undefined} onPointerDown={(event) => event.stopPropagation()} onClick={toggleWeightMenu} title={fragment.inheritance ? Object.hasOwn(fragment.inheritance, 'weight') ? '权重已覆盖，点击修改或恢复继承' : '权重随上游，点击设置覆盖' : '点击修改权重'} aria-haspopup="dialog" aria-expanded={weightMenuOpen} aria-label={`${categoryLabel}第 ${index + 1} 项权重 ${promptWeightLabel(fragment.weight)}`}>{promptWeightLabel(fragment.weight)}{fragment.inheritance && Object.hasOwn(fragment.inheritance, 'weight') ? ' •' : ''}</button>
+      {mobileLayout && <button ref={actionsTriggerRef} type="button" className="prompt-fragment-options-button" onPointerDown={(event) => event.stopPropagation()} onClick={() => setActionsMenuOpen(open => !open)} title="词条选项" aria-haspopup="dialog" aria-expanded={actionsMenuOpen} aria-label={`${categoryLabel}第 ${index + 1} 项选项`}>···</button>}
+      {mobileLayout && actionsMenuOpen && <div className="prompt-fragment-weight-menu" ref={actionsMenuRef} role="dialog" aria-label={`${categoryLabel}第 ${index + 1} 项选项`} onPointerDown={(event) => event.stopPropagation()}>
+        <strong>{categoryLabel}第 {index + 1} 项选项</strong>
+        <div className="prompt-fragment-mobile-actions">{enabledControl}{deleteControl}</div>
+      </div>}
+      {weightMenuOpen && <div className="prompt-fragment-weight-menu" ref={weightMenuRef} role="dialog" aria-label={`${categoryLabel}第 ${index + 1} 项权重编辑`} onPointerDown={(event) => event.stopPropagation()}>
+        <strong>{fragment.inheritance ? '权重与继承' : '修改权重'}</strong>
         {(!toggleOnly || upstreamWeight !== undefined) && <>
         {upstreamWeight !== undefined && <div className="prompt-fragment-weight-upstream">
           <span>上游 <span className="prompt-fragment-weight-value">{promptWeightLabel(upstreamWeight)}</span></span>

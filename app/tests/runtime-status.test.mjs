@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { areTrackedTasksTerminal, createSerialPoller, mergeTaskHistory } from "../src/runtime-status.ts";
+import {taskHistoryMoment} from '../shared/task-history.mjs';
 
 function deferred() {
   let resolve;
@@ -109,4 +110,15 @@ test("历史合并保留同项目同 ID 的不同任务用途", () => {
   const candidate = { id: "shared", project_id: "demo", purpose: "candidate", status: "completed" };
   const comparison = { id: "shared", project_id: "demo", purpose: "comparison", status: "cancelled" };
   assert.equal(mergeTaskHistory([candidate], [comparison]).length, 2);
+});
+
+test('加载更多仍按结束时间合并，显示时间与排序保持一致',()=>{
+  const slow={id:'render-old',project_id:'demo',purpose:'candidate',status:'completed',created_at:'2026-10-05T01:00:00Z',completed_at:'2026-10-05T03:00:00Z'};
+  const fast={...slow,id:'render-new',created_at:'2026-10-05T02:00:00Z',completed_at:'2026-10-05T02:30:00Z'};
+  const output={...slow,id:'finished-one',purpose:'finished',completed_at:'2026-10-05T02:45:00Z'};
+  assert.deepEqual(mergeTaskHistory([fast],[slow,output]).map(x=>x.id),[slow.id,output.id,fast.id]);
+  assert.equal(taskHistoryMoment(slow),slow.completed_at);
+  assert.equal(taskHistoryMoment({...slow,status:'running'}),slow.created_at);
+  assert.equal(taskHistoryMoment({...slow,status:'failed',completed_at:null,failed_at:'2026-10-05T02:15:00Z'}),'2026-10-05T02:15:00Z');
+  assert.equal(taskHistoryMoment({...slow,status:'failed',failed_at:'2026-10-05T02:15:00Z'}),'2026-10-05T02:15:00Z');
 });

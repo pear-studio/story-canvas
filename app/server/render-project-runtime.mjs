@@ -73,7 +73,8 @@ export function resolveComfyLoraNames(workflow, optionsByClass) {
 
 export function mapFrozenExecutionOutputs(unit, history) {
   return unit.outputs.map((output) => {
-    const image = history?.outputs?.[output.node_id]?.images?.[output.image_index];
+    const asset = history?.outputs?.[output.node_id];
+    const image = (asset?.images ?? asset?.videos)?.[output.image_index];
     if (!image) throw new Error(`${unit.id} 缺少冻结输出 ${output.node_id}/${output.image_index}`);
     return { output, image };
   });
@@ -231,12 +232,12 @@ export function findOutputImages(history) {
   throw new Error("ComfyUI 历史记录中没有图片输出");
 }
 
-async function downloadImage(apiUrl, image) {
+async function downloadImage(apiUrl, image, video = false) {
   const query = new URLSearchParams({ filename: image.filename, subfolder: image.subfolder ?? "", type: image.type ?? "output" });
   const response = await fetch(`${apiUrl}/view?${query}`, { signal: AbortSignal.timeout(120_000) });
   if (!response.ok) throw new Error(`下载候选失败：${response.status} ${response.statusText}`);
   const value = Buffer.from(await response.arrayBuffer());
-  if (!isCompletePng(value)) throw new Error("下载候选不是完整 PNG");
+  if (!video && !isCompletePng(value)) throw new Error("下载候选不是完整 PNG");
   return value;
 }
 
@@ -453,7 +454,7 @@ async function runRender(options, assignedTaskId) {
           (history?.outputs && Object.keys(history.outputs).length)
           || history?.status?.status_str === "error",
         );
-        const mappedOutputs = unit.plan.outputs.map(output => ({ output, image: history?.outputs?.[output.node_id]?.images?.[output.image_index] }));
+        const mappedOutputs = unit.plan.outputs.map(output => ({ output, image: (history?.outputs?.[output.node_id]?.images ?? history?.outputs?.[output.node_id]?.videos)?.[output.image_index] }));
         const missing = [];
         const itemById = new Map(unit.items.map((item) => [item.id, item]));
         for (const { output, image } of mappedOutputs) {
@@ -463,7 +464,7 @@ async function runRender(options, assignedTaskId) {
           const existing = await readCandidateResult(options.projectRoot, item.page_key, item.candidate_id);
           const generatedAt = existing?.generated_at ?? new Date().toISOString();
           if (!existing) {
-            const bytes = await unit.recorder.measure("download", () => downloadImage(apiUrl, image), item.id);
+            const bytes = await unit.recorder.measure("download", () => downloadImage(apiUrl, image, Boolean(item.video_settings)), item.id);
             const repo = options.repositoryRoot ?? path.resolve(options.projectRoot, "../..");
             const projectId = path.basename(options.projectRoot);
             await unit.recorder.measure("save", () => withCandidateMutationLock(repo, projectId, () => storage.withPageLocks(repo, projectId, [item.page_key.page_id], async () => {

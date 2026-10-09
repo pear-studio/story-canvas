@@ -1,4 +1,5 @@
 import type { PageKey } from "./page-key";
+import { compareTaskHistory } from "../shared/task-history.mjs";
 export type RuntimePageKey = PageKey;
 
 export type HardwareDevice = {
@@ -72,7 +73,7 @@ export type TaskCollection = {
 export function mergeTaskHistory(current: GlobalTask[], incoming: GlobalTask[]) {
   const tasks = new Map(current.map((task) => [`${task.id}/${task.project_id}/${task.purpose}`, task]));
   for (const task of incoming) tasks.set(`${task.id}/${task.project_id}/${task.purpose}`, task);
-  return [...tasks.entries()].sort(([left], [right]) => left < right ? 1 : left > right ? -1 : 0).map(([, task]) => task);
+  return [...tasks.values()].sort(compareTaskHistory);
 }
 export type BackendHealth = { ok: true; instance_id: string };
 

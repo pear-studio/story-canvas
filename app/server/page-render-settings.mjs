@@ -50,6 +50,8 @@ export async function commitPageRender(root, context, readDocument) {
   const value = await readDocument();
   const errors = validatePageRenderSettings(value);
   if (errors.length) throw new ApiError(422, 'page_render_settings_invalid', errors);
+  const content=JSON.parse(await readFile(path.join(project.projectDirectory,pageRelativePath(context.page_id,'content')),'utf8'));
+  if((content.page_kind==='video')!==(value.model_id==='h3'))throw new ApiError(422,'page_video_model_mismatch');
   const bundle = await compileEffectiveRenderProfile({ repositoryRoot: root, projectRoot: project.projectDirectory, profileId: value.profile_id });
   if (bundle.blocked) throw new ApiError(422, 'render_profile_override_conflict');
   if (value.model_id !== profileModelAdapter(bundle.effective_profile).id) throw new ApiError(422, 'page_profile_model_mismatch');

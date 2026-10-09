@@ -9,7 +9,7 @@ export async function regeneratePage(args,{submit,request=requestWorkbench,signa
   const response=await submit(args,{signal});
   const task=response.value?.task;
   if(!task?.task_id)throw Object.assign(new Error('未取得任务 ID；未执行清理，先查询任务，不直接重提'),{code:'missing_task_receipt'});
-  const result={page_key,task_id:task.task_id,cleanup:{status:'completed',requested:ids.length,deleted:0},wait:{operation:'task.wait',args:{targets:[{project_id,task_id:task.task_id}]}}};
+  const result={page_key,task_id:task.task_id,...(Number.isInteger(task.count)?{count:task.count}:{}),cleanup:{status:'completed',requested:ids.length,deleted:0},wait:{operation:'task.wait',args:{targets:[{project_id,task_id:task.task_id}]}}};
   if(!ids.length)return result;
   try {
     const deleted=await request(projectPath(args,'workbench/candidates'),{method:'DELETE',body:{page_key,candidate_ids:ids},signal});
