@@ -1,6 +1,6 @@
 ---
 name: prompt-authoring
-description: 为 StoryCanvas 编写、编辑和生成页面 Prompt，根据图像错误优化表达；保持已确认画面内容不变，改变画面方案时另行讨论。
+description: 为 StoryCanvas 编写、编辑和生成页面 Prompt，围绕已确认画面目标优化表达；构图测试与方案调整按专项规则处理。
 ---
 
 # Prompt 与生成
