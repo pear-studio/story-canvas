@@ -51,7 +51,12 @@ function qwenTask(overrides = {}) {
 
 const datasetSummary = { id: TASK_ID, name: "主数据集", activation_terms: [], item_count: 95, enabled_item_count: 95, effective_item_count: 95 };
 const datasetDetail = { id: TASK_ID, dataset: { version: 5, name: "主数据集", description: "", activation_terms: [], groups: [], items: [] }, items: [], captioning: { version: 1, latest: null, summary: { total: 0, with_base: 0, confirmed: 0, unconfirmed: 0 }, items: [] } };
-const recipe = { id: "qwen-image21-lora-v1", version: 1, name: "Qwen Rank 32", description: "", family: "qwen-image-2-1", semantic_config: qwenSemanticConfig() };
+const recipe = { id: "qwen-image21-lora-v1", version: 1, name: "Qwen Rank 32", description: "", family: "qwen-image-2-1", semantic_config: qwenSemanticConfig(), default_target: qwenTask().target };
+const animaRecipe = {
+  id: "anima-lora-v1", version: 1, name: "Anima Rank 32", description: "", family: "anima",
+  semantic_config: qwenSemanticConfig({ learning_rate: 0.00002, micro_batch_size: 2, blocks_to_swap: 0, optimizer: { type: "AdamW8bit" }, scheduler: { type: "cosine", warmup_ratio: 0.05 } }),
+  default_target: { family: "anima", prompt_family: "anima", usage_defaults: { clip_skip: null, sampler: "euler_ancestral", scheduler: "normal", steps: 30, cfg: 4 }, base: { dit: { relative_path: "diffusion_models/anima-base-v1.0.safetensors" }, text_encoder: { relative_path: "text_encoders/qwen_3_06b_base.safetensors" }, vae: { relative_path: "vae/qwen_image_vae.safetensors" } } },
+};
 const environment = { available: true, runtime: null, checks: [], captioning: { configured: true, ready: true } };
 
 async function startFixture(page, extra) {
@@ -62,6 +67,89 @@ async function startFixture(page, extra) {
     await route.fulfill({ json: value.body ?? value, headers: { etag: '"lora-test"' }, status: value.status ?? 200 });
   });
 }
+
+test("Anima 切换复用素材和预算，可调有效 Batch，环境按家族隔离，保存后刷新保留", async () => {
+  const server = await createServer({ root: fileURLToPath(new URL("../../", import.meta.url)), cacheDir: ".temp/vite-lora-tests", server: { host: "127.0.0.1", port: 0 }, logLevel: "error" });
+  await server.listen();
+  const browser = await chromium.launch({ headless: true, channel: process.platform === "win32" ? "msedge" : undefined });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } });
+    let task = qwenTask();
+    const environmentFamilies = [];
+    let releaseAnimaEnvironment;
+    const animaEnvironmentGate = new Promise(resolve => { releaseAnimaEnvironment = resolve; });
+    const errors = [];
+    page.on("pageerror", error => errors.push(error.message));
+    await startFixture(page, async (pathname, route) => {
+      if (pathname === "/datasets") return { datasets: [datasetSummary] };
+      if (pathname === `/datasets/${TASK_ID}`) return datasetDetail;
+      if (pathname === "/tasks") return { tasks: [{ id: TASK_ID, name: task.name, family: task.target.family, dataset: datasetSummary, runs: [] }] };
+      if (pathname === "/recipes") return { recipes: [recipe, animaRecipe] };
+      if (pathname === "/environment") {
+        const family = new URL(route.request().url()).searchParams.get("family") ?? "qwen-image-2-1";
+        environmentFamilies.push(family);
+        if (family === "anima") { await animaEnvironmentGate; return { ...environment, available: false, checks: [{ id: "sd_scripts", ok: false, message: "Anima 测试环境缺失" }] }; }
+        return environment;
+      }
+      if (pathname.endsWith("run-settings")) return { recipe: { id: task.training_recipe.id, version: 1, name: "当前配方" }, semantic_config: task.target.family === "anima" ? animaRecipe.semantic_config : recipe.semantic_config, values: task.run_defaults, last_run: null };
+      if (pathname === `/tasks/${TASK_ID}`) {
+        if (route.request().method() === "PUT") task = route.request().postDataJSON();
+        return { id: TASK_ID, task, dataset: datasetSummary, runs: [] };
+      }
+      return { runs: [] };
+    });
+    const origin = `http://127.0.0.1:${server.httpServer.address().port}`;
+    await page.goto(`${origin}/tests/browser/fixtures/lora-settings.html`);
+    const model = page.getByRole("combobox", { name: "训练模型" });
+    const input = label => page.locator("label").filter({ has: page.locator("span.lora-field-label", { hasText: label }) }).locator("input");
+    await model.waitFor();
+    await page.getByText("环境就绪", { exact: true }).waitFor();
+    await model.selectOption("anima");
+    await page.getByText("环境检查中", { exact: true }).waitFor();
+    await page.getByText(/LoRA 与优化器 ·/).click();
+    assert.equal(await input("Micro Batch").inputValue(), "2");
+    assert.equal(await input("Block Swap").inputValue(), "0");
+    assert.equal(await input("Alpha").inputValue(), "32");
+    assert.equal(await input("学习率").inputValue(), "0.00002");
+    await input("Micro Batch").fill("1");
+    await input("梯度累积").fill("4");
+    await page.getByText("有效 Batch 4 · 本轮图片处理量 8000 张次").waitFor();
+    const save = page.getByRole("button", { name: "保存配置", exact: true });
+    await save.click();
+    await page.waitForFunction(() => document.querySelector(".lora-state")?.textContent === "已保存");
+    assert.equal(task.dataset_id, TASK_ID);
+    assert.deepEqual(task.run_defaults, { max_train_steps: 2000, save_every_n_steps: 500, seed: 42 });
+    assert.equal(task.target.family, "anima");
+    assert.equal(task.target.base.processor, undefined);
+    assert.equal(task.training_recipe.overrides.micro_batch_size, 1);
+    assert.equal(task.training_recipe.overrides.gradient_accumulation_steps, 4);
+    // 切回 Qwen 后，较迟的 Anima 环境回包不能覆盖当前状态。
+    await model.selectOption("qwen-image-2-1");
+    await page.getByText("环境就绪", { exact: true }).waitFor();
+    const lateEnvironment = page.waitForResponse(response => response.url().includes("environment?family=anima"));
+    releaseAnimaEnvironment();
+    await lateEnvironment;
+    assert.equal(await page.getByText("环境就绪", { exact: true }).count(), 1);
+    await save.click();
+    await page.waitForFunction(() => document.querySelector(".lora-state")?.textContent === "已保存");
+    assert.deepEqual(Object.keys(task.training_recipe.overrides).sort(), ["gradient_accumulation_steps", "learning_rate", "network_dim"]);
+    await model.selectOption("anima");
+    await page.getByText(/LoRA 与优化器 ·/).click();
+    await input("Micro Batch").fill("1");
+    await input("梯度累积").fill("4");
+    await save.click();
+    await page.waitForFunction(() => document.querySelector(".lora-state")?.textContent === "已保存");
+    await page.reload();
+    await model.waitFor();
+    assert.equal(await model.inputValue(), "anima");
+    await page.getByText(/LoRA 与优化器 ·/).click();
+    assert.equal(await input("Micro Batch").inputValue(), "1");
+    assert.equal(await input("梯度累积").inputValue(), "4");
+    assert.ok(environmentFamilies.includes("anima"));
+    assert.ok(environmentFamilies.includes("qwen-image-2-1"));
+    assert.deepEqual(errors, []);
+  } finally { await browser.close(); await server.close(); }
+});
 
 test("Qwen 训练设置统一保存，刷新保留，梯度累积可编辑，预设先确认", async () => {
   const server = await createServer({ root: fileURLToPath(new URL("../../", import.meta.url)), cacheDir: ".temp/vite-lora-tests", server: { host: "127.0.0.1", port: 0 }, logLevel: "error" });
@@ -154,6 +242,8 @@ test("训练记录显示阶段与恢复可用性，续训校验目标并处理�
       status: { status: "completed", completed_at: "2026-09-17T11:00:00.000Z", step: 400, loss: 0.12, eta_seconds: null, error: null, checkpoints: [] },
       disk_bytes: 456789,
     };
+    // 即使接口误带恢复指针，新 Anima run 也不能展示续训入口。
+    const animaRun = { ...v5Run, id: "run-dddddddddddd", manifest: { ...v5Run.manifest, family: "anima", task_name: "新 Anima 训练" } };
     const resumeRequests = [];
     await startFixture(page, async (pathname, route) => {
       if (pathname === "/datasets") return { datasets: [datasetSummary] };
@@ -166,7 +256,7 @@ test("训练记录显示阶段与恢复可用性，续训校验目标并处理�
         if (resumeRequests.length === 1) return { status: 409, body: { error: "lora_training_resume_source_stale", message: "lora_training_resume_source_stale", details: ["来源快照已不是本任务最新完整状态，请重新读取训练记录"] } };
         return { status: 202, body: { run: { id: "run-cccccccccccc", status: "running" }, manifest: {} } };
       }
-      if (pathname === `/tasks/${TASK_ID}`) return { id: TASK_ID, task, dataset: datasetSummary, runs: [v5Run, legacyRun] };
+      if (pathname === `/tasks/${TASK_ID}`) return { id: TASK_ID, task, dataset: datasetSummary, runs: [v5Run, legacyRun, animaRun] };
       return { runs: [] };
     });
     const origin = `http://127.0.0.1:${server.httpServer.address().port}`;
@@ -203,6 +293,9 @@ test("训练记录显示阶段与恢复可用性，续训校验目标并处理�
     // legacy 历史记录：只读标记，没有续训入口。
     await page.getByRole("button", { name: /旧 Anima 训练/ }).click();
     await page.getByText("Anima 历史记录，不支持精确续训").waitFor();
+    assert.equal(await page.getByRole("button", { name: "继续训练", exact: true }).count(), 0);
+    await page.getByRole("button", { name: /新 Anima 训练/ }).click();
+    await page.getByText("Anima 保留 checkpoint，当前不支持精确续训。").waitFor();
     assert.equal(await page.getByRole("button", { name: "继续训练", exact: true }).count(), 0);
     assert.deepEqual(errors, []);
   } finally { await browser.close(); await server.close(); }

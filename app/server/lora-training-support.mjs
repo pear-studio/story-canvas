@@ -301,15 +301,15 @@ export function postprocessFingerprint({ originalSha256, crop, upscale, outputSc
   return createHash("sha256").update(canonicalJson({ original_sha256: originalSha256, crop, upscale: Boolean(upscale), output_scale: outputScale ?? null, model_sha256: modelSha256 ?? null, downsample_algorithm: postprocessDownsampleAlgorithm, pipeline_version: pipelineVersion })).digest("hex");
 }
 
-export function validateBaseDirIdentity(value, label, errors) {
+export function validateBaseDirIdentity(value, label, errors, { file = false } = {}) {
   if (!isRecord(value)) {
     errors.push(`${label} 必须是底模目录身份对象`);
     return;
   }
   const relativePath = value.relative_path;
   // v5 的 base 各项是 models_root 下的目录前缀；逐文件身份以 library/lora-training/qwen-image21-models.json 为准。
-  if (typeof relativePath !== "string" || path.isAbsolute(relativePath) || relativePath.includes("..") || relativePath.includes("\\") || !relativePath.endsWith("/")) {
-    errors.push(`${label}.relative_path 必须是 models_root 下以 / 结尾的正斜杠目录前缀`);
+  if (typeof relativePath !== "string" || !relativePath.trim() || path.isAbsolute(relativePath) || /^[a-zA-Z]:/.test(relativePath) || relativePath.includes("..") || relativePath.includes("\\") || (file ? !relativePath.endsWith(".safetensors") : !relativePath.endsWith("/"))) {
+    errors.push(`${label}.relative_path 必须是 models_root 下的${file ? ".safetensors 文件路径" : "以 / 结尾的正斜杠目录前缀"}`);
   }
   if (Object.hasOwn(value, "sha256")) errors.push(`${label} 不带单文件 sha256；逐文件身份见模型清单`);
   if (value.source !== undefined && (typeof value.source !== "string" || !value.source.trim())) errors.push(`${label}.source 必须是非空字符串`);
@@ -322,7 +322,7 @@ export function canonicalJson(value) {
 }
 
 export function validateTarget(value, errors) {
-  if (!isRecord(value) || value.family !== "qwen-image-2-1") errors.push("target.family 必须为 qwen-image-2-1");
+  if (!isRecord(value) || !["anima", "qwen-image-2-1"].includes(value.family)) errors.push("target.family 必须为 anima 或 qwen-image-2-1");
   if (typeof value?.prompt_family !== "string" || !value.prompt_family.trim()) errors.push("target.prompt_family 不能为空");
   if (!isRecord(value?.usage_defaults)) errors.push("target.usage_defaults 必须是对象");
   else {
@@ -333,7 +333,9 @@ export function validateTarget(value, errors) {
     if (!Number.isInteger(usage.steps) || usage.steps < 1) errors.push("target.usage_defaults.steps 必须是正整数");
     if (typeof usage.cfg !== "number" || usage.cfg < 0) errors.push("target.usage_defaults.cfg 必须是非负数");
   }
-  for (const kind of ["dit", "text_encoder", "vae", "processor"]) validateBaseDirIdentity(value.base?.[kind], `target.base.${kind}`, errors);
+  const kinds = value?.family === "anima" ? ["dit", "text_encoder", "vae"] : ["dit", "text_encoder", "vae", "processor"];
+  validateExactKeys(value?.base, kinds, "target.base", errors);
+  for (const kind of kinds) validateBaseDirIdentity(value?.base?.[kind], `target.base.${kind}`, errors, { file: value?.family === "anima" });
 }
 
 export function validateActivationTerms(value, errors, label = "activation_terms") {
@@ -359,16 +361,21 @@ export const loraTrainingOverrideDefinitions = Object.freeze({
   gradient_accumulation_steps: "integer",
 });
 
-export function validateTrainingRecipeOverrides(value, errors) {
+export function loraTrainingOverridesForFamily(family) {
+  return family === "anima" ? { ...loraTrainingOverrideDefinitions, micro_batch_size: "integer", blocks_to_swap: "nonnegative" } : loraTrainingOverrideDefinitions;
+}
+
+export function validateTrainingRecipeOverrides(value, errors, family = "qwen-image-2-1") {
   if (!isRecord(value)) {
     errors.push("training_recipe.overrides 必须是对象");
     return;
   }
-  validateExactKeys(value, Object.keys(loraTrainingOverrideDefinitions), "training_recipe.overrides", errors);
-  for (const [key, kind] of Object.entries(loraTrainingOverrideDefinitions)) {
+  const definitions = loraTrainingOverridesForFamily(family);
+  validateExactKeys(value, Object.keys(definitions), "training_recipe.overrides", errors);
+  for (const [key, kind] of Object.entries(definitions)) {
     if (!Object.hasOwn(value, key)) continue;
     const entry = value[key];
-    const valid = kind === "integer"
+    const valid = kind === "nonnegative" ? Number.isInteger(entry) && entry >= 0 && entry <= 27 : kind === "integer"
       ? Number.isInteger(entry) && entry >= 1
       : typeof entry === "number" && Number.isFinite(entry) && entry > 0;
     if (!valid) errors.push(`training_recipe.overrides.${key} 无效`);
@@ -432,8 +439,8 @@ export function validateLoraTrainingTask(value) {
   validateTarget(value.target, errors);
   if (!isRecord(value.training_recipe) || typeof value.training_recipe.id !== "string" || !value.training_recipe.id.trim()) errors.push("training_recipe 无效");
   else {
-    validateTrainingRecipeOverrides(value.training_recipe.overrides, errors);
-    for (const key of Object.keys(loraTrainingOverrideDefinitions)) {
+    validateTrainingRecipeOverrides(value.training_recipe.overrides, errors, value.target?.family);
+    for (const key of Object.keys(loraTrainingOverridesForFamily(value.target?.family))) {
       if (!Object.hasOwn(value.training_recipe.overrides ?? {}, key)) errors.push(`training_recipe.overrides.${key} 必填`);
     }
   }

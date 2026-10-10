@@ -1,0 +1,24 @@
+{
+  "id": "anima-lora-v1",
+  "version": 1,
+  "name": "Anima LoRA · Rank 32",
+  "family": "anima",
+  "description": "Base v1 的 DiT LoRA；不训练文本编码器或 LLM adapter。预算独立于素材数量，默认不做 block swap。",
+  "semantic_config": {
+    "max_pixels": 1048576,
+    "network_dim": 32,
+    "learning_rate": 0.00002,
+    "gradient_accumulation_steps": 2,
+    "micro_batch_size": 2,
+    "optimizer": { "type": "AdamW8bit", "betas": [0.9, 0.999], "eps": 1e-8, "weight_decay": 0.01 },
+    "scheduler": { "type": "cosine", "warmup_ratio": 0.05 },
+    "precision": { "base": "bf16", "lora": "bf16", "optimizer_state": "8bit" },
+    "gradient_checkpointing": true,
+    "lora_target_modules": ["self_attn", "cross_attn", "mlp"],
+    "blocks_to_swap": 0,
+    "timestep_sampling": "sigmoid",
+    "sigmoid_scale": 1,
+    "weighting_scheme": "uniform",
+    "loss_type": "l2"
+  }
+}

@@ -3,7 +3,8 @@ import { registerProject } from "../server/project-registry.mjs";
 import { datasetRoot, taskRoot } from "../server/lora-training-support.mjs";
 import { createLoraTrainingDataset } from "./training-project-fixture.mjs";
 import { registerFixtureProjects } from "./project-registry-fixture.mjs";
-import { snapshotRun, resolveTrainerCommit } from "../server/lora-training-plan.mjs";
+import { snapshotRun, resolveTrainerCommit, listLoraTrainingRecipes } from "../server/lora-training-plan.mjs";
+import { defaultLoraTrainingTarget } from "../server/lora-training-facts.mjs";
 import { updateRunStatus, readLoraTrainingRun } from "../server/lora-training-runtime.mjs";
 import { inventoryCheckpoints } from "../server/lora-training-run-index.mjs";
 import assert from "node:assert/strict";
@@ -81,6 +82,57 @@ async function fixture(context) {
 async function imageBuffer(width = 640, height = 768, color = { r: 40, g: 80, b: 120 }) {
   return sharp({ create: { width, height, channels: 3, background: color } }).png().toBuffer();
 }
+
+test("Anima 复用当前素材、冻结动态数量和独立预算，参数可切回 Qwen", async context => {
+  const { root, project } = await fixture(context);
+  await writeFile(path.join(root, "app", "python", "anima-lora-runner.py"), "# fixture\n");
+  const created = await createLoraTrainingDataset(project, { name: "可调整素材" });
+  const imported = await importLoraTrainingAssets(project, created.id, { group_id: created.dataset.groups[0].id, files: [
+    { filename: "one.png", buffer: await imageBuffer(), caption: "standing" },
+    { filename: "two.png", buffer: await imageBuffer(640, 768, { r: 80, g: 90, b: 100 }), caption: "sitting" },
+  ] });
+  const recipes = (await listLoraTrainingRecipes(root)).recipes;
+  const recipe = recipes.find(entry => entry.family === "anima");
+  const originalTask = await readLoraTrainingTask(project, created.id);
+  const task = { ...originalTask.task, target: recipe.default_target, training_recipe: { id: recipe.id, overrides: { network_dim: 32, learning_rate: .00002, gradient_accumulation_steps: 2, micro_batch_size: 2, blocks_to_swap: 0 } }, run_defaults: { max_train_steps: 800, save_every_n_steps: 100, seed: 42 } };
+  await updateLoraTrainingTask(root, project, created.id, task);
+  assert.deepEqual((await readLoraTrainingDataset(project, created.id)).items.map(item => item.asset_id), imported.items.map(item => item.asset_id));
+  const values = await readLoraTrainingRunSettings(root, project, created.id, {});
+  assert.equal(values.semantic_config.network_alpha, 32);
+  assert.equal(values.semantic_config.micro_batch_size * values.semantic_config.gradient_accumulation_steps, 4);
+  const settingsSchema = JSON.parse(await readFile(new URL("../../library/schemas/lora-training-settings.schema.json", import.meta.url), "utf8"));
+  const { default: Ajv2020 } = await import("ajv/dist/2020.js");
+  const validate = new Ajv2020({ strict: true }).compile(settingsSchema);
+  const { name: _name, dataset_id: _dataset, ...settings } = task;
+  assert.equal(validate(settings), true, JSON.stringify(validate.errors));
+  const preflight = await preflightLoraTraining(root, project, created.id, {}, { skipEnvironment: true });
+  Object.assign(preflight, { environment: { trainer_root: root, python: "python", commit: "c".repeat(40), runtime: { python: "3.10", torch: "2.6", gpu: "test", vram_bytes: 24 * 1024 ** 3 } }, models: ["dit", "text_encoder", "vae"].map((kind, index) => ({ kind, identity: { relative_path: `models/${kind}.safetensors`, source: null }, sha256: String(index + 1).repeat(64), size: 100 })) });
+  const first = await snapshotRun(root, project, created.id, { models_root: path.join(root, "models") }, preflight);
+  assert.equal(first.manifest.items.length, 2);
+  assert.equal(first.manifest.trainer.runner.name, "anima-lora-runner");
+  assert.equal(first.manifest.trainer.sd_scripts_commit, "c".repeat(40));
+  assert.equal(first.manifest.resume, null);
+  const detail = await readLoraTrainingDataset(project, created.id);
+  const dataset = structuredClone(detail.dataset);
+  dataset.items[1].enabled = false;
+  await updateLoraTrainingDataset(project, created.id, dataset);
+  const second = await snapshotRun(root, project, created.id, { models_root: path.join(root, "models") }, preflight);
+  assert.equal(second.manifest.items.length, 1);
+  assert.equal(second.manifest.run.max_train_steps, 800);
+  assert.equal(first.manifest.items.length, 2);
+  const qwen = await defaultLoraTrainingTarget(root, "qwen-image-2-1");
+  const back = { ...task, target: qwen, training_recipe: originalTask.task.training_recipe };
+  await updateLoraTrainingTask(root, project, created.id, back);
+  assert.equal((await readLoraTrainingRunSettings(root, project, created.id, {})).semantic_config.micro_batch_size, 1);
+  const bad = { ...task, training_recipe: { ...task.training_recipe, overrides: { ...task.training_recipe.overrides, blocks_to_swap: 28 } } };
+  await assert.rejects(() => updateLoraTrainingTask(root, project, created.id, bad), error => error.code === "invalid_lora_training_task");
+  const swapped = structuredClone(task);
+  [swapped.target.base.dit, swapped.target.base.vae] = [swapped.target.base.vae, swapped.target.base.dit];
+  await updateLoraTrainingTask(root, project, created.id, swapped);
+  const blocked = await preflightLoraTraining(root, project, created.id, { models_root: path.join(root, "models") }, { skipEnvironment: true });
+  assert.equal(blocked.ready, false);
+  assert.deepEqual(blocked.blockers.filter(entry => entry.code === "model_kind_unmapped").map(entry => entry.model), ["dit", "vae"]);
+});
 
 test("数据集导航只读取清单，图片完整性仍在详情检查", async context => {
   const { project } = await fixture(context);

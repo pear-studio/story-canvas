@@ -6,16 +6,16 @@ import { randomBytes } from "node:crypto";
 import { cp, copyFile, mkdir, readFile, readdir, rename, rm, stat, statfs } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
-import { createLoraTrainingRunManifest, validateLoraTrainingRunManifest } from "./lora-training-run-manifest.mjs";
+import { createLoraTrainingRunManifest, validateLoraTrainingRunManifest, validateSemanticConfig as validateFrozenSemanticConfig } from "./lora-training-run-manifest.mjs";
 import * as support from "./lora-training-support.mjs";
-import { captionerManifestPath, captionerModelRoot, inspectCaptioningProvider, isPathLikeCommand, readCaptioningLatest, requireDataset, requireTask, resolveCaptionerCommand } from "./lora-training-facts.mjs";
+import { defaultLoraTrainingTarget, captionerManifestPath, captionerModelRoot, inspectCaptioningProvider, isPathLikeCommand, readCaptioningLatest, requireDataset, requireTask, resolveCaptionerCommand } from "./lora-training-facts.mjs";
 import { listLoraTrainingRuns } from "./lora-training-run-index.mjs";
 import { readLoraTrainingRecipe } from "./lora-training-recipe.mjs";
 import { primaryComfyUiUrl } from "./comfy-endpoint-selector.mjs";
 
 const {
   LoraTrainingError, idPatterns, sha256Pattern, runningStatuses, upscaleModelManifestRelativePath, upscaleModelId,
-  loraTrainingOverrideDefinitions,
+  loraTrainingOverridesForFamily,
   createId, isRecord, isWithin, exists, readJson, writeJsonAtomic,
   sha256File, datasetRoot, runRoot, generatedRunRoot, itemPaths,
   readAssetMeta, canonicalJson, configuredPath, execFileAsync,
@@ -28,8 +28,18 @@ const loraEnvironmentCache = new Map();
 export const QWEN_RUNNER_NAME = "qwen-image21-lora-runner";
 export const QWEN_RUNNER_VERSION = 1;
 
-export function loraRunnerPath(projectRoot) {
-  return path.join(projectRoot, "app", "python", "qwen-image21-lora-runner.py");
+export function loraRunnerPath(projectRoot, family = "qwen-image-2-1") {
+  return path.join(projectRoot, "app", "python", family === "anima" ? "anima-lora-runner.py" : "qwen-image21-lora-runner.py");
+}
+
+function trainerSettings(projectRoot, config, family) {
+  const anima = family === "anima";
+  const name = anima ? "sd-scripts" : "DiffSynth";
+  const local = config?.lora_training?.[anima ? "sd_scripts" : "diffsynth"];
+  const directory = anima ? "sd-scripts" : "DiffSynth-Studio";
+  return { name, manifestPath: path.join(projectRoot, "library", "lora-training", anima ? "sd-scripts.json" : "diffsynth.json"),
+    trainerRoot: configuredPath(projectRoot, local?.trainer_root, `../story-canvas-trainer/${directory}`),
+    python: configuredPath(projectRoot, local?.python, `../story-canvas-trainer/${directory}/.venv/Scripts/python.exe`) };
 }
 
 export async function gitCommit(directory) {
@@ -61,10 +71,14 @@ export async function pythonProbe(python, trainerRoot) {
   return JSON.parse(result.stdout.trim());
 }
 
-export async function readQwenModelFiles(projectRoot) {
-  const manifest = await readJson(path.join(projectRoot, "library", "lora-training", "qwen-image21-models.json"), { optional: true });
-  if (!isRecord(manifest) || !Array.isArray(manifest.files) || manifest.files.some((file) => !isRecord(file) || typeof file.relative_path !== "string")) throw new LoraTrainingError(422, "invalid_qwen_model_manifest");
+async function readTrainingModelFiles(projectRoot, family) {
+  const manifest = await readJson(path.join(projectRoot, "library", "lora-training", family === "anima" ? "anima-models.json" : "qwen-image21-models.json"), { optional: true });
+  if (!isRecord(manifest) || !Array.isArray(manifest.files) || manifest.files.some((file) => !isRecord(file) || typeof file.relative_path !== "string")) throw new LoraTrainingError(422, family === "anima" ? "invalid_anima_model_manifest" : "invalid_qwen_model_manifest");
   return { repository: typeof manifest.repository === "string" ? manifest.repository : null, files: manifest.files };
+}
+
+export async function readQwenModelFiles(projectRoot) {
+  return readTrainingModelFiles(projectRoot, "qwen-image-2-1");
 }
 
 // processor 前缀嵌套在 text_encoder 前缀内，按前缀长度从长到短匹配。
@@ -75,10 +89,10 @@ export function modelFileKind(base, relativePath) {
   return entries[0]?.[0] ?? null;
 }
 
-export async function readLoraTrainingEnvironment(projectRoot, config) {
-  const manifest = await readJson(path.join(projectRoot, "library", "lora-training", "diffsynth.json"), { optional: true });
-  const trainerRoot = configuredPath(projectRoot, config?.lora_training?.diffsynth?.trainer_root, "../story-canvas-trainer/DiffSynth-Studio");
-  const python = configuredPath(projectRoot, config?.lora_training?.diffsynth?.python, "../story-canvas-trainer/DiffSynth-Studio/.venv/Scripts/python.exe");
+export async function readLoraTrainingEnvironment(projectRoot, config, family = "qwen-image-2-1") {
+  if (!["anima", "qwen-image-2-1"].includes(family)) throw new LoraTrainingError(422, "unsupported_lora_training_family");
+  const { name, manifestPath, trainerRoot, python } = trainerSettings(projectRoot, config, family);
+  const manifest = await readJson(manifestPath, { optional: true });
   const captioning = await inspectCaptioningProvider(projectRoot, config);
   const upscaler = await readUpscaleModelStatus(projectRoot, config);
   const quality = await readMusiqStatus(projectRoot, config);
@@ -87,29 +101,42 @@ export async function readLoraTrainingEnvironment(projectRoot, config) {
   const trainerRootExists = Boolean(trainerRoot && await exists(trainerRoot));
   const identity = trainerRootExists ? await resolveTrainerCommit(trainerRoot, manifest) : { commit: null, matches: false, message: "无法读取 DiffSynth commit" };
   const commit = identity.commit;
-  checks.push({ id: "trainer_root", ok: trainerRootExists, message: trainerRootExists ? "DiffSynth 训练器目录可用" : "DiffSynth 训练器目录缺失" });
-  checks.push({ id: "trainer_commit", ok: Boolean(commit && identity.matches), message: identity.message });
-  const lockPath = configuredPath(projectRoot, manifest?.dependency_lock, path.join("app", "python", "diffsynth.lock"));
-  checks.push({ id: "dependency_lock", ok: Boolean(lockPath && await exists(lockPath)), message: lockPath && await exists(lockPath) ? "训练依赖锁可用" : "训练依赖锁缺失" });
-  const runnerPath = loraRunnerPath(projectRoot);
+  checks.push({ id: "trainer_root", ok: trainerRootExists, message: trainerRootExists ? `${name} 训练器目录可用` : `${name} 训练器目录缺失` });
+  checks.push({ id: "trainer_commit", ok: Boolean(commit && identity.matches), message: identity.message.replaceAll("DiffSynth", name) });
+  if (family !== "anima") {
+    const lockPath = configuredPath(projectRoot, manifest?.dependency_lock, path.join("app", "python", "diffsynth.lock"));
+    checks.push({ id: "dependency_lock", ok: Boolean(lockPath && await exists(lockPath)), message: lockPath && await exists(lockPath) ? "训练依赖锁可用" : "训练依赖锁缺失" });
+  } else {
+    checks.push({ id: "trainer_entry", ok: Boolean(trainerRoot && await exists(path.join(trainerRoot, manifest?.entry ?? "anima_train_network.py"))), message: "Anima 训练入口" });
+  }
+  const runnerPath = loraRunnerPath(projectRoot, family);
   const runnerExists = await exists(runnerPath);
   const runnerHash = runnerExists ? await sha256File(runnerPath) : null;
-  checks.push({ id: "runner", ok: runnerExists, message: runnerExists ? "训练 runner 可用" : "训练 runner 缺失：app/python/qwen-image21-lora-runner.py" });
+  checks.push({ id: "runner", ok: runnerExists, message: runnerExists ? "训练 runner 可用" : `训练 runner 缺失：${runnerPath}` });
   try {
     probe = await pythonProbe(python, trainerRoot);
     checks.push({ id: "python", ok: manifest?.runtime?.python === probe.python, message: `Python ${probe.python}` });
     checks.push({ id: "torch", ok: manifest?.runtime?.torch === probe.torch, message: `Torch ${probe.torch}` });
     checks.push({ id: "cuda", ok: probe.cuda_available, message: probe.cuda_available ? `${probe.gpu}，CUDA ${probe.cuda}` : "CUDA 不可用" });
     checks.push({ id: "bf16", ok: probe.bf16_supported === true, message: probe.bf16_supported ? "GPU 支持 BF16 训练" : "GPU 不支持 BF16 训练" });
+    if (family === "anima") {
+      try {
+        await execFileAsync(python, ["-c", "import bitsandbytes,toml,anima_train_network; from library.anima_utils import load_t5_tokenizer,load_qwen3_tokenizer; load_t5_tokenizer(); load_qwen3_tokenizer('unused.safetensors')"], { cwd: trainerRoot, env: { ...process.env, HF_HUB_OFFLINE: "1", PYTHONUTF8: "1" }, windowsHide: true, timeout: 30_000, maxBuffer: 1024 * 1024 });
+        checks.push({ id: "trainer_dependencies", ok: true, message: "Anima 训练依赖和本地 tokenizer 可用" });
+      } catch (error) {
+        checks.push({ id: "trainer_dependencies", ok: false, message: `Anima 训练依赖或本地 tokenizer 缺失：${error.message}` });
+      }
+    }
   } catch (error) {
     checks.push({ id: "python", ok: false, message: `训练 Python 不可用：${error.message}` });
   }
-  return { available: checks.every((check) => check.ok), trainer_root: trainerRoot, python, manifest, commit, runtime: probe, runner: { name: QWEN_RUNNER_NAME, version: QWEN_RUNNER_VERSION, path: runnerPath, exists: runnerExists, sha256: runnerHash }, checks, captioning, optional_capabilities: { upscaler, quality } };
+  return { family, available: checks.every((check) => check.ok), trainer_root: trainerRoot, python, manifest, commit, runtime: probe, runner: { name: family === "anima" ? "anima-lora-runner" : QWEN_RUNNER_NAME, version: 1, path: runnerPath, exists: runnerExists, sha256: runnerHash }, checks, captioning, optional_capabilities: { upscaler, quality } };
 }
 
-export function loraEnvironmentCacheKey(projectRoot, config) {
+export function loraEnvironmentCacheKey(projectRoot, config, family = "qwen-image-2-1") {
   return canonicalJson({
     projectRoot: path.resolve(projectRoot),
+    family,
     models_root: config?.models_root ?? null,
     lora_training: config?.lora_training ?? null,
   });
@@ -120,12 +147,10 @@ export async function loraEnvironmentFileSignature(target) {
   return info ? { size: info.size, mtime_ms: info.mtimeMs } : null;
 }
 
-export async function loraEnvironmentDependencyFingerprint(projectRoot, config) {
-  const trainerRoot = configuredPath(projectRoot, config?.lora_training?.diffsynth?.trainer_root, "../story-canvas-trainer/DiffSynth-Studio");
-  const python = configuredPath(projectRoot, config?.lora_training?.diffsynth?.python, "../story-canvas-trainer/DiffSynth-Studio/.venv/Scripts/python.exe");
-  const diffsynthManifestPath = path.join(projectRoot, "library", "lora-training", "diffsynth.json");
+export async function loraEnvironmentDependencyFingerprint(projectRoot, config, family = "qwen-image-2-1") {
+  const { trainerRoot, python, manifestPath: diffsynthManifestPath } = trainerSettings(projectRoot, config, family);
   const diffsynthManifest = await readJson(diffsynthManifestPath, { optional: true });
-  const modelManifestPath = path.join(projectRoot, "library", "lora-training", "qwen-image21-models.json");
+  const modelManifestPath = path.join(projectRoot, "library", "lora-training", family === "anima" ? "anima-models.json" : "qwen-image21-models.json");
   const modelManifest = await readJson(modelManifestPath, { optional: true });
   const captioning = config?.lora_training?.captioning;
   const captionerManifestPathValue = captionerManifestPath(projectRoot, captioning);
@@ -139,9 +164,17 @@ export async function loraEnvironmentDependencyFingerprint(projectRoot, config) 
   add(modelManifestPath);
   add(upscalerManifestPath);
   add(python);
-  add(loraRunnerPath(projectRoot));
-  add(configuredPath(projectRoot, diffsynthManifest?.dependency_lock, path.join("app", "python", "diffsynth.lock")));
+  add(loraRunnerPath(projectRoot, family));
+  if (family !== "anima") add(configuredPath(projectRoot, diffsynthManifest?.dependency_lock, path.join("app", "python", "diffsynth.lock")));
   if (trainerRoot) {
+    add(path.join(trainerRoot, diffsynthManifest?.entry ?? "anima_train_network.py"));
+    if (family === "anima") {
+      for (const directory of ["qwen3_06b", "t5_old"]) {
+        const configDirectory = path.join(trainerRoot, "configs", directory);
+        add(configDirectory);
+        for (const file of await readdir(configDirectory).catch(() => [])) add(path.join(configDirectory, file));
+      }
+    }
     add(path.join(trainerRoot, ".git", "HEAD"));
     add(path.join(trainerRoot, ".git", "index"));
   }
@@ -167,13 +200,13 @@ export async function loraEnvironmentDependencyFingerprint(projectRoot, config) 
   });
 }
 
-export async function readCachedLoraTrainingEnvironment(projectRoot, config, { force = false } = {}) {
-  const key = loraEnvironmentCacheKey(projectRoot, config);
-  const fingerprint = await loraEnvironmentDependencyFingerprint(projectRoot, config);
+export async function readCachedLoraTrainingEnvironment(projectRoot, config, { force = false, family = "qwen-image-2-1" } = {}) {
+  const key = loraEnvironmentCacheKey(projectRoot, config, family);
+  const fingerprint = await loraEnvironmentDependencyFingerprint(projectRoot, config, family);
   const cached = loraEnvironmentCache.get(key);
   if (!force && cached?.fingerprint === fingerprint && cached.value) return cached.value;
   if (!force && cached?.fingerprint === fingerprint && cached.promise) return cached.promise;
-  const promise = readLoraTrainingEnvironment(projectRoot, config)
+  const promise = readLoraTrainingEnvironment(projectRoot, config, family)
     .then((value) => {
       loraEnvironmentCache.set(key, { fingerprint, value });
       return value;
@@ -194,13 +227,14 @@ export async function listLoraTrainingRecipes(projectRoot) {
     if (!entry.isFile() || path.extname(entry.name).toLowerCase() !== ".json") continue;
     const recipe = await readJson(path.join(root, entry.name), { optional: true });
     if (!isRecord(recipe) || typeof recipe.id !== "string" || !isRecord(recipe.semantic_config)) continue;
-    if (recipe.family !== "qwen-image-2-1") continue;
+    if (!["anima", "qwen-image-2-1"].includes(recipe.family)) continue;
     recipes.push({
       id: recipe.id,
       version: recipe.version,
       name: typeof recipe.name === "string" ? recipe.name : recipe.id,
       description: typeof recipe.description === "string" ? recipe.description : "",
       family: recipe.family,
+      default_target: await defaultLoraTrainingTarget(projectRoot, recipe.family),
       semantic_config: recipe.semantic_config,
     });
   }
@@ -223,15 +257,20 @@ export function validateSemanticConfig(next) {
 }
 
 export function semanticTrainingConfig(task, recipe) {
-  const allowed = new Set(Object.keys(loraTrainingOverrideDefinitions));
+  const allowed = new Set(Object.keys(loraTrainingOverridesForFamily(task.target.family)));
   const next = structuredClone(recipe.semantic_config);
   for (const [key, value] of Object.entries(task.training_recipe.overrides ?? {})) {
     if (!allowed.has(key)) throw new LoraTrainingError(422, "unsupported_lora_training_parameter", [key]);
     next[key] = value;
   }
-  // alpha 恒等于 rank；Micro Batch 固定 1，都不是独立旋钮。
+  // alpha 恒等于 rank；Anima 可调整 micro batch，Qwen 固定为 1。
   next.network_alpha = next.network_dim;
-  next.micro_batch_size = 1;
+  if (task.target.family !== "anima") next.micro_batch_size = 1;
+  if (task.target.family === "anima") {
+    const errors = [];
+    validateFrozenSemanticConfig(next, errors, "anima");
+    if (errors.length) throw new LoraTrainingError(422, "invalid_lora_training_parameter", errors);
+  }
   return validateSemanticConfig(next);
 }
 
@@ -333,7 +372,7 @@ export async function preflightLoraTraining(projectRoot, projectDirectory, taskI
   const latestCaptioning = await readCaptioningLatest(projectDirectory, task.dataset_id);
   const blockers = [];
   const warnings = [];
-  const environment = skipEnvironment ? null : await readLoraTrainingEnvironment(projectRoot, config);
+  const environment = skipEnvironment ? null : await readLoraTrainingEnvironment(projectRoot, config, task.target.family);
   if (environment && !environment.available) blockers.push({ code: "training_environment_unavailable", message: "LoRA 训练环境缺失或版本不符" });
   const enabledGroups = dataset.groups.filter((group) => group.enabled);
   const enabledGroupIds = new Set(enabledGroups.map((group) => group.id));
@@ -395,23 +434,23 @@ export async function preflightLoraTraining(projectRoot, projectDirectory, taskI
   const modelsRoot = configuredPath(projectRoot, config?.models_root);
   let modelManifest = null;
   try {
-    modelManifest = await readQwenModelFiles(projectRoot);
+    modelManifest = await readTrainingModelFiles(projectRoot, task.target.family);
   } catch {
-    blockers.push({ code: "invalid_qwen_model_manifest", message: "Qwen 模型文件清单缺失或无效" });
+    blockers.push({ code: "invalid_training_model_manifest", message: "训练模型文件清单缺失或无效" });
   }
   if (modelManifest && !modelsRoot) blockers.push({ code: "models_root_not_configured", message: "未配置 models_root，无法校验模型文件" });
   if (modelManifest && modelsRoot) {
     for (const file of modelManifest.files) {
-      const kind = modelFileKind(task.target.base, file.relative_path);
+      const kind = task.target.family === "anima" ? (task.target.base[file.kind]?.relative_path === file.relative_path ? file.kind : null) : modelFileKind(task.target.base, file.relative_path);
       if (!kind) continue;
-      const identity = { relative_path: file.relative_path, sha256: file.sha256 ?? null, size_bytes: Number.isSafeInteger(file.size) ? file.size : null, source: modelManifest.repository };
+      const identity = { relative_path: file.relative_path, sha256: file.sha256 ?? null, size_bytes: Number.isSafeInteger(file.size) ? file.size : null, source: file.source ?? modelManifest.repository };
       const resolved = await resolveModel(projectRoot, config, `${kind}:${file.relative_path}`, identity);
       models.push({ ...resolved, kind });
       if (!resolved.exists) blockers.push({ code: "model_missing", model: file.relative_path, message: `${kind} 模型文件缺失：${file.relative_path}` });
       else if (!identity.sha256) blockers.push({ code: "model_sha_unconfirmed", model: file.relative_path, message: `${file.relative_path} 清单缺少 SHA-256` });
       else if (!resolved.matches) blockers.push({ code: "model_sha_mismatch", model: file.relative_path, actual_sha256: resolved.sha256, message: `${file.relative_path} SHA-256 或大小不匹配` });
     }
-    for (const kind of ["dit", "text_encoder", "vae", "processor"]) {
+    for (const kind of task.target.family === "anima" ? ["dit", "text_encoder", "vae"] : ["dit", "text_encoder", "vae", "processor"]) {
       if (!models.some((model) => model.kind === kind)) blockers.push({ code: "model_kind_unmapped", model: kind, message: `base.${kind} 目录前缀没有匹配任何模型清单文件` });
     }
   }
@@ -434,7 +473,7 @@ export async function preflightLoraTraining(projectRoot, projectDirectory, taskI
   const dimensionScale = (semanticConfig?.network_dim ?? 32) / 32;
   const cacheBytes = enabledItems.length * 8 * 1024 ** 2;
   const loraBytes = 200 * 1024 ** 2 * dimensionScale;
-  const resumeBytes = 2 * (loraBytes + 2 * 2 * loraBytes);
+  const resumeBytes = task.target.family === "anima" ? 0 : 2 * (loraBytes + 2 * 2 * loraBytes);
   const checkpointCount = runSettings ? Math.ceil(runSettings.max_train_steps / runSettings.save_every_n_steps) + 1 : 2;
   const estimatedBytes = cacheBytes + resumeBytes + checkpointCount * loraBytes;
   const volume = await statfs(projectDirectory).catch(() => null);
@@ -510,8 +549,8 @@ export async function snapshotRun(projectRoot, projectDirectory, taskId, config,
       snapshots.push({ item_id: item.id, asset_id: item.asset_id, group_id: item.group_id, source_file: item.file, image_file: `${item.id}${extension}`, caption_file: `${item.id}.txt`, image_sha256: await sha256File(imageTarget), caption_sha256: await sha256File(captionTarget) });
     }
     const sampling = { weights: snapshots.map((snapshot) => ({ item_id: snapshot.item_id, weight: groupById.get(snapshot.group_id).repeats })) };
-    const runnerPath = loraRunnerPath(projectRoot);
-    const runner = { name: QWEN_RUNNER_NAME, version: QWEN_RUNNER_VERSION, sha256: await sha256File(runnerPath) };
+    const runnerPath = loraRunnerPath(projectRoot, task.target.family);
+    const runner = { name: task.target.family === "anima" ? "anima-lora-runner" : QWEN_RUNNER_NAME, version: 1, sha256: await sha256File(runnerPath) };
     const paths = {
       inputs_dir: path.join(archive, "inputs"),
       cache_dir: path.join(destination, "cache"),
@@ -574,7 +613,7 @@ export async function freezeLoraTrainingResumeRun(projectRoot, projectDirectory,
   const parentArchive = generatedRunRoot(projectDirectory, taskId, parentRunId);
   const parentManifest = await readJson(path.join(parentArchive, "manifest.json"), { optional: true });
   if (!parentManifest) throw new LoraTrainingError(404, "lora_training_run_not_found");
-  if (parentManifest.version !== 5) throw new LoraTrainingError(409, "lora_training_resume_unsupported", ["Anima 历史记录不支持精确续训"]);
+  if (parentManifest.version !== 5 || parentManifest.family !== "qwen-image-2-1") throw new LoraTrainingError(409, "lora_training_resume_unsupported", ["当前仅 Qwen run 支持精确续训"]);
   assertLoraTrainingRunManifest(parentManifest, { taskId, runId: parentRunId });
   const pointer = await readJson(path.join(parentArchive, "resume", "latest.json"), { optional: true });
   if (!pointer || pointer.snapshot_id !== request.source_snapshot_id || pointer.sha256 !== request.source_sha256) {

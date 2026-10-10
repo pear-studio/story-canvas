@@ -29,6 +29,11 @@ function findPython() {
 const python = findPython();
 const sha256 = (data) => createHash("sha256").update(data).digest("hex");
 
+test("Anima runner 的冻结、停止和 checkpoint 发布协议", { skip: !python }, () => {
+  const result = spawnSync(python, [path.join(appRoot, "python", "tests", "test_anima_runner.py")], { cwd: repoRoot, encoding: "utf8", windowsHide: true, timeout: 90_000 });
+  assert.equal(result.status, 0, `${result.error?.message ?? ""}\n${result.stdout}\n${result.stderr}`);
+});
+
 function buildManifest(root) {
   const inputs = path.join(root, "inputs");
   mkdirSync(inputs, { recursive: true });

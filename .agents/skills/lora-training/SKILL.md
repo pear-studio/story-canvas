@@ -1,6 +1,6 @@
 ---
 name: lora-training
-description: 为 StoryCanvas 准备 LoRA 素材与 Caption，配置、预检、诊断和分析训练；明确授权后发起训练。当前工作台可新建 Qwen 训练，Anima 恢复另行委托。
+description: 为 StoryCanvas 准备 LoRA 素材与 Caption，配置、预检、诊断和分析训练；明确授权后发起训练。支持 Anima 和 Qwen 新训练。
 ---
 
 # LoRA 训练

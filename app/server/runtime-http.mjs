@@ -212,6 +212,7 @@ export async function handleRuntimeRequest({
   }
   if (request.method === "GET" && decodedPath === "/api/lora-training/environment") {
     sendJson(response, 200, await loraTrainingModule.plan.environment.read(projectRoot, config, {
+      family: requestUrl.searchParams.get("family") ?? "qwen-image-2-1",
       force: requestUrl.searchParams.get("refresh") === "1",
     }));
     return true;

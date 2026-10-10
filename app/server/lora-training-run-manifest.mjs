@@ -108,37 +108,43 @@ function validateItem(value, index, groupIds, itemIds, assetIds, errors) {
   validateHash(value.caption_sha256, `${label}.caption_sha256`, errors);
 }
 
-function validateTrainer(value, errors) {
+function validateTrainer(value, errors, family) {
   const label = "trainer";
-  if (!validateObject(value, label, ["diffsynth_commit", "python", "torch", "gpu", "vram_bytes", "runner"], errors)) return;
-  for (const key of ["diffsynth_commit", "python", "torch"]) validateNonEmptyString(value[key], `${label}.${key}`, errors);
+  const commit = family === "anima" ? "sd_scripts_commit" : "diffsynth_commit";
+  if (!validateObject(value, label, [commit, "python", "torch", "gpu", "vram_bytes", "runner", ...(family === "anima" ? ["root"] : [])], errors)) return;
+  for (const key of [commit, "python", "torch"]) validateNonEmptyString(value[key], `${label}.${key}`, errors);
+  if (family === "anima" && (typeof value.root !== "string" || !path.isAbsolute(value.root))) errors.push("trainer.root 必须是绝对路径");
   // CPU/toy 环境没有 GPU 身份；正式预检会单独阻断无 CUDA 的运行。
   if (value.gpu !== null && typeof value.gpu !== "string") errors.push(`${label}.gpu 必须是字符串或 null`);
   if (!Number.isSafeInteger(value.vram_bytes) || value.vram_bytes < 0) errors.push(`${label}.vram_bytes 必须是非负整数`);
   const runner = value.runner;
   if (!validateObject(runner, `${label}.runner`, ["name", "version", "sha256"], errors)) return;
-  if (runner.name !== "qwen-image21-lora-runner") errors.push(`${label}.runner.name 必须为 qwen-image21-lora-runner`);
+  const name = family === "anima" ? "anima-lora-runner" : "qwen-image21-lora-runner";
+  if (runner.name !== name) errors.push(`${label}.runner.name 必须为 ${name}`);
   validatePositiveInteger(runner.version, `${label}.runner.version`, errors);
   validateHash(runner.sha256, `${label}.runner.sha256`, errors);
 }
 
-function validateRecipe(value, errors) {
+function validateRecipe(value, errors, family) {
   const label = "recipe";
   if (!validateObject(value, label, ["id", "version", "sha256", "overrides"], errors)) return;
   validateNonEmptyString(value.id, `${label}.id`, errors);
   validatePositiveInteger(value.version, `${label}.version`, errors);
   validateHash(value.sha256, `${label}.sha256`, errors);
-  if (!validateObject(value.overrides, `${label}.overrides`, [], errors, ["network_dim", "learning_rate", "gradient_accumulation_steps"])) return;
+  if (!validateObject(value.overrides, `${label}.overrides`, [], errors, ["network_dim", "learning_rate", "gradient_accumulation_steps", ...(family === "anima" ? ["micro_batch_size", "blocks_to_swap"] : [])])) return;
+  if (Object.hasOwn(value.overrides, "micro_batch_size")) validatePositiveInteger(value.overrides.micro_batch_size, `${label}.overrides.micro_batch_size`, errors);
+  if (Object.hasOwn(value.overrides, "blocks_to_swap") && (!Number.isInteger(value.overrides.blocks_to_swap) || value.overrides.blocks_to_swap < 0 || value.overrides.blocks_to_swap > 27)) errors.push("recipe.overrides.blocks_to_swap 必须为 0 到 27 的整数");
   for (const key of ["network_dim", "gradient_accumulation_steps"]) if (Object.hasOwn(value.overrides, key)) validatePositiveInteger(value.overrides[key], `${label}.overrides.${key}`, errors);
   if (Object.hasOwn(value.overrides, "learning_rate") && (!isFiniteNumber(value.overrides.learning_rate) || value.overrides.learning_rate <= 0)) errors.push(`${label}.overrides.learning_rate 必须是正有限数`);
 }
 
-function validateSemanticConfig(value, errors) {
+export function validateSemanticConfig(value, errors, family = "qwen-image-2-1") {
   const label = "semantic_config";
-  const required = ["max_pixels", "network_dim", "network_alpha", "learning_rate", "gradient_accumulation_steps", "micro_batch_size", "optimizer", "scheduler", "precision", "gradient_checkpointing", "lora_target_modules"];
+  const required = ["max_pixels", "network_dim", "network_alpha", "learning_rate", "gradient_accumulation_steps", "micro_batch_size", "optimizer", "scheduler", "precision", "gradient_checkpointing", "lora_target_modules", ...(family === "anima" ? ["blocks_to_swap", "timestep_sampling", "sigmoid_scale", "weighting_scheme", "loss_type"] : [])];
   if (!validateObject(value, label, required, errors)) return;
   for (const key of ["max_pixels", "network_dim", "network_alpha", "gradient_accumulation_steps"]) validatePositiveInteger(value[key], `${label}.${key}`, errors);
-  if (value.micro_batch_size !== 1) errors.push(`${label}.micro_batch_size 固定为 1`);
+  if (family === "anima") validatePositiveInteger(value.micro_batch_size, `${label}.micro_batch_size`, errors);
+  else if (value.micro_batch_size !== 1) errors.push(`${label}.micro_batch_size 固定为 1`);
   if (isPositiveInteger(value.network_dim) && isPositiveInteger(value.network_alpha) && value.network_alpha !== value.network_dim) errors.push(`${label}.network_alpha 必须等于 network_dim`);
   if (!isFiniteNumber(value.learning_rate) || value.learning_rate <= 0) errors.push(`${label}.learning_rate 必须是正有限数`);
   const optimizer = value.optimizer;
@@ -149,7 +155,12 @@ function validateSemanticConfig(value, errors) {
     if (!isFiniteNumber(optimizer.weight_decay) || optimizer.weight_decay < 0) errors.push(`${label}.optimizer.weight_decay 必须是非负有限数`);
   }
   const scheduler = value.scheduler;
-  if (validateObject(scheduler, `${label}.scheduler`, ["type", "factor", "total_iters"], errors)) {
+  if (family === "anima") {
+    if (validateObject(scheduler, `${label}.scheduler`, ["type", "warmup_ratio"], errors)) {
+      if (scheduler.type !== "cosine") errors.push("Anima scheduler.type 必须为 cosine");
+      if (!isFiniteNumber(scheduler.warmup_ratio) || scheduler.warmup_ratio < 0 || scheduler.warmup_ratio >= 1) errors.push("scheduler.warmup_ratio 必须在 [0,1) 内");
+    }
+  } else if (validateObject(scheduler, `${label}.scheduler`, ["type", "factor", "total_iters"], errors)) {
     validateNonEmptyString(scheduler.type, `${label}.scheduler.type`, errors);
     if (!isFiniteNumber(scheduler.factor) || scheduler.factor <= 0) errors.push(`${label}.scheduler.factor 必须是正有限数`);
     if (!Number.isSafeInteger(scheduler.total_iters) || scheduler.total_iters < 0) errors.push(`${label}.scheduler.total_iters 必须是非负整数`);
@@ -161,6 +172,13 @@ function validateSemanticConfig(value, errors) {
   if (typeof value.gradient_checkpointing !== "boolean") errors.push(`${label}.gradient_checkpointing 必须是布尔值`);
   if (!Array.isArray(value.lora_target_modules) || value.lora_target_modules.length === 0) errors.push(`${label}.lora_target_modules 必须是非空字符串数组`);
   else value.lora_target_modules.forEach((entry, index) => validateNonEmptyString(entry, `${label}.lora_target_modules[${index}]`, errors));
+  if (family === "anima") {
+    if (!Number.isInteger(value.blocks_to_swap) || value.blocks_to_swap < 0 || value.blocks_to_swap > 27) errors.push("blocks_to_swap 必须为 0 到 27 的整数");
+    for (const [key, expected] of Object.entries({ max_pixels: 1048576, timestep_sampling: "sigmoid", sigmoid_scale: 1, weighting_scheme: "uniform", loss_type: "l2" })) if (value[key] !== expected) errors.push(`Anima ${key} 必须为 ${expected}`);
+    if (optimizer?.type !== "AdamW8bit") errors.push("Anima optimizer.type 必须为 AdamW8bit");
+    if (value.precision?.base !== "bf16" || value.precision?.lora !== "bf16" || value.precision?.optimizer_state !== "8bit") errors.push("Anima precision 必须为 bf16/bf16/8bit");
+    if (JSON.stringify(value.lora_target_modules) !== JSON.stringify(["self_attn", "cross_attn", "mlp"])) errors.push("Anima 只训练 DiT self_attn/cross_attn/mlp");
+  }
 }
 
 function validateRun(value, errors) {
@@ -262,7 +280,7 @@ export function createLoraTrainingRunManifest({
       source: model.identity.source ?? null,
     })),
     trainer: clone({
-      diffsynth_commit: preflight.environment.commit,
+      ...(task.target.family === "anima" ? { sd_scripts_commit: preflight.environment.commit, root: preflight.environment.trainer_root } : { diffsynth_commit: preflight.environment.commit }),
       python: preflight.environment.runtime.python,
       torch: preflight.environment.runtime.torch,
       gpu: preflight.environment.runtime.gpu ?? null,
@@ -310,7 +328,7 @@ export function validateLoraTrainingRunManifest(value) {
   if (!validDate(value.created_at)) errors.push("created_at 无效");
   validateNonEmptyString(value.task_name, "task_name", errors);
   validateNonEmptyString(value.dataset_name, "dataset_name", errors);
-  if (value.family !== "qwen-image-2-1") errors.push("family 必须为 qwen-image-2-1");
+  if (!["anima", "qwen-image-2-1"].includes(value.family)) errors.push("family 必须为 anima 或 qwen-image-2-1");
   validateNonEmptyString(value.prompt_family, "prompt_family", errors);
   validateUsageDefaults(value.usage_defaults, errors);
   if (typeof value.description !== "string") errors.push("description 必须是字符串");
@@ -356,14 +374,18 @@ export function validateLoraTrainingRunManifest(value) {
       }
     }
   });
-  for (const kind of ["dit", "text_encoder", "vae", "processor"]) if (!modelKinds.has(kind)) errors.push(`manifest.models 缺少 ${kind} 文件`);
+  const requiredKinds = value.family === "anima" ? ["dit", "text_encoder", "vae"] : ["dit", "text_encoder", "vae", "processor"];
+  for (const kind of requiredKinds) if (!modelKinds.has(kind)) errors.push(`manifest.models 缺少 ${kind} 文件`);
+  if (value.family === "anima") for (const kind of requiredKinds) if (value.models?.filter(model => model.kind === kind).length !== 1) errors.push(`Anima ${kind} 必须为单文件`);
+  if (value.family === "anima" && modelKinds.has("processor")) errors.push("Anima 不使用 processor 模型文件");
 
-  validateTrainer(value.trainer, errors);
-  validateRecipe(value.recipe, errors);
-  validateSemanticConfig(value.semantic_config, errors);
+  validateTrainer(value.trainer, errors, value.family);
+  validateRecipe(value.recipe, errors, value.family);
+  validateSemanticConfig(value.semantic_config, errors, value.family);
   validateRun(value.run, errors);
   validateSampling(value.sampling, itemIds, errors);
   validateResume(value.resume, errors);
+  if (value.family === "anima" && value.resume !== null) errors.push("Anima 当前不支持精确续训");
   validatePaths(value.paths, errors);
   validateExecution(value.execution, errors);
   validatePositiveInteger(value.seed, "seed", errors);

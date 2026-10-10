@@ -84,7 +84,7 @@ test("完整 v5 manifest 通过全部内部契约校验", () => {
   assert.deepEqual(validateLoraTrainingRunManifest(completeManifest()), []);
 });
 
-test("v5 manifest 拒绝 v4 的冗余字段与旧家族", () => {
+test("v5 manifest 拒绝 v4 的冗余字段与混用训练器", () => {
   const manifest = completeManifest();
   manifest.version = 4;
   manifest.family = "anima";
@@ -92,7 +92,7 @@ test("v5 manifest 拒绝 v4 的冗余字段与旧家族", () => {
   manifest.dataset_toml_sha256 = "5".repeat(64);
   const errors = validateLoraTrainingRunManifest(manifest);
   assert.ok(errors.some((error) => error.includes("version 必须为 5")));
-  assert.ok(errors.some((error) => error.includes("family 必须为 qwen-image-2-1")));
+  assert.ok(errors.some((error) => error.includes("sd_scripts_commit")));
   assert.ok(errors.some((error) => error.includes("未支持字段：config")));
   assert.ok(errors.some((error) => error.includes("未支持字段：dataset_toml_sha256")));
 });
@@ -164,7 +164,7 @@ test("frozen manifest Schema 与 runtime validator 保持 Qwen 契约一致", as
   assert.deepEqual(Object.keys(schema.$defs.recipe_overrides.properties).sort(), ["gradient_accumulation_steps", "learning_rate", "network_dim"]);
   assert.equal(schema.$defs.recipe_overrides.additionalProperties, false);
   assert.deepEqual(schema.$defs.model.properties.kind.enum, ["dit", "text_encoder", "vae", "processor"]);
-  assert.equal(schema.properties.family.const, "qwen-image-2-1");
+  assert.deepEqual(schema.properties.family.enum, ["anima", "qwen-image-2-1"]);
   assertManifest(completeManifest(), true, "合法 Qwen manifest");
   const withNote = completeManifest();
   withNote.run.note = "追加到 4000\n与上一轮对比";
@@ -193,6 +193,42 @@ test("仓库 Qwen 方案自身是合法的语义配置来源", async () => {
   assert.ok(recipe.semantic_config.lora_target_modules.includes("transformer_blocks.31.img_mlp.gate_layer"));
   const settingsSchema = JSON.parse(await readFile(new URL("../../library/schemas/lora-training-settings.schema.json", import.meta.url), "utf8"));
   assert.equal(settingsSchema.properties.version.const, 5);
-  assert.equal(settingsSchema.properties.target.properties.family.const, "qwen-image-2-1");
+  assert.deepEqual(settingsSchema.properties.target.properties.family.enum, ["anima", "qwen-image-2-1"]);
   assert.deepEqual(settingsSchema.properties.run_defaults.required, ["max_train_steps", "save_every_n_steps", "seed"]);
+});
+
+test("Anima 冻结配置与 Schema 一致，允许 batch 调整但不允许混用或续训", async () => {
+  const recipe = JSON.parse(await readFile(new URL("../../library/lora-training/recipes/anima-lora-v1.json", import.meta.url), "utf8"));
+  const manifest = completeManifest();
+  Object.assign(manifest, { family: "anima", prompt_family: "anima", semantic_config: { ...recipe.semantic_config, network_alpha: 32 } });
+  manifest.models = manifest.models.filter(model => model.kind !== "processor");
+  manifest.models.splice(1, 1);
+  manifest.trainer.sd_scripts_commit = manifest.trainer.diffsynth_commit;
+  delete manifest.trainer.diffsynth_commit;
+  manifest.trainer.root = path.resolve("C:/trainer/sd-scripts");
+  manifest.trainer.runner.name = "anima-lora-runner";
+  manifest.recipe.id = recipe.id;
+  Object.assign(manifest.recipe.overrides, { learning_rate: .00002, gradient_accumulation_steps: 2, micro_batch_size: 2, blocks_to_swap: 0 });
+  const schema = JSON.parse(await readFile(new URL("../../library/schemas/lora-training-run-manifest.schema.json", import.meta.url), "utf8"));
+  const ajv = new Ajv2020({ allErrors: true, strict: true });
+  ajv.addFormat("date-time", true);
+  const validate = ajv.compile(schema);
+  const accepts = (value, expected) => {
+    assert.equal(validate(value), expected, JSON.stringify(validate.errors));
+    assert.equal(validateLoraTrainingRunManifest(value).length === 0, expected);
+  };
+  accepts(manifest, true);
+  const smaller = structuredClone(manifest);
+  Object.assign(smaller.semantic_config, { micro_batch_size: 1, gradient_accumulation_steps: 4 });
+  Object.assign(smaller.recipe.overrides, { micro_batch_size: 1, gradient_accumulation_steps: 4 });
+  accepts(smaller, true);
+  const mixed = structuredClone(manifest);
+  mixed.trainer.diffsynth_commit = "wrong-route";
+  accepts(mixed, false);
+  const resume = structuredClone(manifest);
+  resume.resume = { parent_run_id: "run-333333333333", source_snapshot_id: "step-000100", source_sha256: "a".repeat(64), start_step: 100 };
+  accepts(resume, false);
+  const badSwap = structuredClone(manifest);
+  badSwap.semantic_config.blocks_to_swap = 28;
+  accepts(badSwap, false);
 });

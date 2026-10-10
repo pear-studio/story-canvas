@@ -100,16 +100,15 @@ export async function createLoraTrainingDataset(projectDirectory, input = {}) {
   return readLoraTrainingDataset(projectDirectory, id);
 }
 
-export async function createLoraTrainingTask(projectRoot, projectDirectory, input = {}) {
-  const datasetId = String(input.dataset_id ?? "");
-  const id = datasetId;
-  if (await exists(path.join(taskRoot(projectDirectory, id), "settings.json"))) return readLoraTrainingTask(projectDirectory, id);
-  const { dataset } = await requireDataset(projectDirectory, datasetId);
-  if (input?.target?.family && input.target.family !== "qwen-image-2-1") throw new LoraTrainingError(422, "unsupported_lora_training_family");
-  const family = "qwen-image-2-1";
+export async function defaultLoraTrainingTarget(projectRoot, family) {
+  if (!["anima", "qwen-image-2-1"].includes(family)) throw new LoraTrainingError(422, "unsupported_lora_training_family");
   // 默认底模为官方 BF16 目录前缀；逐文件身份以 library/lora-training/qwen-image21-models.json 为准。
   const qwenSource = "https://huggingface.co/Qwen/Qwen-Image-2.1";
-  const defaultTarget = {
+  return family === "anima" ? {
+    family, prompt_family: "anima",
+    usage_defaults: { clip_skip: null, sampler: "euler_ancestral", scheduler: "normal", steps: 30, cfg: 4 },
+    base: Object.fromEntries((await readJson(path.join(projectRoot, "library", "lora-training", "anima-models.json"))).files.map(file => [file.kind, { relative_path: file.relative_path, source: file.source }])),
+  } : {
     family,
     prompt_family: "qwen",
     usage_defaults: { clip_skip: null, sampler: "euler", scheduler: "simple", steps: 25, cfg: 1 },
@@ -120,21 +119,30 @@ export async function createLoraTrainingTask(projectRoot, projectDirectory, inpu
       processor: { relative_path: "text_encoders/qwen-image-2.1/processor/", source: qwenSource },
     },
   };
+}
+
+export async function createLoraTrainingTask(projectRoot, projectDirectory, input = {}) {
+  const datasetId = String(input.dataset_id ?? "");
+  const id = datasetId;
+  if (await exists(path.join(taskRoot(projectDirectory, id), "settings.json"))) return readLoraTrainingTask(projectDirectory, id);
+  const { dataset } = await requireDataset(projectDirectory, datasetId);
+  const family = input?.target?.family ?? "qwen-image-2-1";
+  const defaultTarget = await defaultLoraTrainingTarget(projectRoot, family);
   const target = {
     family,
     prompt_family: String(input?.target?.prompt_family ?? defaultTarget.prompt_family).trim() || defaultTarget.prompt_family,
     usage_defaults: { ...defaultTarget.usage_defaults, ...(isRecord(input?.target?.usage_defaults) ? input.target.usage_defaults : {}) },
     base: input?.target?.base ?? defaultTarget.base,
   };
-  const recipeId = typeof input.recipe_id === "string" ? input.recipe_id : "qwen-image21-lora-v1";
+  const recipeId = typeof input.recipe_id === "string" ? input.recipe_id : family === "anima" ? "anima-lora-v1" : "qwen-image21-lora-v1";
   const recipe = await readLoraTrainingRecipe(projectRoot, recipeId);
   if (!recipe || recipe.family !== family) throw new LoraTrainingError(422, "invalid_training_recipe");
   const task = {
     version: 5,
-    name: String(input.name ?? `${dataset.name} · Qwen-Image-2.1`).trim() || `${dataset.name} · Qwen-Image-2.1`,
+    name: String(input.name ?? dataset.name).trim() || dataset.name,
     dataset_id: datasetId,
     target,
-    training_recipe: { id: recipeId, overrides: Object.fromEntries(Object.keys(support.loraTrainingOverrideDefinitions).map(key => [key, recipe.semantic_config[key]])) },
+    training_recipe: { id: recipeId, overrides: Object.fromEntries(Object.keys(support.loraTrainingOverridesForFamily(family)).map(key => [key, recipe.semantic_config[key]])) },
     run_defaults: initialRunSettings(),
   };
   const errors = validateLoraTrainingTask(task);

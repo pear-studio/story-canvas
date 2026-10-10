@@ -57,7 +57,10 @@
       "minLength": 1
     },
     "family": {
-      "const": "qwen-image-2-1"
+      "enum": [
+        "anima",
+        "qwen-image-2-1"
+      ]
     },
     "prompt_family": {
       "type": "string",
@@ -96,13 +99,13 @@
       }
     },
     "trainer": {
-      "$ref": "#/$defs/trainer"
+      "type": "object"
     },
     "recipe": {
-      "$ref": "#/$defs/recipe"
+      "type": "object"
     },
     "semantic_config": {
-      "$ref": "#/$defs/semantic_config"
+      "type": "object"
     },
     "run": {
       "$ref": "#/$defs/run"
@@ -670,7 +673,343 @@
         }
       },
       "additionalProperties": false
+    },
+    "anima_trainer": {
+      "type": "object",
+      "required": [
+        "sd_scripts_commit",
+        "python",
+        "torch",
+        "gpu",
+        "vram_bytes",
+        "runner",
+        "root"
+      ],
+      "properties": {
+        "python": {
+          "type": "string",
+          "minLength": 1
+        },
+        "torch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "gpu": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "vram_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "runner": {
+          "type": "object",
+          "required": [
+            "name",
+            "version",
+            "sha256"
+          ],
+          "properties": {
+            "name": {
+              "const": "anima-lora-runner"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "sha256": {
+              "$ref": "#/$defs/sha256"
+            }
+          },
+          "additionalProperties": false
+        },
+        "sd_scripts_commit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "root": {
+          "type": "string",
+          "pattern": "^(?:/|[A-Za-z]:[\\\\/])"
+        }
+      },
+      "additionalProperties": false
+    },
+    "anima_recipe": {
+      "type": "object",
+      "required": [
+        "id",
+        "version",
+        "sha256",
+        "overrides"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "overrides": {
+          "$ref": "#/$defs/anima_recipe_overrides"
+        }
+      },
+      "additionalProperties": false
+    },
+    "anima_recipe_overrides": {
+      "type": "object",
+      "properties": {
+        "network_dim": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "learning_rate": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "gradient_accumulation_steps": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "micro_batch_size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "blocks_to_swap": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 27
+        }
+      },
+      "additionalProperties": false
+    },
+    "anima_semantic_config": {
+      "type": "object",
+      "required": [
+        "max_pixels",
+        "network_dim",
+        "network_alpha",
+        "learning_rate",
+        "gradient_accumulation_steps",
+        "micro_batch_size",
+        "optimizer",
+        "scheduler",
+        "precision",
+        "gradient_checkpointing",
+        "lora_target_modules",
+        "blocks_to_swap",
+        "timestep_sampling",
+        "sigmoid_scale",
+        "weighting_scheme",
+        "loss_type"
+      ],
+      "properties": {
+        "max_pixels": {
+          "const": 1048576
+        },
+        "network_dim": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "network_alpha": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "learning_rate": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "gradient_accumulation_steps": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "micro_batch_size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "optimizer": {
+          "type": "object",
+          "required": [
+            "type",
+            "betas",
+            "eps",
+            "weight_decay"
+          ],
+          "properties": {
+            "type": {
+              "const": "AdamW8bit"
+            },
+            "betas": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 1
+              }
+            },
+            "eps": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "weight_decay": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "scheduler": {
+          "type": "object",
+          "required": [
+            "type",
+            "warmup_ratio"
+          ],
+          "properties": {
+            "type": {
+              "const": "cosine"
+            },
+            "warmup_ratio": {
+              "type": "number",
+              "minimum": 0,
+              "exclusiveMaximum": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "precision": {
+          "type": "object",
+          "required": [
+            "base",
+            "lora",
+            "optimizer_state"
+          ],
+          "properties": {
+            "base": {
+              "const": "bf16"
+            },
+            "lora": {
+              "const": "bf16"
+            },
+            "optimizer_state": {
+              "const": "8bit"
+            }
+          },
+          "additionalProperties": false
+        },
+        "gradient_checkpointing": {
+          "type": "boolean"
+        },
+        "lora_target_modules": {
+          "const": [
+            "self_attn",
+            "cross_attn",
+            "mlp"
+          ]
+        },
+        "blocks_to_swap": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 27
+        },
+        "timestep_sampling": {
+          "const": "sigmoid"
+        },
+        "sigmoid_scale": {
+          "const": 1
+        },
+        "weighting_scheme": {
+          "const": "uniform"
+        },
+        "loss_type": {
+          "const": "l2"
+        }
+      },
+      "additionalProperties": false
     }
   },
-  "title": "LoRA 训练 run 冻结清单"
+  "title": "LoRA 训练 run 冻结清单",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "family": {
+            "const": "anima"
+          }
+        },
+        "required": [
+          "family"
+        ],
+        "type": "object"
+      },
+      "then": {
+        "properties": {
+          "trainer": {
+            "$ref": "#/$defs/anima_trainer"
+          },
+          "recipe": {
+            "$ref": "#/$defs/anima_recipe"
+          },
+          "semantic_config": {
+            "$ref": "#/$defs/anima_semantic_config"
+          },
+          "resume": {
+            "type": "null"
+          },
+          "models": {
+            "minItems": 3,
+            "maxItems": 3,
+            "items": {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "dit",
+                    "text_encoder",
+                    "vae"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "family": {
+            "const": "qwen-image-2-1"
+          }
+        },
+        "required": [
+          "family"
+        ],
+        "type": "object"
+      },
+      "then": {
+        "properties": {
+          "trainer": {
+            "$ref": "#/$defs/trainer"
+          },
+          "recipe": {
+            "$ref": "#/$defs/recipe"
+          },
+          "semantic_config": {
+            "$ref": "#/$defs/semantic_config"
+          }
+        },
+        "type": "object"
+      }
+    }
+  ]
 }

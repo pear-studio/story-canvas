@@ -1,6 +1,6 @@
 # LoRA 训练知识
 
-训练是主线任务，迭代方向以 Anima 为主，也保留 Qwen。当前工作台只能新建 Qwen-Image-2.1 训练；Anima 历史 run 只读、不支持续训，恢复另行实施。当前配方是迭代起点，不是质量保证。
+训练是主线任务，迭代方向以 Anima 为主，也保留 Qwen。工作台支持 Anima 和 Qwen-Image-2.1 新训练，共用素材与确认流程；Anima 暂不支持精确续训，旧 run 保持只读。配方是迭代起点，不是质量保证；参数以 `library/lora-training/recipes/` 为准。
 
 流程由 `lora-training` 技能维护；数据、确认、预检和运行操作查工具 help。环境见[搭建](setup.md)及[Qwen](qwen.md#训练环境)，存储见[项目事实](project-files.md)。
 
@@ -17,6 +17,8 @@
 
 - step、保存间隔和预算指 optimizer 更新；梯度累积增加处理张次，不再乘一次 repeats。Loss 和性能是诊断，不是质量评分。
 - recipe 定义语义，运行设置定义预算；已引用配方不原地改语义，基线变化用新版本。
+- Anima 使用 Base v1，只训练 DiT，不训练文本编码器或 LLM adapter；Alpha 随 Rank。默认不做 block swap，显存不足可先降低 micro batch、增加梯度累积以保持有效 batch；训练步数不固定绑定图片数量。
+- Anima 停止在完整更新步后保存 LoRA 权重；不保存完整优化器恢复状态，强制终止仍可能丢失当前步。Qwen 保留完整状态续训。
 - 没有跨进程 GPU 调度器。训练前检查 ComfyUI 队列，空闲时释放驻留模型；训练中不另占同一 GPU 生成。
 - run 按冻结 manifest 解释，后来改素材或参数不影响它。续训沿用冻结数据和参数；改变训练语义应从头训练。允许的预算调整和恢复点条件查 `training.run.resume`。
 - 停止不等于得到任意当前步恢复点，强制中断可能回退；结构化状态是依据，重启不自动继续。

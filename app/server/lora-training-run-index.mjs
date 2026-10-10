@@ -136,7 +136,7 @@ export async function listLoraTrainingRuns(projectDirectory, taskId) {
     statusValue.loss_history = rawStatus?.loss_history ?? await readRunLossHistory(runtimeDirectory);
     if (valid) {
       statusValue.checkpoints = await inventoryCheckpoints(directory, rawStatus, checkpointDirectoryFromManifest(manifest, path.join(directory, "checkpoints")), manifest.paths?.checkpoints_relative_path ?? null);
-      statusValue.resume = await readRunResumePointer(directory);
+      statusValue.resume = manifest.family === "qwen-image-2-1" ? await readRunResumePointer(directory) : null;
     }
     runs.push({
       id: entry.name,

@@ -8,7 +8,7 @@ const ts=(a,suffix='')=>`${root}/tasks/${encode(a.task_id)}${suffix}`;
 const endpointRead=(summary,route,fields={},options={})=>endpoint(summary,'GET',route,fields,{details:'返回 {value,etag}；事实写入必须带同一目标读取时的 etag，不使用项目 revision。',...options});
 const dsWrite=(summary,suffix,fields,body,options={})=>endpoint(summary,'POST',a=>ds(a,suffix),{...dataset,...fields},{credential:'etag',body,...options});
 export const trainingActions={
-  'training.environment':endpointRead('查询训练环境，不运行模型',`${root}/environment`),
+  'training.environment':endpointRead('查询训练环境，不运行模型',`${root}/environment`,{family:{...string('训练家族，省略为 qwen-image-2-1'),enum:['anima','qwen-image-2-1']}},{required:[],query:a=>({family:a.family}),details:'Anima 检查 lora_training.sd_scripts；Qwen 检查 lora_training.diffsynth。不启动训练。'}),
   'training.recipes':endpointRead('查询训练配方',`${root}/recipes`),
   'training.activation-guide':endpointRead('读取训练激活词规范',`${root}/guides/activation-tags`),
   'training.dataset.list':endpointRead('查询训练数据集目录',`${root}/datasets`),
@@ -24,7 +24,7 @@ export const trainingActions={
   'training.audit.save':dsWrite('记录已检查图片的 Caption 审计','/caption-audit',{image_sha256:array('已核查图片 SHA256'),prompt_family:{...string('审计 Prompt 家族'),enum:['anima']}},a=>({image_sha256:a.image_sha256,prompt_family:a.prompt_family})),
   'training.task.list':endpointRead('查看训练任务目录',`${root}/tasks`),
   'training.task.read':endpointRead('读取训练任务和运行记录',a=>ts(a),task,{details:'返回 value.task 为可写设置；保存仅修改 task，运行历史不写回。dataset_id 固定不变。'}),
-  'training.task.save':endpoint('保存训练设置','PUT',a=>ts(a),{...task,document:object('task.read 的 value.task 完整文档')},{credential:'etag',body:a=>a.document,details:'保留 dataset_id、版本和配方结构；训练参数的字段与范围由读取结果及 training.recipes 给出。'}),
+  'training.task.save':endpoint('保存训练设置','PUT',a=>ts(a),{...task,document:object('task.read 的 value.task 完整文档')},{credential:'etag',body:a=>a.document,details:'保留 dataset_id、版本和配方结构；一个项目维护一份当前设置，可切换 Anima/Qwen 并复用素材。切换时使用 training.recipes 的 default_target 与对应 recipe，参数字段和范围由 Schema 及配方给出。'}),
   'training.run.settings':endpointRead('读取本次训练参数默认值和范围',a=>ts(a,'/run-settings'),task),
   'training.preflight':endpoint('训练预检，不启动训练','POST',a=>ts(a,'/preflight'),{...task,run_settings:object('run.settings 返回 values：note、max_train_steps、save_every_n_steps、seed、gradient_accumulation_steps')},{body:a=>({run_settings:a.run_settings}),details:'检查模型、数据、参数和磁盘。只有 ready=true 才可运行；预检结果不等于训练已启动。'}),
   'training.run.list':endpointRead('查询所有训练运行',`${root}/runs`),
@@ -57,13 +57,13 @@ trainingActions['training.dataset.read'].details+=' 有效训练集合只包含 
 trainingActions['training.caption.read'].details+=' unlabeled 为文本为空且无基础 Prompt，unconfirmed 为未绑定当前图片和 Caption 哈希，confirmed 为两者均匹配；caption.txt 是训练文本。AnimeTimm raw_tags 保留下划线，rating 仅存原始结果。';
 trainingActions['training.caption.save'].details+=' 保存文本清除确认；改图片、裁剪、超分或恢复后也须重新确认。';
 trainingActions['training.caption.confirm'].details+=' 确认绑定当前图片与 Caption 两个哈希；启用条目不等于已确认。';
-trainingActions['training.audit.save'].details+=' 只登记实际看过的图片及最终文本；按图片哈希记录，不绑定 Caption 哈希，不能代替训练确认。scope:anima 不代表支持 Anima 训练；阻断问题不标已审计。';
+trainingActions['training.audit.save'].details+=' 只登记实际看过的图片及最终文本；按图片哈希记录，不绑定 Caption 哈希，不能代替训练确认；阻断问题不标已审计。';
 trainingActions['training.image.restore'].details='恢复原图并失效旧确认，不自动准备训练图；需要时另调用 training.image.prepare。';
 trainingActions['training.caption.run'].details='missing 只处理缺 Caption 的图片；single 指定条目，已有文本覆盖须 confirm_overwrite:true。不支持数据集级覆盖；检查 run.read，不重复提交等待中的运行。';
 trainingActions['training.image.prepare'].details='显式准备指定或有效素材，按配方尺寸保留比例，并以 MUSIQ 比较缩放与超分；打开或刷新不触发。失败不删除素材，修复后显式重试。可能加载模型，需 training 能力。';
 trainingActions['training.preflight'].details+=' 检查有效集合的准备状态和 Caption 双哈希确认；空文本或未确认阻断。run_settings 从 run.settings 读取，启动沿用同一设置。';
 trainingActions['training.run.start'].details+=' 服务重新预检并冻结数据、设置、底座、recipe、训练器和 runner 身份；返回的 run 状态与结构化事件是进度依据。';
-trainingActions['training.run.stop'].details+=' 停止不要求 ETag。Qwen 缓存阶段没有恢复点，训练阶段在完整更新边界保存；强制中断可能回退到最近完整状态，重启不自动继续。';
-trainingActions['training.run.resume'].details+=' 只允许最新完整恢复包，创建新 run，沿用父 run 冻结数据、参数和保存间隔；累计目标步数必须增加，只可改预算和备注。来源 ID/SHA 不匹配、活动 run 或历史 Anima 来源拒绝；每次成功发布新恢复包后只保留最新包，checkpoint 仍分别保留。';
+trainingActions['training.run.stop'].details+=' 停止不要求 ETag。Qwen 缓存阶段没有恢复点，训练阶段在完整更新边界保存；Anima 只保留已保存的 checkpoint，不提供精确续训。强制中断可能回退到最近保存状态，重启不自动继续。';
+trainingActions['training.run.resume'].details+=' 仅支持 Qwen 最新完整恢复包，Anima（含新 run）不支持精确续训。创建新 run，沿用父 run 冻结数据、参数和保存间隔；累计目标步数必须增加，只可改预算和备注。来源 ID/SHA 不匹配或活动 run 拒绝；每次成功发布新恢复包后只保留最新包，checkpoint 仍分别保留。';
 
 

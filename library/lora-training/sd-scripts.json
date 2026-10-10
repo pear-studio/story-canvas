@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "repository": "https://github.com/kohya-ss/sd-scripts",
+  "commit": "37a1cbbc5725ed2a3575506e7bd2001c9908ac92",
+  "entry": "anima_train_network.py",
+  "runtime": { "python": "3.10.19", "torch": "2.6.0+cu124" },
+  "notes": "本机版本与命令入口已核验；工作台接入尚未完成真实 GPU 训练验收。"
+}

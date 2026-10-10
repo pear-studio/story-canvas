@@ -22,7 +22,10 @@
       ],
       "properties": {
         "family": {
-          "const": "qwen-image-2-1"
+          "enum": [
+            "anima",
+            "qwen-image-2-1"
+          ]
         },
         "prompt_family": {
           "type": "string",
@@ -32,28 +35,7 @@
           "$ref": "#/$defs/usage_defaults"
         },
         "base": {
-          "type": "object",
-          "required": [
-            "dit",
-            "text_encoder",
-            "vae",
-            "processor"
-          ],
-          "properties": {
-            "dit": {
-              "$ref": "#/$defs/base_dir"
-            },
-            "text_encoder": {
-              "$ref": "#/$defs/base_dir"
-            },
-            "vae": {
-              "$ref": "#/$defs/base_dir"
-            },
-            "processor": {
-              "$ref": "#/$defs/base_dir"
-            }
-          },
-          "additionalProperties": false
+          "type": "object"
         }
       },
       "additionalProperties": false
@@ -70,7 +52,7 @@
           "minLength": 1
         },
         "overrides": {
-          "$ref": "#/$defs/recipe_overrides"
+          "type": "object"
         }
       },
       "additionalProperties": false
@@ -175,7 +157,187 @@
         }
       },
       "additionalProperties": false
+    },
+    "qwen_base": {
+      "type": "object",
+      "required": [
+        "dit",
+        "text_encoder",
+        "vae",
+        "processor"
+      ],
+      "properties": {
+        "dit": {
+          "$ref": "#/$defs/base_dir"
+        },
+        "text_encoder": {
+          "$ref": "#/$defs/base_dir"
+        },
+        "vae": {
+          "$ref": "#/$defs/base_dir"
+        },
+        "processor": {
+          "$ref": "#/$defs/base_dir"
+        }
+      },
+      "additionalProperties": false
+    },
+    "anima_base": {
+      "type": "object",
+      "required": [
+        "dit",
+        "text_encoder",
+        "vae"
+      ],
+      "properties": {
+        "dit": {
+          "$ref": "#/$defs/base_file"
+        },
+        "text_encoder": {
+          "$ref": "#/$defs/base_file"
+        },
+        "vae": {
+          "$ref": "#/$defs/base_file"
+        }
+      },
+      "additionalProperties": false
+    },
+    "base_file": {
+      "type": "object",
+      "required": [
+        "relative_path"
+      ],
+      "properties": {
+        "relative_path": {
+          "type": "string",
+          "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\.\\.)(?!.*\\\\).+\\.safetensors$"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "anima_recipe_overrides": {
+      "type": "object",
+      "required": [
+        "network_dim",
+        "learning_rate",
+        "gradient_accumulation_steps",
+        "micro_batch_size",
+        "blocks_to_swap"
+      ],
+      "properties": {
+        "network_dim": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "learning_rate": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "gradient_accumulation_steps": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "micro_batch_size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "blocks_to_swap": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 27
+        }
+      },
+      "additionalProperties": false
     }
   },
-  "title": "训练项目当前设置"
+  "title": "训练项目当前设置",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "target": {
+            "properties": {
+              "family": {
+                "const": "anima"
+              }
+            },
+            "required": [
+              "family"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "type": "object"
+      },
+      "then": {
+        "properties": {
+          "target": {
+            "properties": {
+              "base": {
+                "$ref": "#/$defs/anima_base"
+              }
+            },
+            "type": "object"
+          },
+          "training_recipe": {
+            "properties": {
+              "overrides": {
+                "$ref": "#/$defs/anima_recipe_overrides"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "target": {
+            "properties": {
+              "family": {
+                "const": "qwen-image-2-1"
+              }
+            },
+            "required": [
+              "family"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "type": "object"
+      },
+      "then": {
+        "properties": {
+          "target": {
+            "properties": {
+              "base": {
+                "$ref": "#/$defs/qwen_base"
+              }
+            },
+            "type": "object"
+          },
+          "training_recipe": {
+            "properties": {
+              "overrides": {
+                "$ref": "#/$defs/recipe_overrides"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "type": "object"
+      }
+    }
+  ]
 }
