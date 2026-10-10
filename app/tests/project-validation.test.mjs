@@ -9,6 +9,7 @@ import {
   createProject,
   readProjectCreationTemplate,
 } from "../server/project-creation.mjs";
+import { defaultSceneFacts } from "../server/scene-files.mjs";
 
 async function createCurrentProject(context) {
   const root = await mkdtemp(path.join(tmpdir(), "story-canvas-validation-"));
@@ -57,4 +58,20 @@ test("项目校验报告页面索引指向的缺失事实文件", async (context
 
   assert.ok(result.errors.includes("页面文件：missing_content_file（page_id=page-001）"));
   assert.ok(result.errors.includes("页面文件：missing_prompt_file（page_id=page-001）"));
+});
+
+test("场景子设定校验读取模型容器，并仍报告缺失的子设定", async (context) => {
+  const projectDirectory = await createCurrentProject(context);
+  const scene = defaultSceneFacts("room", "房间", "anima");
+  const sceneDirectory = path.join(projectDirectory, "scenes");
+  await writeFile(path.join(sceneDirectory, "index.json"), JSON.stringify({ $schema: "https://storyvisualizer.local/schemas/scene-index.schema.json", scenes: ["room"] }));
+  for (const kind of ["profile", "visual", "prompt"]) await writeFile(path.join(sceneDirectory, `room.${kind}.json`), JSON.stringify(scene[kind]));
+
+  assert.deepEqual((await validateProject(projectDirectory)).errors, []);
+
+  scene.visual.variants.push({ ...scene.visual.variants[0], id: "missing" });
+  await writeFile(path.join(sceneDirectory, "room.visual.json"), JSON.stringify(scene.visual));
+  const result = await validateProject(projectDirectory);
+  assert.ok(result.errors.includes("场景子设定 Prompt 缺失：room/missing"));
+  assert.ok(!result.errors.includes("场景子设定 Prompt 缺失：room/default"));
 });

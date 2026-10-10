@@ -123,7 +123,7 @@ export async function validateProject(projectRoot) {
   await readAndValidateFiles(projectRoot, sceneIds, { directory: "scenes", extension: ".profile.json" }, validateSceneProfileDocument, errors);
   const sceneVisual = await readAndValidateFiles(projectRoot, sceneIds, { directory: "scenes", extension: ".visual.json" }, validateSceneVisualDocument, errors);
   const scenePrompts = await readAndValidateFiles(projectRoot, sceneIds, { directory: "scenes", extension: ".prompt.json" }, validateScenePromptDocument, errors);
-  for (const id of sceneIds) for (const variant of sceneVisual[id]?.variants ?? []) if (!scenePrompts[id]?.variants?.[variant.id]) errors.push(`场景子设定 Prompt 缺失：${id}/${variant.id}`);
+  for (const id of sceneIds) for (const variant of sceneVisual[id]?.variants ?? []) if (!Object.values(scenePrompts[id]?.models ?? {}).some(model => model.variants?.[variant.id])) errors.push(`场景子设定 Prompt 缺失：${id}/${variant.id}`);
   const sequenceIds = new Set((outline.chapters ?? []).flatMap(chapter => (chapter.sequences ?? []).map(sequence => sequence.id)));
   for (const entry of pagesIndex.pages ?? []) {
     const ownerValid = entry.owner_kind === 'story' ? sequenceIds.has(entry.sequence_id)
