@@ -1031,7 +1031,6 @@ html:has(.story-overview) { scrollbar-gutter: stable; }
 .candidate-select { width: 100%; min-height: 120px; position: relative; padding: 0; display: block; overflow: hidden; border: 0; background: #e8ece8; cursor: pointer; }
 .candidate-select:disabled { cursor: wait; }
 .candidate-grid img { width: 100%; height: auto; min-height: 120px; display: block; object-fit: contain; border-radius: 7px 7px 0 0; }
-.candidate-seed { position: absolute; right: 3px; bottom: 3px; padding: 2px 4px; max-width: calc(100% - 6px); overflow: hidden; color: white; border-radius: 4px; background: rgba(21,35,41,.8); font: 6px var(--mono); }
 .candidate-variation-label { position: absolute; z-index: 2; top: 5px; right: 28px; left: 5px; padding: 2px 5px; overflow: hidden; color: #4f3b75; border: 1px solid rgba(111,82,158,.35); border-radius: 999px; background: rgba(248,244,255,.92); text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-meta); font-weight: 700; }
 .candidate-selection-box { position: absolute; z-index: 8; pointer-events: none; border: 1px solid rgba(54,117,179,.78); border-radius: 5px; background: rgba(54,117,179,.14); }
 .candidate-history-modal .modal__body { min-height: 0; padding: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }
@@ -1697,7 +1696,6 @@ textarea { font-size: var(--text-body); }
 .image-version-switch button { min-height: 32px; }
 .candidate-heading b,
 .current-image > div { font-size: var(--text-body); }
-.candidate-seed,
 .candidate-separator { font-size: var(--text-meta); }
 .resource-list .panel-title button,
 .resource-list > button b { font-size: var(--text-label); }

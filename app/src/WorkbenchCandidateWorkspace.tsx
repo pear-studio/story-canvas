@@ -307,7 +307,6 @@ function CandidateGrid({ candidates, selectedIds, previewFile, disabled, layout,
         <div ref={(node) => { const key = candidateKey(candidate); if (node) items.current.set(key, node); else items.current.delete(key); }} className={`candidate-item ${selected ? "is-selected" : ""} ${previewFile === candidate.file ? "is-preview" : ""}`.trim()}>
           <button type="button" role="option" className="candidate-select" disabled={disabled} aria-selected={selected} aria-label={`候选 Seed ${candidate.seed ?? "未知"}`} onClick={(event) => selectCandidate(event, candidate)} onDoubleClick={(event) => { if (!(event.ctrlKey || event.metaKey || event.shiftKey)) void onChoose(candidate); }}>
             <QueuedCandidateImage url={mediaVariantUrl(candidate.url, 320)} alt={`候选 ${candidate.seed ?? "未知"}`} />
-            <span className="candidate-seed">{candidate.seed ?? "—"}</span>
           </button>
         </div>
       </div>;
