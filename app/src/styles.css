@@ -2777,3 +2777,12 @@ label:has(> input:is([type="checkbox"], [type="radio"]):disabled) { cursor: not-
   .prompt-heading-row .prompt-population > label { min-height: 44px; }
   .lora-fold-row summary, .lora-fold-row > button { min-height: 44px; }
 }
+@font-face {font-family:SVTranslation;src:url('/fonts/noto-sans-jp/NotoSansJP-VF.ttf') format('truetype');font-weight:100 900;font-display:block;}
+.lettering-locale {display:inline-flex;align-items:center;gap:.5rem;margin:.5rem 0;font-size:.85rem;}
+.translation-guide {font-size:.8rem;opacity:.7;}
+.translation-row {padding:12px 10px;border-bottom:1px solid var(--border-color,#ddd);}
+.translation-row.is-selected {background:rgba(90,120,190,.1);}
+.translation-row label {display:block;font-size:.85rem;}
+.translation-source {white-space:pre-wrap;opacity:.7;margin:6px 0 10px;}
+.translation-row textarea {width:100%;resize:vertical;margin-top:6px;}
+.translation-row small {color:#b67829;}

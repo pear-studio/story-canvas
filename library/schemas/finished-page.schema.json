@@ -49,6 +49,8 @@
         "canvas"
       ],
       "properties": {
+        "locale": {"enum":["en","ja"]},
+        "source_dialogue": {"type":"array"},
         "dialogue": {
           "type": "array"
         },

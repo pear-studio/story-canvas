@@ -22,12 +22,12 @@ export function useHeartFont() {
   }, []);
   return ready;
 }
-export function resolveHeart(text: string, item: LetteringItem, dimensions: { width: number; height: number }, styleFontSize?: number) {
-  const settings = heartSettings(item, styleFontSize), key = JSON.stringify([text, settings.seed]);
+export function resolveHeart(text: string, item: LetteringItem, dimensions: { width: number; height: number }, styleFontSize?: number, fontFamily='SVHeart', decorationText=text) {
+  const settings = heartSettings(item, styleFontSize), key = JSON.stringify([text, settings.seed,fontFamily,decorationText,document.fonts.check(`100px ${fontFamily}`,text)]);
   let composition = cache.get(key);
   if (!composition) {
     measure ??= document.createElement('canvas').getContext('2d')!;
-    measure.font = '100px SVHeart'; measure.textAlign = 'left';
+    measure.font = `100px ${fontFamily}`; measure.textAlign = 'left';
     let prefix = '';
     const glyphs: { text: string; x: number }[] = [];
     const boxes = [...text].map(ch => {
@@ -35,7 +35,7 @@ export function resolveHeart(text: string, item: LetteringItem, dimensions: { wi
       glyphs.push({ text: ch, x });
       return { l: x - m.actualBoundingBoxLeft - 4, r: x + m.actualBoundingBoxRight + 4, t: -m.actualBoundingBoxAscent - 4, b: m.actualBoundingBoxDescent + 4 };
     });
-    composition = { boxes, glyphs, hearts: createHeartComposition(text, boxes, settings.seed) as Heart[] };
+    composition = { boxes, glyphs, hearts: createHeartComposition(text, boxes, settings.seed,decorationText) as Heart[] };
     if (cache.size >= 128) cache.delete(cache.keys().next().value!);
     cache.set(key, composition);
   }
@@ -43,12 +43,12 @@ export function resolveHeart(text: string, item: LetteringItem, dimensions: { wi
   const glyphs = composition.glyphs.map((g, i) => ({ ...g, x: g.x + oriented.offsets[i].x, y: oriented.offsets[i].y }));
   const viewBox: number[] = heartBounds(oriented.boxes, oriented.hearts);
   const factor = settings.font_size / 100;
-  return { ...oriented, glyphs, viewBox, settings, lines: [text], columns: [], overflow: false, box: { ...item.box, w: viewBox[2] * factor / dimensions.width, h: viewBox[3] * factor / dimensions.height } };
+  return { ...oriented, glyphs, viewBox, settings,fontFamily, lines: [text], columns: [], overflow: false, box: { ...item.box, w: viewBox[2] * factor / dimensions.width, h: viewBox[3] * factor / dimensions.height } };
 }
 export function HeartLettering({ layout }: { text: string; layout: ReturnType<typeof resolveHeart> }) {
   return <svg className="heart-lettering" viewBox={layout.viewBox.join(' ')} aria-hidden="true">
     <g>
-      {layout.glyphs.map((glyph, i) => <text key={i} x={glyph.x} y={glyph.y} fontFamily="SVHeart" fontSize="100" fill={heartColor} stroke="white" strokeWidth="6.4" strokeLinejoin="round" paintOrder="stroke fill">{glyph.text}</text>)}
+      {layout.glyphs.map((glyph, i) => <text key={i} x={glyph.x} y={glyph.y} fontFamily={layout.fontFamily} fontSize="100" fill={heartColor} stroke="white" strokeWidth="6.4" strokeLinejoin="round" paintOrder="stroke fill">{glyph.text}</text>)}
       {layout.hearts.map((h, i) => <g key={i} data-heart-asset={h.asset.id} transform={`translate(${h.x} ${h.y}) scale(${h.scale})`}><path d={h.asset.d} fill={heartColor} fillRule="evenodd" stroke="white" strokeWidth="3.4" strokeLinejoin="round" paintOrder="stroke fill" /></g>)}
     </g>
   </svg>;

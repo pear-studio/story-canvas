@@ -4,6 +4,7 @@ import { pageEditHelp } from './page-edit-help.mjs';
 import { schema, string, object, array, boolean, pagination, paginate } from './contract.mjs';
 import {saveOperationRecord,readOperationRecord} from './operation-records.mjs';
 import { endpoint, projectId, pageKey, projectPath, encode, localImage, downloadArtifact } from './http-action.mjs';
+const finishedLocale={...string('成品语言，默认 zh；动态页共用中文记录'),enum:['zh','en','ja']};
 const post = (summary, suffix, fields, options = {}) => endpoint(summary, 'POST', a => projectPath(a, `workbench/${suffix}`), fields, { project: true, ...options });
 const target = { ...schema({ kind: { ...string('归属'), enum: ['character','scene','page'] }, id: string('角色/场景/页面 ID'), variant_id: string('角色和场景必须提供子设定 ID'), model_id: { ...string('角色和场景必须显式提供 qwen；页面省略，模型取自当前 render'), enum: ['qwen'] } }, ['kind','id']), description: '参考图支持 Qwen 和动态页 H3；角色和场景必须给 variant_id 和 model_id:qwen；页面模型由当前 render 决定，不能用此参数切换模型' };
 const reference = (summary, action, fields, required, body) => post(summary, 'reference-library', { target, ...fields }, { required: ['target', ...required], details: '先 reference.list 取得 entries 与 sha256；修改传 expected_sha256。Qwen 最多十张；H3 仅一张，导入会替换当前输入并记录来源。候选提升后保存到 materials，不依赖临时输出。', body: a => ({ target:a.target, action, ...body(a) }) });
@@ -35,7 +36,7 @@ export const mediaActions = {
   'candidate.list': post('分页读取单张候选与可直接读图的路径', 'page-media', { page_key:pageKey,task_id:string('可选：仅某个生成任务的候选'),...pagination }, {required:['page_key'],freshMedia:true,body:a=>({page_key:a.page_key}),
     transform:(r,a)=>({page_key:a.page_key,...paginate(r.value.media.candidates.filter(c=>!a.task_id||c.task_id===a.task_id).map(({candidate_id,task_id,absolute_file,generated_at,media_kind,video,absolute_video,absolute_review})=>({candidate_id,task_id,absolute_file,generated_at,...(media_kind==='video'?{media_kind,video,absolute_video,absolute_review,review_hint:mediaReviewHint}:{})})),a)}),
     details:'图片必须通过本操作或 candidate.sheet/task.results 查询，不用 glob 扫描 Outputs。每个 candidate_id/目录只是一张图，不是一批。task_id 相同才是同次生成。用返回的 absolute_file 读图，不猜路径。按批次查询/清理用 candidate.batches 和 candidate.cleanup.preview/apply。'}),
-  'candidate.batches': post('按生成任务分组查询一页候选批次','candidate-batches/read',{page_key:pageKey,...pagination},{required:['page_key'],body:a=>({page_key:a.page_key}),
+  'candidate.batches': post('按生成任务分组查询一页候选批次','candidate-batches/read',{locale:finishedLocale,page_key:pageKey,...pagination},{required:['page_key'],body:a=>({page_key:a.page_key}),
     transform:(r,a)=>({page_key:a.page_key,candidate_count:r.value.groups.reduce((n,g)=>n+g.available_count,0),...paginate(r.value.groups.map(({candidates,...g})=>g),a)}),
     details:'按任务创建时间新到旧排序。每组是同一 task_id 的候选；available_count 是现存图片数，expected_count 是该任务原计划数，complete 表示已成功完成且图片仍齐全。不能按目录时间把一张图当作一批；不足三张不等于必须补图。candidate.list + task_id 查询图片路径。'}),
   'candidate.cleanup.preview': {
@@ -71,13 +72,13 @@ export const mediaActions = {
   'lettering.settings.save': endpoint('保存项目文字样式','PUT',a=>projectPath(a,'workbench/lettering-settings'),{settings:object('read 返回的完整 settings'),expected_sha256:string('读取时指纹')},{project:true,body:a=>({settings:a.settings,expected_sha256:a.expected_sha256})}),
   'lettering.page.read': endpoint('读取页面文字布局和指纹','GET',a=>projectPath(a,'workbench/page-lettering'),{page_key:pageKey},{project:true,query:a=>({page_id:a.page_key.page_id}),details:'本入口仅用于插画页对白布局；纯文字页正文与排版用 page.editor.read/save section:content。返回 lettering 与整份布局文件的 expected_sha256。items 的字段以读取结果为准；保存仅传 {items}，不把 page 写回。',transform:r=>r.value}),
   'lettering.page.save': endpoint('保存一个页面文字布局','PUT',a=>projectPath(a,'workbench/page-lettering'),{page_key:pageKey,lettering:object('仅 {items:[...]}，来自 read，保留每项身份'),expected_sha256:string('读取时布局指纹')},{project:true,body:a=>({page_key:a.page_key,lettering:a.lettering,expected_sha256:a.expected_sha256})}),
-  'finished.list': endpoint('分页查看成品状态及全量计数','GET',a=>projectPath(a,'finished'),{page_key:pageKey,...pagination},{project:true,required:[],query:a=>({page_id:a.page_key?.page_id}),
-    transform:(r,a)=>({summary:r.value.pages.reduce((v,p)=>(v[p.status]=(v[p.status]??0)+1,v),{total:r.value.pages.length}),...paginate(r.value.pages.map(p=>({page_id:p.page_id,title:p.title,status:p.status,candidate_count:p.candidate_count,...(p.batch_skip_reason?{batch_skip_reason:p.batch_skip_reason}:{})})),a)}),
+  'finished.list': endpoint('分页查看成品状态及全量计数','GET',a=>projectPath(a,'finished'),{page_key:pageKey,...pagination},{project:true,required:[],query:a=>({page_id:a.page_key?.page_id,locale:a.locale}),
+    transform:(r,a)=>({summary:r.value.pages.reduce((v,p)=>(v[p.status]=(v[p.status]??0)+1,v),{total:r.value.pages.length}),...paginate(r.value.pages.map(p=>({page_id:p.page_id,title:p.title,status:p.status,locale:p.locale,translation_summary:p.translation_summary,candidate_count:p.candidate_count,...(p.batch_skip_reason?{batch_skip_reason:p.batch_skip_reason}:{})})),a)}),
     details:'默认20条；summary 是筛选范围内全量成品状态计数，不含正文、图片链接和记录详情。单页输出/删除前用 finished.inspect 取 record.sha256 等细节。'}),
-  'finished.inspect': endpoint('查看单页成品记录、链接与删除指纹','GET',a=>projectPath(a,'finished'),{page_key:pageKey},{project:true,query:a=>({page_id:a.page_key?.page_id}),transform:r=>r.value,details:'仅返回指定页面完整成品信息；列表用 finished.list。'}),
+  'finished.inspect': endpoint('查看单页成品记录、链接与删除指纹','GET',a=>projectPath(a,'finished'),{locale:finishedLocale,page_key:pageKey},{project:true,required:['page_key'],query:a=>({page_id:a.page_key?.page_id,locale:a.locale}),transform:r=>r.value,details:'仅返回指定页面完整成品信息；列表用 finished.list。'}),
   'finished.jobs': endpoint('查看成品输出任务','GET',a=>projectPath(a,'finished/jobs'),{}, {project:true}),
-  'finished.delete': endpoint('删除一个成品记录','DELETE',a=>projectPath(a,'finished'),{page_key:pageKey,expected_sha256:string('finished.inspect 返回的 record.sha256')},{project:true,body:a=>({page_key:a.page_key,expected_sha256:a.expected_sha256}),details:'删除成品需用户授权，不删除源候选。'}),
-  'finished.export': {summary:'导出已有成品 ZIP 或 HTML 阅读页',parameters:schema({...projectId,variant:{...string('静态图片版本；动态页不嵌字且只导出一份'),enum:['lettered','clean','both']},chapter_id:string('可选章节'),preview:boolean('true 导出HTML，否则ZIP')},['project_id','variant']),details:'只导出已完成的成品，不运行生成模型或超分。动态页统一导出最大宽度1024px的动画WebP，不放大；ZIP保留静态PNG，HTML内嵌静态和动态WebP。不导出MP4。文件放 Saved/Agent/workbench-artifacts，返回绝对路径。',execute:a=>downloadArtifact(projectPath(a,'finished/export'),{method:'POST',body:{variant:a.variant,chapter_id:a.chapter_id,preview:a.preview},extension:a.preview?'html':'zip'})},
+  'finished.delete': endpoint('删除一个成品记录','DELETE',a=>projectPath(a,'finished'),{locale:finishedLocale,page_key:pageKey,expected_sha256:string('finished.inspect 返回的 record.sha256')},{project:true,required:['page_key','expected_sha256'],body:a=>({locale:a.locale,page_key:a.page_key,expected_sha256:a.expected_sha256}),details:'删除成品需用户授权，不删除源候选。'}),
+  'finished.export': {summary:'导出已有成品 ZIP 或 HTML 阅读页',parameters:schema({...projectId,locale:finishedLocale,variant:{...string('静态图片版本；动态页不嵌字且只导出一份'),enum:['lettered','clean','both']},chapter_id:string('可选章节'),preview:boolean('true 导出HTML，否则ZIP')},['project_id','variant']),details:'只导出已完成的成品，不运行生成模型或超分。动态页统一导出最大宽度1024px的动画WebP，不放大；ZIP保留静态PNG，HTML内嵌静态和动态WebP。不导出MP4。文件放 Saved/Agent/workbench-artifacts，返回绝对路径。',execute:a=>downloadArtifact(projectPath(a,'finished/export'),{method:'POST',body:{locale:a.locale,variant:a.variant,chapter_id:a.chapter_id,preview:a.preview},extension:a.preview?'html':'zip'})},
   'media.download': {summary:'将项目媒体下载为本地审阅文件',parameters:schema({...projectId,relative_path:string('工作台媒体返回的项目相对路径，不猜测') }),details:'下载现有图片到 Saved/Agent/workbench-artifacts 后可用 read_image 查看；不改项目文件。',execute:a=>downloadArtifact(projectPath(a,`media/${a.relative_path.split('/').map(encode).join('/')}`))},
 };
 for(const name of ['page.editor.read','page.editor.save'])mediaActions[name].helpTopics=pageEditHelp;
@@ -92,7 +93,7 @@ mediaActions['candidate.scan'].details='按当前编译条件返回 signature、
 mediaActions['candidate.clean'].details+=' 删除前检查 finished.inspect 的候选引用；本接口不保护成品依赖。不完整 signature 或 H3 视频参数不能单靠扫描判断。';
 mediaActions['finished.inspect'].details+=' record 中保留源 candidate_id；候选清理前据此判断依赖。成品媒体独立保存，记录引用不会被候选删除接口自动维护。';
 mediaActions['lettering.page.read'].details+=' 颜色由 lettering.settings 管理；旁白固定顶部或底部字幕条，不拖动。其他对白可调位置和尺寸，心声另有字号、方向和随机排列；可写字段以读取结果和 Schema 为准。文字页排版共用预览及输出，溢出阻止输出。';
-mediaActions['finished.export'].details+=' 按当前剧情页序只导出现有成品，不补做缺失或过时内容；验证页可单页输出但不进入剧情系列导出。';
+mediaActions['finished.export'].details+=' 按当前剧情页序导出指定语言；缺页在 HTML 保留占位，ZIP 附缺页说明；过时内容导出旧版，不补做；验证页可单页输出但不进入剧情系列导出。';
 mediaActions['reference.save'].execute = async a => {
   if ([a.file,a.material_file,a.candidate_id].filter(Boolean).length !== 1) throw new Error('file、material_file、candidate_id 必须且只能提供一项');
   if (a.candidate_id && !a.page_key) throw new Error('候选来源必须提供 page_key');

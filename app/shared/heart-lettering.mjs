@@ -28,8 +28,8 @@ function shuffle(values, rng) {
 }
 
 // 所有形状在 100 单位字号下计算；字号、角度、位置不参与随机抽样。
-export function createHeartComposition(text, boxes, seed) {
-  const letters = [...text].filter(ch => /[\p{L}\p{N}]/u.test(ch)).length;
+export function createHeartComposition(text, boxes, seed, decorationText=text) {
+  const letters = [...decorationText].filter(ch => /[\p{L}\p{N}]/u.test(ch)).length;
   const count = letters ? letters + 1 + Math.floor(random(seed)() * 2) : 0;
   const rng = random(seed + 32917), leaders = letters > 3 ? 2 : Math.min(1, count);
   const hollow = shuffle(Array.from({ length: count }, (_, i) => i < Math.max(1, Math.round(count * .35))), rng);

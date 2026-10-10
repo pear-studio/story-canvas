@@ -28,8 +28,9 @@
 | `pages/<id>.content.json` | 标题、画面内容、角色引用与嵌字；文字页另有正文和排版 |
 | `pages/<id>.prompt.json`、`.render.json` | 各模型输入，以及本页模型、配置、画幅 |
 | `pages/<id>.rewrite.json`、`.text-sources.json` | 改写稿、可选语料出处；普通创作不要求维护出处映射 |
+| `pages/<id>.translations.json` | 可选英文、日文嵌字译文；格式见 `page-translations.schema.json`，读写用 `translation.*` |
 | `lettering/` | 项目文字样式与逐页文案布局 |
-| `finished/<id>.json` | 当前成品制作记录；媒体在 `Outputs/finished/` |
+| `finished/<id>.json`、`<id>.en.json`、`<id>.ja.json` | 中文、英文、日文当前成品记录；媒体在 `Outputs/finished/`；动态页共用中文记录 |
 | `materials/` | 正式参考输入，只支持一层文件；`index.json` 只保存可选标题 |
 | `writing-corpus/`、`resources/loras/` | 本项目唯一持有的语料、LoRA 元数据和预览 |
 

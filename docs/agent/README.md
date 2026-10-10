@@ -29,6 +29,8 @@ node <仓库根绝对路径>/app/scripts/story-canvas.mjs <操作> --args <参�
 
 分类、参数、保存冲突、部分失败及长任务恢复以 help 和结构化回执为准。输入输出分开，回执用 `--out`，不通过 shell 管道或重定向搬运 JSON；操作完成但回执写盘失败时先查结果。
 
+多语言嵌字由当前 Harness 会话按[嵌字翻译规则](../creative/translation.md)处理：用 `translation.*` 读取、保存译文，`translation.inspect` 检查排版，再用 `finished.*` 制作成品；字段、原文变化及副作用以各操作 help 为准。工作台只编辑、预览和输出，不提供翻译生成按钮。资料查询工具按实际 help 使用；未提供多语言查询时读取参考来源的同 ID 文本。
+
 语义操作未覆盖的现有能力才查代码并使用 `app/scripts/workbench-api.mjs`，不另维护路由清单；上传和流式媒体走专用入口，极简模式不提供任意 HTTP。
 
 ## Codex 与 Claude

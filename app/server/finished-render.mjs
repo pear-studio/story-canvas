@@ -2,6 +2,14 @@ import { chromium } from "playwright";
 import sharp from "sharp";
 
 const launchBrowser = () => chromium.launch(process.platform === "win32" ? { channel: "msedge", headless: true } : { headless: true });
+export async function inspectFinishedLettering(clean,lettering,origin) {
+  const {width,height}=await sharp(clean).metadata(),browser=await launchBrowser();
+  try {const page=await browser.newPage({viewport:{width,height},deviceScaleFactor:1});await page.goto(`${origin}/finished-render.html`);await page.waitForFunction(()=>typeof window.renderFinishedLettering==='function');
+    const diagnostics=await page.evaluate(value=>window.renderFinishedLettering(value,true),lettering);
+    const overlay=await page.screenshot({omitBackground:true,animations:'disabled'});
+    return {diagnostics,image:await sharp(clean).composite([{input:overlay}]).png().toBuffer(),width,height};
+  }finally{await browser.close();}
+}
 
 // 与编辑器使用同一个 React 组件和 CSS，只渲染透明文字层，底图保留原始像素。
 export async function renderFinishedImage(clean, lettering, origin) {

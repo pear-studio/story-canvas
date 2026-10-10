@@ -42,7 +42,8 @@ test("开发服务器跳过本机资源与运行产物，仍监听前端源码�
     root,
     configFile: false,
     cacheDir: path.join(root, "node_modules/.vite"),
-    server: { ...config.server, middlewareMode: true, hmr: false, ws: false },
+    // 隔离应用本身位于 Saved/Tests；按模拟应用根限定原配置，避免上级 Saved 吞掉整个源码夹具。
+    server: { ...config.server, middlewareMode: true, hmr: false, ws: false,watch:{...config.server.watch,ignored:config.server.watch.ignored.map(pattern=>pattern.replace('**/',`${root.replaceAll('\\','/')}/`))} },
     optimizeDeps: { noDiscovery: true, include: [] },
     plugins: [],
   });

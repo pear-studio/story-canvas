@@ -204,7 +204,7 @@ test("浏览器成品导航、双版本切换、返回编辑与输出按钮可�
   await page.getByRole("button", { name: "成品", exact: true }).click();
   await page.getByRole("button", { name: "导出", exact: true }).click();
   const download = page.waitForEvent("download");
-  await page.getByRole("button", { name: "导出图片 ZIP", exact: true }).click();
+  await page.getByRole("button", { name: "导出媒体 ZIP", exact: true }).click();
   assert.match((await download).suggestedFilename(), /成品.zip$/);
   await page.getByRole("button", { name: "导出", exact: true }).click();
   await page.getByRole("radio", { name: "轻量 HTML", exact: true }).check();

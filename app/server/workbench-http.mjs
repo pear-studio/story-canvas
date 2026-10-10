@@ -68,6 +68,9 @@ import {
   renameWorkbenchSequence,
 } from "./workbench-navigation.mjs";
 
+import {readPageTranslation,savePageTranslation} from './page-translations.mjs';
+import {prepareTranslationInspection} from './finished-pages.mjs';
+import {inspectFinishedLettering} from './finished-render.mjs';
 export async function handleWorkbenchRequest({
   request,
   response,
@@ -85,6 +88,20 @@ export async function handleWorkbenchRequest({
   workbenchRenderLauncher,
   generationScheduler = null,
 }) {
+  const translationRoute=/^\/api\/projects\/([^/]+)\/workbench\/translation\/(read|save|inspect)$/.exec(decodedPath);
+  if(request.method==='POST'&&translationRoute) {
+    const body=await readJsonBody(request),id=translationRoute[1];
+    if(translationRoute[2]==='inspect') {
+      const frozen=await readFacts(id,({projectDirectory})=>prepareTranslationInspection(projectRoot,id,projectDirectory,body));
+      const {clean,lettering,translation_summary}=frozen.value,result=await inspectFinishedLettering(clean,lettering,`http://127.0.0.1:${request.socket.localPort}`);
+      const {mkdir,writeFile}=await import('node:fs/promises'),path=await import('node:path');
+      const folder=path.join(projectRoot,'Saved/Agent/multilingual-lettering/inspections',id);await mkdir(folder,{recursive:true});const file=path.join(folder,`${body.page_key.page_id}.${body.locale}.png`);await writeFile(file,result.image);
+      sendOperation(200,{revision:frozen.revision,value:{page_key:body.page_key,locale:body.locale,translation_summary,...result.diagnostics,width:result.width,height:result.height,preview_file:file}});return true;
+    }
+    const operation=translationRoute[2]==='read'?readFacts:mutateTargetFacts;
+    const handler=translationRoute[2]==='read'?readPageTranslation:savePageTranslation;
+    sendOperation(200,await operation(id,({projectDirectory})=>handler(projectDirectory,body)));return true;
+  }
   const videoSourceRoute=/^\/api\/projects\/([^/]+)\/workbench\/video-source$/.exec(decodedPath);
   if(request.method==='POST'&&videoSourceRoute) {
     const body=await readJsonBody(request),id=videoSourceRoute[1];

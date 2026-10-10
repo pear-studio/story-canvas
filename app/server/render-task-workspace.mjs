@@ -178,7 +178,7 @@ export async function readWorkspaceTaskResults(projectRoot, projectId, taskId, p
   if (purpose === "finished") {
     const job = (await listFinishedJobs(projectDirectory)).find(job => job.id === taskId);
     if (!job) throw Object.assign(new Error("任务不存在"), { status: 404 });
-    const record = job.status === "completed" ? await readJsonOptional(path.join(projectDirectory, "finished", `${job.page_id}.json`)) : null;
+    const record = job.status === "completed" ? await readJsonOptional(path.join(projectDirectory, "finished", `${job.page_id}${job.locale&&job.locale!=='zh'?`.${job.locale}`:''}.json`)) : null;
     items = record ? [{ id: job.id, file: record.poster ?? record.outputs.lettered, url: mediaUrl(projectId, record.poster ?? record.outputs.lettered),
       ...(record.page_kind === 'video' ? {media_kind:'video', video:record.video, video_url:mediaUrl(projectId,record.outputs.lettered), absolute_video:path.resolve(projectDirectory,record.outputs.lettered)} : {}) }] : [];
   } else if (purpose === "comparison") {

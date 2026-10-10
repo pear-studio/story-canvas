@@ -62,6 +62,8 @@ import {
 import { canvasDimensions, resizeLetteringBox, resolveLetteringLayout } from "./lettering-layout";
 import { TextPageEditor } from "./TextPageEditor";
 import { TextPageArtwork } from "./TextPageArtwork";
+import {LetteringLocaleSelect,TranslationEditor,usePageTranslations,type LetteringLocale} from './page-translations';
+import {resolveTranslatedLettering,translationFont} from './translation-layout';
 import "./WorkbenchPageEditor.css";
 import { HeartLettering, DiceIcon, heartSettings, resolveHeart, useHeartFont, type HeartSettings } from "./HeartLettering";
 
@@ -110,6 +112,9 @@ type EditorTab = "visual" | "lettering" | "flow";
 type SavePhase = "saved" | "saving" | "error";
 
 export type WorkbenchPageEditorProps = {
+  letteringLocale?:LetteringLocale;
+  onLetteringLocaleChange?:(locale:LetteringLocale)=>void;
+  saveLetteringRef?: {current:(()=>Promise<boolean>)|null};
   projectId: string;
   page: WorkbenchPage;
   characters: WorkbenchCharacter[];
@@ -210,7 +215,10 @@ function resolveLetteringObject(line: WorkbenchDialogueDraft, item: LetteringIte
   return resolveLetteringLayout({ text: line.text, direction: preset.direction, kind: preset.kind, fontSize: style.font_size, canvasWidth: dimensions.width, canvasHeight: dimensions.height, box: item.box });
 }
 
-export function WorkbenchLetteringOverlay({ dialogue, items, characters, style, canvas = "3:4", interactive = false, selectedId = "", onSelect, onChange, onDiagnosticsChange }: {
+export function WorkbenchLetteringOverlay({ dialogue,sourceDialogue=dialogue,locale='zh',selectable=false, items, characters, style, canvas = "3:4", interactive = false, selectedId = "", onSelect, onChange, onDiagnosticsChange,onBudgetWarningsChange }: {
+  locale?:LetteringLocale;
+  sourceDialogue?:WorkbenchDialogueDraft[];
+  selectable?:boolean;
   dialogue: WorkbenchDialogueDraft[];
   items: LetteringItem[];
   characters: WorkbenchCharacter[];
@@ -221,12 +229,19 @@ export function WorkbenchLetteringOverlay({ dialogue, items, characters, style, 
   onSelect?: (dialogueId: string) => void;
   onChange?: (item: LetteringItem) => void;
   onDiagnosticsChange?: (value: Record<string, LetteringIssue[]>) => void;
+  onBudgetWarningsChange?:(ids:string[])=>void;
 }) {
   const heartFontReady = useHeartFont();
+  const [translationFontReady,setTranslationFontReady]=useState(false);
+  useEffect(()=>{let active=true;if(locale!=='zh')void document.fonts.load('100px SVTranslation').then(()=>{if(active)setTranslationFontReady(true);});return ()=>{active=false;};},[locale]);
   const gesture = useRef<{ pointerId: number; dialogueId: string; mode: "move" | "resize" | "rotate"; startX: number; startY: number; item: LetteringItem; rect: DOMRect; pivot: { x: number; y: number } } | null>(null);
   const [diagnostics, setDiagnostics] = useState<Record<string, LetteringIssue[]>>({});
   const diagnosticsRef = useRef("");
   const lines = useMemo(() => new Map(dialogue.flatMap((line) => line.id ? [[line.id, line] as const] : [])), [dialogue]);
+  const sourceLines = new Map(sourceDialogue.map(line=>[line.id,line]));
+  const resolveObject=(line:WorkbenchDialogueDraft,item:LetteringItem,currentStyle:LetteringStyle,dimensions:{width:number;height:number})=>locale==='zh'
+    ? {...resolveLetteringObject(line,item,currentStyle,dimensions),fontSize:currentStyle.font_size,budgetExceeded:false}
+    : resolveTranslatedLettering(line,sourceLines.get(line.id)??line,item,currentStyle,dimensions,locale);
   const clampValue = (value: number, minimum = 0, maximum = 1) => Math.max(minimum, Math.min(maximum, value));
 
   function beginGesture(event: ReactPointerEvent<HTMLElement>, item: LetteringItem, mode: "move" | "resize" | "rotate") {
@@ -296,45 +311,48 @@ export function WorkbenchLetteringOverlay({ dialogue, items, characters, style, 
     const frame = window.requestAnimationFrame(() => {
       const dimensions = canvasDimensions(canvas);
       const resolvedById = new Map<string, ReturnType<typeof resolveLetteringLayout>>();
+      const budgetWarnings:string[]=[];
       const resolvedItems = items.flatMap((item) => {
         const line = lines.get(item.dialogue_id);
-        if (!line) return [];
+        if (!line||!line.text.trim()) return [];
         const preset = letteringPreset(line as Parameters<typeof letteringPreset>[0], style);
-        const resolved = resolveLetteringObject(line, item, style, dimensions);
+        const resolved = resolveObject(line, item, style, dimensions);
+        if(resolved.budgetExceeded)budgetWarnings.push(item.dialogue_id);
         resolvedById.set(item.dialogue_id, resolved);
         return [{ ...item, box: resolved.box }];
       });
       const issueSets = geometryIssues(resolvedItems);
       for (const [id, resolved] of resolvedById) if (resolved.overflow) issueSets.get(id)?.add("overflow");
       const next = Object.fromEntries([...issueSets].map(([id, issues]) => [id, [...issues]]));
-      const signature = JSON.stringify(next);
+      const signature = JSON.stringify([next,budgetWarnings]);
       if (signature === diagnosticsRef.current) return;
       diagnosticsRef.current = signature;
       setDiagnostics(next);
       onDiagnosticsChange?.(next);
+      onBudgetWarningsChange?.(budgetWarnings);
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [canvas, items, lines, onDiagnosticsChange, style, heartFontReady]);
+  }, [canvas, items, lines, onDiagnosticsChange,onBudgetWarningsChange, style, heartFontReady,translationFontReady,locale,sourceDialogue]);
 
   const narration = dialogue.find((line) => line.mode === "narration" && line.text.trim());
-  return <div className={`lettering-overlay ${interactive ? "is-interactive" : ""}`.trim()} onPointerDown={(event) => { if (interactive && event.target === event.currentTarget) onSelect?.(""); }}>
+  return <div lang={locale} className={`lettering-overlay ${interactive||selectable ? "is-interactive" : ""}`.trim()} onPointerDown={(event) => { if ((interactive||selectable) && event.target === event.currentTarget) onSelect?.(""); }}>
     {items.map((item) => {
       const line = lines.get(item.dialogue_id);
-      if (!line || line.mode === "narration") return null;
+      if (!line || !line.text.trim() || line.mode === "narration") return null;
       const selected = selectedId === item.dialogue_id;
-      const preset = letteringPreset(line as Parameters<typeof letteringPreset>[0], style);
+      const preset = {...letteringPreset(line as Parameters<typeof letteringPreset>[0], style),...(locale!=='zh'?{direction:'horizontal' as const}:{})};
       const color = preset.kind === "caption" && line.mode !== "heart" && line.speaker && line.speaker !== "npc"
         ? lightenDisplayColor(characters.find((character) => character.id === line.speaker)?.style?.display_color)
         : lineColor(line, characters);
       const dimensions = canvasDimensions(canvas);
-      const resolved = resolveLetteringObject(line, item, style, dimensions);
+      const resolved = resolveObject(line, item, style, dimensions);
       const left = resolved.box.x * 100;
       const top = resolved.box.y * 100;
       const width = resolved.box.w * 100;
       const height = resolved.box.h * 100;
       const kindLabel = preset.kind === "plain" ? "无框" : preset.kind === "balloon" ? "对话框" : preset.kind === "float" ? "浮字" : "叙述框";
       const directionLabel = preset.direction === "vertical" ? "竖排" : "横排";
-      return <div key={item.dialogue_id} role="group" aria-label={`${lineSpeakerName(line, characters)}：${line.text}；${directionLabel}${kindLabel}`} data-dialogue-id={item.dialogue_id} data-lettering-kind={line.mode === "heart" ? "heart" : preset.kind} data-lettering-direction={preset.direction} data-lettering-box={`${item.box.x},${item.box.y},${item.box.w},${item.box.h}`} data-lettering-issues={(diagnostics[item.dialogue_id] ?? []).join(",")} tabIndex={interactive ? 0 : undefined} className={`lettering-object lettering-object--${line.mode === "heart" ? "heart" : preset.kind} lettering-object--${preset.direction} ${selected ? "is-selected" : ""}`.trim()} style={{ left: `${left}%`, top: `${top}%`, width: `${width}%`, height: `${height}%`, "--lettering-color": color, ...letteringTypographyVariables(style, "canvas") } as CSSProperties} onPointerDown={(event) => beginGesture(event, item, "move")} onPointerMove={move} onPointerUp={end} onPointerCancel={end} onKeyDown={(event) => {
+      return <div key={item.dialogue_id} role="group" aria-label={`${lineSpeakerName(line, characters)}：${line.text}；${directionLabel}${kindLabel}`} data-dialogue-id={item.dialogue_id} data-lettering-kind={line.mode === "heart" ? "heart" : preset.kind} data-lettering-direction={preset.direction} data-lettering-box={`${item.box.x},${item.box.y},${item.box.w},${item.box.h}`} data-lettering-issues={(diagnostics[item.dialogue_id] ?? []).join(",")} data-translation-budget={resolved.budgetExceeded ? "exceeded" : undefined} tabIndex={interactive||selectable ? 0 : undefined} className={`lettering-object lettering-object--${line.mode === "heart" ? "heart" : preset.kind} lettering-object--${preset.direction} ${selected ? "is-selected" : ""}`.trim()} style={{ left: `${left}%`, top: `${top}%`, width: `${width}%`, height: `${height}%`, "--lettering-color": color, ...letteringTypographyVariables({...style,font_size:resolved.fontSize}, "canvas") } as CSSProperties} onPointerDown={(event) => beginGesture(event, item, "move")} onPointerMove={move} onPointerUp={end} onPointerCancel={end} onKeyDown={(event) => {
         if (!interactive || !onChange || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
         event.preventDefault();
         event.stopPropagation();
@@ -346,7 +364,7 @@ export function WorkbenchLetteringOverlay({ dialogue, items, characters, style, 
         if (event.key === "ArrowDown") next.box.y = clampValue(next.box.y + step, 0, 1 - resolved.box.h);
         onChange(next);
       }} onClick={(event) => { event.preventDefault(); event.stopPropagation(); onSelect?.(item.dialogue_id); }}>
-        {line.mode === "heart" ? (heartFontReady && <HeartLettering text={line.text} layout={resolveHeart(line.text, item, dimensions, style.font_size)} />) : <span className="lettering-text">{preset.direction === "horizontal" ? resolved.lines.join("\n") : line.text}</span>}
+        {line.mode === "heart" ? (heartFontReady && <HeartLettering text={line.text} layout={locale==='zh'?resolveHeart(line.text, item, dimensions, style.font_size):resolveObject(line,item,style,dimensions) as ReturnType<typeof resolveHeart>} />) : <span className="lettering-text">{preset.direction === "horizontal" ? resolved.lines.join("\n") : line.text}</span>}
         {interactive && selected && line.mode === "heart" && <button type="button" className="lettering-rotate-handle" title="拖动调整排布方向" aria-label="旋转爱心排布" onPointerDown={event => beginGesture(event, item, "rotate")} onPointerMove={move} onPointerUp={end} onPointerCancel={end}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M19 10a7 7 0 1 0-1 7M19 4v6h-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg></button>}
         {interactive && selected && <i className={`lettering-resize-handle lettering-resize-handle--${preset.direction}`} aria-hidden="true" title={line.mode === "heart" ? "拖动缩放爱心文字" : preset.direction === "vertical" ? "拖动调整列高" : "拖动调整行宽"} onPointerDown={(event) => beginGesture(event, item, "resize")} onPointerMove={move} onPointerUp={end} onPointerCancel={end} />}
       </div>;
@@ -606,6 +624,7 @@ function FlowPreviewPanel({ projectId, preview, error = "" }: { projectId: strin
 
 export default function WorkbenchPageEditor({
   projectId,
+  letteringLocale="zh",onLetteringLocaleChange,saveLetteringRef,
   page,
   characters: directoryCharacters,
   scenes: directoryScenes = [],
@@ -641,6 +660,12 @@ export default function WorkbenchPageEditor({
 }: WorkbenchPageEditorProps) {
   const pageIdentity = `${page.page_id}:${page.model_id}:${page.render_sha256??''}`;
   const isTextPage = page.page_kind === "text";
+  const translations=usePageTranslations(projectId,page.page_id,page.content_sha256,letteringLocale!=='zh');
+  const activeTranslation=letteringLocale==='zh'?undefined:translations.branches[letteringLocale];
+  const targetValues=activeTranslation?.draft??{};
+  const translatedDialogue=(page.dialogue??[]).map(line=>({...line,text:targetValues[line.id]??''}));
+  const overlayDialogue=letteringLocale==='zh'?undefined:translatedDialogue;
+  const targetStyle=letteringStyle&&letteringLocale!=='zh'?{...letteringStyle,font_family:translationFont}:letteringStyle;
   const [textOverflow, setTextOverflow] = useState(false);
   const activeIdentity = useRef(pageIdentity);
   activeIdentity.current = pageIdentity;
@@ -678,6 +703,8 @@ export default function WorkbenchPageEditor({
   const setActiveTab = (tab: EditorTab) => { setLocalTab(tab); onEditorTabChange?.(tab); };
   const [selectedDraftKey, setSelectedDraftKey] = useState("");
   const [letteringDiagnostics, setLetteringDiagnostics] = useState<Record<string, LetteringIssue[]>>({});
+  const [translationBudgetWarnings,setTranslationBudgetWarnings]=useState<string[]>([]);
+  useEffect(()=>setTranslationBudgetWarnings([]),[pageIdentity,letteringLocale]);
 
   useEffect(() => {
     if (savingPage.current?.identity === pageIdentity) return;
@@ -719,7 +746,7 @@ export default function WorkbenchPageEditor({
   const previewItems = useMemo(() => letteringStyle ? previewLetteringItems(previewDialogue, layoutDraft, letteringStyle) : layoutDraft, [previewDialogue, layoutDraft, letteringStyle]);
   const layoutDirty = !sameJson(layoutDraft, layoutBaseline);
   hasDraft.current = contentDirty || promptDirty || layoutDirty;
-  useEffect(() => { onDirtyChange?.(contentDirty || promptDirty || layoutDirty || contentPhase === "error"); }, [contentDirty, layoutDirty, onDirtyChange, promptDirty, contentPhase]);
+  useEffect(() => { onDirtyChange?.(contentDirty || promptDirty || layoutDirty || translations.dirty || contentPhase === "error"); }, [contentDirty, layoutDirty, onDirtyChange, promptDirty, contentPhase,translations.dirty]);
   const selectedDialogueId = previewDialogue.find((line) => line.draftKey === selectedDraftKey)?.id ?? "";
   const promptAuditErrors = !promptDirty && flowPreview?.audit.status === "complete" ? flowPreview.audit.errors : [];
   const promptAuditWarnings = flowPreview?.audit.status === "complete" ? flowPreview.audit.warnings : [];
@@ -730,22 +757,22 @@ export default function WorkbenchPageEditor({
     await onReloadContent?.();
   }
 
-  async function saveAll(): Promise<boolean> {
-    if (references.pending) { setContentError(references.error || '正在读取新引用的设定，请稍后保存。'); return false; }
-    if (savingPage.current || (!contentDirty && !layoutDirty && !promptDirty)) return !savingPage.current;
+  async function saveSource(onlyLettering=false): Promise<boolean> {
+    if (!onlyLettering&&references.pending) { setContentError(references.error || '正在读取新引用的设定，请稍后保存。'); return false; }
+    if (savingPage.current || (!contentDirty && !layoutDirty && (onlyLettering||!promptDirty))) return !savingPage.current;
     const run = { identity: pageIdentity };
     savingPage.current = run;
     const isActive = () => savingPage.current === run && activeIdentity.current === pageIdentity;
     setContentPhase('saving'); setPromptPhase('saving'); setContentError(''); setPromptError('');
     const snapshot = { ...clone(contentToSave), dialogue: dialogueDraft.map(line => ({ ...persistedDialogue([line])[0], id: dialogueKey(line) })) };
     try {
-      const saved = await onSavePage(snapshot, persistedPrompt, clone(previewItems), editBaseline.current, sourceVersions.current);
+      const saved = await onSavePage(snapshot, onlyLettering?promptBaseline:persistedPrompt, clone(previewItems), editBaseline.current, sourceVersions.current);
       if (isActive()) {
         const content = contentFromPage({ ...page, ...saved.content });
         editBaseline.current = saved.page; setExternalConflict(false);
         sourceVersions.current = incomingSourceVersions;
         setContentBaseline(clone(content)); setContentDraft(clone(content)); setDialogueDraft(editableDialogue(content.dialogue));
-        setPromptDraft(clone(saved.prompt)); setPromptBaseline(clone(saved.prompt));
+        if(!onlyLettering)setPromptDraft(clone(saved.prompt)); setPromptBaseline(clone(saved.prompt));
         setLayoutDraft(clone(saved.items)); setLayoutBaseline(clone(saved.items));
         setSelectedDraftKey(''); setContentPhase('saved'); setPromptPhase('saved'); onPageSaved?.();
       }
@@ -755,6 +782,8 @@ export default function WorkbenchPageEditor({
       return false;
     } finally { if (savingPage.current === run) savingPage.current = null; }
   }
+  async function saveAll(){if(!await saveSource())return false;return translations.dirty?translations.save():true;}
+  useEffect(()=>{if(!saveLetteringRef)return;saveLetteringRef.current=async()=>letteringLocale==='zh'?saveSource(true):translations.save(letteringLocale);return ()=>{saveLetteringRef.current=null;};});
   useEffect(() => {
     if (!saveAllRef) return;
     saveAllRef.current = saveAll;
@@ -762,6 +791,7 @@ export default function WorkbenchPageEditor({
   });
 
   function discardAll() {
+    translations.discard();
     // 明确放弃时重建编辑区，清除词条撤销历史及尚未提交的输入。
     setPromptDiscardCount(count => count + 1);
     references.reset();
@@ -778,9 +808,9 @@ export default function WorkbenchPageEditor({
     return () => { discardAllRef.current = null; };
   });
 
-  const anyDirty = contentDirty || promptDirty || layoutDirty;
+  const anyDirty = contentDirty || promptDirty || layoutDirty || translations.dirty;
   const saveNeeded = anyDirty || contentPhase === "error" || promptPhase === "error";
-  const saving = contentPhase === "saving" || promptPhase === "saving";
+  const saving = contentPhase === "saving" || promptPhase === "saving" || translations.busy;
 
   function changeCharacters(value: Array<{ character_id: string; variant_id: string }>) {
     setPromptDraft(current => {
@@ -824,7 +854,7 @@ export default function WorkbenchPageEditor({
 
     <div className="page-storyboard-fields">
       {isTextPage
-        ? <><TextPageEditor value={contentDraft} disabled={busy || saving} onChange={patch => setContentDraft(current => ({ ...current, ...patch }))} />{textOverflow && <p className="prompt-save-error" role="alert">文字超出画布，请缩小字号或减少内容后再输出。</p>}</>
+        ? <>{letteringLocale==='zh'&&<TextPageEditor value={contentDraft} disabled={busy || saving} onChange={patch => setContentDraft(current => ({ ...current, ...patch }))} />}{textOverflow && <p className="prompt-save-error" role="alert">文字超出画布，请缩小字号或减少内容后再输出。</p>}</>
         : <>
         <label><span>画面内容<small className={sceneDescriptionWarning ? "is-over-limit" : undefined} aria-live="polite">{sceneDescriptionLength} / {SCENE_DESCRIPTION_CHARACTER_LIMIT} 字</small></span><textarea className="page-scene-description" rows={1} aria-label="画面内容" placeholder="简单描述谁在做什么，20 字以内" value={contentDraft.scene_description} onChange={(event) => setContentDraft((current) => ({ ...current, scene_description: event.target.value }))} />{sceneDescriptionWarning && <small className="is-over-limit" role="status">{sceneDescriptionWarning.message}</small>}</label>
       </>}
@@ -837,6 +867,9 @@ export default function WorkbenchPageEditor({
       <button role="tab" aria-selected={visibleTab === "flow"} className={visibleTab === "flow" ? "is-active" : ""} onClick={() => setActiveTab("flow")}>生成详情</button>
     </div>}
 
+    {(visibleTab === "lettering" || isTextPage) && page.page_kind!=='video' && onLetteringLocaleChange && <LetteringLocaleSelect value={letteringLocale} onChange={onLetteringLocaleChange}/>}
+    {letteringLocale!=='zh'&&(visibleTab==='lettering'||isTextPage)&&translationBudgetWarnings.length>0&&<p role="status" className="workbench-lettering-note">{translationBudgetWarnings.length} 条译文比中文占用空间大，可缩短；未发生裁切时仍可输出。</p>}
+    {(visibleTab==='lettering'||isTextPage)&&letteringLocale!=='zh'&&<TranslationEditor characterNames={Object.fromEntries(characters.map(character=>[character.id,character.name]))} locale={letteringLocale} branch={activeTranslation} busy={busy||saving} error={translations.error} onEdit={(id,text,confirm)=>translations.edit(letteringLocale,id,text,confirm)} selectedId={selectedDraftKey} onSelect={setSelectedDraftKey}/>}
     {(visibleTab === "lettering" || isTextPage) && onOpenLetteringSettings && <button type="button" className="button button--quiet lettering-settings-link" onClick={onOpenLetteringSettings}>项目嵌字样式 ↗</button>}
     {!isTextPage && visibleTab === "visual" && <section className="current-workbench-prompts character-prompt-editor">
 
@@ -846,25 +879,25 @@ export default function WorkbenchPageEditor({
       <ModelPromptEditor key={promptDiscardCount} header={<SectionHeader title="Prompt" actions={<div className="prompt-save-actions">{promptPhase === "error" && <button type="button" className="button button--quiet" onClick={() => void reloadAll()}>放弃本页草稿并重新载入</button>}{promptAuditWarnings.length > 0 && <button type="button" className="issue-indicator issue-indicator--warning" aria-label={`查看 ${promptAuditWarnings.length} 条 Prompt 警告`} title="查看 Prompt 警告" onClick={() => setPromptWarningsOpen(true)}>!</button>}</div>} />} projectId={projectId} page={page} prompt={promptDraft} onChange={setPromptDraft} characters={characters} scenes={scenes} references={contentDraft.characters??[]} onReferencesChange={changeCharacters} disabled={busy||saving} onOpenOverview={onOpenPromptOverview} qwenRewrite={qwenRewrite} dirty={anyDirty}/>
     </section>}
 
-    {!isTextPage && visibleTab === "lettering" && letteringStyle && <>
+    {!isTextPage && visibleTab === "lettering" && letteringLocale==='zh' && letteringStyle && <>
       <LetteringEditor dialogue={dialogueDraft} items={previewItems} characters={characters} style={letteringStyle} diagnostics={letteringDiagnostics} hasImage={Boolean(letteringTarget)} projectId={projectId} pageId={page.page_id} selectedDraftKey={selectedDraftKey} onSelectedDraftKeyChange={setSelectedDraftKey} onDialogueChange={setDialogueDraft} onItemsChange={setLayoutDraft} />
       <p className="workbench-lettering-note">{letteringTarget ? "在右侧拖动文字；普通文字调整框宽，爱心可独立缩放、旋转；旁白固定在画面底部。文案与布局一起保存。" : "文案可先编辑；有候选图后自动显示嵌字。"}</p>
 
     </>}
     {!isTextPage && visibleTab === "lettering" && !letteringStyle && <div className="workbench-flow-placeholder"><b>嵌字样式不可用</b><p>项目嵌字样式接入后即可编辑布局。</p></div>}
     {isTextPage && letteringTarget && letteringStyle && createPortal(
-      <TextPageArtwork title={contentDraft.display_title ?? ""} body={contentDraft.body ?? ""} layout={contentDraft.text_layout} style={letteringStyle} onOverflow={setTextOverflow} />,
+      <TextPageArtwork title={letteringLocale==='zh'?contentDraft.display_title??'':targetValues.display_title??''} body={letteringLocale==='zh'?contentDraft.body??'':targetValues.body??''} layout={letteringLocale==='zh'?contentDraft.text_layout:page.text_layout} style={targetStyle!} onOverflow={setTextOverflow} locale={letteringLocale} />,
       letteringTarget)}
     {!isTextPage && letteringTarget && letteringStyle && createPortal(<>
-      <WorkbenchLetteringOverlay dialogue={previewDialogue} items={previewItems} characters={characters} style={letteringStyle} canvas={canvas}
-        interactive={!busy && contentPhase !== "saving"} selectedId={selectedDialogueId}
-        onSelect={(id) => setSelectedDraftKey(previewDialogue.find((line) => line.id === id)?.draftKey ?? "")}
+      <WorkbenchLetteringOverlay locale={letteringLocale} sourceDialogue={page.dialogue} dialogue={overlayDialogue??previewDialogue} items={letteringLocale==='zh'?previewItems:previewLetteringItems(page.dialogue??[],letteringItems,letteringStyle)} characters={characters} style={targetStyle!} canvas={canvas}
+        selectable={true} interactive={letteringLocale==='zh' && !busy && contentPhase !== "saving"} selectedId={letteringLocale==='zh'?selectedDialogueId:selectedDraftKey}
+        onSelect={(id) => setSelectedDraftKey(letteringLocale==='zh'?previewDialogue.find((line) => line.id === id)?.draftKey ?? "":id)}
         onChange={(item) => setLayoutDraft(previewItems.map((candidate) => candidate.dialogue_id === item.dialogue_id ? item : candidate))}
-        onDiagnosticsChange={setLetteringDiagnostics} />
+        onDiagnosticsChange={setLetteringDiagnostics} onBudgetWarningsChange={setTranslationBudgetWarnings} />
       {layoutDirty && <span className="lettering-unsaved-hint">布局未保存 · 点击「保存」</span>}
     </>, letteringTarget)}
     {!isTextPage && fullscreenLetteringTarget && letteringStyle && createPortal(
-      <WorkbenchLetteringOverlay dialogue={previewDialogue} items={previewItems} characters={characters} style={letteringStyle} canvas={fullscreenLetteringTarget.canvas} />,
+      <WorkbenchLetteringOverlay locale={letteringLocale} sourceDialogue={page.dialogue} dialogue={overlayDialogue??previewDialogue} items={letteringLocale==='zh'?previewItems:previewLetteringItems(page.dialogue??[],letteringItems,letteringStyle)} characters={characters} style={targetStyle!} canvas={fullscreenLetteringTarget.canvas} />,
       fullscreenLetteringTarget.element)}
     {!isTextPage && visibleTab === "flow" && <FlowPreviewPanel projectId={projectId} preview={flowPreview} error={flowPreviewError} />}
     {promptWarningsOpen && <Modal title="Prompt 警告" subtitle={`${promptAuditWarnings.length} 条`} onClose={() => setPromptWarningsOpen(false)} ariaLabel="Prompt 警告"><div className="issue-dialog-body"><PromptIssueList issues={promptAuditWarnings} tone="warning" /></div></Modal>}

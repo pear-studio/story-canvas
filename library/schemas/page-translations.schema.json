@@ -1,0 +1,19 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://storyvisualizer.local/schemas/page-translations.schema.json",
+  "type":"object",
+  "required":["$schema"],
+  "additionalProperties":false,
+  "properties":{
+    "$schema":{"const":"https://storyvisualizer.local/schemas/page-translations.schema.json"},
+    "en":{"$ref":"#/$defs/branch"},
+    "ja":{"$ref":"#/$defs/branch"}
+  },
+  "$defs":{
+    "entry":{"type":"object","required":["text","source_sha256"],"additionalProperties":false,"properties":{"text":{"type":"string","minLength":1},"source_sha256":{"type":"string","pattern":"^[a-f0-9]{64}$"}}},
+    "branch":{"anyOf":[
+      {"type":"object","additionalProperties":false,"properties":{"dialogue":{"type":"object","additionalProperties":{"$ref":"#/$defs/entry"}}}},
+      {"type":"object","additionalProperties":false,"properties":{"display_title":{"$ref":"#/$defs/entry"},"body":{"$ref":"#/$defs/entry"}}}
+    ]}
+  }
+}

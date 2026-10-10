@@ -9,6 +9,7 @@ import { settingActionsCatalog } from './settings.mjs';
 import { projectSettingsActions } from './project-settings.mjs';
 import { workspaceActions } from './workspace.mjs';
 import { mediaActions } from './media-actions.mjs';
+import { translationActions } from './translations.mjs';
 import { pageBatchActions } from './page-batch.mjs';
 import { dictionaryActions } from './dictionary.mjs';
 import { managementActions } from './management.mjs';
@@ -19,7 +20,7 @@ import { workbenchRestrictions } from './access-policy.mjs';
 import { videoHelp } from './video-help.mjs';
 import { invalid, validate, schema, string, object } from './contract.mjs';
 const actions = {};
-for (const catalog of [projectActions,structureActions,settingActionsCatalog,pageActions,factActions,promptActions,projectSettingsActions,workspaceActions,mediaActions,pageBatchActions,dictionaryActions,managementActions,comparisonActions,trainingActions,executionActions]) {
+for (const catalog of [projectActions,structureActions,settingActionsCatalog,pageActions,factActions,promptActions,projectSettingsActions,workspaceActions,mediaActions,translationActions,pageBatchActions,dictionaryActions,managementActions,comparisonActions,trainingActions,executionActions]) {
   for (const [name, definition] of Object.entries(catalog)) {
     if (Object.hasOwn(actions,name)) throw new Error(`重复工具操作 ${name}`);
     actions[name]=definition;
@@ -49,7 +50,7 @@ const groups=[
   {id:'resources',title:'资源目录与词库',prefixes:['resource.','dictionary.','asset.']},
   {id:'materials',title:'材料、参考图与创作约定',prefixes:['material.','reference.','agreement.','media.']},
   {id:'candidates',title:'候选图查询与清理',prefixes:['candidate.']},
-  {id:'finished',title:'文字布局与成品',prefixes:['lettering.','finished.']},
+  {id:'finished',title:'译文、文字布局与成品',prefixes:['translation.','lettering.','finished.']},
   {id:'tasks',title:'生成任务与队列',prefixes:['task.']},
   {id:'runtime',title:'本机环境管理',prefixes:['runtime.']},
   {id:'comparison',title:'对比实验',prefixes:['comparison.']},

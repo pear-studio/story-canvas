@@ -13,6 +13,7 @@
 | 任务 | 必读入口 |
 |---|---|
 | 故事、分页、seq、角色与场景 | `story-editing` → [创作规则](docs/creative/guide.md) |
+| 嵌字翻译与多语言成品 | [嵌字翻译规则](docs/creative/translation.md) |
 | Prompt、图片或视频生成 | `prompt-authoring` → [Prompt 与生成规则](docs/creative/prompt-generation.md) |
 | 参考图搜寻 | `lora-material-sourcing` |
 | 训练素材、Caption、训练与分析 | `lora-training` → [训练知识](docs/reference/lora-training.md) |

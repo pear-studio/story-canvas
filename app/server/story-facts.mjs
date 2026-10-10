@@ -833,6 +833,9 @@ export async function cleanupDeletedStoryPages(
 
 // 项目写锁由调用入口持有；失败时恢复已写文件，避免半套连带修改。
 export async function commitFactChanges(directory, writes, { cleanupReferences = true } = {}) {
+  const {prunePageTranslationChange}=await import('./page-translations.mjs');
+  const pruned=[];for(const write of writes){const change=await prunePageTranslationChange(directory,write);if(change&&!writes.some(item=>item.relative===change.relative))pruned.push(change);}
+  writes=[...writes,...pruned];
   if (cleanupReferences) await checkRemovedSettingReferences(directory, writes);
   const done = [];
   try {

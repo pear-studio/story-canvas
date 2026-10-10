@@ -1,4 +1,5 @@
 import {cleanRemovedPageCharacters} from './page-character-cleanup.mjs';
+import {readTranslationDocument,translationPath} from './page-translations.mjs';
 import { cleanRemovedReferences, removeUnusedFile, savePageReferenceInputs } from './reference-materials.mjs';
 import { pageSettingsFromDefaults, readPageRenderSettings } from './page-render-settings.mjs';
 import { modelPrompt, replaceModelPrompt, promptModelEntries, makeModelPromptDocument } from './model-prompts.mjs';
@@ -113,6 +114,7 @@ export async function duplicatePage(root,projectId,pageId) {
   const suffix=content.title.match(/\d+$/);
   content.title=suffix?content.title.slice(0,-suffix[0].length)+(BigInt(suffix[0])+1n):`${content.title}2`;
   const writes=[{relative:pageRelativePath(id,'content'),before:null,after:content},{relative:pageRelativePath(id,'prompt'),before:null,after:prompt}];
+  const translations=await readTranslationDocument(directory,pageId);if(translations)writes.push({relative:translationPath(id),before:null,after:translations});
   writes.push({relative:pageRelativePath(id,'render'),before:null,after:await readPageRenderSettings(directory,pageId)});
   const sources=await optionalJson(directory,pageRelativePath(pageId,'text-sources'));if(sources)writes.push({relative:pageRelativePath(id,'text-sources'),before:null,after:sources});
   const layouts=await optionalJson(directory,'lettering/dialogue-layouts.json');const layout=layouts?.pages.find(item=>item.page===pageId);
@@ -127,7 +129,7 @@ export async function deletePage(root,projectId,pageId,{beforeCommit}={}) {
   if((await listFinishedJobs(directory)).some(job=>job.page_id===pageId&&finishedBusyStatuses.has(job.status)))fail('page_finished_output_busy',[pageId]);
   const removedReferences = await optionalJson(directory, pageRelativePath(pageId, 'prompt'));
   const deletionId=`deleted-${randomBytes(6).toString('hex')}`,archive=path.join(path.resolve(root),'Saved/state/deleted-pages',project.projectId,deletionId);
-  const descriptors=[...['content','prompt','render','rewrite','text-sources'].map(kind=>pageRelativePath(pageId,kind)),`Outputs/pages/${pageId}`];
+  const descriptors=[...['content','prompt','render','rewrite','text-sources'].map(kind=>pageRelativePath(pageId,kind)),translationPath(pageId),`Outputs/pages/${pageId}`];
   const siblings=index.pages.filter(page=>sameOwner(page,entry)),ordinal=siblings.findIndex(page=>page.page_id===pageId);
   const position={ordinal,previous_page_id:siblings[ordinal-1]?.page_id??null,next_page_id:siblings[ordinal+1]?.page_id??null};
   if(beforeCommit)await beforeCommit();

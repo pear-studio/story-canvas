@@ -58,8 +58,8 @@ test("文字页独立排版保存恢复，预览与输出一致，长文溢出�
   await page.getByLabel("显示标题", { exact: true }).waitFor();
   assert.equal(await page.getByLabel("显示标题", { exact: true }).inputValue(), "");
   assert.equal(await placement.getByRole("button", { name: "下三分之一", exact: true }).getAttribute("aria-pressed"), "true");
-  const view = await (await page.request.get(`${origin}/api/projects/demo/workbench`)).json();
-  const dimensions = view.render_capabilities.text_page.dimensions;
+  const view = await (await page.request.get(`${origin}/api/projects/demo/workbench?scope=${encodeURIComponent(JSON.stringify({kind:"page",page_id:key.page_id}))}`)).json();
+  const dimensions = view.outline.chapters.flatMap(chapter=>chapter.sequences.flatMap(sequence=>sequence.pages)).find(page=>page.page_id===key.page_id).render_capabilities.text_page.dimensions;
   assert.deepEqual(dimensions, { width: 1664, height: 2496 });
   const previewRatio = await artwork.evaluate(element => element.clientWidth / element.clientHeight);
   assert.ok(Math.abs(previewRatio - dimensions.width / dimensions.height) < .002, "预览采用实际 recipe 的成品比例");

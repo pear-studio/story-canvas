@@ -1,4 +1,6 @@
 import { defaultTextPageLayout } from "../shared/text-page-layout.mjs";
+import {storyPageNumbers} from '../shared/story-page-numbers.mjs';
+import {requireLetteringLocale,readTranslationDocument,translationProjection,localizeLettering} from './page-translations.mjs';
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rmdir, stat, unlink, writeFile } from "node:fs/promises";
 import { replaceFileWithRetry } from "./file-replace.mjs";
@@ -30,9 +32,10 @@ async function writeJson(file, value) {
   finally { await unlink(temp).catch(() => {}); }
 }
 function pageId(key) { encodePageKey(key); return key.page_id; }
-const recordPath = (directory, id) => path.join(directory, "finished", `${pageId({ page_id: id })}.json`);
-const jobPath = (directory, id) => path.join(directory, "Saved", "finished", `${pageId({ page_id: id })}.json`);
-export const readFinishedRecord = (directory, id) => optionalJson(recordPath(directory, id));
+const localeSuffix=locale=>requireLetteringLocale(locale)==='zh'?'':`.${locale}`;
+const recordPath = (directory, id, locale='zh') => path.join(directory, "finished", `${pageId({ page_id: id })}${localeSuffix(locale)}.json`);
+const jobPath = (directory, id, locale='zh') => path.join(directory, "Saved", "finished", `${pageId({ page_id: id })}${localeSuffix(locale)}.json`);
+export const readFinishedRecord = (directory, id, locale='zh') => optionalJson(recordPath(directory, id,locale));
 export function orderedFinishedPages(view) {
   return view.outline.chapters.flatMap(chapter => chapter.sequences.flatMap(sequence => sequence.pages.map(page => ({ page, chapter_id: chapter.id, chapter_title: chapter.title, sequence_title: sequence.title }))));
 }
@@ -44,27 +47,46 @@ function letteringSnapshot(view, page, canvas = page.render?.canvas ?? view.proj
   settings.character_colors = Object.fromEntries(Object.entries(settings.character_colors).filter(([id]) => speakers.has(id)));
   return { dialogue: page.dialogue ?? [], items: page.lettering?.items ?? [], settings, canvas };
 }
-export async function readFinishedPages(repositoryRoot, projectId, directory, { page_id = null } = {}) {
+async function localizedSnapshot(view,page,directory,locale,canvas,strict=false) {
+  return localizeLettering(letteringSnapshot(view,page,canvas),page,await readTranslationDocument(directory,page.page_id),locale,{strict});
+}
+export async function prepareTranslationInspection(repositoryRoot,projectId,directory,value) {
+  const id=pageId(value.page_key),locale=requireLetteringLocale(value.locale),view=await readProjectWorkbenchView(repositoryRoot,projectId,{kind:'finished',page_id:id}),page=view.pages.find(page=>page.page_id===id);
+  if(!page)fail('页面已不存在',404);if(page.page_kind==='video')fail('动态页没有嵌字译文');
+  let clean,canvas;
+  if(page.page_kind==='text') {const dimensions=(page.render_capabilities??view.render_capabilities).text_page?.dimensions;if(!dimensions)fail('文字页尺寸不可用');clean=await sharp({create:{...dimensions,channels:3,background:'#000'}}).png().toBuffer();}
+  else if(value.candidate_id){requireCandidateId(value.candidate_id);const media=await resolveExistingProjectMedia(directory,candidateFileRelativePath(page.page_key,value.candidate_id));if(!media)fail('指定候选底图不可用');clean=await readFile(media.target);}
+  else if(value.clean_locale){const record=await readFinishedRecord(directory,id,requireLetteringLocale(value.clean_locale));const media=record&&await resolveExistingProjectMedia(directory,record.outputs.clean);if(!media)fail('指定语言的成品底图不可用');clean=await readFile(media.target);canvas=record.lettering.canvas;}
+  else fail('请显式指定 candidate_id 或 clean_locale 选择预览底图',400);
+  if(!canvas){const {width,height}=await sharp(clean).metadata();canvas=`${width}:${height}`;}
+  const document=await readTranslationDocument(directory,id);
+  return {clean,lettering:await localizedSnapshot(view,page,directory,locale,canvas),translation_summary:translationProjection(page,document,locale).summary};
+}
+export async function readFinishedPages(repositoryRoot, projectId, directory, { page_id = null,locale='zh' } = {}) {
+  requireLetteringLocale(locale);
   const view = await readProjectWorkbenchView(repositoryRoot, projectId, {kind:'finished',page_id});
   const jobs = await listFinishedJobs(directory);
+  const numbers=storyPageNumbers(view.outline.chapters);
   const pages = [];
   const entries = page_id ? view.pages.filter(page => page.page_id === page_id).map(page => ({ page })) : orderedFinishedPages(view);
   for (const { page, ...chapter } of entries) {
     if (page_id && page.page_id !== page_id) continue;
-    const record = await readFinishedRecord(directory, page.page_id);
+    const mediaLocale=page.page_kind==='video'?'zh':locale;
+    const record = await readFinishedRecord(directory, page.page_id,mediaLocale);
+    const translation_summary=locale==='zh'||page.page_kind==='video'?null:translationProjection(page,await readTranslationDocument(directory,page.page_id),locale).summary;
     const candidates = page.page_kind === "text" ? null : await readGenerationCandidateRecords(directory, { pageKey: page.page_key });
     const candidate = candidates?.length === 1 ? candidates[0].candidate_id : null;
     const files = record ? await Promise.all(["lettered", "clean"].map(kind => resolveExistingProjectMedia(directory, record.outputs[kind]))) : [];
     const available = files.length === 2 && files.every(Boolean);
     const dimensions = page.page_kind === 'text' ? (page.render_capabilities ?? view.render_capabilities).text_page?.dimensions : null;
     const dimensionsChanged = dimensions && record && (record.width !== dimensions.width || record.height !== dimensions.height);
-    const stale = record ? Boolean(dimensionsChanged) || (candidate !== null && candidate !== record.candidate_id) || hashCanonicalJson(letteringSnapshot(view, page, page.page_kind === "text" ? undefined : record.lettering.canvas)) !== hashCanonicalJson(record.lettering) : false;
+    const stale = record ? Boolean(dimensionsChanged) || (candidate !== null && candidate !== record.candidate_id) || Boolean(translation_summary?.missing||translation_summary?.stale) || hashCanonicalJson(await localizedSnapshot(view, page,directory,mediaLocale,page.page_kind === "text" ? undefined : record.lettering.canvas)) !== hashCanonicalJson(record.lettering) : false;
     const url = kind => `/api/projects/${encodeURIComponent(projectId)}/media/${record.outputs[kind]}`;
-    pages.push({ ...chapter, page_id: page.page_id, page_key: page.page_key, title: page.title,
+    pages.push({ ...chapter,page_number:numbers.get(page.page_id)??null,locale:mediaLocale,translation_summary, page_id: page.page_id, page_key: page.page_key, title: page.title,
       candidate_id: candidate, candidate_count: candidates?.length ?? null,
-      batch_skip_reason: candidates?.length === 0 ? "没有候选图" : candidates && candidates.length > 1 ? `有 ${candidates.length} 张候选，请只保留一张` : null,
+      batch_skip_reason: translation_summary?.missing||translation_summary?.stale ? `译文未就绪：缺译 ${translation_summary.missing} 条、原文变化 ${translation_summary.stale} 条` : candidates?.length === 0 ? "没有候选图" : candidates && candidates.length > 1 ? `有 ${candidates.length} 张候选，请只保留一张` : null,
       status: !record ? "missing" : !available ? "files_missing" : stale ? "stale" : "ready",
-      job: jobs.find(job => job.page_id === page.page_id) ?? null,
+      job: jobs.find(job => job.page_id === page.page_id&&(job.locale??'zh')===mediaLocale) ?? null,
       record: record ? { media_kind:record.page_kind==='video'?'video':'image', poster_url:record.poster ? `/api/projects/${encodeURIComponent(projectId)}/media/${record.poster}` : null, sha256: hashCanonicalJson(record), candidate_id: record.candidate_id ?? null, width: record.width, height: record.height, created_at: record.created_at,
         bytes: available ? (await stat(files[0].target)).size : null,
         lettered_url: available ? url("lettered") : null, clean_url: available ? url("clean") : null } : null });
@@ -74,16 +96,17 @@ export async function readFinishedPages(repositoryRoot, projectId, directory, { 
 
 export async function deleteFinishedPage(directory, value) {
   const id = pageId(value?.page_key);
+  const locale=requireLetteringLocale(value.locale);
   if ((await listFinishedJobs(directory)).some(job => job.page_id === id && busyStatuses.has(job.status))) fail("本页正在输出成品，请等待完成后再删除");
-  const record = await readFinishedRecord(directory, id);
+  const record = await readFinishedRecord(directory, id,locale);
   if (!record || hashCanonicalJson(record) !== value.expected_sha256) fail("本页成品已变化，请刷新后再删除");
-  await unlink(recordPath(directory, id));
+  await unlink(recordPath(directory, id,locale));
   for (const relative of new Set([...Object.values(record.outputs),...(record.poster?[record.poster]:[])])) {
     if (!relative.startsWith(`Outputs/finished/${id}/`)) continue;
     const media = await resolveExistingProjectMedia(directory, relative);
     if (media) { await unlink(media.target); await rmdir(path.dirname(media.target)).catch(() => {}); }
   }
-  await unlink(jobPath(directory, id)).catch(error => { if (error.code !== "ENOENT") throw error; });
+  await unlink(jobPath(directory, id,locale)).catch(error => { if (error.code !== "ENOENT") throw error; });
   return { deleted: true };
 }
 
@@ -122,8 +145,9 @@ export async function prepareFinishedPage(repositoryRoot, projectId, directory, 
   const view = await readProjectWorkbenchView(repositoryRoot, projectId, {kind:'finished',page_id:id});
   const page = view.pages.find(page => page.page_id === id);
   if (!page) fail("页面已经删除", 404);
-  const old = await readFinishedRecord(directory, id);
-  const job = queuedJob ?? { id: `finished-${randomUUID()}`, page_id: id, project_id: projectId, status: "queued", pid: process.pid, created_at: new Date().toISOString(), error: null };
+  const locale=page.page_kind==='video'?'zh':requireLetteringLocale(value.locale);
+  const old = await readFinishedRecord(directory, id,locale);
+  const job = queuedJob ?? { id: `finished-${randomUUID()}`, locale,page_id: id, project_id: projectId, status: "queued", pid: process.pid, created_at: new Date().toISOString(), error: null };
   const storyIndex = orderedFinishedPages(view).findIndex(entry => entry.page.page_id === id);
   job.page_label = storyIndex >= 0 ? String(storyIndex + 1).padStart(3, "0") : page.title || id;
   if (page.page_kind === "text") {
@@ -131,8 +155,8 @@ export async function prepareFinishedPage(repositoryRoot, projectId, directory, 
     const textPage = (page.render_capabilities ?? view.render_capabilities).text_page;
     if (!textPage.dimensions) fail(textPage.error);
     const dimensions = textPage.dimensions;
-    const snapshot = { page_key: page.page_key, page_kind: "text", lettering: letteringSnapshot(view, page) };
-    await writeJson(jobPath(directory, id), job);
+    const snapshot = { page_key: page.page_key, page_kind: "text", lettering: await localizedSnapshot(view, page,directory,locale,undefined,true) };
+    await writeJson(jobPath(directory, id,locale), job);
     return { job, snapshot, sourceBuffer: null, reuse: null, expected: hashCanonicalJson(old), old, textPage: dimensions };
   }
   try { requireCandidateId(value.candidate_id); }
@@ -154,28 +178,32 @@ export async function prepareFinishedPage(repositoryRoot, projectId, directory, 
     await writeJson(jobPath(directory,id),job);
     return {job,snapshot,sourceBuffer,posterBuffer:await readFile(source.target),video:true,expected:hashCanonicalJson(old),old};
   }
-  const reuse = old?.candidate_id === value.candidate_id && old.upscale.name === finishedModel.name
-    && old.upscale.sha256 === finishedModel.sha256 ? await resolveExistingProjectMedia(directory, old.outputs.clean) : null;
-  if (!source && !reuse) fail("候选底图已不存在；请根据成品记录重新生成候选，再输出成品");
   const sourceBuffer = source ? await readFile(source.target) : null;
+  let base=old,reuse=null;
+  for(const language of [locale,...['zh','en','ja'].filter(language=>language!==locale)]) {
+    const record=language===locale?old:await readFinishedRecord(directory,id,language);
+    if(record?.candidate_id!==value.candidate_id||record?.upscale?.name!==finishedModel.name||record.upscale.sha256!==finishedModel.sha256||(sourceBuffer&&sha(sourceBuffer)!==record.source_sha256))continue;
+    const media=await resolveExistingProjectMedia(directory,record.outputs.clean);
+    if(media){reuse=media;base=record;break;}
+  }
+  if (!source && !reuse) fail("候选底图已不存在；请根据成品记录重新生成候选，再输出成品");
   const dimensions = await sharp(sourceBuffer ?? await readFile(reuse.target)).metadata();
-  const generation = source ? await readCandidateGeneration(directory, page.page_key, value.candidate_id) : old.generation;
+  const generation = source ? await readCandidateGeneration(directory, page.page_key, value.candidate_id) : base.generation;
   const snapshot = { page_key: page.page_key, candidate_id: value.candidate_id,
-    source_sha256: sourceBuffer ? sha(sourceBuffer) : old.source_sha256,
+    source_sha256: sourceBuffer ? sha(sourceBuffer) : base.source_sha256,
     generation: Object.fromEntries(["seed", "execution_seed", "prompt", "models", "loras", "recipe", "canvas", "render_profile", "render_route"].map(key => [key, generation[key] ?? null])),
-    lettering: letteringSnapshot(view, page, sourceBuffer ? `${dimensions.width}:${dimensions.height}` : old.lettering.canvas), upscale: finishedModel };
-  const reuseValid = reuse && (!sourceBuffer || snapshot.source_sha256 === old.source_sha256);
-  await writeJson(jobPath(directory, id), job);
-  return { job, snapshot, sourceBuffer, reuse: reuseValid ? reuse.target : null, expected: hashCanonicalJson(old), old };
+    lettering: await localizedSnapshot(view, page,directory,locale,sourceBuffer ? `${dimensions.width}:${dimensions.height}` : base.lettering.canvas,true), upscale: finishedModel };
+  await writeJson(jobPath(directory, id,locale), job);
+  return { job, snapshot, sourceBuffer, reuse: reuse?.target??null, expected: hashCanonicalJson(old), old };
 }
 
 export async function publishFinishedPage(repositoryRoot, projectId, directory, prepared, record) {
   const { page_id: id } = prepared.job;
-  if (hashCanonicalJson(await readFinishedRecord(directory, id)) !== prepared.expected) fail("本页成品已被其他操作更新，请重新读取");
+  if (hashCanonicalJson(await readFinishedRecord(directory, id,prepared.job.locale)) !== prepared.expected) fail("本页成品已被其他操作更新，请重新读取");
   const view = await readProjectWorkbenchView(repositoryRoot, projectId, {kind:'directory'});
   const pages = [...view.outline.chapters.flatMap(chapter=>chapter.sequences.flatMap(sequence=>sequence.pages)), ...view.characters.flatMap(setting=>setting.pages), ...view.scenes.scenes.flatMap(setting=>setting.pages), ...view.orphan_pages];
   if (!pages.some(page => page.page_id === id)) fail("页面已删除，本次输出不再发布");
-  await writeJson(recordPath(directory, id), record);
+  await writeJson(recordPath(directory, id,prepared.job.locale), record);
 }
 
 export async function runFinishedPage({ repositoryRoot, projectId, directory, prepared, config, origin, mutateTargetFacts,
@@ -184,7 +212,7 @@ export async function runFinishedPage({ repositoryRoot, projectId, directory, pr
   let outputs = null;
   let newPoster = null;
   let published = false;
-  const update = async (status, error = null) => { job.status = status; job.error = error; const now = new Date().toISOString(); job.started_at ??= now; if (status === "completed") job.completed_at = now; if (status === "failed") job.failed_at = now; await writeJson(jobPath(directory, job.page_id), job); };
+  const update = async (status, error = null) => { job.status = status; job.error = error; const now = new Date().toISOString(); job.started_at ??= now; if (status === "completed") job.completed_at = now; if (status === "failed") job.failed_at = now; await writeJson(jobPath(directory, job.page_id,job.locale), job); };
   try {
     if(prepared.video) {
       await update('publishing');const prefix=`Outputs/finished/${job.page_id}/${job.id}`;
@@ -210,7 +238,7 @@ export async function runFinishedPage({ repositoryRoot, projectId, directory, pr
     const lettered = await render(clean, snapshot.lettering, origin);
     const dimensions = await sharp(lettered).metadata();
     if (dimensions.width !== width || dimensions.height !== height) fail("嵌字输出尺寸不匹配");
-    const prefix = `Outputs/finished/${job.page_id}/${job.id}`;
+    const prefix = `Outputs/finished/${job.page_id}/${job.locale??'zh'}/${job.id}`;
     outputs = { clean: `${prefix}/clean.png`, lettered: `${prefix}/lettered.png` };
     await mkdir(path.join(directory, prefix), { recursive: true });
     await writeFile(path.join(directory, outputs.clean), clean);
@@ -236,8 +264,8 @@ export async function runFinishedPage({ repositoryRoot, projectId, directory, pr
 
 // 批量输出只采用当前唯一候选；零张或多张候选跳过，文字页无需候选。
 // force 时连已就绪页面一起排队，用于样式代码变化后的整批重新嵌字（候选未变会复用超分底图）。
-export async function planFinishedBatch(repositoryRoot, projectId, directory, { chapter_id = null, force = false } = {}) {
-  const { pages } = await readFinishedPages(repositoryRoot, projectId, directory);
+export async function planFinishedBatch(repositoryRoot, projectId, directory, { chapter_id = null, force = false,locale='zh' } = {}) {
+  const { pages } = await readFinishedPages(repositoryRoot, projectId, directory,{locale});
   const statuses = force ? ["missing", "stale", "files_missing", "ready"] : ["missing", "stale", "files_missing"];
   const targets = [];
   const skipped = [];
@@ -247,7 +275,7 @@ export async function planFinishedBatch(repositoryRoot, projectId, directory, { 
     if (page.job && busyStatuses.has(page.job.status)) continue;
     const page_label = String(index + 1).padStart(3, "0");
     if (page.batch_skip_reason) { skipped.push({ page_id: page.page_id, title: page.title, reason: page.batch_skip_reason }); continue; }
-    targets.push({ page_key: page.page_key, ...(page.candidate_id ? { candidate_id: page.candidate_id } : {}), page_label });
+    targets.push({locale:page.locale, page_key: page.page_key, ...(page.candidate_id ? { candidate_id: page.candidate_id } : {}), page_label });
   }
   return { targets, skipped };
 }
@@ -261,8 +289,8 @@ export async function runFinishedBatch({ repositoryRoot, projectId, directory, t
   for (const target of targets) {
     const id = pageId(target.page_key);
     if (busy.has(id)) continue;
-    const job = { id: `finished-${randomUUID()}`, page_id: id, page_label: target.page_label ?? id, project_id: projectId, status: "queued", pid: process.pid, created_at: new Date().toISOString(), error: null };
-    await writeJson(jobPath(directory, id), job);
+    const job = { id: `finished-${randomUUID()}`,locale:target.locale??'zh', page_id: id, page_label: target.page_label ?? id, project_id: projectId, status: "queued", pid: process.pid, created_at: new Date().toISOString(), error: null };
+    await writeJson(jobPath(directory, id,job.locale), job);
     placeholders.set(id, job);
   }
   const pending = new Set(placeholders.keys());
@@ -281,7 +309,7 @@ export async function runFinishedBatch({ repositoryRoot, projectId, directory, t
       } catch (error) {
         const now = new Date().toISOString();
         const placeholder = placeholders.get(id);
-        await writeJson(jobPath(directory, id), { id: placeholder?.id ?? `finished-${randomUUID()}`, page_id: id, page_label: placeholder?.page_label ?? id, project_id: projectId, status: "failed", pid: process.pid, created_at: placeholder?.created_at ?? now, failed_at: now, error: error.message });
+        await writeJson(jobPath(directory, id,target.locale), { id: placeholder?.id ?? `finished-${randomUUID()}`,locale:target.locale??'zh', page_id: id, page_label: placeholder?.page_label ?? id, project_id: projectId, status: "failed", pid: process.pid, created_at: placeholder?.created_at ?? now, failed_at: now, error: error.message });
         results.failed += 1;
         pending.delete(id);
         continue;
@@ -293,7 +321,7 @@ export async function runFinishedBatch({ repositoryRoot, projectId, directory, t
   } finally {
     if (renderer) await renderer.close();
     for (const id of pending) {
-      await writeJson(jobPath(directory, id), { ...placeholders.get(id), status: "failed", failed_at: new Date().toISOString(), error: "批量输出中断，请重新输出" }).catch(() => {});
+      await writeJson(jobPath(directory, id,placeholders.get(id).locale), { ...placeholders.get(id), status: "failed", failed_at: new Date().toISOString(), error: "批量输出中断，请重新输出" }).catch(() => {});
     }
   }
   return results;

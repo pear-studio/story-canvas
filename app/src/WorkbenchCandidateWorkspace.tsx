@@ -1,3 +1,4 @@
+import type {LetteringLocale} from "./page-translations";
 import { floatingLayerHost } from "./floating-layer";
 import { useFloatingLayer } from "./floating-layer";
 import {
@@ -45,7 +46,7 @@ type ContextMenuTrigger = { clientX: number; clientY: number; preventDefault?: (
 
 export type WorkbenchCandidateWorkspaceProps = {
   onDesktopActionsTarget?: (element:HTMLDivElement|null)=>void;
-  finishedOutput?: { projectId: string; pageId: string; onOutput: (candidateId?: string) => Promise<FinishedJob | null> };
+  finishedOutput?: {locale?:LetteringLocale; projectId: string; pageId: string; onOutput: (candidateId?: string) => Promise<FinishedJob | null> };
   pageIdentity: string;
   pageTitle: string;
   canvas?: string | null;

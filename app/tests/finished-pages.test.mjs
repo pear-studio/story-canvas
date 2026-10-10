@@ -269,25 +269,25 @@ test("批量输出计划：零张或多张候选跳过，唯一候选与文字�
   await json(path.join(f.directory, `pages/${textKey.page_id}.prompt.json`), await readFile(path.join(f.directory, `pages/${key.page_id}.prompt.json`)).then(JSON.parse));
   await json(path.join(f.directory, "pages/index.json"), { $schema: PAGES_INDEX_SCHEMA_ID, pages: [key.page_id, second, textKey.page_id].map(page_id => ({ page_id, owner_kind: "story", sequence_id: "sequence" })) });
   const plan = await planFinishedBatch(f.root, "demo", f.directory, {});
-  assert.deepEqual(plan.targets, [{ page_key: textKey, page_label: "003" }]);
+  assert.deepEqual(plan.targets, [{locale:"zh", page_key: textKey, page_label: "003" }]);
   assert.deepEqual(plan.skipped.map(page => page.page_id), [key.page_id, second]);
   assert.match(plan.skipped[0].reason, /2 张候选/);
   assert.match(plan.skipped[1].reason, /没有候选/);
   await unlink(path.join(f.directory, candidateFileRelativePath(key, newer).replace("image.png", "result.json")));
-  assert.deepEqual((await planFinishedBatch(f.root, "demo", f.directory)).targets, [{ page_key: key, candidate_id: candidateId, page_label: "001" }, { page_key: textKey, page_label: "003" }]);
+  assert.deepEqual((await planFinishedBatch(f.root, "demo", f.directory)).targets, [{locale:"zh", page_key: key, candidate_id: candidateId, page_label: "001" }, {locale:"zh", page_key: textKey, page_label: "003" }]);
   assert.deepEqual(await planFinishedBatch(f.root, "demo", f.directory, { chapter_id: "other-chapter" }), { targets: [], skipped: [] });
   const pending = await f.prepare();
-  assert.deepEqual((await planFinishedBatch(f.root, "demo", f.directory, {})).targets, [{ page_key: textKey, page_label: "003" }], "输出中的页面不重复排队");
+  assert.deepEqual((await planFinishedBatch(f.root, "demo", f.directory, {})).targets, [{locale:"zh", page_key: textKey, page_label: "003" }], "输出中的页面不重复排队");
   await f.run(pending);
-  assert.deepEqual((await planFinishedBatch(f.root, "demo", f.directory, {})).targets, [{ page_key: textKey, page_label: "003" }], "已就绪页面不排队");
+  assert.deepEqual((await planFinishedBatch(f.root, "demo", f.directory, {})).targets, [{locale:"zh", page_key: textKey, page_label: "003" }], "已就绪页面不排队");
   const forced = await planFinishedBatch(f.root, "demo", f.directory, { force: true });
-  assert.deepEqual(forced.targets, [{ page_key: key, candidate_id: candidateId, page_label: "001" }, { page_key: textKey, page_label: "003" }], "强制模式已就绪页面也排队");
+  assert.deepEqual(forced.targets, [{locale:"zh", page_key: key, candidate_id: candidateId, page_label: "001" }, {locale:"zh", page_key: textKey, page_label: "003" }], "强制模式已就绪页面也排队");
   const view = await readProjectWorkbenchView(f.root, "demo");
   const page = view.outline.chapters[0].sequences[0].pages[0];
   await f.operations.mutateTargetFacts("demo", () => savePageContent(f.root, "demo", { page_key: key, expected_sha256: page.content_sha256,
     content: { title: page.title, scene_description: page.scene_description, characters: [], dialogue: [{ mode: "narration", text: "新文案" }] } }));
   const stale = await planFinishedBatch(f.root, "demo", f.directory, {});
-  assert.deepEqual(stale.targets, [{ page_key: key, candidate_id: candidateId, page_label: "001" }, { page_key: textKey, page_label: "003" }], "内容过时页使用当前唯一候选");
+  assert.deepEqual(stale.targets, [{locale:"zh", page_key: key, candidate_id: candidateId, page_label: "001" }, {locale:"zh", page_key: textKey, page_label: "003" }], "内容过时页使用当前唯一候选");
 });
 
 test("更换唯一候选使成品过时，批量采用新候选；排队后候选变化不得静默输出旧图", async t => {
@@ -302,7 +302,7 @@ test("更换唯一候选使成品过时，批量采用新候选；排队后候�
   const listing = await readFinishedPages(f.root, "demo", f.directory);
   assert.equal(listing.pages[0].status, "stale");
   const plan = await planFinishedBatch(f.root, "demo", f.directory);
-  assert.deepEqual(plan.targets, [{ page_key: key, candidate_id: replacement, page_label: "001" }]);
+  assert.deepEqual(plan.targets, [{locale:"zh", page_key: key, candidate_id: replacement, page_label: "001" }]);
   await json(f.file.replace("image.png", "result.json"), result);
   await assert.rejects(prepareFinishedPage(f.root, "demo", f.directory, plan.targets[0], { queuedJob: { id: "queued-test" } }), /候选已变化/);
   assert.deepEqual((await planFinishedBatch(f.root, "demo", f.directory, { force: true })).targets, []);
@@ -327,7 +327,7 @@ test("批量输出先为全部目标写入排队任务，再逐页串行执行",
   assert.equal((await listWorkspaceRenderTasks(f.root)).tasks.length, 0, "批量结束后没有活动任务");
 });
 
-test("成品按当前索引排序，新增缺页可见，删除页不发布；分享 ZIP 只有图片", async t => {
+test("成品按当前索引排序，新增缺页可见，删除页不发布；分享 ZIP 附缺页说明", async t => {
   const f = await fixture(t);
   await f.run(await f.prepare());
   const record = await readFinishedRecord(f.directory, key.page_id);
@@ -354,13 +354,13 @@ test("成品按当前索引排序，新增缺页可见，删除页不发布；�
   assert.equal(bytes.readUInt32LE(0), 0x04034b50);
   const names = []; let offset = 0;
   while ((offset = bytes.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]), offset)) !== -1) { const size = bytes.readUInt16LE(offset + 28); names.push(bytes.subarray(offset + 46, offset + 46 + size).toString()); offset += 46 + size; }
-  assert.deepEqual(names, ["嵌字版/002.png", "无字版/002.png"]);
+  assert.deepEqual(names, ["嵌字版/002.png", "无字版/002.png", "缺页说明.txt"]);
   const previewResponse = await send({ variant: "both", preview: true });
   assert.equal(previewResponse.status, 200);
   assert.match(previewResponse.headers.get("content-type"), /text\/html/);
   const html = await previewResponse.text();
   assert.equal(Number(previewResponse.headers.get("x-export-total")), Buffer.byteLength(html), "预览 HTML 通告精确总大小");
-  assert.ok(html.includes("<title>demo-预览</title>"), "标题使用项目名");
+  assert.ok(html.includes("<title>demo-zh-预览</title>"), "标题使用项目名和语言");
   const embedded = [...html.matchAll(/data:image\/webp;base64,([A-Za-z0-9+/=]+)/g)].map(item => Buffer.from(item[1], "base64"));
   assert.equal(embedded.length, 2, "两个版本各一张内嵌压缩图");
   for (const bytes of embedded) {
@@ -368,8 +368,8 @@ test("成品按当前索引排序，新增缺页可见，删除页不发布；�
     assert.equal(meta.format, "webp");
     assert.equal(meta.width, 256, "小图不放大，保持原尺寸");
   }
-  assert.deepEqual([...html.matchAll(/data-page="(\d+)"/g)].map(match => match[1]), ["1", "2"], "页码连续编号");
-  assert.ok(!html.includes("嵌字版") && !html.includes("测试页"), "除图和页码外不含其他信息");
+  assert.deepEqual([...html.matchAll(/data-page="(\d+)"/g)].map(match => match[1]), ["1", "2","1","2"], "两个版本均保留正式页码和缺页占位");
+  assert.ok(html.includes('reader-placeholder')&&html.includes('第 1 页'),"缺失页明确显示占位");
   const pending = await f.prepare();
   await setIndex([second]);
   assert.equal((await f.run(pending)).status, "failed");

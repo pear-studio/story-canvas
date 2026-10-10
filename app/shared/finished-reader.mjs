@@ -6,6 +6,9 @@ function startReader() {
   const pages = [...viewport.querySelectorAll("figure")];
   const counter = document.querySelector(".reader-number");
   const controls = [...document.querySelectorAll("[data-direction]")];
+  for(const image of viewport.querySelectorAll('img'))image.addEventListener('error',()=>{
+    image.hidden=true;const message=document.createElement('p');message.className='reader-placeholder';message.textContent=`第 ${image.closest('figure').dataset.page} 页 · 成品文件已不可用`;image.closest('figure').append(message);
+  },{once:true});
   for (const button of viewport.querySelectorAll('[data-original]')) button.addEventListener('click', () => {
     const original = button.closest('figure').querySelector('video');
     const preview = button.closest('figure').querySelector('img');
@@ -63,9 +66,9 @@ function startReader() {
   update();
 }
 
-export function finishedReaderHead(title = "成品预览") {
+export function finishedReaderHead(title = "成品预览",locale='zh') {
   return `<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)}</title>
+<html lang="${locale==='en'?'en':locale==='ja'?'ja':'zh-CN'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)}</title>
 <style>
 *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#202923;font-family:system-ui,sans-serif}
 .finished-reader{width:100%;height:100dvh;overflow:auto;overscroll-behavior:contain;scrollbar-width:none}
@@ -78,6 +81,7 @@ video:not([hidden])+.reader-original{bottom:76px}
 .is-horizontal figure{flex:none;width:auto;height:100%;margin:0;aspect-ratio:var(--ratio)}
 .is-horizontal img,.is-horizontal video{width:auto;height:100%;max-width:none}
 .reader-directions{position:fixed;left:12px;top:12px;display:flex;gap:3px;padding:3px;border-radius:9px;background:rgba(251,252,249,.9);z-index:1}
+figure{position:relative}.reader-placeholder{display:grid;place-items:center;width:min(90vw,700px);min-height:75vh;margin:0;color:#d6ded9;background:#303a34;text-align:center;padding:32px}.reader-stale{position:absolute;top:8px;left:8px;padding:4px 8px;background:#3a2d1ccc;color:white;font-size:12px}
 button{font:600 13px system-ui,sans-serif;color:#172126;background:transparent;border:0;border-radius:7px;min-height:34px;padding:5px 12px;cursor:pointer}
 button[aria-pressed=true]{background:#e3efe8;color:#2d6a55}
 .reader-number{position:fixed;right:12px;bottom:12px;padding:3px 9px;border-radius:5px;background:rgba(0,0,0,.5);color:white;font:12px/1.6 system-ui,sans-serif;pointer-events:none;font-variant-numeric:tabular-nums}
@@ -85,12 +89,13 @@ button[aria-pressed=true]{background:#e3efe8;color:#2d6a55}
 </style></head><body><nav class="reader-directions" aria-label="阅读方向"><button type="button" data-direction="vertical" aria-pressed="true">垂直</button><button type="button" data-direction="horizontal" aria-pressed="false">水平</button></nav><main class="finished-reader" tabindex="0" aria-label="连续阅读"><!-- 图片 -->
 `;
 }
-export function finishedReaderFigure(src, number, width, height, mediaKind = "image", originalSrc) {
+export function finishedReaderFigure(src, number, width, height, mediaKind = "image", originalSrc,message='',stale=false) {
+  if(!src)return `<figure data-page="${Number(number)}" style="--ratio:${Number(width)}/${Number(height)}"><p class="reader-placeholder">第 ${Number(number)} 页 · ${escapeHtml(message||'尚未制作')}</p></figure>\n`;
   if (mediaKind === 'video' && originalSrc) return `<figure data-page="${Number(number)}" style="--ratio:${Number(width)}/${Number(height)}"><img loading="lazy" src="${escapeHtml(src)}" width="${Number(width)}" height="${Number(height)}" alt="第 ${Number(number)} 页动态预览"><video hidden controls muted loop playsinline preload="none" width="${Number(width)}" height="${Number(height)}" aria-label="第 ${Number(number)} 页原图视频"></video><button type="button" class="reader-original" data-original="${escapeHtml(originalSrc)}">查看原图</button></figure>\n`;
   if(mediaKind === "video") return `<figure data-page="${Number(number)}" style="--ratio:${Number(width)}/${Number(height)}"><video controls muted loop playsinline preload="metadata" src="${escapeHtml(src)}" width="${Number(width)}" height="${Number(height)}" aria-label="第 ${Number(number)} 页动态画面"></video></figure>\n`;
-  return `<figure data-page="${Number(number)}" style="--ratio:${Number(width)}/${Number(height)}"><img loading="lazy" src="${escapeHtml(src)}" width="${Number(width)}" height="${Number(height)}" alt="第 ${Number(number)} 页"></figure>\n`;
+  return `<figure data-page="${Number(number)}" style="--ratio:${Number(width)}/${Number(height)}"><img loading="lazy" src="${escapeHtml(src)}" width="${Number(width)}" height="${Number(height)}" alt="第 ${Number(number)} 页">${stale?'<figcaption class="reader-stale">旧版成品 · 内容已变化</figcaption>':''}</figure>\n`;
 }
 export const finishedReaderTail = `</main><output class="reader-number" aria-label="当前页码"></output><script>(${startReader.toString()})()</script></body></html>\n`;
-export function finishedReaderDocument(pages, title) {
-  return finishedReaderHead(title) + pages.map(page => finishedReaderFigure(page.src, page.number, page.width, page.height, page.media_kind, page.original_src)).join("") + finishedReaderTail;
+export function finishedReaderDocument(pages, title,locale='zh') {
+  return finishedReaderHead(title,locale) + pages.map(page => finishedReaderFigure(page.src, page.number, page.width, page.height, page.media_kind, page.original_src,page.message,page.stale)).join("") + finishedReaderTail;
 }
