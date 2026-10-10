@@ -1,6 +1,6 @@
 import { validatePopulation } from '../../../shared/prompt-population.mjs';
 import { validateReferenceEntries, validateReferenceOverrides } from "../../../shared/reference-images.mjs";
-import { validateCameraSettings } from "../../../shared/camera-prompt.mjs";
+import { validateCameraSettings, normalizeCameraSettings } from "../../../shared/camera-prompt.mjs";
 import { validateAdjustments } from '../../../shared/prompt-inheritance.mjs';
 import { NARRATION_CHARACTER_LIMIT } from "../../../shared/story-content-guidance.mjs";
 export const STORY_PAGE_PROMPT_SCHEMA_ID = "https://storyvisualizer.local/schemas/story-page-prompt.schema.json";
@@ -29,11 +29,10 @@ function invalidFragmentId(field, message) {
 
 function validatePromptFragment(fragment, valuePath, errors) {
   if (!isRecord(fragment)) { errors.push(`${valuePath} 必须是对象`); return; }
-  checkExactKeys(fragment, ["tag", "description", "camera_settings", "character_id", "weight", "enabled"], valuePath, errors);
+  checkExactKeys(fragment, ["tag", "description", "character_id", "weight", "enabled"], valuePath, errors);
   const textKeys = ["tag", "description"].filter((key) => Object.hasOwn(fragment, key));
   if (textKeys.length !== 1) errors.push(`${valuePath} 必须且只能包含 tag、description 之一`);
   else checkNonemptyText(fragment[textKeys[0]], `${valuePath}.${textKeys[0]}`, errors);
-  if (fragment.camera_settings !== undefined) { try { validateCameraSettings(fragment.camera_settings); } catch (error) { errors.push(`${valuePath}.camera_settings: ${error.message}`); } }
   if (fragment.character_id !== undefined && !storyIdPattern.test(fragment.character_id)) errors.push(`${valuePath}.character_id 不是有效可读 ID`);
   if (fragment.weight !== undefined && (typeof fragment.weight !== "number" || !Number.isFinite(fragment.weight))) errors.push(`${valuePath}.weight 必须是有限数字`);
   if (fragment.enabled !== undefined && typeof fragment.enabled !== "boolean") errors.push(`${valuePath}.enabled 必须是布尔值`);
@@ -41,6 +40,7 @@ function validatePromptFragment(fragment, valuePath, errors) {
 
 export function preparePromptForPersistence(prompt) {
   const prepared = structuredClone(prompt);
+  if(prepared.camera_settings!==undefined){prepared.camera_settings=normalizeCameraSettings(prepared.camera_settings);if(!Object.keys(prepared.camera_settings).length)delete prepared.camera_settings;}
   for (const category of storyPromptCategories) {
     for (const [index, fragment] of (Array.isArray(prepared?.[category]) ? prepared[category] : []).entries()) {
       if (isRecord(fragment) && Object.hasOwn(fragment, 'id')) {
@@ -97,13 +97,14 @@ export function validateStoryPagePromptDocument(prompt) {
       errors.push(...validateAdjustments(adjustments, source));
     }
   }
-  checkExactKeys(prompt, ["$schema", "reference_images", "reference_overrides", "scene_id", "scene_variant_id", "inheritance", ...storyPromptCategories], "prompt", errors);
+  checkExactKeys(prompt, ["$schema", "reference_images", "reference_overrides", "scene_id", "scene_variant_id", "inheritance", "camera_settings", ...storyPromptCategories], "prompt", errors);
   errors.push(...validateReferenceEntries(prompt.reference_images), ...validateReferenceOverrides(prompt.reference_overrides));
   if (prompt.$schema !== STORY_PAGE_PROMPT_SCHEMA_ID) errors.push("prompt.$schema 不匹配");
   for (const category of storyPromptCategories) {
     if (!Array.isArray(prompt[category])) errors.push(`prompt.${category} 必须是数组`);
     else prompt[category].forEach((fragment, index) => validatePromptFragment(fragment, `prompt.${category}[${index}]`, errors));
   }
+  if(prompt.camera_settings!==undefined)try{validateCameraSettings(prompt.camera_settings);}catch(error){errors.push(error.message);}
   errors.push(...validatePopulation(prompt));
   return errors;
 }

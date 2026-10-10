@@ -27,12 +27,12 @@ for (const catalog of [projectActions,structureActions,settingActionsCatalog,pag
   }
 }
 const utilityHelp = {
-  help: {summary:'查询分类、操作及字段主题用法',parameters:schema({target:string('省略查分类；分类 ID 查操作目录；操作名查完整用法'),topic:string('操作帮助中 topics 的主题 ID')},[]),details:'总览不返回操作清单；分类目录只含摘要与必填参数签名；操作详情才含参数、规则和示例。字段细则用 target:操作名 + topic:主题ID 按需读取。直接指定已知操作名可跳过分类。'},
+  help: {summary:'查询分类、操作及字段主题用法',parameters:schema({target:string('省略查分类；分类 ID 或操作前缀查目录；操作名查完整用法'),topic:string('操作帮助中 topics 的主题 ID')},[]),details:'总览不返回操作清单；分类目录只含摘要与必填参数签名；操作详情才含参数、规则和示例。字段细则用 target:操作名 + topic:主题ID 按需读取。直接指定已知操作名可跳过分类。'},
   status: {summary:'工具版本与当前会话能力限制',parameters:schema(),details:'报告已加载/磁盘版本及当前限制；不代表后端版本。reload_required 为 true 时重载 DSH。'},
 };
 function revision() {
   const hash=createHash('sha256');
-  hash.update(readFileSync(new URL('../../shared/prompt-weight-presets.mjs',import.meta.url)));
+  for(const file of ['prompt-weight-presets.mjs','camera-prompt.mjs'])hash.update(readFileSync(new URL('../../shared/'+file,import.meta.url)));
   for(const file of readdirSync(new URL('./',import.meta.url)).filter(f=>f.endsWith('.mjs')).sort()) hash.update(file).update(readFileSync(new URL(file,import.meta.url)));
   hash.update(readFileSync(new URL('../workbench-client.mjs',import.meta.url)));
   return `v3-${hash.digest('hex').slice(0,12)}`;
@@ -72,8 +72,13 @@ export async function executeWorkbench(input, execution={}) {
       const directory=catalog(denied);
       if(!input.target) return {groups:directory.map(({operations,...group})=>({...group,operations_count:operations.length,disabled_count:operations.filter(o=>o.availability==='disabled').length})),workflows:[{target:'video',summary:'动态页导入、编辑、生成与成品的完整用法'}],usage:'help + target分类ID 查看该类操作和必填参数签名；target操作名 查看参数；target:video 一次取得动态页流程与参数。disabled 操作被当前限制插件禁用，请交给具备该能力的 Agent。'};
       if(input.target==='video'){if(input.topic)throw invalid('video 流程不支持 topic');return videoHelp(actions,definition=>availability(definition,denied));}
-      const group=directory.find(g=>g.id===input.target);if(group){if(input.topic)throw invalid('topic 需要操作名，不能是分类');return group;}
+      const group=directory.find(g=>g.id===input.target);if(group){if(input.topic)throw invalid('topic 需要操作名，不能是分类');return {...group,...(group.id==='generation'?{related:[{operation:'page.render.read',summary:'读取单页模型与画幅'},{operation:'page.render.set',summary:'修改单页模型与画幅'}]}:{})};}
       const definition=Object.hasOwn(definitions,input.target)?definitions[input.target]:null;
+      if(!definition && !input.topic) {
+        const matches=directory.flatMap(g=>g.operations).filter(o=>o.operation.startsWith(input.target+'.'));
+        const operations=[...new Map(matches.map(o=>[o.operation,o])).values()];
+        if(operations.length) return {prefix:input.target,operations};
+      }
       if(!definition)throw Object.assign(new Error('未知帮助入口，请查分类目录'),{code:'unknown_operation'});
       const {execute,transport,recover,helpTopics,...help}=definition;
       const topics=helpTopics?Object.fromEntries(Object.entries(helpTopics).map(([key,value])=>[key,value.summary])):undefined;

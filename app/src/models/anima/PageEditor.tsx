@@ -8,8 +8,7 @@ import {CameraControlDialog} from '../../CameraControlDialog';
 import {SceneReferenceEditor} from '../../SceneReferenceEditor';
 import {ReferenceRow,ReferenceLabel,ParticipantEditor} from '../../PromptReferences';
 import {displayPromptDraft,persistPromptDraft,createPromptDraftFragment,matchesLocalPromptDraft} from '../../prompt-fragment-draft';
-import {applyCameraDraft} from '../../camera-prompt-draft';
-import {cameraFragmentIndex} from '../../../shared/camera-prompt.mjs';
+import {cameraPromptPreview} from '../../../shared/camera-prompt.mjs';
 import {variantPrompt,resolvedSettingEntries} from '../../../shared/prompt-inheritance.mjs';
 import {characterSource,sceneSource} from '../../project-workbench-client';
 import {promptCategories,type PagePrompt,type CharacterPromptDocument} from './types';
@@ -53,7 +52,7 @@ export function AnimaPageEditor({projectId,page,prompt,onChange,characters,scene
       </ReferenceRow>
     </div>
     <PromptFragmentEditor categories={promptCategories.filter(c=>c!=='population').map(id=>({id,label:labels[id]}))} scope="page" fragments={draft} roles={roles} createFragment={createPromptDraftFragment} onChange={next=>changeDraft({...next,population:draft.population})} historyScopeKey={`${page.page_id}:${page.prompt_sha256}`}/>
-    <div className="prompt-camera-actions"><button type="button" className="button" disabled={disabled} onClick={()=>setCameraOpen(true)}>机位控制</button>{onOpenOverview&&<button type="button" className="button" disabled={disabled} onClick={onOpenOverview}>Prompt 总览</button>}</div>
-    {cameraOpen&&<CameraControlDialog cameraSettings={draft.camera[cameraFragmentIndex(draft.camera)]?.camera_settings} onClose={()=>setCameraOpen(false)} onApply={settings=>{changeDraft(applyCameraDraft(draft,settings,createPromptDraftFragment));setCameraOpen(false);}}/>}
+    <div className="prompt-camera-actions"><small aria-label="当前机位">{cameraPromptPreview(native.camera_settings).join(", ")}</small><button type="button" className="button" disabled={disabled} onClick={()=>setCameraOpen(true)}>机位控制</button>{onOpenOverview&&<button type="button" className="button" disabled={disabled} onClick={onOpenOverview}>Prompt 总览</button>}</div>
+    {cameraOpen&&<CameraControlDialog cameraSettings={native.camera_settings} onClose={()=>setCameraOpen(false)} onApply={settings=>{const next={...prompt};if(Object.keys(settings).length)next.camera_settings=settings;else delete next.camera_settings;onChange(next);setCameraOpen(false);}}/>}
   </>;
 }

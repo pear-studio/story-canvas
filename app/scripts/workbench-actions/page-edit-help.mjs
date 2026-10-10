@@ -1,7 +1,20 @@
+import {CAMERA_DIRECTIONS,CAMERA_HEIGHTS,CAMERA_SHOTS,CAMERA_VIEWS,CAMERA_EFFECTS} from '../../shared/camera-prompt.mjs';
 import { promptWeightPresets } from '../../shared/prompt-weight-presets.mjs';
 export const promptWeightGuidance = `网页词条权重预设为 ${promptWeightPresets.join('、')}；这是快捷选项，不是保存值域，LoRA 权重另按其契约。`;
 // 页面编辑工具自己的按需字段帮助；普通分类目录不展开这些细则。
 export const pageEditHelp = {
+  camera: {
+    summary:'独立机位参数：局部修改，自动生成只读 Prompt',
+    details:'仅 Anima 页面 changes.camera_settings；字段未传保持，null 清除该字段；整个 camera_settings:null 清除机位。效果用 true/false。不提交生成文字；读取的 camera_preview 只读。camera 数组保存独立镜头 Prompt，机位修改不改该数组。角色关系和具体构图另写人物或镜头 Prompt。方位相对主体；front 使用 from front 自然语言，其余按已确认词库输出。机位修改仍使用 prompt.read 的版本与 source_versions。',
+    fields:{direction:Object.keys(CAMERA_DIRECTIONS),height:Object.keys(CAMERA_HEIGHTS),shot:Object.keys(CAMERA_SHOTS),view:Object.keys(CAMERA_VIEWS),...Object.fromEntries(Object.keys(CAMERA_EFFECTS).map(key=>[key,'boolean']))},
+    example:{target:{kind:'page',id:'page-001',model_id:'anima'},changes:{camera_settings:{direction:'side',shot:'full_body',motionLines:true}}},
+    clear:{changes:{camera_settings:null}},
+  },
+  identity: {
+    summary:'角色／场景基础词与子设定的写入范围',
+    details:'prompt.read/save 的 target 使用 kind:character 或 scene、id、model_id:anima、scope:base。changes 使用 identity:{prompt:{person:[...]}} 等读取到的分组，不把 person 放在 changes 顶层；对象递归合并，数组整项替换，保留未修改词及原 id，新增词省略 id。基础词修改会由未覆盖的下游继续继承。子设定改用 scope:variant + variant_id，按读取的 document 修改；覆盖基础词查 inheritance 主题。Qwen 基础使用 prompt_name，查 qwen 主题。',
+    example:{target:{kind:'character',id:'alice',model_id:'anima',scope:'base'},changes:{identity:{prompt:{person:[{tag:'blue_hair'}]}}}},
+  },
   person_groups: {
     summary:'在指定角色下编辑本页词，自动绑定而不复制继承',
     details:'仅 Anima 页面 prompt.save 的 changes.person_groups，数组项为 {character_id,entries}。角色 ID 取 references.characters；null 表示共同／未绑定区域。entries 完整替换该组本页 person 词，条目省略 character_id，[] 清空该组；不改变角色引用、人数或继承词。不能同时提交 person。原槽位依次替换，其余角色顺序保持，新增项接在该组最后原槽位之后，无原词则追加末尾。重排所有人词才用 person 完整数组。重复提示包含归属与权重，不自动清理。解除角色引用使用 page.editor.read/save 的 characters，带原 save.args（包括 expected_reference_sha256）；会清理各模型明确绑定词与旧来源，保留画外对白、自由词和显式 LoRA。',

@@ -1,3 +1,4 @@
+import {normalizeCameraSettings,cameraPromptPreview} from '../shared/camera-prompt.mjs';
 import {promptSourceView, promptPageDiagnostics} from '../shared/prompt-source-view.mjs';
 import {applyPersonGroups} from './prompt-person-edit.mjs';
 import { readFactDraft, saveFactDraft, fingerprintErrors } from './fact-drafts.mjs';
@@ -44,6 +45,7 @@ export async function readPromptScope(options) {
   const result = receipt(state,options.projectId);
   if (state.target.kind === 'page') {
     const {narrative,sources} = state;
+    if(state.target.model_id==='anima')result.camera_preview=cameraPromptPreview(state.document.camera_settings);
     result.references = {characters:narrative.characters ?? [],composition:state.document.composition ?? 'settings',
       edit:{operation:'page.editor.read',args:{project_id:options.projectId,page_key:{page_id:state.target.id},section:'content'}}};
     result.inherited_sources = Object.entries(sources).map(([key,value])=>promptSourceView(key,value,state.document));
@@ -52,8 +54,12 @@ export async function readPromptScope(options) {
       result.bindings={characters:(narrative.characters ?? []).map(ref=>({character_id:ref.character_id,person_indices:person.flatMap((entry,index)=>entry.character_id===ref.character_id?[index]:[])})),unbound_person_indices:person.flatMap((entry,index)=>!entry.character_id?[index]:[])};
     }
     result.diagnostics = promptPageDiagnostics(state.document,narrative.characters ?? [],result.inherited_sources,state.target.model_id);
+    for(const issue of result.diagnostics) if(issue.code==='source_has_no_consumed_words' && issue.source.startsWith('character:')) {
+      issue.message='该画面引用没有继承词参与输出；核查是否仍需入镜，不自动删除。解除画面引用保留对白。';
+      issue.next=result.references.edit;
+    }
     result.read_hint = state.target.model_id==='anima'
-      ? 'document 仅本页词；references.characters 是画面引用，独立于人数和对白。inherited_sources 已应用覆盖，enabled 为启用，consumed 表示该分类会送入编译；去重后的实际输出按需查 prompt.context，不要复制继承。按角色改本页词用 changes.person_groups:[{character_id,entries}]，null 为未绑定，条目不填 character_id。解除角色用 references.edit；只删词或 LoRA 不会解除引用。diagnostics 是带来源、位置和权重的核查线索，不代表可自动删除。'
+      ? 'document 仅本页词；references.characters 是画面引用，独立于人数和对白。inherited_sources 已应用覆盖，enabled 为启用，consumed 表示该分类会送入编译；去重后的实际输出按需查 prompt.context，不要复制继承。按角色改本页词用 changes.person_groups:[{character_id,entries}]，null 为未绑定，条目不填 character_id。解除角色用 references.edit，保留对白并清理角色绑定词及继承调整；只删词或 LoRA 不会解除引用。diagnostics 是带来源、位置和权重的核查线索，不代表可自动删除。'
       : 'document 是本页文字与覆盖。references.characters 为画面引用；standalone 时不消费上游。inherited_sources 的 text 已应用覆盖，reference_images 为可用图库，selected_image_ids 才是选择结果（空数组表示不选）。解除引用用 references.edit，保留画外对白。';
 
   } else if (state.target.model_id === 'anima' && state.target.scope === 'variant') {
@@ -77,6 +83,10 @@ export async function savePromptScope(options) {
     changes.person = applyPersonGroups(state.document.person ?? [],person_groups,narrative.characters ?? []);
   }
   const changed = applyDocumentChanges(state.document,changes);
+  if(state.target.kind==='page' && state.target.model_id==='anima' && changed.camera_settings!==undefined){
+    try{changed.camera_settings=normalizeCameraSettings(changed.camera_settings);}catch(error){throw new ApiError(400,'invalid_camera_settings',[error.message]);}
+    if(!Object.keys(changed.camera_settings).length)delete changed.camera_settings;
+  }
   const model = state.target.kind === 'page' ? changed : replaceSettingPromptScope({target:state.target,document:state.draft.document,visual:state.visual,value:changed});
   const document = replaceModelPrompt(state.draft.document,state.target.model_id,{$schema:state.draft.document.$schema,...model});
   const saved = await saveFactDraft(options.projectRoot,{...state.identity,document,

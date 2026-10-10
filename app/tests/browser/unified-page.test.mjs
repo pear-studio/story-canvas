@@ -362,3 +362,25 @@ for (const outcome of ['success','save-failure','missing-saved-image']) test('�
   assert.deepEqual(events,outcome==='save-failure'?['save']:['save','strict-inspection']);
  }
 });
+
+test('机位独立参数保存、重开恢复与清除不影响自由镜头',async t=>{
+ const page=await open(t,'anima&collapsed');
+ await page.getByRole('button',{name:'机位控制',exact:true}).click();
+ const dialog=page.getByRole('dialog');
+ for(const name of ['中景','特写','越肩','强调透视','透视缩短','女性第一人称'])assert.equal(await dialog.getByRole('button',{name,exact:true}).count(),0);
+ await dialog.getByRole('button',{name:'侧面',exact:true}).click();
+ await dialog.getByRole('button',{name:'全身',exact:true}).click();
+ await dialog.getByRole('button',{name:'运动线',exact:true}).click();
+ assert.match(await dialog.getByLabel('机位 Prompt 预览').textContent(),/from_side, full_body, motion_lines/);
+ await dialog.getByRole('button',{name:'应用到草稿'}).click();
+ await page.getByRole('button',{name:'保存',exact:true}).click();
+ await page.waitForFunction(()=>localStorage.getItem('saved-page'));
+ let saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('saved-page')));
+ assert.deepEqual(saved.prompt.camera_settings,{direction:'side',shot:'full_body',motionLines:true});
+ assert.deepEqual(saved.prompt.camera,[]);
+ await page.getByRole('button',{name:'机位控制',exact:true}).click();
+ assert.equal(await dialog.getByRole('button',{name:'运动线',exact:true}).getAttribute('aria-pressed'),'true');
+ await dialog.getByRole('button',{name:'清除机位'}).click();await dialog.getByRole('button',{name:'应用到草稿'}).click();
+ await page.getByRole('button',{name:'保存',exact:true}).click();
+ await page.waitForFunction(()=>!JSON.parse(localStorage.getItem('saved-page')).prompt.camera_settings);
+});

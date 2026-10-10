@@ -1,3 +1,4 @@
+import {cameraPromptEntries} from '../../../shared/camera-prompt.mjs';
 import { effectivePromptEntries, resolvedSettingEntries, characterSource, sceneSource, duplicatePromptWords } from '../../../shared/prompt-inheritance.mjs';
 import { explicitPageLoras, resolvePageLoras } from "../../lora-config.mjs";
 import { validatePageKey } from "../../page-key.mjs";
@@ -299,6 +300,11 @@ export function compileCurrentPagePrompt({
     categoryParts[category] = parts;
   }
 
+  for(const {field,fragment:input} of cameraPromptEntries(pagePrompt.camera_settings)) {
+    const fragment=currentFragment(input);
+    const part=tracePart(fragment,{path:'pages/'+pageId+'.prompt.json.camera_settings.'+field,source_kind:'page',source_id:pageId,scope:'page:'+pageId,category:'camera',role:null,polarity:'positive',origin_detail:{kind:'project_fact',page_key:structuredClone(pageKey),field:'camera_settings.'+field}});
+    part.text=encodePromptFragment(fragment);categoryParts.camera.push(part);categoryPrompts.camera.push(part.text);
+  }
   for (const characterId of participantIds) {
     const character = characterById.get(characterId);
     if (!character) {

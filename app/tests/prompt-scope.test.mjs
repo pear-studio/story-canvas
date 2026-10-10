@@ -150,3 +150,21 @@ test('页面默认读取实际角色及生效继承词，移除引用清理绑�
   assert.equal(after.document.inheritance?.['character:alice:default'],undefined);
   assert.equal((await readPageEditContext(opts)).document.dialogue[0].speaker,'alice');
 });
+
+test('Agent 机位局部更新、清除与自由镜头独立，错误不落盘',async t=>{
+ const f=await fixture(t);
+ await f.save(await f.read(character('anima','base')),{identity:{prompt:{person:[{tag:'blue_eyes'}]}}});
+ const page=await createPage(f.root,'demo',{owner_kind:'character',character_id:'alice',variant_id:'default'});
+ const render=await readPageRenderDraft(f.root,'demo',page.page_id);
+ await commitPageRender(f.root,{project_id:'demo',page_id:page.page_id,target:{relative_path:render.definition.targetRelative,sha256:hashCanonicalJson(render.definition.targetBaseline??render.definition.persisted)},upstream:render.definition.upstream},()=>({...render.definition.persisted,model_id:'anima',profile_id:'anima-base-v1'}));
+ const target={kind:'page',id:page.page_id};
+ let r=await f.save(await f.read(target),{camera:[{description:'through the window'}],camera_settings:{direction:'side',shot:'full_body'}});
+ r=await f.save(r,{camera_settings:{motionLines:true}});
+ assert.deepEqual(r.document.camera_settings,{direction:'side',shot:'full_body',motionLines:true});
+ assert.deepEqual(r.camera_preview,['from_side','full_body','motion_lines']);
+ await assert.rejects(f.save(r,{camera_settings:{view:'over_shoulder'}}),{code:'invalid_camera_settings'});
+ r=await f.save(r,{camera_settings:{direction:null,motionLines:false}});
+ assert.deepEqual(r.document.camera_settings,{shot:'full_body'});
+ r=await f.save(r,{camera_settings:null});assert.equal(r.document.camera_settings,undefined);
+ assert.deepEqual(r.document.camera,[{description:'through the window'}]);assert.deepEqual(r.camera_preview,[]);
+});

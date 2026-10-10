@@ -7,7 +7,6 @@ import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type Poin
 import { createPortal } from "react-dom";
 import { activePromptDictionarySuggestion, canSearchPromptDictionary, inferUserPromptType, mergePromptDictionarySuggestions, shouldOpenPromptDictionarySearch } from "./prompt-fragment-input";
 import { type PromptDictionaryMatch, usePromptDictionaryMatches } from "./prompt-display";
-import { type CameraSettings } from "../shared/camera-prompt.mjs";
 import { promptTagMarkerErrors, promptCompletionSpan } from "../shared/prompt-tags.mjs";
 import { placePromptSuggestions } from "./prompt-suggestion-placement";
 import "./prompt-dictionary-details.css";
@@ -26,7 +25,6 @@ export type PromptFragment = {
   inheritance?: { weight?: number; enabled?: boolean };
   prompt_type: PromptType;
   prompt_text: string;
-  camera_settings?: CameraSettings;
   weight?: number;
   role?: string;
   /** 缺省为启用；关闭时仅持久化 false，便于保留草稿和顺序。 */
@@ -361,7 +359,6 @@ function PromptFragmentRow({
     [categoryId, fragment, issues],
   );
   const type = fragment.prompt_type ?? "danbooru";
-  const isCameraFragment = Boolean(fragment.camera_settings);
   const promptTextMissing = !fragment.prompt_text.trim();
   const visibleFragmentIssues = fragmentIssues.filter((issue) =>
     issue.code !== "prompt.fragment.text_empty" || (promptTextMissing && !deferEmptyError),
@@ -785,7 +782,7 @@ function PromptFragmentRow({
       ? <button type="button" className="prompt-fragment-delete prompt-fragment-reset" title="恢复继承的权重和开关" aria-label={`恢复${categoryLabel}第 ${index + 1} 项继承值`} onClick={() => restoreInheritance()}>{mobileLayout ? '恢复继承' : '↶'}</button>
       : <span className="prompt-fragment-delete" aria-hidden="true" />)
       : <button type="button" className="prompt-fragment-delete" onClick={onDelete} aria-label={`删除${categoryLabel}第 ${index + 1} 项`}>{mobileLayout ? '删除词条' : '×'}</button>;
-  return <article className={`prompt-fragment-row ${isCameraFragment ? "is-camera-control" : ""} ${toggleOnly ? "prompt-fragment-row--toggle-only" : ""} ${enabled ? "" : "is-disabled"} ${hasVisibleError ? "has-error" : visibleFragmentIssues.length ? "has-warning" : ""} ${dragPosition ? `is-drag-${dragPosition}` : ""}`.replace(/\s+/g, " ").trim()} data-fragment-id={fragment.id} data-prompt-type={type} aria-label={isCameraFragment ? "机位控制" : undefined} title={fragment.inheritance_source ?? (isCameraFragment ? "机位控制" : undefined)} onBlurCapture={(event) => {
+  return <article className={`prompt-fragment-row ${toggleOnly ? "prompt-fragment-row--toggle-only" : ""} ${enabled ? "" : "is-disabled"} ${hasVisibleError ? "has-error" : visibleFragmentIssues.length ? "has-warning" : ""} ${dragPosition ? `is-drag-${dragPosition}` : ""}`.replace(/\s+/g, " ").trim()} data-fragment-id={fragment.id} data-prompt-type={type} title={fragment.inheritance_source} onBlurCapture={(event) => {
     if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDeferEmptyError(false);
   }}>
     <button type="button" className="prompt-fragment-drag" disabled={toggleOnly} onPointerDown={toggleOnly ? undefined : (event) => { commitQueryDraft(); onDragStart(event); }} title="拖动排序" aria-label={`拖动${categoryLabel}第 ${index + 1} 项排序`}>⋮</button>
@@ -1054,7 +1051,7 @@ export function ReadonlyPromptFragmentEditor({ categories, scope, fragments, rol
             const type = fragment.prompt_type;
             const enabled = promptFragmentEnabled(fragment);
             const boundRole = roles?.find((role) => role.id === fragment.role);
-            return <article className={`prompt-fragment-row prompt-fragment-row--readonly ${fragment.camera_settings ? "is-camera-control" : ""} ${enabled ? "" : "is-disabled"}`} data-prompt-type={type} key={fragment.id}>
+            return <article className={`prompt-fragment-row prompt-fragment-row--readonly ${enabled ? "" : "is-disabled"}`} data-prompt-type={type} key={fragment.id}>
               <span className="prompt-fragment-drag" aria-hidden="true">·</span>
               {roles && <span className={`prompt-fragment-role token-role ${boundRole ? "is-bound" : ""}`} title={boundRole?.label ?? (fragment.role ? `角色 ${fragment.role}` : "不绑定角色")}>
                 {boundRole ? <span className="role-badge"><i style={{ backgroundColor: boundRole.color ?? "#89938E" }} />{compactLabel(boundRole.label)}</span> : <span className="role-bind-action">—</span>}

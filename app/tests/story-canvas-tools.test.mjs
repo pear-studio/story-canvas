@@ -13,7 +13,7 @@ async function fixture(t, responder = () => assert.fail('不应发送请求')) {
   const root = await mkdtemp(path.join(testsRoot, 'dsh-tools-'));
   assert.equal(path.dirname(root), path.resolve(testsRoot));
   t.after(() => rm(root, { recursive: true, force: true }));
-  for (const file of ['.dsh/presets/story-canvas/story-canvas-tools.mjs', 'app/scripts/workbench-actions', 'app/scripts/workbench-client.mjs', 'app/scripts/story-canvas.mjs', 'app/server/page-key.mjs', 'app/server/file-replace.mjs', 'app/shared/prompt-weight-presets.mjs']) {
+  for (const file of ['.dsh/presets/story-canvas/story-canvas-tools.mjs', 'app/scripts/workbench-actions', 'app/scripts/workbench-client.mjs', 'app/scripts/story-canvas.mjs', 'app/server/page-key.mjs', 'app/server/file-replace.mjs', 'app/shared/prompt-weight-presets.mjs', 'app/shared/camera-prompt.mjs']) {
     await mkdir(path.dirname(path.join(root, file)), { recursive: true });
     await cp(path.join(repositoryRoot, file), path.join(root, file), { recursive: true });
   }
@@ -930,4 +930,42 @@ test('批量读取跨页有效继承展示可复用，页面指纹和引用保�
  assert.deepEqual(result.sources[1].entries,[{key:'key-1',text:'appearance-1',enabled:false,weight:1}]);
  assert.deepEqual(result.results.map(r=>r.expected_sha256),['page-a','page-b']);
  assert.deepEqual(result.results.map(r=>r.inherited_source_refs),[['source-1'],['source-2']]);
+});
+
+test('Prompt 批量回执突出未完成字段，成功项和未执行项不可混淆',async t=>{
+ const f=await fixture(t,({body},res)=>{
+  if(body.target.id==='bad'){res.statusCode=422;return res.end(JSON.stringify({error:'invalid_story_edit_document'}));}
+  if(body.target.id==='unknown'){res.statusCode=500;return res.end('{}');}
+  res.end(JSON.stringify({saved:true,target:body.target,save:{args:{expected_sha256:'new'}}}));
+ });
+ const item=id=>({target:{kind:'page',id},expected_sha256:'old',changes:{person_groups:[],camera:[]}});
+ const result=await f.tool.execute({operation:'prompt.batch.save',args:{project_id:'demo',items:['good','bad','unknown','unrun'].map(item)}});
+ assert.equal(result.all_saved,false);
+ assert.deepEqual(result.results.map(x=>x.status),['saved','failed','unknown','not_executed']);
+ assert.deepEqual(result.results[0].changed_fields,['person_groups','camera']);
+ for(const r of result.results.slice(1)) assert.deepEqual(r.requested_fields,['person_groups','camera']);
+ assert.equal(f.requests.length,3);
+ const ok=await f.tool.execute({operation:'prompt.batch.save',args:{project_id:'demo',items:[item('good')]}});
+ assert.equal(ok.all_saved,true);
+});
+
+test('帮助可按操作前缀发现入口，保留分类及详细帮助',async t=>{
+ const f=await fixture(t);
+ for(const prefix of ['prompt','character','scene','sequence']){
+  const h=await f.tool.execute({operation:'help',target:prefix});
+  assert.ok(h.operations.length);assert.ok(h.operations.every(x=>x.operation.startsWith(prefix+'.')));
+ }
+ const h=await f.tool.execute({operation:'help',target:'prompt.save',topic:'identity'});
+ assert.equal(h.example.changes.identity.prompt.person[0].tag,'blue_hair');
+ const gen=await f.tool.execute({operation:'help',target:'generation'});
+ assert.ok(gen.related.some(x=>x.operation==='page.render.set'));
+ assert.equal((await failure(f.tool,{operation:'help',target:'not-real'})).error,'unknown_operation');
+ assert.equal(f.requests.length,0);
+});
+
+test('批量 Prompt 读取保留逐页引用编辑入口并解释对白解耦',async t=>{
+ const f=await fixture(t,({body},res)=>res.end(JSON.stringify({target:body.target,document:{},references:{characters:[],edit:{operation:'page.editor.read',args:{page_key:{page_id:body.target.id},section:'content'}}},save:{args:{expected_sha256:'hash'}}})));
+ const r=await f.tool.execute({operation:'prompt.batch.read',args:{project_id:'demo',targets:['a','b'].map(id=>({kind:'page',id}))}});
+ assert.match(r.read_hint,/解除引用保留对白/);
+ assert.deepEqual(r.results.map(x=>x.references.edit.args.page_key.page_id),['a','b']);
 });

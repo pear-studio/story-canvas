@@ -147,19 +147,18 @@ test("Prompt 随宽度自动换行，失焦后仍完整显示", async t => {
   assert.match(await input.evaluate(promptText), /soft evening shadows$/);
 });
 
-test("独立机位参数带绿色条标识，镜头词识别为标签后保存仍保留参数", async t => {
+test("独立镜头文本正常编辑，不携带机位参数", async t => {
   const { page } = await editor(t);
   const entry = { prompt_text: "from above", matched: true, allowed: true, source_text: "from_above", display_text: "俯视" };
   await page.route("**/api/prompt-dictionary**", route => route.fulfill({ json: { available: true, ...(route.request().method() === "POST" ? { matches: [entry] } : { suggestions: [entry] }) } }));
   await page.goto(`${url}?camera`);
   const input = page.getByRole("combobox", { name: "镜头第 1 项 Prompt" });
-  await page.getByLabel("机位控制", { exact: true }).waitFor();
   await input.fill("from above"); await page.getByRole("option").first().click(); await input.press("Tab");
   await page.waitForFunction(() => JSON.parse(document.querySelector("#persisted-camera").textContent)[0].tag === "from above");
   const [fragment] = JSON.parse(await page.locator("#persisted-camera").textContent());
-  assert.equal(fragment.camera_settings.direction, "side", "编辑英文不自动改写面板参数");
+  assert.equal(fragment.camera_settings, undefined);
   assert.equal(fragment.id, undefined);
-  assert.equal(await page.getByLabel("机位控制", { exact: true }).isVisible(), true);
+  assert.equal(await page.getByLabel("机位控制", { exact: true }).count(), 0);
 });
 
 test("行内中文不进入剪贴板、退格与粘贴；词库异步更新保留选区和输入框位置", async t => {

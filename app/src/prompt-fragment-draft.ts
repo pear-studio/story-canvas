@@ -14,7 +14,6 @@ function displayPromptFragment(fragment: PromptFragment, category: string, index
     source_index: index,
     prompt_type: promptType,
     prompt_text: promptFragmentText(fragment),
-    ...(fragment.camera_settings === undefined ? {} : { camera_settings: fragment.camera_settings }),
     ...(fragment.character_id ? { role: fragment.character_id } : {}),
     ...(fragment.weight === undefined ? {} : { weight: fragment.weight }),
     ...(fragment.enabled === undefined ? {} : { enabled: fragment.enabled }),
@@ -38,9 +37,6 @@ function persistDisplayFragment(fragment: DisplayPromptFragment, shared: boolean
     ...(fragment.prompt_type === "danbooru"
       ? { tag: fragment.prompt_text }
       : { description: fragment.prompt_text }),
-    ...(fragment.camera_settings
-      ? { camera_settings: fragment.camera_settings }
-      : {}),
     ...(fragment.role ? { character_id: fragment.role } : {}),
     ...(fragment.weight === undefined ? {} : { weight: fragment.weight }),
     ...(fragment.enabled === undefined ? {} : { enabled: fragment.enabled }),

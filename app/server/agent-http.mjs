@@ -1,3 +1,4 @@
+import {migrateProjectCamera} from './camera-migration.mjs';
 import {migrateProjectPopulation} from './population-migration.mjs';
 import { captureCandidateSheet, exportCandidateSheet } from './candidate-sheet.mjs';
 import { ApiError, readJsonBody, sendJson } from "./http-support.mjs";
@@ -20,10 +21,11 @@ export async function handleAgentRequest({ request, response, decodedPath, proje
   const pageEditorSave = decodedPath === '/api/agent/page-editor/save';
   const pageRender = /^\/api\/agent\/page-render\/(read|set)$/.exec(decodedPath);
   const promptScope = /^\/api\/agent\/prompt\/(read|save|sources|check)$/.exec(decodedPath);
+  const cameraMigration = decodedPath === '/api/agent/camera-migration';
   const populationMigration = decodedPath === '/api/agent/population-migration';
   const candidateSheet = decodedPath === '/api/agent/candidate-sheet';
   const directoryRead = decodedPath === '/api/agent/directory';
-  if (request.method !== "POST" || (!promptScope && !populationMigration && !candidateSheet && !match && !creation && !contextRead && !promptContextRead && !directoryRead && !pageEditorRead && !pageEditorSave && !pageRender)) return false;
+  if (request.method !== "POST" || (!cameraMigration && !promptScope && !populationMigration && !candidateSheet && !match && !creation && !contextRead && !promptContextRead && !directoryRead && !pageEditorRead && !pageEditorSave && !pageRender)) return false;
   const body = await readJsonBody(request);
   if (!body || typeof body !== "object" || Array.isArray(body)) throw new ApiError(400, "invalid_edit_request");
   if (promptScope) {
@@ -37,6 +39,7 @@ export async function handleAgentRequest({ request, response, decodedPath, proje
     sendOperation(200,await (action === 'save' ? mutateTargetFacts : readFacts)(body.project_id,()=>run(options)));
     return true;
   }
+  if(cameraMigration){sendOperation(200,await (body.apply?mutateTargetFacts:readFacts)(body.project_id,({projectDirectory})=>migrateProjectCamera(projectDirectory,body)));return true;}
   if (populationMigration) {
     sendOperation(200,await (body.apply?mutateTargetFacts:readFacts)(body.project_id,({projectDirectory})=>migrateProjectPopulation(projectDirectory,body)));
     return true;

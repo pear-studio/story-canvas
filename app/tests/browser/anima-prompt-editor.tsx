@@ -3,7 +3,6 @@ import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { PromptFragmentEditor, type PromptFragment } from "../../src/PromptFragmentEditor";
 import "../../src/styles.css";
-import { CAMERA_DEFAULTS } from "../../shared/camera-prompt.mjs";
 import { persistFragmentList } from "../../src/prompt-fragment-draft";
 
 function Harness() {
@@ -11,7 +10,7 @@ function Harness() {
   const cameraMode = new URLSearchParams(location.search).has("camera");
   const [fragments, setFragments] = useState<Record<string, PromptFragment[]>>({
     setting: [{ id: "probe", prompt_type: "custom_description", prompt_text: "quiet hallway under dim lights with a window and soft evening shadows" }],
-    ...(cameraMode ? { camera: [{ id: "token-123456789abc", prompt_type: "custom_description" as const, prompt_text: "from side", camera_settings: { ...CAMERA_DEFAULTS, direction: "side" as const } }] } : {}),
+    ...(cameraMode ? { camera: [{ id: "token-123456789abc", prompt_type: "custom_description" as const, prompt_text: "from side" }] } : {}),
     ...(roleMode ? { person: [{ id: "person-probe", prompt_type: "danbooru" as const, prompt_text: "long_hair", weight: 1.2 }],  } : {}),
   });
   return <div id="host" style={{ width: 1000, marginTop: 320 }}>

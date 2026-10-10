@@ -51,79 +51,6 @@
             },
             "enabled": {
               "type": "boolean"
-            },
-            "camera_settings": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "direction",
-                "height",
-                "shot",
-                "view",
-                "hands",
-                "legs",
-                "shadow",
-                "perspective",
-                "foreshortening",
-                "backgroundBlur",
-                "foregroundBlur"
-              ],
-              "properties": {
-                "direction": {
-                  "enum": [
-                    null,
-                    "front",
-                    "side",
-                    "back"
-                  ]
-                },
-                "height": {
-                  "enum": [
-                    null,
-                    "above",
-                    "below"
-                  ]
-                },
-                "shot": {
-                  "enum": [
-                    null,
-                    "特写",
-                    "近景",
-                    "中景",
-                    "全身",
-                    "远景"
-                  ]
-                },
-                "view": {
-                  "enum": [
-                    null,
-                    "pov",
-                    "female_pov",
-                    "over_shoulder"
-                  ]
-                },
-                "hands": {
-                  "type": "boolean"
-                },
-                "legs": {
-                  "type": "boolean"
-                },
-                "shadow": {
-                  "type": "boolean"
-                },
-                "perspective": {
-                  "type": "boolean"
-                },
-                "foreshortening": {
-                  "type": "boolean"
-                },
-                "backgroundBlur": {
-                  "type": "boolean"
-                },
-                "foregroundBlur": {
-                  "type": "boolean"
-                }
-              }
             }
           },
           "oneOf": [
@@ -369,6 +296,46 @@
         },
         "lora_overrides": {
           "$ref": "#/$defs/loraOverrides"
+        },
+        "camera_settings": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "direction": {
+              "enum": [
+                "front",
+                "side",
+                "back"
+              ]
+            },
+            "height": {
+              "enum": [
+                "above",
+                "below"
+              ]
+            },
+            "shot": {
+              "enum": [
+                "close_up",
+                "full_body",
+                "wide_shot"
+              ]
+            },
+            "view": {
+              "enum": [
+                "pov"
+              ]
+            },
+            "backgroundBlur": {
+              "type": "boolean"
+            },
+            "foregroundBlur": {
+              "type": "boolean"
+            },
+            "motionLines": {
+              "type": "boolean"
+            }
+          }
         }
       },
       "additionalProperties": false,

@@ -10,7 +10,6 @@ export type PromptFragment = {
   inheritance_source?: string;
   tag?: string;
   description?: string;
-  camera_settings?: import("../../../shared/camera-prompt.mjs").CameraSettings;
   character_id?: string;
   weight?: number;
   enabled?: boolean;
@@ -18,7 +17,7 @@ export type PromptFragment = {
 export type InheritedAdjustments = Record<string, { weight?: number; enabled?: boolean }>;
 export type SettingKind = 'character' | 'scene';
 export type PageOwner = { page_id: string; owner_kind: 'story' | 'character' | 'scene'; sequence_id?: string; character_id?: string; scene_id?: string; variant_id?: string };
-export type PagePrompt = Record<PromptCategory, PromptFragment[]> & { reference_images?: ReferenceEntry[]; reference_overrides?: Record<string, string[]>; scene_id?: string; scene_variant_id?: string; inheritance?: Record<string, InheritedAdjustments> };
+export type PagePrompt = Record<PromptCategory, PromptFragment[]> & { camera_settings?: import("../../../shared/camera-prompt.mjs").CameraSettings; reference_images?: ReferenceEntry[]; reference_overrides?: Record<string, string[]>; scene_id?: string; scene_variant_id?: string; inheritance?: Record<string, InheritedAdjustments> };
 export type CharacterLora = { filename: string; sha256: string; weight: number; trigger?: string };
 export type CharacterPromptSetting = {
   reference_images?: ReferenceEntry[];

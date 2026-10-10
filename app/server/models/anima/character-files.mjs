@@ -1,7 +1,6 @@
 import { validatePopulation } from '../../../shared/prompt-population.mjs';
 import {validateLoraOverrides} from '../../../shared/lora-inheritance.mjs';
 import { validateReferenceEntries } from "../../../shared/reference-images.mjs";
-import { validateCameraSettings } from "../../../shared/camera-prompt.mjs";
 import { adjustmentKey, validateAdjustments } from '../../../shared/prompt-inheritance.mjs';
 import {
   STORY_PAGE_PROMPT_SCHEMA_ID,
@@ -40,12 +39,11 @@ function checkNonemptyText(value, valuePath, errors, maxLength = null) {
 
 function validatePromptFragment(fragment, valuePath, errors) {
   if (!isRecord(fragment)) { errors.push(`${valuePath} 必须是对象`); return; }
-  checkExactKeys(fragment, ["id", "tag", "description", "camera_settings", "weight", "enabled"], valuePath, errors);
+  checkExactKeys(fragment, ["id", "tag", "description", "weight", "enabled"], valuePath, errors);
   if (!storyPromptFragmentIdPattern.test(fragment.id ?? '')) errors.push(`${valuePath}.id 必须是有效共享 Prompt 片段 ID`);
   const textKeys = ["tag", "description"].filter((key) => Object.hasOwn(fragment, key));
   if (textKeys.length !== 1) errors.push(`${valuePath} 必须且只能包含 tag、description 之一`);
   else checkNonemptyText(fragment[textKeys[0]], `${valuePath}.${textKeys[0]}`, errors);
-  if (fragment.camera_settings !== undefined) { try { validateCameraSettings(fragment.camera_settings); } catch (error) { errors.push(`${valuePath}.camera_settings: ${error.message}`); } }
   if (fragment.weight !== undefined && (typeof fragment.weight !== "number" || !Number.isFinite(fragment.weight))) errors.push(`${valuePath}.weight 必须是有限数字`);
   if (fragment.enabled !== undefined && typeof fragment.enabled !== "boolean") errors.push(`${valuePath}.enabled 必须是布尔值`);
 }
