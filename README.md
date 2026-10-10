@@ -1,77 +1,38 @@
 # StoryCanvas
 
-StoryCanvas 是由 Agent 操作的本地系列图片视觉化工作台。输入可以是完整故事、角色设定与
-主题清单或一句简要需求；输出以全页插画序列为主，页面可以有对白、旁白或没有文字。
+Agent 操作的本地系列图片视觉化工作台。用户在浏览器调整项目、Prompt、候选、嵌字和成品；Agent 通过语义接口编辑并生成。
 
-外部 Agent 负责理解来源、整理角色和分页、维护视觉页面，并操作本机 ComfyUI。用户在浏览器
-中查看和调整当前项目事实、Prompt、候选、嵌字预览以及生成与评估任务。
+## 入口
 
-## 当前能力
+先读 [AGENTS.md](AGENTS.md)，再按任务读取：
 
-- 一个本地 Node.js 服务同时提供 React 工作台和受限项目 API；
-- 项目材料、创作约定、角色设定、角色视觉页和章节化剧情分页；
-- 剧情、角色和场景视觉页共用 `PageKey`、页面编辑、候选与成品制作；
-- 插画支持 Anima Basic 与 Qwen-Image-2.1，页面独立选择模型与画幅；H3 动态页可与插画、文字页混排；
-- 按生成配置确定性编译 Prompt，并诊断 checkpoint、风格 LoRA 和角色 LoRA；
-- 本机或远程 ComfyUI 候选生成、冻结任务恢复和跨项目队列；
-- 独立对比实验、结果审阅、拼图与冻结输入差异查询；
-- 项目操作执行已由 `app/server/project-operations.mjs` 统一实现，覆盖事实读取、事实写入、事实派生、
-  本机派生、revision 并发保护、项目复制/重命名生命周期和项目移动保护；媒体流在项目操作完成后发送；
-- 浏览器实时嵌字预览、选定候选超分、嵌字／无字 PNG 成品、媒体 ZIP 和离线阅读 HTML 导出；动态页预览与导出使用动画 WebP。
-- 当前项目的 Qwen-Image-2.1 LoRA 训练任务、不可变 run 快照、停止与续训、checkpoint
-  盘点与效果比较；正式 LoRA 由 Agent 按用户选定结果登记，训练环境由 Agent 显式安装。
-- 普通模型支持仓库与本机登记；LoRA 支持仓库、本机及项目登记，项目资源单一归属、跨项目读取。
-
-## 快速入口
-
-| 你想做什么 | 阅读或使用 |
+| 任务 | 文档／技能 |
 |---|---|
-| 第一次启动或了解当前能力 | [从这里开始](docs/start-here.md) |
-| 不确定一个故事项目从哪里开始 | `project-orientation` |
-| 了解统一创作方法 | [创作指南](docs/creative/guide.md) |
-| 建立或调整故事粗骨架与角色 profile | `story-direction` |
-| 把当前 sequence 拆成页面并调整 narrative | `story-editing` |
-| 从用户验收页面提炼可复用解法 | `story-craft-review` |
-| 制作一批剧情页或角色视觉页 | `visual-production` |
-| 探索画风、角色形象或其他主观方向 | `visual-exploration` |
-| 验证动作、Prompt 或生成参数/技术方案 | `generation-testing` |
-| 安装或诊断 ComfyUI | [环境搭建](docs/reference/setup.md) |
-| 准备或分析 LoRA 训练 | `lora-training` 与 [LoRA 训练](docs/reference/lora-training.md) |
-| 理解项目文件和 Git 边界 | [项目文件](docs/reference/project-files.md) |
-| 参与开发 | [开发文档导航](docs/dev/README.md) |
+| 故事、分页、seq 重组、子设定与文案 | [创作入口](docs/creative/guide.md)，`story-editing` |
+| Prompt、插画与动态页生成 | [Prompt](docs/reference/prompt.md)、[页面操作](docs/reference/visual-pages.md)，`prompt-authoring` |
+| 素材搜寻与 LoRA 训练 | [素材搜寻](docs/reference/lora-material-sourcing.md)、[训练](docs/reference/lora-training.md)，`lora-material-sourcing` / `lora-training` |
+| ComfyUI、模型安装与诊断 | [环境](docs/reference/setup.md)，`comfyui-runtime` |
+| 项目、资源与操作契约 | [项目文件](docs/reference/project-files.md)、[资源目录](library/resources/README.md)、[Agent 接口](docs/reference/agent-interfaces.md) |
+| 开发 | [开发指南](docs/dev/guide.md)、[架构](docs/dev/architecture.md) |
+| Agent 集成 | [集成说明](docs/agent/README.md)，明确要求同步时用 `agent-sync` |
 
-## 最快启动
+日常插画主线为 Anima Basic，动态页使用 H3；[Qwen](docs/reference/qwen.md) 的文生图和参考图生成保留作备用。LoRA 训练是主线任务，实际已接入能力见训练文档。项目支持临时复制与提升、独立对比、选图超分、嵌字以及成品 ZIP / 离线 HTML 导出。
+
+## 启动
+
+使用克隆位置的绝对路径；Node.js 版本见 [.node-version](.node-version)。
 
 ```powershell
-npm --prefix <仓库根>/app ci
-npm --prefix <仓库根>/app run setup
-npm --prefix <仓库根>/app run doctor
-npm --prefix <仓库根>/app run dev
+npm --prefix <仓库根绝对路径>/app ci
+npm --prefix <仓库根绝对路径>/app run setup
+npm --prefix <仓库根绝对路径>/app run doctor
+npm --prefix <仓库根绝对路径>/app run dev
 ```
 
-打开 `http://127.0.0.1:3000`。不连接 ComfyUI 也可以编辑项目事实和预览 Prompt。
-`<仓库根>` 使用克隆位置的绝对路径；Node.js 版本见 [.node-version](.node-version)。
-模型权重需自行按[环境搭建](docs/reference/setup.md)安装，仓库不附带权重、个人项目或小说语料。
+默认打开 `http://127.0.0.1:3000`。未连接 ComfyUI 也能编辑项目和预览 Prompt；生成环境按环境文档配置。
 
-## 仓库结构
+代码在 `app/`，可复现资产在 `library/`；本机配置、个人项目、生成媒体与模型权重不随工具仓库分发。
 
-```text
-story-canvas/
-├─ app/                 本地网页应用、服务端、脚本和测试
-├─ docs/                中文使用、流程与开发文档
-├─ library/             Schema、模板、生成配置、工作流和资源目录
-├─ Config/              本机配置与项目路径登记，不入 Git
-├─ workspace/           工作台临时项目，不入 Git
-└─ Saved/               可清理的运行数据、对比实验与 Agent 临时工作
-```
+## 许可
 
-正式剧情项目与训练项目放在工具仓库外，各自独立本地 Git。工作台通过本机登记打开项目，提供临时复制与提升。训练项目包含素材、唯一当前配置和多轮历史记录；详情见[本地项目管理](docs/reference/local-projects.md)。
-
-## 软件许可
-
-StoryCanvas 自有软件代码和说明文档采用 [MIT License](LICENSE)，允许商用、修改和再分发；
-再分发时保留版权声明和许可文本。
-
-第三方依赖、模型权重、LoRA、模型附带文件、预览图、词库与其他引用资料沿用各自许可，
-不因软件采用 MIT 而改变其授权范围。资源中的来源与许可记录供核查；未明确许可的资料
-不能据此视为已获商用或再分发授权。剧情与训练项目内容由各项目单独管理。
+自有代码和说明文档采用 [MIT](LICENSE)。第三方模型、LoRA、预览、词库和引用素材沿用各自许可；软件许可不授予这些资料的商用或再分发权。

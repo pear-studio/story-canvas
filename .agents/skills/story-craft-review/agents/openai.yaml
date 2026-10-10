@@ -1,4 +1,0 @@
-interface:
-  display_name: "创作能力复盘"
-  short_description: "按用户要求复盘已验收页面，提出需确认后才写入的可复用解法"
-  default_prompt: "使用 $story-craft-review 复盘我已验收的页面，先提出可复用解法建议。"

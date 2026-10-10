@@ -1,4 +1,0 @@
-interface:
-  display_name: "剧情导演"
-  short_description: "与用户讨论完整故事骨架和角色背景，制作中按需要调整既有方案"
-  default_prompt: "使用 $story-direction 和我讨论当前故事骨架或本次需要的调整。"

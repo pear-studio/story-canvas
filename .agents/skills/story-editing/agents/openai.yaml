@@ -1,4 +1,4 @@
 interface:
-  display_name: "剧情编辑"
-  short_description: "设计含基础文案分配与机位建议的分页草案，经用户确认后执行"
-  default_prompt: "使用 $story-editing 为当前单元提出分页、基础文案分配和机位草案，先给我确认。"
+  display_name: "故事与页面编辑"
+  short_description: "讨论故事和视觉方向，重组 seq 与页面，确认草案后落实当前修改"
+  default_prompt: "使用 $story-editing 为当前内容提出调整草案，确认后再执行。"

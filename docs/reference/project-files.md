@@ -1,216 +1,58 @@
-# 项目文件
+# 项目文件与资料归属
 
-Agent 日常操作需要本地工作台服务在线；命令与 API 统一说明见[直接操作入口](agent-interfaces.md)。
+本页维护目录、事实归属与项目生命周期。操作见 [Agent 接口](agent-interfaces.md)，字段以 `library/schemas/` 为准。
 
-本页说明项目中的持久事实、本机派生结果和 Agent 写入边界。字段级契约以
-`library/schemas/` 与当前代码为准。
+## 存储边界
 
-## 项目目录
+| 位置 | 内容与管理 |
+|---|---|
+| 工具 `app/`、`library/`、`docs/` | 应用、全局资产和说明，进入工具 Git |
+| `Config/local.json`、`Config/projects.json` | 本机环境和显式项目登记，忽略并单独备份 |
+| 工具 `workspace/` | 临时项目，不初始化 Git |
+| 正式项目外部目录 | 各自独立 Git，不进入工具仓库 |
+| 项目 `Outputs/`、`Training/` | 生成成果、训练冻结输入与结果，忽略并单独备份 |
+| 工具及项目 `Saved/` | 任务、缓存和可清理派生物，忽略 |
 
-```text
-<正式剧情项目目录>/
-├─ project.json
-├─ creative-agreement.json
-├─ render-profile.override.json
-├─ materials/
-│  └─ index.json
-├─ writing-corpus/        # 本项目持有的小说原文、摘录和提取规则
-├─ resources/loras/       # 本项目持有的 LoRA 元数据和预览，权重仍在 models_root
-├─ characters/
-│  ├─ index.json
-│  └─ <character-id>.{profile,visual,prompt}.json
-├─ scenes/
-│  ├─ index.json
-│  └─ <scene-id>.{profile,visual,prompt}.json
-├─ pages/
-│  ├─ index.json          # 全局页面 ID、归属与顺序
-│  └─ <page-id>.{content,prompt,render,rewrite,text-sources}.json
-├─ story/
-│  └─ outline.json
-├─ lettering/
-│  ├─ settings.json
-│  └─ dialogue-layouts.json
-├─ finished/<page-id>.json   # 当前成品制作记录，进入 Git
-├─ Outputs/               # 长期保留的本机成果，不入 Git、不随项目复制
-│  ├─ pages/<page-id>/<candidate-id>/
-│  ├─ finished/<page-id>/<output-id>/ # clean.png、lettered.png
-├─ Saved/                 # 运行状态、工作副本、缓存、临时文件
-│  ├─ render/
-│  ├─ cache/
-│  └─ staging/
-├─ .gitignore
-└─ .gitattributes
-```
+项目 ID 是本机登记句柄，目录由登记决定，不扫描磁盘发现项目。权重不属于项目，位置见 [环境搭建](setup.md)。
 
-项目由 `Config/projects.json` 显式登记，ID 是本机接口句柄，目录可以在工具仓库外。LoRA 元数据和图片由一个所属项目持有，其他项目通过资源 ID 从登记的所属项目读取；不复制，不同步。语料检索显式指定所属项目。对比实验位于工具 `Saved/comparison-results/`，执行状态在 `Saved/comparisons/`，拼图在 `Saved/comparison-reviews/`。参见[本地项目管理](local-projects.md)。
+## 剧情项目事实
 
-## Agent 临时工作
+| 文件或目录 | 唯一职责 |
+|---|---|
+| `project.json` | 标题、新页默认画幅与生成配置 |
+| `creative-agreement.json` | 用户确认的项目约定 |
+| `render-profile.override.json` | 本项目生成配置覆盖 |
+| `story/outline.json` | 故事、章节、seq 粗骨架，不含分页 |
+| `characters/`、`scenes/` | 索引及各设定的 profile、visual、prompt；visual 管理子设定身份 |
+| `pages/index.json` | 稳定页面 ID、归属和顺序 |
+| `pages/<id>.content.json` | 标题、画面内容、角色引用与嵌字；文字页另有正文和排版 |
+| `pages/<id>.prompt.json`、`.render.json` | 各模型输入，以及本页模型、配置、画幅 |
+| `pages/<id>.rewrite.json`、`.text-sources.json` | 改写稿、可选语料出处；普通创作不要求维护出处映射 |
+| `lettering/` | 项目文字样式与逐页文案布局 |
+| `finished/<id>.json` | 当前成品制作记录；媒体在 `Outputs/finished/` |
+| `materials/` | 正式参考输入，只支持一层文件；`index.json` 只保存可选标题 |
+| `writing-corpus/`、`resources/loras/` | 本项目唯一持有的语料、LoRA 元数据和预览 |
 
-Agent 临时工作统一位于仓库根 `Saved/Agent/<任务名>/`，同一任务复用目录，容纳临时脚本、素材中转、API 请求与回包及临时审阅页，不进入 Git。`Saved/Tests/` 仅供应用、测试和工具自动生成临时文件，不作为 Agent 手工工作目录。正式素材导入数据集或项目材料，正式生成成果保留在系统管理的 `Outputs/`；临时目录在任务结束并核对依赖后清理。
+模型输入语义见 [Prompt](prompt.md)，页面操作见 [视觉页面](visual-pages.md)。
 
-## 项目语料与全局文案方法
+## 训练项目事实
 
-- `<所属项目>/writing-corpus/<源>/原文/` 保存小说原文、摘录和提取规则，是**参考输入**，
-  进入所属项目 Git；项目 `.gitattributes` 对 `writing-corpus/**` 设置 `-text` 冻结字节，
-  text-sources 的字节偏移依赖语料字节不变；
-- `library/writing-policies/` 保存跨项目的文案方法文档（如 `copy-from-corpus.md`），
-  story-editing 技能引用；
-- 语料检索用 `app/scripts/corpus-search.mjs --project <所属项目ID>`（`corpus:search`），输出语料相对路径与字节偏移，
-  供 text-sources 映射使用。
+一个项目持有一份素材集合和唯一当前 `settings.json`：`project.json` 管素材组织，`assets/` 管图片与 Caption，`captioning/` 管审核事实。启动时冻结输入形成 run，后续编辑不改旧 run。当前训练路线见 [LoRA 训练](lora-training.md)。
 
-语料和项目 LoRA 在复制临时项目时不重复复制；LoRA 仍从唯一所属项目读取，语料命令仍指定原所属项目。提升、重命名保留整个所属资料树。原所属项目需要继续登记，移除登记后相关资源不再提供元数据和预览。
-现有完整资料通过 `asset.transfer.plan/apply` 迁移归属，计划核对文件 SHA，提交拒绝来源变化或目标冲突；不直接写项目 JSON。
+## 单一资料归属
 
-## 持久事实
+语料和项目 LoRA 只保留一个所属项目。跨项目 LoRA 按资源 ID 读取，语料检索显式指定所属项目；不复制、不同步。所属项目必须继续登记且可用，重新定位后按新路径读取。
 
-- `project.json` 保存 `format: "story-models-v1"`、标题、新页默认画幅和默认 render profile；
-- 每页 `render.json` 保存模型、profile 与画幅，创建时复制默认，之后独立；Prompt 通过 `models` 分别保存各模型输入，详见[模型适配器](../dev/model-adapters.md)；
-- `creative-agreement.json` 保存用户确认的项目级创作约定；清单保持扁平，每条明确为必须遵守或创作偏好；
-- `materials/` 保存用户提供的原文与参考材料，只容纳一层纯文件（不支持子目录），目录中的实际文件会自动进入参考材料清单；
-  `materials/index.json` 仅保存可选显示标题，不表达登记状态或阅读顺序；
-- `story/outline.json` 保存 synopsis、chapter 与 sequence 粗骨架，不包含分页；
-- `pages/index.json` 把页面有序归入剧情单元、角色子设定或场景子设定；每页 content 保存标题、`scene_description`
-  （简单白描的客观画面内容）、画面角色和文案；画面内容不超过 20 字，
-  按创作规范填写，空白或超长不阻止保存、生成；结合情节单元和前后页理解，Prompt 单独保存；
-  文字页额外带 `page_kind: "text"`、`body` 正文（可空）、独立显示标题 `display_title`（缺省为空）与 `text_layout`（独立字号、对齐和整组位置），无角色和文案，不生成候选图；
-- 每页 text-sources 保存文案条目的语料出处映射（dialogue_id → 语料文件、字节偏移、原句），
-  是可选的参考索引：无条目即自写，heart 条目不挂出处；保存时服务端按偏移核验出处真实存在，
-  不做相似度校验；方法见 `library/writing-policies/copy-from-corpus.md`；
-- `characters/index.json` 保存角色顺序；每名角色的 profile、visual 与 Prompt 分开保存；
-- 三种归属的图片页共用标题、画面内容、角色引用、场景引用、Prompt、候选与嵌字能力；页面归属只负责组织；
-- `scenes/index.json` 保存场景顺序；各场景拆分 profile、visual 和 Prompt，与角色共用同一设定契约；
-- `lettering/settings.json` 统一保存项目字体、字号、文案框预设（角色对白/心理/NPC）和角色显示颜色；
-  `lettering/dialogue-layouts.json` 只保存逐页对白位置与尺寸；旁白使用通栏字幕条（按页选顶部或底部），不保存布局；
-训练也是独立项目：`project.json` 保存素材组织，`assets/` 保存图片与 Caption，`captioning/` 保存审核事实，`settings.json` 保存唯一当前训练设置（Qwen-Image-2.1，version 5）；这些内容进入该项目 Git。`Training/` 保存历史冻结输入、恢复包和结果，`Saved/` 保存缓存及执行副本，均不入 Git。
+临时项目复制不复制所属语料和 LoRA，继续读取原所属项目；提升保留临时项目的整个目录。资料迁移使用 `asset.transfer.plan/apply`，核对计划后移动资料目录，不移动权重；源变化或目标冲突会拒绝。资源身份见 [资源目录](../../library/resources/README.md)。
 
-角色与场景 `*.prompt.json` 形状为 `{$schema,models:{anima:…,qwen:…}}`。Anima 输入保留 identity、分类词条及 Prompt／LoRA 继承；页面也使用模型容器，切换模型保留另一份输入。模型字段与覆盖规则见[模型适配器](../dev/model-adapters.md)；下列整段规则仅描述 Qwen 输入。
-Qwen 输入形状为 `{ prompt_name, variants }`：`prompt_name` 是编译输出的名称，
-创建时复制显示名称、之后独立；每个 `variants.<id>` 自包含一段自由文本 `text` 和有序
-`reference_images`（条目为 `{id, file, title}`），子设定之间互不继承，也没有 identity 层、LoRA
-或逐词继承。角色至少一个 variant（禁止删除最后一个），全部同构、无保留 id、无默认造型。
-页面 Prompt 保存本页 `text`、成对的 `scene_id`/`scene_variant_id`、按 `character:<id>:<variant>`／
-`scene:<id>:<variant>` 键的整段 `text_overrides` 与图片选择 `reference_overrides`，以及可带
-`purpose` 的本页附图 `reference_images`；key 存在即覆盖（含空串），恢复继承就是删除 key，切换
-子设定或移除引用时删除对应 key。具体规则见 [Prompt 契约](prompt.md)。
-visual 只维护子设定 id/name；所有视觉页通过 content 编辑标题与 scene_description。
+## 生命周期与 Git
 
-outline、profile、narrative、visual 和 Prompt 之间是单向引用关系。上游变化可以使下游出现诊断；
-语义内容由下游责任 Agent 重新读取并修正；页面的整段 override 不随上游文字变化，已有候选图片不改变。
+- 添加：登记已有绝对目录，不复制；剧情项目须有 `project.json`，训练项目还须有 `settings.json`。
+- 新建／复制：在 `workspace/` 创建临时项目；复制只带事实和输入，不带 `.git`、成果、训练历史或缓存。
+- 提升：复制到不存在的外部目录并核对，保留本次成果，初始化 Git 后移除临时目录。
+- 重新定位：更新登记路径；移除登记只改本机列表，不删除目录。
+- 删除：工作台只提供临时项目删除；活动任务会限制生命周期操作。
 
-## 读取与写入
+正式项目 Git 保存事实与输入，包括参考图、语料、训练素材和 Caption；不保存运行状态、成果或权重。当前使用普通 Git，材料、语料和训练素材通过 `.gitattributes` 保护字节身份。
 
-Agent 可以直接读取稳定项目 JSON，但不得直接写入。准备修改时先通过 read 获取正文和指纹：
-
-```powershell
-npm --prefix <仓库根>/app run story:page -- outline read <project-id>
-npm --prefix <仓库根>/app run story:page -- index read <project-id>
-npm --prefix <仓库根>/app run story:page -- narrative read <project-id> <page-id>
-npm --prefix <仓库根>/app run story:page -- text-sources read <project-id> <page-id>
-node <仓库根>/app/scripts/story-canvas.mjs help prompt
-node <仓库根>/app/scripts/story-canvas.mjs prompt.read --args <读取参数JSON> --out <读取回执JSON>
-node <仓库根>/app/scripts/story-canvas.mjs prompt.save --args <保存参数JSON> --out <保存回执JSON>
-
-npm --prefix <仓库根>/app run character:fact -- profile read <project-id> <character-id>
-npm --prefix <仓库根>/app run character:fact -- visual read <project-id> <character-id>
-npm --prefix <仓库根>/app run character:fact -- page-index read <project-id>
-npm --prefix <仓库根>/app run character:fact -- page-goal read <project-id> <page-id>
-```
-
-非 Prompt 的 read 返回 `{ project_id, target_id, document, expected_sha256, expected_context_sha256 }`。
-Prompt 使用 `prompt.read` 回执的保存参数加 `changes`，不回传整个 models 容器；旧 Prompt 事实入口返回升级指引。
-只修改 document，身份和指纹保持读取时的值；将完整对象通过普通 JSON 文件或 stdin 交给 save。
-
-```powershell
-npm --silent --prefix <仓库根>/app run story:page -- narrative save <完整草稿JSON文件|->
-npm --silent --prefix <仓库根>/app run character:fact -- visual save <完整草稿JSON文件|->
-```
-
-服务不管理草稿文件，不创建 sidecar。局部 outline 对象和只读上下文范围见[Agent 接口](agent-interfaces.md)。
-
-busy 是短暂资源锁冲突，可以短暂退避后有界重提。目标、必要
-上游或编辑依赖的内容指纹冲突表示事实已经改变，必须丢弃旧判断，重新 read 当前正文和指纹并判断，不能拿旧文件自动覆盖。
-
-创建、删除对象使用语义命令维护文件配对；现有页面排序与归属通过 index/page-index save 或导航命令调整：
-
-```powershell
-npm --prefix <仓库根>/app run story:page -- page create <project-id> <sequence-id>
-npm --prefix <仓库根>/app run story:page -- page delete <project-id> <page-id>
-npm --prefix <仓库根>/app run character:fact -- character create <project-id> <character-id> [name]
-npm --prefix <仓库根>/app run character:fact -- character delete <project-id> <character-id>
-npm --prefix <仓库根>/app run character:fact -- page create <project-id> <character-id> <variant-id>
-npm --prefix <仓库根>/app run character:fact -- page delete <project-id> <page-id>
-```
-
-服务端为新增页面和新增对白生成 ID；新增对白在临时 narrative 中不得指定 `id`。角色和 variant
-使用调用者给出的可读 kebab-case ID。删除归档只用于 Agent 参考重建，不提供恢复命令。
-
-## 渲染与本机派生结果
-
-渲染读取提交时最新的项目事实，不携带项目 revision，不接受临时 Prompt 覆盖；受控对照可显式传 `--seed`，种子只冻结到任务与候选，不写回页面：
-
-```powershell
-npm --prefix <仓库根>/app run visual:produce -- render page <project-id> <page-id> [--count 1..3]
-```
-
-返回的 `task_directory` 和 `candidate_paths` 是完整绝对路径，Agent 直接按这些路径读取。每个渲染
-任务目录包含不可变 `manifest.json` 与可更新 `state.json`，并按活动或终态位于
-`Saved/render/active/` 或 `Saved/render/history/`；状态更新通过 `Saved/render/locks/` 中的本机
-跨进程锁串行完成。渲染任务、
-候选、缓存和输出是本机派生物，不写回故事 JSON。普通原型保留全部候选供用户查看，不由 Agent 筛选或自动删除。用户明确要求清理时使用以下入口；生成与一次严重问题修正规则见创作指南：
-
-```powershell
-npm --prefix <仓库根>/app run visual:produce -- candidate delete <project-id> <page-id> <absolute-candidate-path>
-```
-
-Agent 没有批量清理入口；用户在浏览器中预览候选并调整文字样式。成为后续必须依赖
-的生成图片应先提升到 `materials/`。
-
-## 新建项目与 Git
-
-新建项目使用：
-
-```powershell
-npm --prefix <仓库根>/app run project:create -- template <project-id>
-npm --prefix <仓库根>/app run project:create -- create <完整草稿JSON文件|->
-```
-
-创建文件只接收 metadata、粗 outline 和最小角色事实；不会接收页面、Prompt、LoRA、候选、图片
-或旧项目路径。服务端补齐空的 Prompt 配置与页面索引。
-
-正式项目各自独立 Git，工具仓库不提交项目内容。工作台新建或复制到 `workspace/` 的临时项目不建立 Git；提升到外部目录后初始化。设置、原文、参考图、Caption 和训练素材进入项目 Git；`Outputs/`、`Training/`、`Saved/` 与权重不提交。
-
-项目复制与 Git 上传不携带生成结果：复制只保留项目事实和输入白名单，候选、输出、任务、缓存不复制；Git 忽略规则保持这些派生目录不入库。需要跨项目或跨机器保留的生成参考图须先提升为明确输入。
-
-## 成果与清理
-
-页面 PageKey 统一为 `{ page_id }`，字符形式 `v3/<page-id>`。归属保存于 `pages/index.json`，
-不参与页面身份和媒体路径；移动归属不改画面引用、候选或成品。创建角色／场景验证页时默认引用所属子设定，之后可以移除或替换。
-
-角色或场景删除后保留页面和引用；归属失效的页面进入待整理入口，内容引用失效显示可修复诊断。
-已有候选仍可查看；只有实际参与生成的依赖失效时才阻止生成。
-
-每个候选目录包含 `image.png`、小型 `result.json` 和按需读取的 `generation.json`。
-先在 Saved/staging 准备全部文件，再原子发布目录，最后更新运行状态。列表、数量、详情和删除
-从 `Outputs/pages/` 读取。清理任务历史不影响成果；生成期间也可删除已发布候选，页面或所引用角色的结构删除仍受活动任务保护。
-generation 保存完整冻结任务快照及实际提交的 workflow/extra_data/prompt_id，历史未记录的请求明确
-标为 unavailable。result 保存图片与 generation 的 SHA-256，清理前校验成果字节。
-
-比较实验保留 manifest、preflight、execution、result 摘要及每个 results/<cell-id>/ 的图片与生成记录。
-训练 run 在 `Training/<task-id>/<run-id>/` 保留 manifest、`inputs/` 冻结图片与 Caption、`resume/` 恢复包
-和 result.json；`Saved/Training/<task-id>/<run-id>/` 保存缓存、控制文件、status、事件与日志等可清理
-工作副本。归档 manifest 中的绝对路径是执行证据，不随本机配置变化重写。
-外部权重缺失只影响可用性，不擦除历史 checkpoint 清单。
-
-用户明确要清理时，先停止 Node 服务及其他项目写入者，再执行：
-
-```powershell
-npm --prefix <仓库根>/app run project:storage -- clean-runtime <project-id> --offline
-```
-
-没有活动任务且成果已归档才允许清理 Saved；不动 Outputs、项目事实、根 Saved/state 或外部权重。
-
-复制项目按事实目录白名单保留材料、训练数据和设置，不复制 .git、generated、runtime、密钥和权重。
-Git 独立管理项目事实；项目 .gitattributes 对 materials/** 设置 -text，训练项目 .gitattributes 对 assets/** 设置 -text，保护原文和
-Caption 的字节身份。当前使用普通 Git，不引入 LFS。
-
-成品制作记录、替换与导出规则见 [成品输出](../dev/finished-pages.md)。
+Git 状态只读本机仓库，不 fetch；领先／落后相对本机 upstream 引用。备份分别覆盖正式项目（含必要成果和 `.git`）、`Config/`、本机资源及外部权重；项目复制与 Git 均不能代替成果备份。

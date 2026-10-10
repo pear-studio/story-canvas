@@ -1,4 +1,4 @@
 interface:
   display_name: "Prompt 与出图"
-  short_description: "编写简洁 Prompt 原型，生成图片和检查严重问题"
-  default_prompt: "使用 $prompt-authoring 落实当前确认范围的 Prompt，按默认规则生成原型交给我。"
+  short_description: "编写和生成页面 Prompt，在画面内容不变的前提下修正表达与图像错误"
+  default_prompt: "使用 $prompt-authoring 落实当前页面 Prompt，按已确认范围生成并检查结果。"

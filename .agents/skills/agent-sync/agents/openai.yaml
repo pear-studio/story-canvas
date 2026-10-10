@@ -2,3 +2,5 @@ interface:
   display_name: "Agent 配置同步"
   short_description: "同步并检查项目级 Agent 规则、技能链接与配置状态"
   default_prompt: "使用 $agent-sync 检查并同步当前项目的 Agent 配置。"
+policy:
+  allow_implicit_invocation: false

@@ -1,44 +1,15 @@
 ---
 name: agent-sync
-description: 仅当用户在当前请求中明确要求使用 agent-sync 时触发，不根据文件或任务类型自动触发。用于管理 StoryCanvas 的项目级 Agent 规则、技能链接与同步投影。
+description: 仅当用户当前请求明确要求 agent-sync 时使用，管理 StoryCanvas 项目级规则、技能链接与 Claude 同步投影；修改相关文件本身不触发。
 ---
 
 # Agent 配置同步
 
-## 触发边界
+先读 [Agent 集成](../../../docs/agent/README.md)。以 `AGENTS.md` 和 `.agents/skills/` 为源，不从生成投影反向修改，也不安装用户级技能。
 
-只有用户在当前请求中明确要求使用 `agent-sync` 时才执行本技能。任务涉及 `AGENTS.md`、
-`CLAUDE.md`、`.agents/skills/`、`.claude/skills/` 或 `docs/agent/`，本身不构成触发条件。
+1. 用仓库绝对路径运行同步器 `report`、`apply --dry-run`，检查计划仅涉及受管规则、技能链接和同步状态。
+2. 普通目录、未知链接或手工修改发生冲突时停止，不覆盖或删除。
+3. 按已委托范围修改源规则或技能；名称、目录与引用保持一致，详细事实链接至所属文档。
+4. 运行 `apply` 和 `doctor`；修改过的技能另用标准 `quick_validate.py` 校验。
 
-先完整阅读 `docs/agent/README.md`，以 `AGENTS.md` 和 `.agents/skills/` 为唯一事实
-来源。不要从 `CLAUDE.md` 或 `.claude/skills/` 反向修改源文件。
-
-## 检查
-
-在写入前运行：
-
-```powershell
-node <仓库根绝对路径>/docs/agent/sync.mjs report
-node <仓库根绝对路径>/docs/agent/sync.mjs apply --dry-run
-```
-
-确认所有计划操作只涉及根目录 `CLAUDE.md`、`.claude/skills/` 和同步状态文件。
-遇到普通目录、未知链接或手工修改时停止并说明冲突，不覆盖或删除。
-
-## 修改
-
-- 仓库规则只修改 `AGENTS.md`，且使用中文。
-- 技能只修改 `.agents/skills/<name>/`。
-- 保持技能目录名、文档头部元数据中的 `name` 字段和所有引用一致。
-- `description` 写清触发条件；正文只保留执行步骤，详细事实引用现有中文文档。
-- 不创建或同步用户级技能，不写入用户主目录。
-
-修改后执行：
-
-```powershell
-node <仓库根绝对路径>/docs/agent/sync.mjs apply
-node <仓库根绝对路径>/docs/agent/sync.mjs doctor
-```
-
-再使用标准技能校验器检查所有变更过的技能。只汇报有效变化和发现的冲突，不粘贴
-大段同步器原始输出。
+命令示例与投影边界只在集成文档维护。汇报有效变化及未解决冲突，不粘贴完整回包。

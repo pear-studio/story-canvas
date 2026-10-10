@@ -1,26 +1,18 @@
 ---
 name: story-editing
-description: 为 StoryCanvas 设计单元分页草案，用户确认后维护页面顺序、画面与基础文案；文案优化按用户后续要求单独处理。
+description: 为 StoryCanvas 讨论故事与视觉方向，编辑角色、场景、seq 和页面，拆分、合并或重组内容，准备子设定验证；用户确认草案后落实当前委托。
 ---
 
-# 单元分页与文案
+# 故事与页面编辑
 
-按 docs/creative/guide.md 读取当前单元上下文、用户内容与基础文案，补读相关角色配置。维护 pages/index.json 中的剧情归属与页面 content；不代写角色配置或 Prompt。
+任务流程见 [创作指南](../../../docs/creative/guide.md)，页面用法见 [页面参考](../../../docs/reference/visual-pages.md)。只读当前范围的故事、相关角色与场景、用户输入和必要参考图；机械操作按依赖最小读取。
 
-## 先提交草案
+- 按任务准备故事骨架、视觉方向或分页草案，可跨 seq 重组；不设岗位、固定阶段或完整故事前提。
+- 草案写清当前准备改什么、页序、画面和必要文案变化；确认后落实已委托内容。子设定验证和方向变更遵循 AGENTS。
+- 画面内容用简短白描；机位建议单独表达。只让实际入镜人物参与编译，画外对白不自动加人。
+- 重组时文案粗调即可，用户确认后保存嵌字变化；统一文案优化按后续委托处理。
+- 主观方向不清时可提出小范围视觉对照；不自动扩大制作范围。进入 Prompt 与生成时使用 `prompt-authoring`。
 
-草案列页数、顺序、每页基本画面、用户基础文案分配和简短机位建议。机位建议用简短语言表达，供用户判断整组变化；不把机位塞进 scene_description。用户修改确认后执行，不自行从草案进入生成。
+项目结构、素材归属见 [项目文件](../../../docs/reference/project-files.md)。编辑先查工具对应分类的 help；页面内容用 `page.editor.read/save`，结构调整用现有语义操作，不直接写项目 JSON。
 
-只展开已有故事事实，允许普通姿态、表情、视线和静态时刻的变化。同一情节可以多图呈现，不机械要求每页推进剧情；普通动作可省略过程。发现需要改变原因、结果或关系时回到故事讨论。
-
-## 落实确认稿
-
-scene_description 简短白描，不超过 20 字的创作规范保留，不作为保存门槛。characters 只列实际入镜且参与编译的人物及明确 variant_id；画外 speaker 不自动入镜。
-
-基础文案原样放入对应页，不润色、不扩写；缺失或分配疑问在草案中指出。新增对白不指定 ID，已有对白保留 ID，避免破坏排版引用。字段和文案类型见 docs/reference/visual-pages.md 与 docs/reference/project-files.md。
-
-有 story_canvas 时优先查 page、structure 与 facts 分类帮助；新建、删除用语义操作，顺序与 narrative 用 read/save。参数查操作 help，无该工具时用 docs/reference/agent-interfaces.md 的 CLI。保存警告不等于保存失败，应读取结果后判断，不重复提交。
-
-文案优化是后期独立任务：可以参考语料，不要求照抄或记录出处映射。方法见 library/writing-policies/copy-from-corpus.md。不要以优化文案为由修改用户原文、画面或重新生成。
-
-交付当前草案或实际修改；不默认扩展页数、制作后续单元或启动候选验收链。
+无工具时使用 [Agent 接口](../../../docs/reference/agent-interfaces.md) 的 CLI。交付当前草案或实际改动，不默认推进下一段。
