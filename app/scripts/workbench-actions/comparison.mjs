@@ -15,6 +15,9 @@ export const comparisonActions={
   'comparison.image':{summary:'下载某个实验结果图供查看',parameters:schema({...id,cell_id:string('inspect 返回的 cell ID')}),details:'只读取已有结果，落盘到 Saved/Agent/workbench-artifacts。',execute:a=>downloadArtifact(`${base}/${encode(a.experiment_id)}/results/${encode(a.cell_id)}.png`)},
 };
 const selection = schema({ experiment_id: string('实验ID'), cell_ids: array('可选 cell ID 集合'), axis_values: object('可选 {轴类型:value_id} 过滤') }, ['experiment_id']);
+comparisonActions['comparison.create'].details+=' 输入、配置、LoRA 和参考图在创建时冻结，运行后不重读来源项目。对比轴按笛卡尔积展开，启动前 inspect 核对 cell 数量与预检；修改方案另建实验。共用生成队列逐格执行，失败保留已完成成果。';
 for(const action of ['review','diff','sheet']) comparisonActions[`comparison.${action}`]=endpoint(`对比结果${action==='review'?'汇总':action==='diff'?'输入差异':'拼图导出'}`,'POST',`${base}/${action}`,{
   selections: array('要查看的实验结果',selection), include_inputs:boolean('是否包含冻结输入'), columns:{type:'integer',minimum:1,maximum:6,description:'拼图列数'},font_size:{type:'integer',minimum:20,maximum:48,description:'拼图字号'},title:string('拼图标题'),labels:array('自定义图片标签')
 },{required:['selections'],body:a=>a,details:'selections 每项提供 experiment_id，可指定 cell_ids 或 axis_values:{轴类型:value_id}。省略筛选则选择实验全部结果；只消费已有结果。sheet 的列数、字号、标题、标签可选，返回导出文件路径。'});
+comparisonActions['comparison.sheet'].details+=' 一次最多36格，返回PNG及索引；筛选和顺序显式指定，不推断配对。';
+comparisonActions['comparison.review'].details+=' 汇总状态、条件和结果路径，冻结输入按需 include_inputs；读图使用 comparison.image，不扫描 Saved。';

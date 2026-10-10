@@ -1,11 +1,9 @@
 // 复用 DSH 原生读文件和读图实现，只保留当前任务需要的模型工具。
-import { fileURLToPath } from 'node:url'
 import { restrictWorkbench } from '../../app/scripts/workbench-actions/access-policy.mjs'
 export const name = 'story-canvas-lite-tools'
-export const inject = ['tools', 'systemPrompt']
+export const inject = ['tools']
 
 export function apply(ctx) {
-  ctx.systemPrompt.variable('story_canvas_root', () => fileURLToPath(new URL('../../', import.meta.url)))
   const allowed = ['glob', 'read', 'read_image', 'story_canvas']
   const restrictions = new Map()
   const release = id => {

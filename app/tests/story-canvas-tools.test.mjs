@@ -37,9 +37,10 @@ async function fixture(t, responder = () => assert.fail('不应发送请求')) {
   await mkdir(path.join(root, 'Config'));
   await writeFile(path.join(root, 'Config/local.json'), JSON.stringify({ port: server.address().port }));
   const { apply } = await import(pathToFileURL(path.join(root, '.dsh/presets/story-canvas/story-canvas-tools.mjs')));
-  const tools = new Map(); apply({ tools: { register: definition => tools.set(definition.name, definition) } });
+  const tools = new Map(), variables = new Map();
+  apply({ tools: { register: definition => tools.set(definition.name, definition) }, systemPrompt: { variable: (name, value) => variables.set(name, value) } });
   assert.deepEqual([...tools.keys()], ['story_canvas']);
-  return { root, tool: tools.get('story_canvas'), requests };
+  return { root, tool: tools.get('story_canvas'), requests, variables };
 }
 async function failure(tool, input) {
   try { await tool.execute(input); } catch (error) { return JSON.parse(error.message); }
@@ -87,6 +88,8 @@ test('Prompt 来源冲突给出准确读取入口，同模型相同来源批量�
 
 test('字段帮助按需展开，分类与默认操作帮助不注入完整细则',async t=>{
   const f=await fixture(t);
+  // 根路径来自安装模块，不随会话 cwd 改变。
+  assert.equal(path.resolve(f.variables.get('story_canvas_root')()), path.resolve(f.root));
   assert.ok((await f.tool.execute({operation:'help',args:{}})).groups);
   assert.equal((await failure(f.tool,{operation:'help',args:{wrong:true}})).error,'invalid_arguments');
   const overview=await f.tool.execute({operation:'help',target:'page'});

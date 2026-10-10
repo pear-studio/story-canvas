@@ -50,4 +50,20 @@ trainingActions['training.image.prepare']=dsWrite('运行图像质量评估和�
 trainingActions['training.image.upscale']=dsWrite('运行超分并生成处理预览','/postprocess/preview',{item_id:string('素材 ID'),crop:object('裁剪 {x,y,width,height}'),output_scale:{type:'integer',enum:[1,2,4],description:'倍率'}},a=>({item_id:a.item_id,crop:a.crop,upscale:true,output_scale:a.output_scale}),{capability:'training'});
 trainingActions['training.image.bulk-upscale']=dsWrite('批量运行素材超分','/postprocess/bulk-upscale',{},()=>({}),{capability:'training',details:'须用户明确批量授权，可能加载模型且耗时；完成后重读数据集。'});
 
+const trainingWriteHelp='写入沿用同一项目最近详情的 ETag；集合创建回执不能代替详情版本，素材与设置共享版本，不用剧情 revision。冲突重新读取并判断，不只换 etag 重放；批量只重查失败项，结果不明先核实。';
+for(const name of ['training.dataset.read','training.task.read'])trainingActions[name].details+=' 返回 {value,etag}，素材和设置视图共享项目 ETag。';
+for(const name of ['training.dataset.save','training.caption.save','training.caption.confirm','training.audit.save','training.task.save','training.run.start','training.run.resume'])trainingActions[name].details=(trainingActions[name].details??'')+' '+trainingWriteHelp;
+trainingActions['training.dataset.read'].details+=' 有效训练集合只包含 item 与所属 group 均启用的图片；group repeats 参与采样。';
+trainingActions['training.caption.read'].details+=' unlabeled 为文本为空且无基础 Prompt，unconfirmed 为未绑定当前图片和 Caption 哈希，confirmed 为两者均匹配；caption.txt 是训练文本。AnimeTimm raw_tags 保留下划线，rating 仅存原始结果。';
+trainingActions['training.caption.save'].details+=' 保存文本清除确认；改图片、裁剪、超分或恢复后也须重新确认。';
+trainingActions['training.caption.confirm'].details+=' 确认绑定当前图片与 Caption 两个哈希；启用条目不等于已确认。';
+trainingActions['training.audit.save'].details+=' 只登记实际看过的图片及最终文本；按图片哈希记录，不绑定 Caption 哈希，不能代替训练确认。scope:anima 不代表支持 Anima 训练；阻断问题不标已审计。';
+trainingActions['training.image.restore'].details='恢复原图并失效旧确认，不自动准备训练图；需要时另调用 training.image.prepare。';
+trainingActions['training.caption.run'].details='missing 只处理缺 Caption 的图片；single 指定条目，已有文本覆盖须 confirm_overwrite:true。不支持数据集级覆盖；检查 run.read，不重复提交等待中的运行。';
+trainingActions['training.image.prepare'].details='显式准备指定或有效素材，按配方尺寸保留比例，并以 MUSIQ 比较缩放与超分；打开或刷新不触发。失败不删除素材，修复后显式重试。可能加载模型，需 training 能力。';
+trainingActions['training.preflight'].details+=' 检查有效集合的准备状态和 Caption 双哈希确认；空文本或未确认阻断。run_settings 从 run.settings 读取，启动沿用同一设置。';
+trainingActions['training.run.start'].details+=' 服务重新预检并冻结数据、设置、底座、recipe、训练器和 runner 身份；返回的 run 状态与结构化事件是进度依据。';
+trainingActions['training.run.stop'].details+=' 停止不要求 ETag。Qwen 缓存阶段没有恢复点，训练阶段在完整更新边界保存；强制中断可能回退到最近完整状态，重启不自动继续。';
+trainingActions['training.run.resume'].details+=' 只允许最新完整恢复包，创建新 run，沿用父 run 冻结数据、参数和保存间隔；累计目标步数必须增加，只可改预算和备注。来源 ID/SHA 不匹配、活动 run 或历史 Anima 来源拒绝；每次成功发布新恢复包后只保留最新包，checkpoint 仍分别保留。';
+
 

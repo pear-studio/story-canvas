@@ -81,6 +81,18 @@ export const mediaActions = {
   'media.download': {summary:'将项目媒体下载为本地审阅文件',parameters:schema({...projectId,relative_path:string('工作台媒体返回的项目相对路径，不猜测') }),details:'下载现有图片到 Saved/Agent/workbench-artifacts 后可用 read_image 查看；不改项目文件。',execute:a=>downloadArtifact(projectPath(a,`media/${a.relative_path.split('/').map(encode).join('/')}`))},
 };
 for(const name of ['page.editor.read','page.editor.save'])mediaActions[name].helpTopics=pageEditHelp;
+mediaActions['candidate.inspect'].helpTopics={signature:{
+  summary:'候选与当前输入的匹配依据及 H3 限制',
+  details:'插画 generation_signature 比较实际正负向、模型和 LoRA 身份、参考图、recipe/workflow，排除 seed 和展示名；不是仅比较 Prompt 字符串。H3 signature 未覆盖全部 video_settings，必须同时核对冻结视频设置及实际输入，并按明确 task_id 保留。资料不全或事实变化不能视为匹配，材料与成品不属于候选集合。',
+}};
+mediaActions['candidate.cleanup.preview'].details+=' 常规更新先 generation.run 并等待成功发布，核验新候选匹配当前输入后显式指定 keep_task_id；失败或输入变化时不先删旧图。先 finished.inspect 检查 record 的候选引用并保留，删除接口不会自动保护成品引用；需要保留部分旧候选时不用整批 apply，改用 candidate.delete 指定可删 ID。正式 reference.save 已复制到 materials 的素材独立于候选。generation.regenerate 和 batch clear_candidates 在提交成功后、新图成功前就删除旧图，不适用于此顺序。匹配细则查 candidate.inspect 的 signature topic。';
+mediaActions['candidate.cleanup.apply'].details+=' 成品引用须在预览阶段核验，本操作不额外保护仍被成品引用的候选。';
+mediaActions['candidate.delete'].details+=' 先 finished.inspect 保留成品 record 仍引用的候选，本接口不会自动检查该引用；已复制为正式材料的参考图独立保存。';
+mediaActions['candidate.scan'].details='按当前编译条件返回 signature、匹配数及不匹配 candidate_ids；不是 Prompt 文本差异或选图建议。输入检查不完整不能据此删除。匹配细则查 candidate.inspect 的 signature topic；H3 另核对冻结视频设置。';
+mediaActions['candidate.clean'].details+=' 删除前检查 finished.inspect 的候选引用；本接口不保护成品依赖。不完整 signature 或 H3 视频参数不能单靠扫描判断。';
+mediaActions['finished.inspect'].details+=' record 中保留源 candidate_id；候选清理前据此判断依赖。成品媒体独立保存，记录引用不会被候选删除接口自动维护。';
+mediaActions['lettering.page.read'].details+=' 颜色由 lettering.settings 管理；旁白固定顶部或底部字幕条，不拖动。其他对白可调位置和尺寸，心声另有字号、方向和随机排列；可写字段以读取结果和 Schema 为准。文字页排版共用预览及输出，溢出阻止输出。';
+mediaActions['finished.export'].details+=' 按当前剧情页序只导出现有成品，不补做缺失或过时内容；验证页可单页输出但不进入剧情系列导出。';
 mediaActions['reference.save'].execute = async a => {
   if ([a.file,a.material_file,a.candidate_id].filter(Boolean).length !== 1) throw new Error('file、material_file、candidate_id 必须且只能提供一项');
   if (a.candidate_id && !a.page_key) throw new Error('候选来源必须提供 page_key');

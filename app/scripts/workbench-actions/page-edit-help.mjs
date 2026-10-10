@@ -1,5 +1,5 @@
 import { promptWeightPresets } from '../../shared/prompt-weight-presets.mjs';
-export const promptWeightGuidance = `Anima Prompt 词条权重优先选网页预设 ${promptWeightPresets.join('、')}；自主调整不随意细分为1.3等值。已有值不自动取整，用户明确指定时按其要求；此规则不用于 LoRA 权重。`;
+export const promptWeightGuidance = `网页词条权重预设为 ${promptWeightPresets.join('、')}；这是快捷选项，不是保存值域，LoRA 权重另按其契约。`;
 // 页面编辑工具自己的按需字段帮助；普通分类目录不展开这些细则。
 export const pageEditHelp = {
   person_groups: {
@@ -19,9 +19,13 @@ export const pageEditHelp = {
   },
   inheritance: {
     summary:'Anima 继承来源、调整键与恢复继承',
-    details:promptWeightGuidance+'先 prompt.sources 查询完整来源和词条 key。页面 inheritance 的来源为 character:<角色ID>:<子设定ID> 或 scene:<场景ID>:<子设定ID>，必须对应最终引用；内部 key 为 identity:token-… 或 variant:token-…，不能从原词或顺序猜。子设定只用 identity_overrides 调整基础，key为identity:token-…。值允许 enabled（布尔）与 weight（0.2–10）。字段缺失才继承；显式设置即使等于上游也保留，上游改字仍关联同一条。null删除一个字段恢复该字段，整个key置null恢复整条；不删除上游词。已有失效覆盖可原样保留或明确清理，不能新增无效key。新增来源先读source_versions，合入原保存参数。',
+    details:promptWeightGuidance+'先 prompt.sources 查询完整来源和词条 key。页面 inheritance 的来源为 character:<角色ID>:<子设定ID> 或 scene:<场景ID>:<子设定ID>，必须对应最终引用；内部 key 为 identity:token-… 或 variant:token-…，不能从原词或顺序猜。子设定只用 identity_overrides 调整基础，key为identity:token-…。值允许 enabled（布尔）与 weight（0.2–10）。字段缺失才继承；显式设置即使等于上游也保留，上游改字仍关联同一条，上游关闭也可在下游开启。null删除一个字段恢复该字段，整个key置null恢复整条；不删除上游词。源词删除后覆盖失效，不按相似文字重绑；已有失效覆盖可原样保留或明确清理，不能新增无效key。新增来源先读source_versions，合入原保存参数。停用的 LoRA 不编译其调用词。',
     example:{target:{kind:'page',id:'page-001',model_id:'anima'},changes:{inheritance:{'scene:study:default':{'identity:token-012345abcdef':{enabled:false},'variant:token-fedcba543210':{weight:1.5}}}}},
     restore:{changes:{inheritance:{'scene:study:default':{'identity:token-012345abcdef':{enabled:null}}}}},
+  },
+  audit: {
+    summary:'Anima 编译、标签校验与保存诊断',
+    details:'活动模型按当前引用、继承调整、本页词及有效 profile 确定性编译，不调用 LLM；共享质量词来自 profile，不复制到页面。Anima 审计词条格式、权重、标签及分类、人数矛盾、重复和正负冲突；Danbooru tag 须命中固定词库，Artist 标签禁止，description 不当标签清单。草稿可带审计错误保存，saved 不代表可生成；看 audit.status 及 errors/warnings/diagnostics，生成重新审计。非活动模型保存不代表完成该模型审计。配置或上下文缺失先处理诊断。继承的 enabled 不等于编译 consumed，最终输入按需 prompt.context；该展开结果只读。',
   },
   qwen: {
     summary:'Qwen 整段文字覆盖及恢复继承',

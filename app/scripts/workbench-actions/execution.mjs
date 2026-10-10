@@ -13,6 +13,8 @@ export const executionActions = {
 executionActions['finished.output'].recover=(error,args)=>error.code==='invalid_candidate_id'
   ? {message:'本次未创建输出任务。先查询本页候选，明确 candidate_id 后提交。',next:{operation:'candidate.list',args:{project_id:args.project_id,page_key:args.page_key}}}
   : {message:'核查成品任务和记录后处理，不盲目重放输出。',next:{operation:'finished.inspect',args:{project_id:args.project_id,page_key:args.page_key}}};
+executionActions['finished.output'].details+=' 输出前保存页面事实；插画生成2倍超分 clean/lettered PNG，文字页直接排版。只改文字时可复用当前无字成品；源候选与无字成品都缺失则不能重制。重新输出替换当前记录及媒体，不维护历史版本；事实或选图变化可能使记录过时，移动顺序不要求重制。';
+executionActions['finished.output.batch'].details+=' 仅采用当前唯一候选，零张或多张跳过，不自动选图；文字页直接制作，单页失败不阻断后续，检查逐项回执。';
 executionActions['generation.run'].recover=(error,args)=>error.code==='text_page_not_renderable'
   ? {message:'文字页无需候选图。用 page.editor.read（content）编辑正文，lettering.page.read/save 调整布局，finished.output 输出成品。',next:{operation:'page.editor.read',args:{project_id:args.project_id,page_key:args.page_key,section:'content'}}}
   : (!error.status || error.status>=500)

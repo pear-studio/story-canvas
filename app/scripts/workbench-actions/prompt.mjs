@@ -1,14 +1,14 @@
 import { compactSourcePool } from './prompt-source-pool.mjs';
 import { requestWorkbench } from '../workbench-client.mjs';
 import { schema, string, object, invalid, pagination } from './contract.mjs';
-import { pageEditHelp, promptWeightGuidance } from './page-edit-help.mjs';
+import { pageEditHelp } from './page-edit-help.mjs';
 
 const target = schema({kind:{...string('目标类型'),enum:['page','character','scene']},id:string('页面、角色或场景 ID'),model_id:{...string('anima 或 qwen；页面省略用活动模型，设定必须提供'),enum:['anima','qwen','h3']},scope:{...string('仅角色／场景必填：基础或单个子设定'),enum:['base','variant']},variant_id:string('scope:variant 必填；其他情况省略')},['kind','id']);
 const sourceVersions = object('读取回执中的来源版本；新引用先用 prompt.sources 查询，再合并进此对象');
 const fields = {project_id:string('项目 ID'),target};
 const saveFields = {target,expected_sha256:string('prompt.read 原样返回的范围版本'),source_versions:sourceVersions,changes:object('窄范围的修改；对象递归合并、数组整项替换、null删除键')};
-const details = promptWeightGuidance+' 页面默认读取活动模型的本页 Prompt，target 不填 scope；角色／场景必须明确 model_id、scope:base 或 scope:variant + variant_id。返回 document 和直接可用的 save.args。document 不带 models/$schema 外壳；Anima base 为 {identity}，Qwen base 为 {prompt_name}，variant 为单个子设定对象。同时返回实际角色引用和继承词；document 仍只含本次可写范围，继承展示不得写回。不展开最终组装全文。';
-const saveRules = promptWeightGuidance+' Anima 页面可用 changes.person_groups:[{character_id,entries}] 替换指定角色的本页 person 词；character_id:null 为未绑定组，组内条目不填 character_id，[]清空该组。不能和 person 同传；其他组原顺序不变，新增词放到该组最后原槽位之后，无原槽位则追加末尾。计划必须基于本次读据正文，不给旧数组换新指纹。 使用原读取回执的 save.args 加 changes。对象递归合并；数组完整替换，[]清空；null删除键以恢复继承。不能写入 models/$schema 外壳或其他范围。Anima 本页词条不带 id；共享词改字／排序保留 id，新增省略 id，由服务端生成。数组替换时保留未修改词。相关上游或本范围变化报409，重读判断，不仅换指纹。单项成功只返回版本、changed_fields和诊断，不回显 document 或继承展开；核验正文按需 prompt.read；批量返回 target、expected_sha256、source_versions，不重复回显正文和操作外壳；诊断与 saved 分开。切换场景、子设定或 standalone→settings 前，用 prompt.sources 读取新来源，再将 source_versions 合入原保存参数；不能替换原 expected_sha256。LoRA新增、删除或替换须经用户同意。';
+const details = '页面默认读取活动模型的本页 Prompt，target 不填 scope；角色／场景必须明确 model_id、scope:base 或 scope:variant + variant_id。返回 document 和直接可用的 save.args。document 不带 models/$schema 外壳；Anima base 为 {identity}，Qwen base 为 {prompt_name}，variant 为单个子设定对象。同时返回实际角色引用和继承词；document 仍只含本次可写范围，继承展示不得写回。不展开最终组装全文。';
+const saveRules = 'Anima 页面可用 changes.person_groups:[{character_id,entries}] 替换指定角色的本页 person 词；character_id:null 为未绑定组，组内条目不填 character_id，[]清空该组。不能和 person 同传；其他组原顺序不变，新增词放到该组最后原槽位之后，无原槽位则追加末尾。计划必须基于本次读据正文，不给旧数组换新指纹。 使用原读取回执的 save.args 加 changes。对象递归合并；数组完整替换，[]清空；null删除键以恢复继承。不能写入 models/$schema 外壳或其他范围。Anima 本页词条不带 id；共享词改字／排序保留 id，新增省略 id，由服务端生成。数组替换时保留未修改词。相关上游或本范围变化报409，重读判断，不仅换指纹。单项成功只返回版本、changed_fields和诊断，不回显 document 或继承展开；核验正文按需 prompt.read；批量返回 target、expected_sha256、source_versions，不重复回显正文和操作外壳；诊断与 saved 分开。切换场景、子设定或 standalone→settings 前，用 prompt.sources 读取新来源，再将 source_versions 合入原保存参数；不能替换原 expected_sha256。';
 const helpTopics = Object.fromEntries(Object.entries(pageEditHelp).filter(([key])=>key!=='dialogue'));
 const post = async (action,args,execution={}) => (await requestWorkbench(`/api/agent/prompt/${action}`,{method:'POST',body:args,signal:execution.signal})).value;
 const sourceErrors = new Set(['prompt_source_conflict','prompt_source_read_required']);

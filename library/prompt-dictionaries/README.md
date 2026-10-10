@@ -26,7 +26,7 @@ overlay 覆盖显示译名，分类和关键词加入搜索；有用的旧译名
 - 原站 `other_names` 已参与搜索，不复制到关键词。正文不作为关键词搜索内容。
 
 overlay 字段类型、关键词限制与分类值域以 `app/server/prompt-dictionary.mjs` 的验证器及常量为准。
-词库分类与页面可写分类不同；模型语义见 [Prompt](../../docs/reference/prompt.md)。
+词库分类与页面可写分类不同；模型字段查 `prompt.read` 的 fragments topic，标签审计查 audit topic。
 不存在的标签、未知分类及类型错误会阻止加载；合并前检查 JSON 重复键，解析后的对象无法发现它们。
 
 ## 维护入口

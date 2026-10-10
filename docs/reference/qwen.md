@@ -1,6 +1,6 @@
 # Qwen 备用生成与训练环境
 
-Qwen 文生图及参考图生成都是备用路线；主线见[Prompt](prompt.md)和[页面](visual-pages.md)。LoRA 训练仍是主线，通用流程见[LoRA 训练](lora-training.md)。本文只维护 Qwen 专用事实。
+本文只维护 Qwen 专有语义与环境；公共生成规则见[Prompt 与生成](../creative/prompt-generation.md)，训练知识见[LoRA 训练](lora-training.md)。
 
 ## 输入与参考图
 
@@ -16,7 +16,7 @@ Qwen 使用自由文本：
 
 传图顺序为角色 → 场景 → 本页附图，合计最多 10 张，超限阻断。无图文生图，有图参考图；画布尺寸仍来自本页配方。
 参考图保存到项目 `materials/`，替换保留 ID；被页面手动引用的设定图不能直接删除。候选提升为素材后独立保存。
-页面文字、选图和附图随草稿保存，设定参考图即时保存；写入见[Agent 接口](agent-interfaces.md)。
+页面文字、选图和附图随草稿保存，设定参考图即时保存；写入参数查 `prompt` 的 qwen topic 和 `reference` 操作 help。
 
 ## 编译与冻结
 
@@ -54,4 +54,4 @@ uv pip check --python <训练Python绝对路径>
 
 Windows Triton 必须匹配锁定 PyTorch，不能只通过 import 或 help 宣称可训练。
 正式执行由 `app/python/qwen-image21-lora-runner.py` 缓存及训练，不运行上游示例自行下载权重。模型及配套文件放[模型目录](setup.md#模型目录规范)，不留训练器默认 `models/`。
-输入与编译入口为 `app/server/models/qwen/prompt-contract.mjs`、`app/server/models/qwen/prompt-compiler.mjs`；公共执行见[生成实现](../dev/render-plan.md)。
+输入与编译入口为 `app/server/models/qwen/prompt-contract.mjs`、`app/server/models/qwen/prompt-compiler.mjs`；公共执行见[架构](../dev/architecture.md)。

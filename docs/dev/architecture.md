@@ -1,59 +1,60 @@
-# 架构
+# 架构与生成实现
 
-本文维护当前组件职责和并发边界。通用规则见 [AGENTS](../../AGENTS.md)。
+本文维护组件、并发和生成资产边界；开发取舍与验证见[开发指南](guide.md)。操作参数查工具 help，项目目录见[项目事实](../reference/project-files.md)。
 
-## 组件
+## 组件与数据流
 
 | 组件 | 职责 |
 |---|---|
-| 外部 Agent | 讨论、语义编辑、调用工具与判断生成结果 |
-| React 工作台 `app/src/` | 项目导航、显式草稿保存、候选与成品查看、全局工具 |
-| Node 服务 `app/server/` | 项目操作、确定性编译、资源查询、任务调度和媒体访问 |
-| 模型适配器 | 模型原生输入、编译与专用编辑器 |
-| ComfyUI | 消费已实例化工作流，执行图片和视频生成 |
-| 训练模块 | 训练事实、计划冻结、子进程运行与训练媒体 |
+| 外部 Agent | 讨论、语义编辑、调用工具、判断成果 |
+| React `app/src/` | 导航、显式草稿保存、媒体和全局工具 |
+| Node `app/server/` | 事实校验与保存、确定性编译、资源、任务和媒体 |
+| 模型适配器 | 原生输入、编译及专用编辑器 |
+| ComfyUI | 消费实例化工作流，生成图片／视频 |
+| 训练模块 | 素材与设置、冻结计划、子进程及训练媒体 |
 
-只有一个本地 Node 服务。前端开发由 Vite 中间件接入，生产提供 `app/dist/`。
-HTTP Adapter 解析请求并调用领域入口；领域模块持有事实校验和保存语义。
-
-## 数据流
+单个 Node 服务持有事实写入；开发挂 Vite 中间件，生产提供 dist。HTTP Adapter 只解析并调用领域入口。
 
 ```text
-项目事实 + 可复用配置
-          ↓ 领域读取、模型编译
-      冻结任务 → 队列 → ComfyUI → 候选 → 显式成品制作
+项目事实 + 可复用配置 → 编译与冻结 → 队列 → ComfyUI → 候选 → 显式成品
 ```
 
-项目事实、可复用资源和可清理派生物的目录及 Git 归属只在[项目文件](../reference/project-files.md)
-和[资源目录](../../library/resources/README.md)维护。
-页面以完整 `PageKey` 定位，剧情、角色、场景共用编辑和候选工作区；页序由 index 派生。
-内容、Prompt 与 render 设置分开保存；模型容器允许保留不同模型输入，适配器只消费当前模型。
-生成冻结机制见[渲染计划](render-plan.md)，模型写法见 [Prompt](../reference/prompt.md)。
+页面由完整 PageKey 定位，归属和顺序由 index 管理；content、各模型 Prompt 和 render 独立保存。适配器只消费活动模型；内容描述不隐式写入 Prompt。
 
-## 项目操作
+## 并发与独立工具
 
-`project-operations.mjs` 统一项目 mutation lock、revision 与移动保护；
-路由明确选择操作语义，不在领域内部另建事实锁。
+`project-operations.mjs` 统一剧情项目 mutation lock、revision 和移动保护，不在领域内部另建事实锁。
 
-| 操作 | 并发条件 |
+| 入口 | 条件 |
 |---|---|
-| `readFacts` | 一致性读取；读取期间变化时有界重读 |
-| `mutateTargetFacts` | 领域入口校验目标及必要依赖指纹，不因无关事实变化拒绝 |
-| `mutateFacts`、`deriveFromFacts` | 校验 expected revision |
-| `mutateDerived` | 使用项目锁，不要求或改变事实 revision；候选提交在此读取最新事实并冻结 |
-| `copyProject`、`renameProject` | 校验源 revision，另有生命周期协调 |
+| `readFacts` | 一致性读取，期间变化有界重读 |
+| `mutateTargetFacts` | 校验目标及必要依赖指纹 |
+| `mutateFacts / deriveFromFacts` | 校验 expected revision |
+| `mutateDerived` | 持锁但不要求或改变事实 revision；提交时冻结最新事实 |
+| `copyProject / renameProject` | 校验源 revision，并协调生命周期 |
 
-revision 是磁盘事实签名，不写入项目 JSON。HTTP 在响应头返回 revision，目标内容指纹由领域回执返回。
-文件通知缓存仅优化浏览器查询，提交仍核对实时事实；媒体、队列和缓存变化不推进事实 revision。
-浏览器只接纳当前项目及写入代次的快照，媒体有独立版本。调用规范见 [Agent 接口](../reference/agent-interfaces.md)。
+revision 是实时磁盘事实签名，不写项目 JSON；媒体和缓存不推进它，通知缓存不替代提交检查。浏览器只接纳当前项目及写入代次的快照，媒体独立刷新。
 
-## 独立工具
+训练通过 TrainingOperations 和 ETag 协调，模块组合 facts、plan、runtime、media，不使用剧情锁／revision。对比工具独立冻结输入和成果，共用生成队列，不写来源页面；成品入口消费明确候选，不增加最终图扩散操作。
 
-- [对比工具](comparison-experiment.md)持有独立冻结输入，共用生成队列，不写项目页面或候选。
-- LoRA 训练项目通过 `TrainingOperations` 和 ETag / If-Match 协调，不使用剧情 revision。
-  `lora-training-module.mjs` 对外组合 `facts`、`plan`、`runtime`、`media` 和启动协调；
-  运行时消费冻结 manifest，续训建立新 run，不接管旧进程。
-  当前支持情况见[训练指南](../reference/lora-training.md)，不在架构文档维护训练路线。
-- 成品制作消费明确选定的候选；图片嵌字与视频导出使用不同输出路径，详见[页面指南](../reference/visual-pages.md)。
+## 生成资产与冻结
 
-当前实现和操作入口分别以领域模块、Schema 与工具帮助为准。开发命令见[开发指南](guide.md)。
+| 资产 | 维护内容 |
+|---|---|
+| `library/render-profiles/` | 模型身份、模型 Prompt 配置、LoRA、operation 和输入 route |
+| `library/render-recipes/` | 采样与画幅 |
+| workflow API 模板及 manifest | 可执行节点、operation、输入、modifier 和节点绑定 |
+| 项目 override | 稀疏稳定 target、基础值和项目值 |
+| 页面 render | 独立模型、profile、画幅，创建后不继承默认变更 |
+
+字段以 Schema 和资产为准。profile 直接组合、不使用 extends；绑定只在 manifest；route 必须显式声明。modifier 只变换已选 workflow，语义 ID 冲突报错。override 不存全量副本，保留基础值判断冲突。
+
+`page-render-resolver.mjs` 读取最新事实，模型与 `render-profile-compiler.mjs` 编译；`render-task-contract.mjs` 冻结配置、来源、文件、Prompt、LoRA、seed、route 和执行单元。入队前实例化 workflow 及输入输出映射，`render-project-runtime.mjs` 只消费 task ID 对应快照，恢复不重读当前页面或配置。
+
+契约错误、输入身份变化或启用资源缺失阻止执行，不静默跳过或换路线；恢复失败进入明确终态。候选由 `render-media.mjs` descriptor 定义身份与映射，并验证成果完整性。
+
+## 模型接入
+
+服务端注册在 `model-adapters.mjs`，原生实现位于 `models/<model>/`；`model-prompts.mjs / prompt-scope.mjs` 管容器及范围保存。前端注册在 `app/src/models/registry.tsx`，编辑器只修改宿主草稿。
+
+新增模型沿现有注册路径，不另建插件加载器；修改 workflow／recipe 同步 Schema、引用、编译和冻结测试。参考图、LoRA 或采样变化须核验真实冻结工作流及输出映射。模型专有知识见[Qwen](../reference/qwen.md)，字段语义查 prompt 操作 topics。

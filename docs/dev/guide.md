@@ -2,6 +2,11 @@
 
 通用规则见 [AGENTS](../../AGENTS.md)。先读[架构](architecture.md)，按改动范围查专项文档。
 
+- 优先个人本地使用、快速迭代与长期可维护；只实现当前需求的最小单一路径，不加假想兼容、同步、防御或扩展层。格式变化直接更新当前契约、模板、受管事实及测试。
+- 没有明确需求，不增加数据库、云端服务、内置 LLM 或第二个本地服务，不要求用户手改 ComfyUI workflow。
+- 全局 `prune-pear` 可用于架构体检；普通 bug、明确实现或局部清理不自动扩大为体检。
+- 迭代运行类型检查及相关测试，收尾或提交前通常完整测试一次；新失败和跨模块风险再追加回归。
+
 ## 开发与验证
 
 Node 版本以 `.node-version` 和 `app/package.json` 为准；依赖安装、环境配置见[环境搭建](../reference/setup.md)。
@@ -32,10 +37,10 @@ npm --prefix C:/Workspace/story-canvas/app test
 
 ## 修改入口
 
-- 项目事实与 Agent 操作：[项目文件](../reference/project-files.md)、[Agent 接口](../reference/agent-interfaces.md)。
-- 页面输入与模型语义：[Prompt](../reference/prompt.md)；备用生成路线见 [Qwen](../reference/qwen.md)。
-- 生成配置、工作流与冻结任务：[渲染计划](render-plan.md)。
-- 全局对比工具：[对比工具](comparison-experiment.md)。
+- 项目事实与 Agent 接入：[项目文件](../reference/project-files.md)、[集成说明](../agent/README.md)。
+- 输入字段：`prompt` 操作 topics 与模型契约；备用路线见 [Qwen](../reference/qwen.md)。
+- 生成配置、模型接入和冻结：[架构](architecture.md)。
+- 对比工具：`help comparison` 与当前领域模块。
 - 训练入口与当前支持情况：[LoRA 训练](../reference/lora-training.md)。
 
 数据契约以 `library/schemas/`、模型原生契约和接口帮助为准。格式变化时同步修改当前创建器、
