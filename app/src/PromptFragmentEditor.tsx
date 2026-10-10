@@ -3,7 +3,7 @@ import { promptWeightPresets } from "../shared/prompt-weight-presets.mjs";
 import { FloatingPanel } from "./FloatingPanel";
 import { InlinePromptInput, type InlinePromptHandle } from "./InlinePromptInput";
 import { useDismissableLayer } from "./use-dismissable-layer";
-import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, useEffect, useId, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { activePromptDictionarySuggestion, canSearchPromptDictionary, inferUserPromptType, mergePromptDictionarySuggestions, shouldOpenPromptDictionarySearch } from "./prompt-fragment-input";
 import { type PromptDictionaryMatch, usePromptDictionaryMatches } from "./prompt-display";
@@ -69,7 +69,7 @@ function hasDictionaryDetails(entry: PromptDictionaryMatch | undefined): entry i
 function PromptDictionaryDetailsDialog({ entry, onClose }: { entry: PromptDictionaryMatch; onClose: () => void }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleId = useId();
-  useEffect(() => {
+  useLayoutEffect(() => {
     const dialog = dialogRef.current;
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     dialog?.showModal();
@@ -695,7 +695,8 @@ function PromptFragmentRow({
 
   const queryHasText = Boolean(queryDraft.trim());
   const queryCanSearch = canSearchPromptDictionary(completion.query);
-  const queryPanelVisible = queryFocused && queryEnabled && !queryComposing && queryHasText;
+  // 查看详情时暂停候选浮层，避免重绘后挂入 modal 并覆盖说明；保留搜索和草稿供关闭后继续补全。
+  const queryPanelVisible = queryFocused && queryEnabled && !queryComposing && queryHasText && !detailEntry;
   const queryResultsVisible = queryPanelVisible && queryCanSearch && searchState === "results";
   const queryStatusId = `${listboxId}-status`;
   const activeSuggestionId = activeSuggestionIndex >= 0 ? `${listboxId}-option-${activeSuggestionIndex}` : undefined;
@@ -793,7 +794,7 @@ function PromptFragmentRow({
           aria-controls={queryResultsVisible ? listboxId : undefined} aria-activedescendant={queryResultsVisible ? activeSuggestionId : undefined}
           aria-describedby={queryPanelVisible && !queryResultsVisible ? queryStatusId : undefined} aria-label={`${categoryLabel}第 ${index + 1} 项 Prompt`}
           className={promptTextMissing && !deferEmptyError ? "is-missing" : ""} aria-keyshortcuts="F1"
-          onDetails={entry => { dictionaryDetailsOpen.current = true; setDetailEntry(entry); }}
+          onDetails={openDictionaryDetails}
           onFocus={() => { if (!toggleOnly) setQueryFocused(true); }} onCaretChange={setQueryCaret}
           onBlur={() => { if (toggleOnly || dictionaryDetailsOpen.current) return; setQueryFocused(false); commitQueryDraft(); closeQuerySearch(); }}
           onCompositionStart={() => { queryComposingRef.current = true; setQueryComposing(true); closeQuerySearch(); }}

@@ -132,6 +132,49 @@ test("标签底色和自动释义常驻，补全只替换句内标记并保留�
   assert.equal(await input.evaluate(e => getComputedStyle(e.parentElement).gridColumnStart), "1");
 });
 
+for (const mobile of [false, true]) for (const keyboard of [false, true]) {
+  test(`候选词详情不被补全浮层遮挡，关闭后保留草稿与选择 ${mobile ? '手机' : '桌面'} ${keyboard ? 'F1' : '点击'}`, async t => {
+    const { page, input, options } = await editor(t);
+    if (mobile) {
+      await page.setViewportSize({ width: 390, height: 600 });
+      await page.locator('#host').evaluate(e => { e.style.cssText = 'width:100%;margin-top:380px'; });
+    }
+    const saved = await page.locator('output').textContent();
+    await input.fill('quiet evening');
+    await options.first().waitFor();
+    await input.press('ArrowDown');
+    const activeId = await input.getAttribute('aria-activedescendant');
+    if (keyboard) await input.press('F1');
+    else await page.getByRole('button', { name: '查看 安静 的词条说明', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: '安静', exact: true });
+    await dialog.waitFor();
+    await page.waitForFunction(() => document.querySelector('.prompt-dictionary-details')?.matches(':modal'));
+    assert.equal(await page.locator('.prompt-fragment-suggestions').count(), 0, '详情打开期间不挂载候选浮层');
+    assert.equal(await input.getAttribute('aria-expanded'), 'false');
+    assert.equal(await input.getAttribute('aria-controls'), null);
+    assert.equal(await page.locator('output').textContent(), saved, '查看详情不会提交或替换草稿');
+    await page.evaluate(() => window.dispatchEvent(new Event('resize')));
+    await dialog.locator('.prompt-dictionary-details-content').evaluate(e => { e.scrollTop = e.scrollHeight; });
+    const visible = await dialog.evaluate(e => {
+      const rect = e.getBoundingClientRect();
+      const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+      return { inside: e.contains(hit), candidate: Boolean(hit?.closest('.prompt-fragment-suggestions')), x: rect.x, y: rect.y, right: rect.right, bottom: rect.bottom };
+    });
+    assert.equal(visible.inside, true);
+    assert.equal(visible.candidate, false);
+    assert.ok(visible.x >= 0 && visible.y >= 0 && visible.right <= page.viewportSize().width && visible.bottom <= page.viewportSize().height);
+    if (keyboard) await page.keyboard.press('Escape');
+    else await dialog.getByRole('button', { name: '关闭词条说明' }).click();
+    await dialog.waitFor({ state: 'hidden' });
+    await options.first().waitFor();
+    assert.equal(await input.evaluate(e => document.activeElement === e), true);
+    assert.equal(await input.evaluate(promptText), 'quiet evening');
+    assert.equal(await input.getAttribute('aria-activedescendant'), activeId);
+    await input.press('Enter');
+    assert.equal(await input.evaluate(promptText), 'quiet', '关闭详情后仍能采用原先选中的候选词');
+  });
+}
+
 test("Prompt 随宽度自动换行，失焦后仍完整显示", async t => {
   const { page, input } = await editor(t);
   await page.locator("#host").evaluate(e => { e.style.width = "180px"; });
