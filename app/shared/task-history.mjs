@@ -1,4 +1,5 @@
 const activeStatuses = new Set(['queued', 'launching', 'running']);
+export const CANDIDATE_HISTORY_LIMIT = 500;
 
 export function taskHistoryMoment(task) {
   if (activeStatuses.has(task.status)) return task.created_at;

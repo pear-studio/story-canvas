@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import sharp from 'sharp';
 import { ApiError } from './http-support.mjs';
 import { readPageIndex, readPageContent } from './pages-store.mjs';
-import { listProjectRenderTaskStates } from './render-task-storage.mjs';
+import { readRenderTaskBusiness } from './render-task-storage.mjs';
 import { readPageMedia } from './page-media.mjs';
 
 // 事实读取边界内冻结阅读顺序；后续读取媒体和绘图不持有项目锁。
@@ -78,20 +78,11 @@ export async function renderCandidateSheet(cells) {
 }
 
 export async function exportCandidateSheet(projectRoot, projectDirectory, snapshot) {
-  // 严格读取两遍任务身份，遇到归档/新增变化再试一次，不把坏状态当成没有任务。
-  let states;
-  for (let attempt=0;attempt<2;attempt++) {
-    try {
-      const first=await listProjectRenderTaskStates(projectDirectory,{scope:'all',strict:true});
-      const second=await listProjectRenderTaskStates(projectDirectory,{scope:'all',strict:true});
-      const ids=rows=>JSON.stringify([...new Set(rows.map(s=>s.id))].sort());
-      if(ids(first)!==ids(second))throw new Error('生成任务集合读取期间发生变化');
-      states=second;break;
-    } catch(error) { if(attempt===1)throw new ApiError(409,'sheet_tasks_unstable',[error.message]); }
-  }
+  // 在 catalog 锁内取得业务快照；最新失败/零图任务不依赖已清理档案。
+  const latest = (await readRenderTaskBusiness(projectDirectory)).pages;
   const cells=[];
   for(const [index,page] of snapshot.pages.entries()) {
-    const task=latestPageTask(states,page.page_key.page_id);
+    const task=latest[page.page_key.page_id];
     const media=page.page_kind==='text'||!task ? {candidates:[]} : (await readPageMedia(projectRoot,snapshot.project_id,{page_key:page.page_key})).media;
     cells.push(...sheetPageCells(page,index+1,task,media.candidates));
   }

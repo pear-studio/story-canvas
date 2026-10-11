@@ -152,6 +152,7 @@ export function createHttpRequestHandler({
         comfyEndpointSelector,
         controlComfyRuntime,
         generationScheduler,
+        logPerformance,
       })) return;
       if (await handleComparisonRequest({
         ...shared,

@@ -70,6 +70,7 @@ export async function handleRuntimeRequest({
   controlComfyRuntime,
   mutateDerivedState,
   generationScheduler = null,
+  logPerformance = () => {},
 }) {
   if (request.method === "GET" && decodedPath === "/api/health") {
     const dictionary = await dictionaryStatus(projectRoot, config);
@@ -120,7 +121,10 @@ export async function handleRuntimeRequest({
     return true;
   }
   if (request.method === "GET" && decodedPath === "/api/tasks/history") {
-    sendJson(response, 200, await listWorkspaceRenderHistory(projectRoot, { before: requestUrl.searchParams.get("before"), projectId: requestUrl.searchParams.get('project_id') }));
+    sendJson(response, 200, await listWorkspaceRenderHistory(projectRoot, {
+      before: requestUrl.searchParams.get("before"), projectId: requestUrl.searchParams.get('project_id'),
+      onTiming: timing => { void logPerformance({ kind: 'task-history', ...timing }); },
+    }));
     return true;
   }
   if (request.method === "GET" && decodedPath === "/api/tasks") {

@@ -1,5 +1,5 @@
 import {readPageMedia} from './page-media.mjs';
-import {readRenderTaskState} from './render-task-storage.mjs';
+import {readRenderTaskBusiness} from './render-task-storage.mjs';
 import {deletePageCandidates} from './candidate-delete.mjs';
 import {hashCanonicalJson} from './workflow-definition.mjs';
 import {ApiError} from './http-support.mjs';
@@ -12,7 +12,7 @@ export function groupCandidateTasks(candidates,states,pageKey) {
     if(!groups.has(candidate.task_id)) {
       const state=states.get(candidate.task_id);
       groups.set(candidate.task_id,{task_id:candidate.task_id,status:state?.status??'unknown',created_at:state?.created_at??candidate.generated_at,
-        expected_count:state?.items?.filter(i=>i.page_key.page_id===pageKey.page_id).length??null,candidates:[]});
+        expected_count:state?.expected_counts?.[pageKey.page_id]??state?.items?.filter(i=>i.page_key.page_id===pageKey.page_id).length??null,candidates:[]});
     }
     groups.get(candidate.task_id).candidates.push(candidate);
   }
@@ -22,7 +22,7 @@ export function groupCandidateTasks(candidates,states,pageKey) {
 export async function readCandidateBatches({projectRoot,projectDirectory,projectId},pageKey) {
   decodePageKey(pageKey);
   const {media}=await readPageMedia(projectRoot,projectId,{page_key:pageKey});
-  const states=new Map(await Promise.all([...new Set(media.candidates.map(c=>c.task_id))].map(async id=>[id,await readRenderTaskState(projectDirectory,id)])));
+  const states=new Map(Object.entries((await readRenderTaskBusiness(projectDirectory)).batches));
   return {page_key:pageKey,fingerprint:fingerprint(media.candidates),groups:groupCandidateTasks(media.candidates,states,pageKey)};
 }
 function selections(value) {

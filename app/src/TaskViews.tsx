@@ -7,7 +7,7 @@ import { mergeTaskHistory, type GlobalTask, type RuntimePageKey } from "./runtim
 import { formatTaskDuration, formatTaskMoment, taskPageLabel } from "./task-summary";
 import ZoomableImageLightbox from "./ImageLightbox";
 import { mediaVariantUrl } from "./media-variant";
-import { taskHistoryMoment } from "../shared/task-history.mjs";
+import { taskHistoryMoment, CANDIDATE_HISTORY_LIMIT } from "../shared/task-history.mjs";
 import "./tasks.css";
 
 export type TaskImage = { id: string; url: string; media_kind?: "image" | "video"; video_url?: string };
@@ -28,10 +28,25 @@ function TaskResultStrip({ task, enabled, onPreview }: { task: GlobalTask; enabl
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
+  const container = useRef<HTMLDivElement>(null);
+  const [visibleIdentity, setVisibleIdentity] = useState("");
   const identity = `${task.project_id}/${task.purpose}/${task.id}`;
   useEffect(() => { setImages([]); }, [identity]);
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled) { setVisibleIdentity(""); return; }
+    const element = container.current;
+    if (!element) return;
+    const observer = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) {
+        setVisibleIdentity(identity);
+        observer.disconnect();
+      }
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [enabled, identity]);
+  useEffect(() => {
+    if (!enabled || visibleIdentity !== identity) { setLoading(false); return; }
     const controller = new AbortController();
     setLoading(true); setError("");
     void (async () => {
@@ -42,13 +57,13 @@ function TaskResultStrip({ task, enabled, onPreview }: { task: GlobalTask; enabl
       finally { if (!controller.signal.aborted) setLoading(false); }
     })();
     return () => controller.abort();
-  }, [enabled, task.project_id, task.id, task.purpose, task.status, task.item_counts.available, task.item_counts.discarded, retry]);
-  return <div className="task-results">
+  }, [enabled, visibleIdentity, identity, task.project_id, task.id, task.purpose, task.status, task.item_counts.available, task.item_counts.discarded, retry]);
+  return <div className="task-results" ref={container}>
     {images.length > 0 && <div className="task-results__strip">{images.map((image, index) => <button type="button" key={image.id} className="task-results__image" aria-label={`全屏查看第 ${index + 1} 张生成结果`} onClick={() => onPreview({ images, index, title: task.pages[0] ? taskPageLabel(task.pages[0]) : task.project_title })}>
       <img src={mediaVariantUrl(image.video_url ?? image.url, 320)} alt={`第 ${index + 1} 张生成结果`} loading="lazy" draggable={false} onError={() => setImages(current => current.filter(item => item.id !== image.id))} />
       {image.media_kind === "video" && <span className="task-results__video">▶ 视频</span>}
     </button>)}</div>}
-    <div className="task-results__status" aria-live="polite">{loading ? <span className="task-spinner" role="status" aria-label="加载结果" /> : error ? <button type="button" className="button" title={error} onClick={() => setRetry(value => value + 1)}>图片读取失败 · 重试</button> : !images.length ? (task.item_counts.available > 0 || task.item_counts.discarded > 0 ? "图片已删除或不可用" : "尚未生成图片") : null}</div>
+    <div className="task-results__status" aria-live="polite">{!enabled || visibleIdentity !== identity ? "等待加载结果" : loading ? <span className="task-spinner" role="status" aria-label="加载结果" /> : error ? <button type="button" className="button" title={error} onClick={() => setRetry(value => value + 1)}>图片读取失败 · 重试</button> : !images.length ? (task.item_counts.available > 0 || task.item_counts.discarded > 0 ? "图片已删除或不可用" : "尚未生成图片") : null}</div>
   </div>;
 }
 
@@ -114,6 +129,7 @@ export function TaskHistory({ enabled = true, refreshKey = "", onOpen, onPreview
     <div className="task-history-list">{history.map(task => <TaskCard key={`${task.project_id}:${task.purpose}:${task.id}`} task={task} onOpen={onOpen} onPreview={onPreview} previewsEnabled={enabled} />)}</div>
     {error && <p className="task-error">{error}<button type="button" className="button" onClick={() => void load(next ?? undefined)}>重试</button></p>}
     <div className="task-history-footer">{loading ? "正在读取" : next ? <button type="button" className="button" onClick={() => void load(next)}>加载更多</button> : !error ? history.length ? "已显示全部历史" : "暂无任务记录" : null}</div>
+    <p className="task-muted">每个项目保留最近 {CANDIDATE_HISTORY_LIMIT} 条候选任务记录，候选图片和生成详情仍保留。</p>
     </div>
   </>;
 }

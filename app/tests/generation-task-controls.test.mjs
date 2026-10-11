@@ -32,7 +32,7 @@ test("候选任务控制只改变轻量状态并与统一队列同步", async (c
     status: "queued",
     created_at: "2026-08-28T01:02:03.000Z",
     snapshot: {},
-    items: [{ id: "item-1", page_key: { owner_kind: "story", page_id: "page-1" }, seed: 1, status: "queued" }],
+    items: [{ id: "item-1", page_key: { page_id: "page-001" }, seed: 1, status: "queued" }],
   };
   await createRenderTask(project, task, { project_title: "Demo", pages: [] });
   await enqueueGenerationTask(root, generationReference("demo", task.id, "candidate", task.created_at));
@@ -68,8 +68,8 @@ test("重启保留尚未生效的取消，冻结任务预检失败也不会留�
   const id = "render-20260828T010203Z-22222222";
   const task = { version: 2, id, project: "demo", purpose: "candidate", render_profile: "anima-base-v1",
     status: "running", created_at: "2026-08-28T01:02:03.000Z", snapshot: {},
-    items: [{ id: "done", page_key: { owner_kind: "story", page_id: "page-1" }, seed: 1, status: "available" },
-      { id: "remaining", page_key: { owner_kind: "story", page_id: "page-1" }, seed: 2, status: "running" }] };
+    items: [{ id: "done", page_key: { page_id: "page-001" }, seed: 1, status: "available" },
+      { id: "remaining", page_key: { page_id: "page-001" }, seed: 2, status: "running" }] };
   await createRenderTask(project, task, { project_title: "Demo", pages: [] });
   const reference = generationReference("demo", id, "candidate", task.created_at);
   await enqueueGenerationTask(root, reference);

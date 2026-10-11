@@ -3,7 +3,8 @@ import { registeredProjectPath, listRegisteredProjects, registerProject, unregis
 import path from "node:path";
 import { readdir, readFile } from "node:fs/promises";
 import { requireProjectDirectoryName } from "./project-contracts.mjs";
-import { readRenderTaskState, updateRenderTask, listProjectRenderTaskStates } from "./render-task-storage.mjs";
+import { readRenderTaskState, updateRenderTask, listProjectRenderTaskStates, maintainRenderTaskHistory } from "./render-task-storage.mjs";
+import { withCandidateMutationLock } from './candidate-mutation-lock.mjs';
 import { renderTaskIdPattern } from "./render-task-id.mjs";
 import { readGenerationCandidateRecords } from "./candidate-storage.mjs";
 import { failedRenderTaskSnapshot } from "./render-task-state.mjs";
@@ -38,6 +39,20 @@ const active = new Set(["launching", "queued", "running"]);
 const terminal = new Set(["completed", "failed", "incomplete", "cancelled"]);
 const key = ref => `${ref.project_id}\0${ref.purpose}\0${ref.task_id}`;
 
+async function maintainProjectHistory(repositoryRoot, projectId) {
+  try {
+    const directory = registeredProjectPath(repositoryRoot, projectId);
+    const result = await withCandidateMutationLock(repositoryRoot, projectId, () => maintainRenderTaskHistory(directory, {
+      isIdle: async () => {
+        const queue = await readGenerationQueue(repositoryRoot);
+        return !queue.draining && !queue.items.some(item => item.project_id === projectId && item.purpose === 'candidate')
+          && !(queue.active?.project_id === projectId && queue.active.purpose === 'candidate');
+      },
+    }));
+    if (result.blocked.length) console.warn(`任务历史维护保留 ${result.blocked.length} 条无法清理的档案：${projectId}`, result.blocked);
+  } catch (error) { console.warn(`任务历史维护未完成：${projectId}：${error.message}`); }
+}
+
 async function failTask(projectRoot, taskId, purpose, error) {
   if (purpose === "candidate") return markRenderTaskProcessFailed(projectRoot, taskId, generationFailureMessage(error));
   return failComparisonExperiment(projectRoot, taskId, error);
@@ -60,6 +75,7 @@ export async function executeGenerationTask({ projectRoot, taskId, purpose, gene
         if (!failure) throw cleanupError;
         failure.cleanupErrors = [...(failure.cleanupErrors ?? []), cleanupError];
       }
+      if (purpose === 'candidate') await maintainProjectHistory(generationQueue.repositoryRoot, generationQueue.reference.project_id);
     }
   }
 }
@@ -98,14 +114,16 @@ export async function controlGenerationTask(repositoryRoot, projectId, taskId, a
       if (!active.has(state.status)) return state;
       state.status = "cancelled";
       state.failed_at = null;
-      state.completed_at = null;
+      state.completed_at = new Date().toISOString();
       for (const item of state.items) if (["queued", "running"].includes(item.status)) item.status = "cancelled";
       return state;
     });
     else await cancelComparisonExperiment(projectRoot, taskId);
     await completeGenerationTask(repositoryRoot, reference);
   }
-  return { kind, reference, status: candidate ? await readRenderTaskState(projectRoot, taskId) : await readComparisonExperimentStorage(projectRoot, taskId) };
+  const response = { kind, reference, status: candidate ? await readRenderTaskState(projectRoot, taskId) : await readComparisonExperimentStorage(projectRoot, taskId) };
+  if (candidate) await maintainProjectHistory(repositoryRoot, projectId);
+  return response;
 }
 
 /** 只在启动时重建队列投影；轮询和控制操作都不承担恢复工作。 */
@@ -160,4 +178,5 @@ export async function recoverGenerationTasks(repositoryRoot, { apiUrl, drainOpti
       finally { await completeGenerationTask(repositoryRoot, item); }
     }
   }
+  for (const project of entries) await maintainProjectHistory(repositoryRoot, project.id);
 }

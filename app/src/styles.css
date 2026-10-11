@@ -1028,9 +1028,13 @@ html:has(.story-overview) { scrollbar-gutter: stable; }
 .candidate-item.is-preview::after { content: ""; position: absolute; z-index: 3; inset: 3px; pointer-events: none; border: 1px dashed rgba(21,35,41,.78); border-radius: 5px; }
 .candidate-item.is-adopted { border-color: var(--green); box-shadow: 0 0 0 2px rgba(45,106,85,.18); }
 .candidate-item.is-selected { border-color: #4b86bd; box-shadow: 0 0 0 2px #5b9bd5; }
-.candidate-select { width: 100%; min-height: 120px; position: relative; padding: 0; display: block; overflow: hidden; border: 0; background: #e8ece8; cursor: pointer; }
+.candidate-select { width: 100%; aspect-ratio: var(--candidate-aspect, 2 / 3); position: relative; padding: 0; display: block; overflow: hidden; border: 0; background: #e8ece8; cursor: pointer; }
 .candidate-select:disabled { cursor: wait; }
-.candidate-grid img { width: 100%; height: auto; min-height: 120px; display: block; object-fit: contain; border-radius: 7px 7px 0 0; }
+.candidate-thumbnail { position: absolute; inset: 0; }
+.candidate-thumbnail img { width: 100%; height: 100%; display: block; object-fit: contain; visibility: hidden; }
+.candidate-thumbnail[data-state="loaded"] img { visibility: visible; }
+.candidate-thumbnail-placeholder { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: var(--text-meta); }
+.candidate-thumbnail-placeholder i { width: 38%; height: 28%; border-radius: 6px; background: linear-gradient(135deg, #dce3dc, #edf1ed); }
 .candidate-variation-label { position: absolute; z-index: 2; top: 5px; right: 28px; left: 5px; padding: 2px 5px; overflow: hidden; color: #4f3b75; border: 1px solid rgba(111,82,158,.35); border-radius: 999px; background: rgba(248,244,255,.92); text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-meta); font-weight: 700; }
 .candidate-selection-box { position: absolute; z-index: 8; pointer-events: none; border: 1px solid rgba(54,117,179,.78); border-radius: 5px; background: rgba(54,117,179,.14); }
 .candidate-history-modal .modal__body { min-height: 0; padding: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }
@@ -1042,8 +1046,6 @@ html:has(.story-overview) { scrollbar-gutter: stable; }
 .candidate-history-toolbar .button--danger:hover:not(:disabled) { background: #f3d8d4; }
 .candidate-grid--history { max-height: none; padding: 16px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; scroll-snap-type: none; }
 .candidate-grid--history .candidate-item { scroll-snap-align: none; }
-.candidate-grid--history .candidate-select { min-height: 0; }
-.candidate-grid--history img { min-height: 0; }
 .candidate-grid-empty { grid-column: 1 / -1; min-height: 280px; display: grid; place-content: center; justify-items: center; gap: 7px; color: var(--muted); }
 .candidate-grid-empty b { color: var(--ink); font-size: var(--text-body); }
 .candidate-grid-empty span { font-size: var(--text-label); }
@@ -2390,7 +2392,7 @@ label.button > input[type="file"] { width: 1px; height: 1px; position: absolute;
   .mobile-generate-bar .icon-button:disabled { opacity: .45; }
   .mobile-generate-bar .issue-indicator { width: 44px; height: 44px; flex: none; }
   /* 紧凑层完整工作台不常驻大预览：候选改为横向缩略条，点按打开大图；
-     缩略条按项目画布比例（--canvas-aspect）与固定高度预留尺寸，无候选或加载中也不收起；
+     缩略条按当前画布比例（--candidate-aspect）与固定高度预留尺寸，无候选或加载中也不收起；
      加载状态由候选栏刷新按钮的转动图标表达（aria-busy），不再插入文字横幅。 */
   .is-full-layout .current-workbench-page { --compact-thumb-h: clamp(264px, 48vw, 352px); }
   .is-full-layout .current-workbench-page .page-images { display: flex; flex-direction: column; gap: 8px; }
@@ -2398,14 +2400,13 @@ label.button > input[type="file"] { width: 1px; height: 1px; position: absolute;
   .is-full-layout .current-workbench-page .candidate-media-state:not(.candidate-media-state--error) { display: none; }
   .is-full-layout .current-workbench-page .candidate-rail { contain: none; display: block; }
   .is-full-layout .current-workbench-page .candidate-grid { display: flex; flex-flow: row nowrap; overflow-x: auto; overflow-y: hidden; max-height: none; min-height: calc(var(--compact-thumb-h) + 12px); scroll-snap-type: x proximity; }
-  .is-full-layout .current-workbench-page .candidate-select { width: auto; height: var(--compact-thumb-h); min-height: 0; aspect-ratio: var(--canvas-aspect, 2 / 3); }
+  .is-full-layout .current-workbench-page .candidate-select { width: auto; height: var(--compact-thumb-h); aspect-ratio: var(--candidate-aspect, 2 / 3); }
   /* 横条里的 "Prompt 变化" 分组分隔只留一条竖线，文字收进 title 提示。 */
   .is-full-layout .current-workbench-page .candidate-entry { flex: none; display: flex; align-items: stretch; gap: 6px; }
   .is-full-layout .current-workbench-page .candidate-separator { width: 8px; height: auto; flex: none; flex-direction: column; }
   .is-full-layout .current-workbench-page .candidate-separator span { display: none; }
   .is-full-layout .current-workbench-page .candidate-separator::before { width: 1px; margin: 0 auto; }
   .is-full-layout .current-workbench-page .candidate-separator::after { content: none; }
-  .is-full-layout .current-workbench-page .candidate-grid img { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; object-fit: contain; }
 }
 
 .scene-setting-chip > select { left: 0; }

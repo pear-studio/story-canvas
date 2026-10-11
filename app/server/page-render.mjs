@@ -213,7 +213,7 @@ export async function runCompiledPageRenderTask(compiled, options = {}, { runTas
     compiled.task.created_at,
   ));
   const projectDirectory = compiled.project_directory;
-  await runTask({
+  const completed = await runTask({
     projectRoot: projectDirectory,
     repositoryRoot,
     taskId: compiled.task.id,
@@ -223,7 +223,7 @@ export async function runCompiledPageRenderTask(compiled, options = {}, { runTas
       reference: generationReference(compiled.task.project, compiled.task.id, "candidate", compiled.task.created_at),
     },
   });
-  const persisted = await readRenderTask(compiled.project_directory, compiled.task.id);
+  const persisted = completed?.task?.id === compiled.task.id ? completed : await readRenderTask(compiled.project_directory, compiled.task.id);
   if (!persisted) throw new Error(`渲染任务在执行后消失：${compiled.task.id}`);
   return persisted;
 }

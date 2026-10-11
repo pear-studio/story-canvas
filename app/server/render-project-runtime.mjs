@@ -564,7 +564,7 @@ async function runRender(options, assignedTaskId) {
             await commit((current) => {
               current.status = "cancelled";
               for (const item of current.items) if (["queued", "running"].includes(item.status)) item.status = "cancelled";
-              current.completed_at = null;
+              current.completed_at = new Date().toISOString();
             });
             return;
           }
@@ -593,5 +593,9 @@ export async function runPersistedRenderTask({ projectRoot, repositoryRoot = nul
     throw new Error("执行器只接受有效的已持久化渲染任务 ID");
   }
   return executeGenerationTask({ projectRoot, taskId, purpose: "candidate", generationQueue },
-    () => runRender({ projectRoot, repositoryRoot, apiUrl, generationQueue }, taskId));
+    async () => {
+      await runRender({ projectRoot, repositoryRoot, apiUrl, generationQueue }, taskId);
+      // 收尾维护可能裁掉早创建的取消任务，调用方消费维护前冻结的最终快照。
+      return readRenderTask(projectRoot, taskId);
+    });
 }

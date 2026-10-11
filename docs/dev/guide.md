@@ -28,6 +28,7 @@ npm --prefix C:/Workspace/story-canvas/app test
 | 服务端领域契约 | `app/tests/` 对应测试；用绝对路径调用 `node --test` |
 | Prompt、继承、页面编辑 | `test:prompt-ui`、`test:anima-ui` |
 | 导航、浮层、选择控件 | `test:navigation-ui`、`test:floating-ui`、`test:selection-ui` |
+| 任务记录与结果卡片 | `test:tasks-ui`、任务存储与历史对应服务测试 |
 | 对比、训练、成品 | `test:comparison-ui`、`test:lora-ui`、`test:finished-ui` |
 | 项目格式 | `validate:project -- --project <登记的项目绝对路径>` |
 
@@ -41,6 +42,7 @@ npm --prefix C:/Workspace/story-canvas/app test
 - 输入字段：`prompt` 操作 topics 与模型契约；备用路线见 [Qwen](../reference/qwen.md)。
 - 生成配置、模型接入和冻结：[架构](architecture.md)。
 - 对比工具：`help comparison` 与当前领域模块。
+- 任务历史索引、业务摘要与清理：[任务历史](task-history.md)。
 - 训练入口与当前支持情况：[LoRA 训练](../reference/lora-training.md)。
 
 数据契约以 `library/schemas/`、模型原生契约和接口帮助为准。格式变化时同步修改当前创建器、

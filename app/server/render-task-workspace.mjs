@@ -17,6 +17,8 @@ import {
   readRenderTaskState,
   readRenderTask,
   renderTaskProgressFile,
+  readRenderHistoryReferences,
+  readRenderTaskStatesById,
 } from "./render-task-storage.mjs";
 
 const activeStatuses = new Set(["launching", "queued", "running"]);
@@ -275,16 +277,20 @@ export async function listWorkspaceRenderTasks(projectRoot, {
 }
 
 // 历史按结束时间翻页；只读取轻量 state，不加载冻结 manifest、候选或提交详情。
-export async function listWorkspaceRenderHistory(projectRoot, { before = null, limit = 30, projectId: filterProjectId = null } = {}) {
+export async function listWorkspaceRenderHistory(projectRoot, { before = null, limit = 30, projectId: filterProjectId = null, onTiming = () => {}, attempt = 0 } = {}) {
+  const started = performance.now();
+  const timing = { references_ms: 0, other_sources_ms: 0, page_states_ms: 0, state_reads: 0 };
   const entries = listRegisteredProjects(projectRoot, "story").filter(entry => entry.available && (!filterProjectId || entry.id === filterProjectId));
   const references = [];
   const summaries = new Map();
   for (const entry of entries) {
-    for (const state of await listProjectRenderTaskStates(entry.path, { scope:'history' })) {
-      if (!terminalStatuses.has(state.status)) continue;
-      const cursor = taskHistoryKey({...state,project_id:entry.id});
-      if (!before || cursor < before) references.push({ projectId:entry.id,taskId:state.id,cursor,state });
+    let stage = performance.now();
+    for (const row of await readRenderHistoryReferences(entry.path)) {
+      const cursor = `${row.moment}/candidate/${row.id}/${entry.id}`;
+      if (!before || cursor < before) references.push({ projectId:entry.id,taskId:row.id,cursor });
     }
+    timing.references_ms += performance.now() - stage;
+    stage = performance.now();
     const projectFacts = await readJsonOptional(path.join(entry.path, "project.json"));
     const projectTitle = typeof projectFacts?.title === "string" && projectFacts.title.trim() ? projectFacts.title : entry.id;
     for (const job of await listFinishedJobs(entry.path)) {
@@ -294,7 +300,9 @@ export async function listWorkspaceRenderHistory(projectRoot, { before = null, l
       summaries.set(`${entry.id}\0${job.id}`, summary);
       if (!before || cursor < before) references.push({ projectId: entry.id, taskId: job.id, cursor, kind: "finished" });
     }
+    timing.other_sources_ms += performance.now() - stage;
   }
+  const comparisonStarted = performance.now();
   for (const record of filterProjectId ? [] : await listComparisonExperimentViews(projectRoot)) {
     if (!terminalStatuses.has(record.status.status) && record.status.status !== "incomplete") continue;
     const summary=publicComparisonTask(null, record);
@@ -302,17 +310,35 @@ export async function listWorkspaceRenderHistory(projectRoot, { before = null, l
     summaries.set(`null\0${record.id}`, summary);
     if (!before || cursor < before) references.push({ projectId: null, taskId: record.id, cursor, kind: "comparison" });
   }
+  timing.other_sources_ms += performance.now() - comparisonStarted;
   references.sort((left, right) => left.cursor < right.cursor ? 1 : left.cursor > right.cursor ? -1 : 0);
   const selected = references.slice(0, limit);
   const history = [];
-  for (const { projectId, taskId, kind, state } of selected) {
+  const pageStarted = performance.now();
+  const groups = new Map();
+  for (const row of selected.filter(row => !row.kind)) {
+    if (!groups.has(row.projectId)) groups.set(row.projectId, []);
+    groups.get(row.projectId).push(row.taskId);
+  }
+  const statesByProject = new Map(await Promise.all([...groups].map(async ([id, ids]) => [id, await readRenderTaskStatesById(registeredProjectPath(projectRoot, id), ids)])));
+  let stale = false;
+  for (const { projectId, taskId, kind, cursor } of selected) {
     if (kind === "comparison" || kind === "finished") {
       const summary = summaries.get(`${projectId}\0${taskId}`);
       if (summary) history.push(summary);
       continue;
     }
     const projectDirectory = registeredProjectPath(projectRoot, projectId);
-    if (state && terminalStatuses.has(state.status)) history.push(await publicRenderTaskState(projectDirectory, projectId, state));
+    const state = statesByProject.get(projectId).get(taskId);
+    timing.state_reads++;
+    if (state && terminalStatuses.has(state.status) && taskHistoryKey({ ...state, project_id: projectId }) === cursor) history.push(await publicRenderTaskState(projectDirectory, projectId, state));
+    else stale = true;
+  }
+  timing.page_states_ms = performance.now() - pageStarted;
+  onTiming({ ...timing, total_ms: performance.now() - started });
+  if (stale) {
+    if (attempt) throw Object.assign(new Error('任务历史读取期间发生变化，请刷新重试'), { status: 409, code: 'task_history_changed' });
+    return listWorkspaceRenderHistory(projectRoot, { before, limit, projectId: filterProjectId, onTiming, attempt: attempt + 1 });
   }
   return { history, next_cursor: references.length > selected.length ? selected.at(-1).cursor : null };
 }

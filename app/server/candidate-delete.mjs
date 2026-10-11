@@ -8,7 +8,7 @@ import { withCandidateMutationLock } from "./candidate-mutation-lock.mjs";
 import { encodePageKey } from "./page-key.mjs";
 import { resolveProjectLocation } from "./project-operations.mjs";
 import { PageRenderError, compilePageRenderInspectionContext, resolveExactPageIdentity, resolvePageIdentity } from "./page-render-resolver.mjs";
-import { updateRenderTask } from "./render-task-storage.mjs";
+import { deleteRetainedCandidate } from "./render-task-storage.mjs";
 import { factStorage as storage } from "./story-facts.mjs";
 import {replaceFileWithRetry} from './file-replace.mjs';
 
@@ -65,18 +65,12 @@ export async function deletePageCandidate(projectRoot, projectId, pageId, absolu
         if (!current || current.status !== "available") fail("candidate_delete_conflict", [record.candidate_id], 409);
         const staged = path.join(project.projectDirectory, "Saved", "staging", "deleted-" + randomUUID());
         await mkdir(path.dirname(staged), { recursive: true });
-        // 先持久化删除状态，再移走目录；标记失败时不删除，防止执行器重新发布。
-        let previousItem;
-        await updateRenderTask(project.projectDirectory, current.task_id, (task) => {
-          const item = task.items.find(entry => entry.candidate_id === current.candidate_id);
-          if (item) { previousItem = structuredClone(item); item.status = 'discarded'; item.discarded_at = new Date().toISOString(); }
-        }).catch(error => { if (error.code !== 'ENOENT') throw error; });
-        try{await replaceFileWithRetry(path.dirname(requested),staged);}
+        // 持久删除意图协调源档案与业务摘要；catalog 锁内移动，失败时两者都不变。
+        try{
+          const move = () => replaceFileWithRetry(path.dirname(requested),staged);
+          await deleteRetainedCandidate(project.projectDirectory, current.task_id, current.page_key, current.candidate_id, move);
+        }
         catch(error){
-          if (previousItem) await updateRenderTask(project.projectDirectory, current.task_id, task => {
-            const item = task.items.find(entry => entry.candidate_id === current.candidate_id);
-            if (item) { item.status = previousItem.status; if (previousItem.discarded_at) item.discarded_at = previousItem.discarded_at; else delete item.discarded_at; }
-          });
           if(['EPERM','EACCES','EBUSY'].includes(error.code))fail('candidate_file_busy',[
           {candidate_id:record.candidate_id,filesystem_code:error.code,phase:'stage_delete'},
           '移动候选目录失败，已完成短时重试；可能是文件占用或权限问题。停止空等，可继续其他编辑或生成。',
