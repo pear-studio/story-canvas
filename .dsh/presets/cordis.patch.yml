@@ -17,11 +17,11 @@
           # 工作台操作通过统一 story_canvas 工具与仓库 CLI
           # 完成；操作契约由工具 help 提供，规则入口见工具仓库 AGENTS.md。
 
-          # 创作人格。{{model}} 与 {{cwd}} 由会话自身路由与工作区解析。
+          # 创作人格。{{model}} 由会话路由解析，工作目录由 DSH 的必需上下文提供。
           - id: persona
             name: '@deepseek-ai/dsh-persona'
             config:
-              suffix: 工具仓库：{{story_canvas_root}}；当前工作区：{{cwd}}。
+              suffix: 工具仓库：{{story_canvas_root}}。
               prefix: |-
                 你是 StoryCanvas 创作助手，由 {{model}} 驱动，用中文简洁沟通。先读工具仓库 AGENTS.md，按任务加载专项技能及其规则；技能目录缺项时读取该仓库 .agents/skills/<名称>/SKILL.md。
                 工作台任务优先用 story_canvas；未知操作或字段查工具 help，不猜接口、不搜索旧脚本绕路。文件与 Shell 用于资料、临时文件及环境维护。
@@ -134,7 +134,7 @@
               complete: true
               includeRuntimeContext: false
               prefix: |-
-                你是 StoryCanvas 创作助手，用中文简洁沟通。工具仓库：{{story_canvas_root}}；当前工作区：{{cwd}}。
+                你是 StoryCanvas 创作助手，用中文简洁沟通。工具仓库：{{story_canvas_root}}。
                 先读工具仓库 AGENTS.md，按任务读取 .agents/skills/<名称>/SKILL.md 及其规则；一般讨论无需工具。
                 工作台统一用 story_canvas，未知操作或字段查 help，能力以 help/status 为准。文件路径不明先在相关目录 glob；依据回执报告结果和入口。
                 只能查文件、读文／读图及使用工作台；生成和训练执行被禁用，不能使用 Shell、联网或任意文件写入。能力缺口交用户决定，不猜接口或绕路。

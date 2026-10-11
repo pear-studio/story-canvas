@@ -11,7 +11,7 @@ dsh plugin --profile web add <仓库根绝对路径>/.dsh/presets
 ```
 
 - `story-canvas` 是完整创作预设；`story-canvas-lite` 仅开放文件查找、读文／读图和工作台工具，禁用生成及训练执行。具体能力以工具 help 为准，不绕过禁用项。
-- persona 只声明沟通方式、知识入口和工具边界。工具提供 `story_canvas_root`，会话目录在外部项目时也能定位工具仓库；先读其 AGENTS，再加载相关技能和专项规则。
+- persona 只声明沟通方式、知识入口和工具边界。工具提供 `story_canvas_root`，会话目录在外部项目时也能定位工具仓库；先读其 AGENTS，再加载相关技能和专项规则。 当前执行目录由 DSH 的必需 user context 提供，persona 不引用 `{{cwd}}`。
 - 创作预设的工作区指令只加载 AGENTS 系列，避免旧 CLAUDE 投影干扰。项目技能由 filesystem provider 发现；目录缺少技能时直接读取工具仓库 `.agents/skills/<名称>/SKILL.md`。
 - `story_canvas` 与 CLI 共用操作注册表；未知操作先查 help，操作细节再查 topic，不搜索旧脚本或猜 HTTP。
 - `status` 检查工具加载版本与磁盘版本；不代表 persona 或服务端版本。预设／工具更新后重启 DSH，恢复会话按原预设 ID 加载；压缩不会重载插件。检查新会话实际提示词及技能目录，不能只看磁盘文件。
