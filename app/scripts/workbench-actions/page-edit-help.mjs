@@ -5,6 +5,7 @@ export const promptWeightGuidance = `网页词条权重预设为 ${promptWeightP
 export const pageEditHelp = {
   camera: {
     summary:'独立机位参数：局部修改，自动生成只读 Prompt',
+    workflow:'先 prompt.read 读取页面，沿用返回的 save.args，用 prompt.save 提交 changes.camera_settings；多页使用 prompt.batch.read/save。网页“机位控制”对应这个字段，不需要迁移操作。',
     details:'仅 Anima 页面 changes.camera_settings；字段未传保持，null 清除该字段；整个 camera_settings:null 清除机位。效果用 true/false。不提交生成文字；读取的 camera_preview 只读。camera 数组保存独立镜头 Prompt，机位修改不改该数组。角色关系和具体构图另写人物或镜头 Prompt。方位相对主体；front 使用 from front 自然语言，其余按已确认词库输出。机位修改仍使用 prompt.read 的版本与 source_versions。',
     fields:{direction:Object.keys(CAMERA_DIRECTIONS),height:Object.keys(CAMERA_HEIGHTS),shot:Object.keys(CAMERA_SHOTS),view:Object.keys(CAMERA_VIEWS),...Object.fromEntries(Object.keys(CAMERA_EFFECTS).map(key=>[key,'boolean']))},
     example:{target:{kind:'page',id:'page-001',model_id:'anima'},changes:{camera_settings:{direction:'side',shot:'full_body',motionLines:true}}},

@@ -8,7 +8,7 @@ import {CameraControlDialog} from '../../CameraControlDialog';
 import {SceneReferenceEditor} from '../../SceneReferenceEditor';
 import {ReferenceRow,ReferenceLabel,ParticipantEditor} from '../../PromptReferences';
 import {displayPromptDraft,persistPromptDraft,createPromptDraftFragment,matchesLocalPromptDraft} from '../../prompt-fragment-draft';
-import {cameraPromptPreview} from '../../../shared/camera-prompt.mjs';
+import {CAMERA_DIRECTIONS,CAMERA_HEIGHTS,CAMERA_SHOTS,CAMERA_VIEWS,CAMERA_EFFECTS} from '../../../shared/camera-prompt.mjs';
 import {variantPrompt,resolvedSettingEntries} from '../../../shared/prompt-inheritance.mjs';
 import {characterSource,sceneSource} from '../../project-workbench-client';
 import {promptCategories,type PagePrompt,type CharacterPromptDocument} from './types';
@@ -16,8 +16,10 @@ import type {ModelPageEditorProps} from '../types';
 
 const labels={population:'画面人数',person:'人物',setting:'场景',camera:'镜头',avoid:'避免'};
 // 沿用 64db906 的编辑器和引用行。仅把宿主草稿转换与模型编辑区域收进适配器。
-export function AnimaPageEditor({projectId,page,prompt,onChange,characters,scenes,references,onReferencesChange,disabled,onOpenOverview,header}:ModelPageEditorProps) {
+export function AnimaPageEditor({projectId,page,prompt,onChange,characters,scenes,references,onReferencesChange,disabled,header}:ModelPageEditorProps) {
   const native={population:[],person:[],setting:[],camera:[],avoid:[],...prompt} as PagePrompt;
+  const camera=native.camera_settings??{};
+  const cameraSummary=[camera.direction&&CAMERA_DIRECTIONS[camera.direction],camera.height&&CAMERA_HEIGHTS[camera.height],camera.shot&&CAMERA_SHOTS[camera.shot],camera.view&&CAMERA_VIEWS[camera.view],...Object.entries(CAMERA_EFFECTS).filter(([key])=>camera[key as keyof typeof CAMERA_EFFECTS]).map(([,effect])=>effect.label)].filter(Boolean);
   const [draft,setDraft]=useState(()=>displayPromptDraft(native));
   const [cameraOpen,setCameraOpen]=useState(false);
   const emitted=useRef(JSON.stringify(prompt));
@@ -52,7 +54,7 @@ export function AnimaPageEditor({projectId,page,prompt,onChange,characters,scene
       </ReferenceRow>
     </div>
     <PromptFragmentEditor categories={promptCategories.filter(c=>c!=='population').map(id=>({id,label:labels[id]}))} scope="page" fragments={draft} roles={roles} createFragment={createPromptDraftFragment} onChange={next=>changeDraft({...next,population:draft.population})} historyScopeKey={`${page.page_id}:${page.prompt_sha256}`}/>
-    <div className="prompt-camera-actions"><small aria-label="当前机位">{cameraPromptPreview(native.camera_settings).join(", ")}</small><button type="button" className="button" disabled={disabled} onClick={()=>setCameraOpen(true)}>机位控制</button>{onOpenOverview&&<button type="button" className="button" disabled={disabled} onClick={onOpenOverview}>Prompt 总览</button>}</div>
+    <button type="button" className="prompt-camera-row" aria-label="机位控制" aria-haspopup="dialog" disabled={disabled} onClick={()=>setCameraOpen(true)}><span className="prompt-camera-label">机位控制</span><span className="prompt-camera-summary" aria-label="当前机位">{cameraSummary.length?cameraSummary.map(label=><span className="prompt-camera-chip" key={label}>{label}</span>):<span className="prompt-camera-empty">未设置</span>}</span><span className="prompt-camera-edit">调整 <span aria-hidden="true">›</span></span></button>
     {cameraOpen&&<CameraControlDialog cameraSettings={native.camera_settings} onClose={()=>setCameraOpen(false)} onApply={settings=>{const next={...prompt};if(Object.keys(settings).length)next.camera_settings=settings;else delete next.camera_settings;onChange(next);setCameraOpen(false);}}/>}
   </>;
 }

@@ -2743,6 +2743,17 @@ label:has(> input:is([type="checkbox"], [type="radio"]):disabled) { cursor: not-
 .lora-fold-row > button { min-height: 30px; padding: 4px 8px; font-size: var(--text-label); }
 .compact-prompt-editor > .page-loras { border-top: 1px solid var(--line); padding-top: 6px; }
 .compact-prompt-editor .prompt-camera-actions { margin: 0; gap: 6px; }
+.prompt-camera-row { display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; min-height: 44px; padding: 8px 10px; border: 1px solid #b7cfc1; border-left: 3px solid var(--green); border-radius: 6px; background: var(--green-soft); color: var(--ink); font: inherit; font-size: var(--text-body); text-align: left; cursor: pointer; }
+.prompt-camera-label { flex: none; font-weight: 600; color: var(--green); }
+.prompt-camera-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.prompt-camera-chip { padding: 2px 7px; border: 1px solid #c9dcd0; border-radius: 4px; background: var(--paper); font-size: var(--text-label); }
+.prompt-camera-empty { color: var(--muted); font-size: var(--text-label); }
+.prompt-camera-edit { flex: none; color: var(--green); white-space: nowrap; }
+.prompt-camera-row:hover:not(:disabled) { border-color: var(--green); }
+.prompt-camera-row:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.prompt-camera-row:disabled { opacity: .5; cursor: default; }
+.prompt-overview-action { border-top: 1px solid var(--line); padding-top: 6px; }
+.prompt-overview-action .button { font-size: var(--text-label); }
 /* 手机词条保持单行，低频操作收进选项菜单。 */
 @media (max-width: 680px) {
   .workbench-shell--page .project-main { padding-inline: 8px; }

@@ -25,7 +25,7 @@ function ReferenceTextField({ label, currentText, override, disabled, onChange, 
 }
 
 
-export function QwenPageEditor({projectId,page,prompt:promptDraft,onChange,characters,scenes:allScenes,references:allReferences,onReferencesChange,disabled,qwenRewrite,dirty=false,onOpenOverview:onOpenPromptOverview}:ModelPageEditorProps) {
+export function QwenPageEditor({projectId,page,prompt:promptDraft,onChange,characters,scenes:allScenes,references:allReferences,onReferencesChange,disabled,qwenRewrite,dirty=false}:ModelPageEditorProps) {
  const standalone=promptDraft.composition==='standalone';
  const references=standalone?[]:allReferences,scenes=standalone?[]:allScenes;
  const pageIdentity=page.page_id;
@@ -95,6 +95,5 @@ export function QwenPageEditor({projectId,page,prompt:promptDraft,onChange,chara
       <label className="page-prompt-field"><span>本页 Prompt</span><PromptTextArea ariaLabel="本页 Prompt" rows={3} value={promptDraft.text ?? ""} disabled={disabled} placeholder="本页画面描述，可留空" onChange={text => setPromptDraft(current => ({ ...current, text }))} /></label>
       {qwenRewrite?.enabled && <RewritePanel controller={qwenRewrite} dirty={dirty} disabled={disabled} pageIdentity={pageIdentity}/>}
 
-      {onOpenPromptOverview && <div className="prompt-camera-actions"><button type="button" className="button" disabled={disabled} onClick={onOpenPromptOverview}>Prompt 总览</button></div>}
       <ReferenceLibrary key={pageIdentity} projectId={projectId} target={{ kind: 'page', id: page.page_id }} pages={[]} inheritedEntries={enabledReferenceImages.slice(0, enabledReferenceImages.length - (promptDraft.reference_images?.length ?? 0))} initialEntries={promptDraft.reference_images ?? []} capacity={10 - referenceCount} disabled={disabled} onChanged={() => {}} onDraftChange={entries => setPromptDraft(current => ({ ...current, reference_images: entries }))} /></>;
 }

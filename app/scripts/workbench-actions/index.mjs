@@ -45,7 +45,7 @@ const groups=[
   {id:'structure',title:'故事梗概、章节与单元',prefixes:['chapter.','sequence.','story.synopsis.']},
   {id:'settings',title:'角色、场景与子设定',prefixes:['character.','scene.']},
   {id:'page',title:'页面与模板',prefixes:['page.']},
-  {id:'facts',title:'正文、Prompt 与语料',prefixes:['facts.','prompt.','corpus.','story.context']},
+  {id:'facts',title:'正文、Prompt、机位与语料',prefixes:['facts.','prompt.','corpus.','story.context']},
   {id:'generation',title:'生成配置、LoRA 与出图',prefixes:['generation.']},
   {id:'resources',title:'资源目录与词库',prefixes:['resource.','dictionary.','asset.']},
   {id:'materials',title:'材料、参考图与创作约定',prefixes:['material.','reference.','agreement.','media.']},
@@ -60,6 +60,7 @@ const groups=[
   {id:'tools',title:'工具帮助与状态',prefixes:['help','status']},
 ];
 const definitions={...actions,...utilityHelp};
+const cameraHelpLink={operation:'help',target:'prompt.save',topic:'camera',summary:'机位控制：方向、俯仰、景别、第一人称和效果开关'};
 function availability(definition,denied) {return definition.capability && denied.has(definition.capability)?'disabled':'enabled';}
 function catalog(denied) {return groups.map(({prefixes,...group})=>({...group,operations:Object.entries(definitions).filter(([name])=>prefixes.some(prefix=>name.startsWith(prefix))).map(([operation,definition])=>({operation,summary:definition.summary,signature:`${operation}(${(definition.parameters.required??[]).join(", ")})`,...(availability(definition,denied)==='disabled'?{availability:'disabled',capability:definition.capability}:{})}))}));}
 export async function executeWorkbench(input, execution={}) {
@@ -72,12 +73,13 @@ export async function executeWorkbench(input, execution={}) {
       const directory=catalog(denied);
       if(!input.target) return {groups:directory.map(({operations,...group})=>({...group,operations_count:operations.length,disabled_count:operations.filter(o=>o.availability==='disabled').length})),workflows:[{target:'video',summary:'动态页导入、编辑、生成与成品的完整用法'}],usage:'help + target分类ID 查看该类操作和必填参数签名；target操作名 查看参数；target:video 一次取得动态页流程与参数。disabled 操作被当前限制插件禁用，请交给具备该能力的 Agent。'};
       if(input.target==='video'){if(input.topic)throw invalid('video 流程不支持 topic');return videoHelp(actions,definition=>availability(definition,denied));}
-      const group=directory.find(g=>g.id===input.target);if(group){if(input.topic)throw invalid('topic 需要操作名，不能是分类');return {...group,...(group.id==='generation'?{related:[{operation:'page.render.read',summary:'读取单页模型与画幅'},{operation:'page.render.set',summary:'修改单页模型与画幅'}]}:{})};}
+      if(input.target==='camera'&&!input.topic)return {operation:'prompt.save',topic:'camera',...actions['prompt.save'].helpTopics.camera};
+      const group=directory.find(g=>g.id===input.target);if(group){if(input.topic)throw invalid('topic 需要操作名，不能是分类');return {...group,...(['page','facts','generation'].includes(group.id)?{related:[cameraHelpLink,...(group.id==='generation'?[{operation:'page.render.read',summary:'读取单页模型与画幅'},{operation:'page.render.set',summary:'修改单页模型与画幅'}]:[])]}:{})};}
       const definition=Object.hasOwn(definitions,input.target)?definitions[input.target]:null;
       if(!definition && !input.topic) {
         const matches=directory.flatMap(g=>g.operations).filter(o=>o.operation.startsWith(input.target+'.'));
         const operations=[...new Map(matches.map(o=>[o.operation,o])).values()];
-        if(operations.length) return {prefix:input.target,operations};
+        if(operations.length) return {prefix:input.target,operations,...(['prompt','prompt.camera'].includes(input.target)?{related:[cameraHelpLink]}:{})};
       }
       if(!definition)throw Object.assign(new Error('未知帮助入口，请查分类目录'),{code:'unknown_operation'});
       const {execute,transport,recover,helpTopics,...help}=definition;
@@ -86,7 +88,7 @@ export async function executeWorkbench(input, execution={}) {
         if(!helpTopics||!Object.hasOwn(helpTopics,input.topic))throw invalid(`未知字段主题；可选：${Object.keys(helpTopics??{}).join(', ')}`);
         return {operation:input.target,topic:input.topic,...helpTopics[input.topic]};
       }
-      return {operation:input.target,...help,...(topics?{topics,topic_usage:'help + target:本操作名 + topic:主题ID 查看字段用法'}:{}),availability:availability(definition,denied)};
+      return {operation:input.target,...help,...(input.target==='prompt.camera.migrate'?{related:[cameraHelpLink]}:{}),...(topics?{topics,topic_usage:'help + target:本操作名 + topic:主题ID 查看字段用法'}:{}),availability:availability(definition,denied)};
     }
     if(input.target!==undefined||input.topic!==undefined)throw invalid('target/topic 仅用于 help');
     if(operation==='status'){if(input.args!==undefined)throw invalid('status 不接受 args');return toolStatus(denied);}

@@ -47,6 +47,23 @@ async function failure(tool, input) {
   assert.fail('必须保持工具失败状态');
 }
 
+test('机位从分类与迁移帮助均可找到同一字段说明，不触发写入',async t=>{
+ const f=await fixture(t);
+ const root=await f.tool.execute({operation:'help'});
+ assert.ok(root.groups.some(group=>group.title.includes('机位')));
+ const canonical=await f.tool.execute({operation:'help',target:'prompt.save',topic:'camera'});
+ assert.deepEqual(await f.tool.execute({operation:'help',target:'camera'}),canonical);
+ for(const target of ['page','facts','generation','prompt','prompt.camera','prompt.camera.migrate']){
+  const directory=await f.tool.execute({operation:'help',target});
+  const entry=directory.related.find(item=>item.topic==='camera');
+  assert.ok(entry,target);
+  const {summary,...call}=entry;
+  assert.deepEqual(await f.tool.execute(call),canonical);
+ }
+ assert.match(canonical.workflow,/save.args/);
+ assert.equal(f.requests.length,0);
+});
+
 test('单页与批量生成将 rewrite 优化稿来源原样提交，错误来源在发送前拒绝',async t=>{
  const f=await fixture(t,(req,res)=>res.end(JSON.stringify({task:{task_id:`render-${req.body.page_key.page_id}`,status:'queued'}})));
  const args={project_id:'demo',page_key:{page_id:'page-001'},prompt_source:'rewrite'};
