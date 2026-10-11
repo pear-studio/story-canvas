@@ -48,5 +48,6 @@ test('空候选和读取失败可在面板中查看并刷新，桌面保留原�
  await page.getByRole('dialog').getByRole('button',{name:'关闭',exact:true}).click();
  await page.setViewportSize({width:1400,height:900});
  assert.equal(await page.locator('.page-images').isVisible(),true);
- assert.equal(await page.getByRole('button',{name:'查看成品',exact:true}).isVisible(),true);
+ assert.equal(await page.getByRole('button',{name:'查看成品',exact:true}).count(),0);
+ assert.equal(await page.getByRole('button',{name:'保存嵌字并输出成品',exact:true}).isVisible(),true);
 });

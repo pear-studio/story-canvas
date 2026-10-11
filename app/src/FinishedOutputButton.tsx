@@ -1,9 +1,6 @@
 import {localeLabels,type LetteringLocale} from "./page-translations";
-import { useEffect, useState } from "react";
-import { finishedBusy, finishedJobLabel, loadFinishedPages, type FinishedJob, type FinishedPage } from "./finished-client";
-import ZoomableImageLightbox from "./ImageLightbox";
-import { useFeedback } from "./feedback";
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { finishedBusy, finishedJobLabel, type FinishedJob } from "./finished-client";
 import { readFacts } from "./project-write-client";
 import { workbenchResponseJson } from "./api-response";
 import "./FinishedPagesView.css";
@@ -15,22 +12,8 @@ export function FinishedOutputButton({locale="zh", projectId, pageId, candidateI
   const [job, setJob] = useState<FinishedJob | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [preview, setPreview] = useState<FinishedPage | null>(null);
-  const [viewing, setViewing] = useState(false);
-  const { notify } = useFeedback();
   const identity = `${projectId}/${pageId}/${locale}`;
   const currentIdentity = useRef(identity); currentIdentity.current = identity;
-  async function viewFinished() {
-    setViewing(true);
-    try {
-      const { pages } = await loadFinishedPages(projectId, undefined, pageId,locale);
-      if (currentIdentity.current !== identity) return;
-      const page = pages[0];
-      if (page?.record?.lettered_url) setPreview(page);
-      else notify(page?.record ? "成品文件缺失，请重新制作。" : "本页尚未制作成品。");
-    } catch (reason) { if (currentIdentity.current === identity) notify({ kind: "error", message: reason instanceof Error ? reason.message : String(reason) }); }
-    finally { if (currentIdentity.current === identity) setViewing(false); }
-  }
   useEffect(() => {
     const controller = new AbortController(); let timer: ReturnType<typeof setTimeout>;
     async function poll() {
@@ -42,16 +25,15 @@ export function FinishedOutputButton({locale="zh", projectId, pageId, candidateI
     }
     void poll(); return () => { controller.abort(); clearTimeout(timer); };
   }, [projectId, pageId,locale]);
-  useEffect(()=>{setPreview(null);setJob(null);setViewing(false);setError('');},[identity]);
+  useEffect(()=>{setJob(null);setError('');},[identity]);
   async function output() {
     setSubmitting(true); setError("");
     try { const next = await onOutput(candidateId); if (next&&currentIdentity.current===identity) setJob(next); }
     catch (reason) { if(currentIdentity.current===identity)setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { if(currentIdentity.current===identity)setSubmitting(false); }
   }
+  const status = error || job?.error || finishedJobLabel(job?.status);
   return <div className="finished-output-action"><button type="button" className="button" disabled={disabled || submitting || finishedBusy(job?.status)} onClick={() => void output()}>{submitting ? "正在提交…" : dirty ? "保存嵌字并输出成品" : "输出成品"}{locale!=='zh'&&` · ${localeLabels[locale]}`}</button>
-    <button type="button" className="button button--quiet" disabled={viewing} onClick={() => void viewFinished()}>查看成品</button>
-    <small>{error || job?.error || finishedJobLabel(job?.status)}</small>
-    {preview?.record?.lettered_url && <ZoomableImageLightbox src={preview.record.lettered_url} alt="当前成品" footer={null} onClose={() => setPreview(null)} />}
+    {status && <small>{status}</small>}
   </div>;
 }

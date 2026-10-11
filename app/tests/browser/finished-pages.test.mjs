@@ -161,9 +161,7 @@ test("浏览器成品导航、双版本切换、返回编辑与输出按钮可�
   const output = page.getByRole("button", { name: "输出成品", exact: true });
   await output.waitFor();
   assert.equal(await output.isEnabled(), true);
-  await page.getByRole("button", { name: "查看成品", exact: true }).click();
-  await page.getByRole("dialog", { name: "当前成品", exact: true }).waitFor();
-  await page.keyboard.press("Escape");
+  assert.equal(await page.getByRole("button", { name: "查看成品", exact: true }).count(), 0);
   const bounds = await output.boundingBox();
   assert.ok(bounds.y + bounds.height <= 1000, "输出按钮应在当前页面可见区域内");
   await page.getByRole("tab", { name: "嵌字", exact: true }).click();

@@ -147,7 +147,8 @@
 .page-generation-settings select { max-width:14rem; }
 .page-generation-settings p { flex-basis:100%; margin:0; color:var(--danger,#a84137); }
 /* 桌面编辑操作随预览成品操作栏放置；紧凑布局继续使用原底部操作条。 */
-.page-output-toolbar { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.page-output-toolbar { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding-block: 8px; }
+.page-output-toolbar .finished-output-action { padding: 0; }
 .desktop-page-actions { display: flex; align-items: center; gap: 7px; }
 @media (max-width: 1160px) {
   .desktop-page-actions { display: none; }
