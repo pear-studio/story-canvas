@@ -1500,6 +1500,7 @@ html:has(.story-overview) { scrollbar-gutter: stable; }
 .resource-catalog-card__body > header b, .resource-catalog-card__body > header small, .resource-catalog-card__path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .resource-catalog-card__body > header b { font-size: var(--text-body); }
 .resource-catalog-card__body > header small, .resource-catalog-card__path { color: var(--muted); font: var(--text-meta) var(--mono); }
+.resource-catalog-card.is-lora .resource-catalog-card__body > header small { white-space: normal; overflow-wrap: anywhere; }
 .resource-catalog-card__body > header > span { flex: none; color: var(--green); font-size: 12px; font-weight: 700; }
 .resource-catalog-card.has-warning .resource-catalog-card__body > header > span { color: var(--amber); }
 .resource-catalog-card__tags { display: flex; flex-wrap: wrap; gap: 5px; }
@@ -1517,8 +1518,19 @@ html:has(.story-overview) { scrollbar-gutter: stable; }
 .resource-picker-filters label { display: grid; gap: 5px; min-width: 140px; }
 .resource-picker-filters label:first-child { flex: 1; }
 .resource-picker-filters input, .resource-picker-filters select { width: 100%; min-height: 38px; }
+.lora-facet-filter { display: grid; gap: 5px; min-width: 140px; }
+.lora-facet-trigger { min-height: 38px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.lora-facet-panel { width: 300px; max-height: 420px; display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); box-shadow: 0 8px 28px #0002; }
+.lora-facet-panel label { min-height: 38px; display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 10px; align-items: center; cursor: pointer; }
+.lora-facet-panel input[type="checkbox"] { width: 18px; height: 18px; margin: 0; }
+.lora-facet-panel label small, .lora-facet-panel__actions label > span { color: var(--muted); font-variant-numeric: tabular-nums; }
+.lora-facet-panel__actions { display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+.lora-facet-panel__actions label { flex: 1; }
+.resource-picker-scope { display: grid; gap: 5px; max-width: 240px; margin-top: 12px; }
+.resource-picker-scope select { width: 100%; min-height: 38px; }
 .resource-picker-actions, .resource-picker-selected { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .resource-picker-actions > span { margin-right: auto; color: var(--muted); }
+.resource-picker-actions[aria-label="LoRA 分区"] { margin: 0 0 12px; }
 .resource-picker-selected { max-height: 100px; overflow: auto; }
 .resource-picker-check { display: flex; align-items: center; gap: 8px; margin-right: auto; cursor: pointer; }
 .resource-picker-check input { width: 18px; height: 18px; }
@@ -1537,6 +1549,8 @@ html:has(.story-overview) { scrollbar-gutter: stable; }
   .resource-catalog-card.is-lora > .resource-catalog-preview { width: 88px; height: 150px; min-height: 150px; }
   .resource-catalog-card.is-lora footer { flex-wrap: wrap; }
   .resource-picker-filters label { flex: 1; min-width: 120px; }
+  .lora-facet-filter { flex: 1; min-width: 120px; }
+  .lora-facet-panel label { min-height: 44px; }
   .resource-picker-filters label:first-child { flex-basis: 100%; }
   .comparison-selected-loras > article { flex-wrap: wrap; }
 }

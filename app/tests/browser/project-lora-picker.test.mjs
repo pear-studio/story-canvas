@@ -23,6 +23,11 @@ test('自由文本配置按模型架构选择 LoRA，并在重新打开时刷新
     await page.getByRole('button',{name:'选择 LoRA',exact:true}).click();
     await page.getByText('Qwen 初版',{exact:true}).waitFor();
     assert.equal(await page.getByText('Anima 旧版',{exact:true}).count(),0);
+    await page.getByRole('button',{name:'用途分类筛选',exact:true}).click();
+    await page.getByRole('group',{name:'用途分类选项',exact:true}).waitFor();
+    await page.keyboard.press('Escape');
+    assert.equal(await page.getByRole('dialog',{name:'选择 LoRA',exact:true}).count(),1);
+    assert.equal(await page.getByRole('group',{name:'用途分类选项',exact:true}).count(),0);
     await page.getByRole('button',{name:'关闭',exact:true}).click();
     includeNew=true;
     await page.getByRole('button',{name:'选择 LoRA',exact:true}).click();

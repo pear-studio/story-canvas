@@ -16,6 +16,8 @@ export type GlobalModelResource = {
   repository_record?: boolean;
   storage?: string;
   owner_project_id?: string;
+  owner_project_title?: string;
+  owner_project_type?: "story" | "training";
   status: string;
   reason?: string | null;
   preview?: { images: ResourcePreviewImage[] } | null;
@@ -54,7 +56,7 @@ export function loraResourceItem(model: GlobalModelResource): ResourceCatalogIte
     previews: [],
     examples: [],
   };
-  return { ...loraResourceCatalogItem({ resource, status: model.status, size_bytes: model.size_bytes, repository_record: model.repository_record, storage: model.storage, owner_project_id: model.owner_project_id }), previewImages: model.preview?.images ?? [] };
+  return { ...loraResourceCatalogItem({ resource, status: model.status, size_bytes: model.size_bytes, repository_record: model.repository_record, storage: model.storage, owner_project_id: model.owner_project_id, owner_project_title: model.owner_project_title, owner_project_type: model.owner_project_type }), previewImages: model.preview?.images ?? [] };
 }
 
 export function loraMatchesProfile(model: GlobalModelResource, profile: { architecture_family?: string }) {

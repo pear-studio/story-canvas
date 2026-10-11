@@ -429,7 +429,7 @@ export async function readGlobalResources(projectRoot, config = {}) {
   })));
   const modelsRoot = configuredPath(projectRoot, config.models_root);
   const usage = await readProjectResourceUsage(projectRoot, profileBundles.map((bundle) => bundle.resolved_profile));
-  const localModels = localLoras.resources.map(({ resource, status, reason, actual_sha256: actualSha256, size_bytes: sizeBytes, repository_record: repositoryRecord, storage, owner_project_id }) => {
+  const localModels = localLoras.resources.map(({ resource, status, reason, actual_sha256: actualSha256, size_bytes: sizeBytes, repository_record: repositoryRecord, storage, owner_project_id, owner_project_title, owner_project_type }) => {
     const previewItems = resource.previews.length ? resource.previews : resource.examples.slice(0, 3).map((example) => ({ ...example, alt: `${resource.name} 的示例图` }));
     return {
       id: resource.id,
@@ -446,6 +446,8 @@ export async function readGlobalResources(projectRoot, config = {}) {
       repository_record: Boolean(repositoryRecord),
       storage,
       owner_project_id,
+      owner_project_title,
+      owner_project_type,
       status,
       reason,
       actual_sha256: actualSha256,

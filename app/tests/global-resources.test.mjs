@@ -3,10 +3,13 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import { openLocalModelPreview, readGlobalResources, readResourceCatalog } from "../server/global-resources.mjs";
 import { validateLoraResource } from "../server/lora-resources.mjs";
+import { listLocalLoraResources, readLocalLoraResource } from "../server/lora-resources.mjs";
+import { registerProject } from "../server/project-registry.mjs";
 
 test("普通模型本机清单保留身份与预览，仓库同 ID 或路径优先", async context => {
   const root = await mkdtemp(path.join(tmpdir(), "story-canvas-local-models-"));
@@ -57,6 +60,33 @@ test("LoRA 中文浏览信息经全局资源投影保留，原始名称与标签
   assert.equal(model.lora_metadata.summary_zh, resource.summary_zh);
   assert.equal(model.lora_metadata.purpose, resource.purpose);
   assert.deepEqual(model.lora_metadata.activation.tags, resource.activation.tags);
+});
+
+test("项目 LoRA 返回所属名称和类型，改名后刷新且不改变资源元数据", async context => {
+  const base = new URL("../../Saved/Tests/", import.meta.url);
+  await mkdir(base, { recursive: true });
+  const root = await mkdtemp(path.join(fileURLToPath(base), "lora-owner-"));
+  context.after(() => rm(root, { recursive: true }));
+  const owner = path.join(root, "training", "veloria");
+  const resource = JSON.parse(await readFile(new URL("../../library/resources/loras/lora-6ecff93984c1b084/resource.json", import.meta.url), "utf8"));
+  const directory = path.join(owner, "resources", "loras", resource.id);
+  await mkdir(directory, { recursive: true });
+  await writeFile(path.join(owner, "project.json"), JSON.stringify({ name: "Veloria · 主数据集" }));
+  await writeFile(path.join(directory, "resource.json"), JSON.stringify(resource));
+  for (const media of [...resource.previews, ...resource.examples]) {
+    await mkdir(path.dirname(path.join(directory, media.file)), { recursive: true });
+    await writeFile(path.join(directory, media.file), "preview");
+  }
+  registerProject(root, { id: "dataset-273e046affd2", type: "training", path: owner });
+  const model = (await readGlobalResources(root)).models.find(model => model.id === resource.id);
+  assert.equal(model.owner_project_id, "dataset-273e046affd2");
+  assert.equal(model.owner_project_title, "Veloria · 主数据集");
+  assert.equal(model.owner_project_type, "training");
+  await writeFile(path.join(owner, "project.json"), JSON.stringify({ name: "Veloria v3" }));
+  assert.equal((await listLocalLoraResources(root)).resources[0].owner_project_title, "Veloria v3");
+  assert.deepEqual((await readLocalLoraResource(root, {}, resource.id)).resource, resource);
+  await writeFile(path.join(owner, "project.json"), "broken");
+  assert.equal((await listLocalLoraResources(root)).resources[0].owner_project_title, "veloria");
 });
 
 test("全局资源投影发现本机模型、关联项目使用并忽略链接目录", async (context) => {

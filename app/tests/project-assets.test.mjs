@@ -46,6 +46,8 @@ test("项目 LoRA 移动后沿用 ID、元数据与图片，复制项目不重�
   const list = await listLocalLoraResources(root);
   assert.equal(list.resources.length, 1);
   assert.equal(list.resources[0].owner_project_id, "owner");
+  assert.equal(list.resources[0].owner_project_title, "所属项目");
+  assert.equal(list.resources[0].owner_project_type, "story");
   const read = await readLocalLoraResource(root, {}, resource.id);
   assert.deepEqual(read.resource, resource);
   const media = await openLoraResourceMedia(root, resource.id, resource.previews[0].file);

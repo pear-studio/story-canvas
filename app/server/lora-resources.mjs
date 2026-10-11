@@ -84,15 +84,20 @@ function resourceCandidates(projectRoot, resourceId) {
 function resourceRoots(projectRoot) {
   return [
     ...listRegisteredProjects(projectRoot).filter(project => project.available).map(project => ({
-      root: path.join(project.path, "resources", "loras"), boundary: project.path, storage: "project", owner_project_id: project.id,
+      root: path.join(project.path, "resources", "loras"), boundary: project.path, storage: "project", owner_project_id: project.id, owner_project_type: project.type,
     })),
     { root: trackedResourcesRoot(projectRoot), boundary: projectRoot, storage: "repository" },
     { root: resourcesRoot(projectRoot), boundary: projectRoot, storage: "local" },
   ];
 }
 
-function resourceScope(scope) {
-  return { storage: scope.storage, repository_record: scope.storage === "repository", ...(scope.owner_project_id ? { owner_project_id: scope.owner_project_id } : {}) };
+async function resourceScope(scope) {
+  const result = { storage: scope.storage, repository_record: scope.storage === "repository" };
+  if (!scope.owner_project_id) return result;
+  const project = await readJson(path.join(scope.boundary, "project.json"), { optional: true }).catch(() => null);
+  const title = scope.owner_project_type === "training" ? project?.name : project?.title;
+  return { ...result, owner_project_id: scope.owner_project_id, owner_project_type: scope.owner_project_type,
+    owner_project_title: typeof title === "string" && title.trim() ? title : path.basename(scope.boundary) };
 }
 
 async function readJson(target, { optional = false } = {}) {
@@ -269,6 +274,7 @@ export async function listLocalLoraResources(projectRoot, config = {}) {
     const { root } = scope;
     const rootReal = await safeResourceRoot(scope.boundary, root);
     if (!rootReal) continue;
+    const scopeInfo = await resourceScope(scope);
     const entries = await readdir(root, { withFileTypes: true });
     for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name, "en"))) {
       if (!entry.isDirectory() || entry.isSymbolicLink() || !resourceIdPattern.test(entry.name) || seen.has(entry.name)) continue;
@@ -281,7 +287,7 @@ export async function listLocalLoraResources(projectRoot, config = {}) {
         if (validation.length) throw new LoraResourceError(422, "invalid_lora_resource", validation);
         const mediaErrors = await validateResourceMediaFiles(directory, resource);
         if (mediaErrors.length) throw new LoraResourceError(422, "invalid_lora_resource_media", mediaErrors);
-        resources.push({ ...(await inspectResource(projectRoot, config, resource)), ...resourceScope(scope) });
+        resources.push({ ...(await inspectResource(projectRoot, config, resource)), ...scopeInfo });
         seen.add(entry.name);
       } catch (error) {
         errors.push({ id: entry.name, code: error.code ?? "invalid_lora_resource", details: error.details ?? [error.message] });
@@ -307,7 +313,7 @@ export async function readLocalLoraResource(projectRoot, config, resourceId) {
       if (!errors.length) errors.push(...await validateResourceMediaFiles(candidate.directory, resource));
       if (isRecord(resource) && resource.id !== resourceId) errors.push("目录名与资源 ID 不一致");
       if (errors.length) throw new LoraResourceError(422, "invalid_lora_resource", errors);
-      return { ...(await inspectResource(projectRoot, config, resource)), ...resourceScope(candidate) };
+      return { ...(await inspectResource(projectRoot, config, resource)), ...(await resourceScope(candidate)) };
     } catch (error) {
       if (candidate.storage === "repository" && ["invalid_lora_resource_json", "invalid_lora_resource", "invalid_lora_resource_media"].includes(error.code)) {
         repositoryError = error;

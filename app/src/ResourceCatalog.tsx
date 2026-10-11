@@ -1,7 +1,10 @@
-import { useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import ZoomableImageLightbox from "./ImageLightbox";
 import { Modal } from "./Modal";
+import { FloatingPanel } from "./FloatingPanel";
+import { floatingLayerHost } from "./floating-layer";
 
 export type ResourcePreviewImage = { src: string; alt: string; source?: string };
 export type ResourceDetail = { label: string; value?: string; values?: string[]; href?: string };
@@ -17,6 +20,8 @@ export type ResourceCatalogItem = {
   registered?: boolean;
   description?: string;
   architectureFamily?: string;
+  ownerProjectId?: string;
+  storage?: "repository" | "project" | "local";
   relativePath: string;
   sizeBytes?: number | null;
   status: string;
@@ -59,6 +64,8 @@ export type LoraResourceEntry = {
   repository_record?: boolean;
   storage?: string;
   owner_project_id?: string;
+  owner_project_title?: string;
+  owner_project_type?: "story" | "training";
   resource: LoraResourceDefinition;
 };
 
@@ -85,6 +92,7 @@ export function loraResourceCatalogItem(entry: LoraResourceEntry): ResourceCatal
   const range = weight.minimum !== null || weight.maximum !== null ? `${weight.minimum ?? "—"}～${weight.maximum ?? "—"}` : "";
   const generation = [resource.recommended_generation.steps ? `${resource.recommended_generation.steps} 步` : "", resource.recommended_generation.cfg !== null && resource.recommended_generation.cfg !== undefined ? `CFG ${resource.recommended_generation.cfg}` : "", resource.recommended_generation.sampler, resource.recommended_generation.scheduler].filter(Boolean).join(" · ");
   const repositoryRecord = entry.repository_record === true || entry.storage === "repository";
+  const ownerLabel = entry.owner_project_id ? `${entry.owner_project_type === "training" ? "训练项目" : "剧情项目"}：${entry.owner_project_title || "未命名项目"}` : "工作台";
   return {
     id: resource.id,
     kind: "lora",
@@ -95,13 +103,18 @@ export function loraResourceCatalogItem(entry: LoraResourceEntry): ResourceCatal
     registered: true,
     description: resource.description,
     architectureFamily: resource.architecture.family,
+    ownerProjectId: entry.owner_project_id,
+    storage: entry.owner_project_id ? "project" : repositoryRecord ? "repository" : "local",
     relativePath: resource.file.relative_path,
     sizeBytes: entry.size_bytes ?? resource.file.size_bytes,
     status: entry.status,
-    recordLabel: entry.owner_project_id ? `项目：${entry.owner_project_id}` : repositoryRecord ? "仓库登记" : "本机登记",
+    recordLabel: ownerLabel,
     previewImages: loraResourcePreviewImages(resource),
     tags: resource.activation.tags,
     details: [
+      { label: "归属", value: ownerLabel },
+      { label: "项目 ID", value: entry.owner_project_id },
+      { label: "登记位置", value: entry.owner_project_id ? "项目" : repositoryRecord ? "仓库" : "本机" },
       { label: "原名", value: resource.name },
       { label: "用途", value: resource.purpose ?? "未分类" },
       { label: "原始标签", values: resource.activation.tags },
@@ -126,6 +139,7 @@ export function rawLoraCatalogItem(raw: RawLoraResource): ResourceCatalogItem {
     name: raw.name,
     purpose: "未分类",
     registered: false,
+    storage: "local",
     relativePath: raw.relative_path,
     sizeBytes: raw.size_bytes,
     status: raw.status,
@@ -194,7 +208,7 @@ export function ResourceCatalogCard({ item, onSelect, onInspect, busy = false, s
       {item.originalName && item.originalName !== item.name && <small className="resource-catalog-card__original" title={item.originalName}>{item.originalName}</small>}
       {item.summary && <p className="resource-catalog-card__summary">{item.summary}</p>}
       {item.kind !== "lora" && <small className="resource-catalog-card__path" title={item.relativePath}>{item.relativePath}</small>}
-      <div className="resource-catalog-card__tags">{item.purpose && <span>{item.purpose}</span>}{item.kind !== "lora" && item.tags?.slice(0, 4).map((tag) => <span key={tag}>{tag}</span>)}</div>
+      <div className="resource-catalog-card__tags">{item.purpose && <span>{item.purpose}</span>}{item.kind === "lora" && item.storage && <span>{item.storage === "repository" ? "仓库" : item.storage === "project" ? "项目" : "本机"}</span>}{item.kind !== "lora" && item.tags?.slice(0, 4).map((tag) => <span key={tag}>{tag}</span>)}</div>
       <footer>{onToggle && <label className="resource-picker-check"><input type="checkbox" checked={selected} disabled={busy} onChange={onToggle} aria-label={`选择 ${item.name}`} />{selected ? "已选择" : "选择"}</label>}{onInspect ? <button className="button button--quiet" type="button" onClick={() => onInspect(item)}>查看详情</button> : <ResourceDetailsButton item={item} />}{onSelect && <button className="button button--primary" type="button" disabled={busy} onClick={() => onSelect(item)}>选择</button>}</footer>
     </div>
   </article>;
@@ -205,27 +219,96 @@ export function ResourceCatalogGrid({ items, onSelect, onInspect, busy = false, 
   return <div className="resource-catalog-grid">{items.map((item) => <ResourceCatalogCard key={item.id} item={item} onSelect={onSelect} onInspect={onInspect} busy={busy} />)}</div>;
 }
 
+export type LoraCatalogSection = "registered" | "raw" | "checkpoints";
+export function loraCatalogSection(item: ResourceCatalogItem): LoraCatalogSection {
+  return item.registered !== false ? "registered" : item.relativePath.startsWith("loras/training/") ? "checkpoints" : "raw";
+}
+
+type LoraFilterDimension = "purpose" | "family" | "owner";
+export type LoraCatalogFilter = { search: string } & Record<LoraFilterDimension, string[] | null>;
+export const emptyLoraCatalogFilter: LoraCatalogFilter = { search: "", purpose: null, family: null, owner: null };
+
+function loraFilterValue(item: ResourceCatalogItem, dimension: LoraFilterDimension) {
+  if (dimension === "purpose") return item.purpose ?? "未分类";
+  if (dimension === "family") return item.architectureFamily ?? "unknown";
+  return item.ownerProjectId ? `project:${item.ownerProjectId}` : item.storage === "repository" ? "repository" : "local";
+}
+
+export function filterLoraCatalogItems(items: ResourceCatalogItem[], filter: LoraCatalogFilter) {
+  const query = filter.search.trim().toLocaleLowerCase();
+  return items.filter(item => (["purpose", "family", "owner"] as const).every(dimension => filter[dimension] === null || filter[dimension]!.includes(loraFilterValue(item, dimension)))
+    && (!query || [item.name, item.originalName, item.summary, item.description, item.relativePath, item.id, item.recordLabel, item.ownerProjectId, ...(item.tags ?? [])].some(value => value?.toLocaleLowerCase().includes(query))));
+}
+
+type LoraFilterOption = { value: string; label: string; count: number };
+function LoraFacetFilter({ label, allLabel, options, selected, onChange }: { label: string; allLabel: string; options: LoraFilterOption[]; selected: string[] | null; onChange: (values: string[] | null) => void }) {
+  const [open, setOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const id = useId();
+  const selectedCount = selected === null ? options.length : options.filter(option => selected.includes(option.value)).length;
+  const all = selectedCount === options.length && (selected === null || options.length > 0);
+  useEffect(() => {
+    if (!open) return;
+    panel.current?.querySelector("input")?.focus();
+    const outside = (event: PointerEvent) => { if (event.target instanceof Node && !panel.current?.contains(event.target) && !trigger.current?.contains(event.target)) setOpen(false); };
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setOpen(false); trigger.current?.focus(); } };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape, true);
+    return () => { document.removeEventListener("pointerdown", outside); document.removeEventListener("keydown", escape, true); };
+  }, [open]);
+  return <div className="lora-facet-filter">
+    <span>{label}</span>
+    <button ref={trigger} type="button" className="button button--quiet lora-facet-trigger" aria-label={`${label}筛选`} aria-expanded={open} aria-controls={open ? id : undefined} onClick={() => setOpen(value => !value)}>{all ? allLabel : selectedCount ? `已选 ${selectedCount} 项` : "未选择"}<span aria-hidden="true">▾</span></button>
+    {open && createPortal(<FloatingPanel ref={panel} target={trigger.current ?? undefined} id={id} role="group" aria-label={`${label}选项`} className="lora-facet-panel">
+      <div className="lora-facet-panel__actions"><label><input type="checkbox" aria-label={`${label}全选`} checked={all} ref={node => { if (node) node.indeterminate = !all && selectedCount > 0; }} onChange={() => onChange(all ? [] : null)} /><b>全选</b><span>{options.reduce((count, option) => count + option.count, 0)}</span></label><button type="button" className="button button--quiet" onClick={() => onChange([])}>清空</button></div>
+      {options.map(option => <label className="lora-facet-option" key={option.value}><input type="checkbox" aria-label={option.label} checked={selected === null || selected.includes(option.value)} onChange={event => { const current = selected ?? options.map(item => item.value); const next = event.target.checked ? [...current, option.value] : current.filter(value => value !== option.value); onChange(options.every(item => next.includes(item.value)) ? null : next); }} /><span>{option.label}</span><small aria-label={`${option.label}资源数量`}>{option.count}</small></label>)}
+      <button type="button" className="button button--quiet" onClick={() => { setOpen(false); trigger.current?.focus(); }}>完成</button>
+    </FloatingPanel>, floatingLayerHost())}
+  </div>;
+}
+
+export function LoraCatalogFilters({ items, filter, onChange, showMetadata = true }: { items: ResourceCatalogItem[]; filter: LoraCatalogFilter; onChange: (filter: LoraCatalogFilter) => void; showMetadata?: boolean }) {
+  const families = [...new Set(items.map(item => item.architectureFamily ?? "unknown"))].sort();
+  const owners = [...new Map(items.filter(item => item.ownerProjectId).map(item => [item.ownerProjectId!, item.recordLabel])).entries()].sort((a, b) => a[1].localeCompare(b[1], "zh-CN"));
+  const options = (dimension: LoraFilterDimension, entries: Array<{ value: string; label: string }>): LoraFilterOption[] => {
+    const matches = filterLoraCatalogItems(items, { ...filter, [dimension]: null });
+    return entries.map(option => ({ ...option, count: matches.filter(item => loraFilterValue(item, dimension) === option.value).length }));
+  };
+  return <div className="resource-picker-filters">
+    <label>搜索 LoRA<input type="search" placeholder="名称、标签或所属项目" value={filter.search} onChange={event => onChange({ ...filter, search: event.target.value })} /></label>
+    {showMetadata && <>
+      <LoraFacetFilter label="用途分类" allLabel="全部用途" options={options("purpose", loraPurposes.map(value => ({ value, label: value })))} selected={filter.purpose} onChange={purpose => onChange({ ...filter, purpose })} />
+      <LoraFacetFilter label="底座" allLabel="全部底座" options={options("family", families.map(value => ({ value, label: value === "unknown" ? "未登记底座" : value === "other" ? "其他" : value.toUpperCase() })))} selected={filter.family} onChange={family => onChange({ ...filter, family })} />
+      <LoraFacetFilter label="归属" allLabel="全部归属" options={options("owner", [{ value: "repository", label: "仓库" }, ...owners.map(([id, label]) => ({ value: `project:${id}`, label })), { value: "local", label: "本机" }])} selected={filter.owner} onChange={owner => onChange({ ...filter, owner })} />
+    </>}
+  </div>;
+}
+
+export function GroupedLoraCatalog({ items, renderItem, empty }: { items: ResourceCatalogItem[]; renderItem?: (item: ResourceCatalogItem) => React.ReactNode; empty: string }) {
+  if (!items.length) return <div className="empty-card">{empty}</div>;
+  const rank = { repository: 0, project: 1, local: 2 };
+  return <div className="resource-page-sections lora-catalog-groups">{loraPurposes.map(purpose => {
+    const group = items.filter(item => (item.purpose ?? "未分类") === purpose).sort((a, b) => rank[a.storage ?? "local"] - rank[b.storage ?? "local"] || (a.ownerProjectId && b.ownerProjectId ? a.recordLabel.localeCompare(b.recordLabel, "zh-CN") : 0) || a.name.localeCompare(b.name, "zh-CN", { numeric: true }) || a.id.localeCompare(b.id));
+    return group.length ? <section key={purpose} aria-label={`${purpose}资源`}><header><h3>{purpose}</h3><span>{group.length} 项</span></header><div className="resource-catalog-grid">{group.map(item => renderItem ? renderItem(item) : <ResourceCatalogCard key={item.id} item={item} />)}</div></section> : null;
+  })}</div>;
+}
+
 export function ResourcePicker({ items, onSelect, onInspect, busy = false, empty = "当前没有可选择的资源。", selection }: { items: ResourceCatalogItem[]; onSelect?: (item: ResourceCatalogItem) => void; onInspect?: (item: ResourceCatalogItem) => void; busy?: boolean; empty?: string; selection?: { ids: string[]; onChange: (ids: string[]) => void } }) {
-  const [search, setSearch] = useState("");
-  const [purpose, setPurpose] = useState("");
+  const [filter, setFilter] = useState(emptyLoraCatalogFilter);
   const [scope, setScope] = useState("registered");
   const isLora = items.every(item => item.kind === "lora");
-  const query = search.trim().toLocaleLowerCase();
-  const visible = items.filter(item => (!isLora || scope === "all" || (scope === "registered" ? item.registered !== false : item.registered === false))
-    && (!purpose || item.purpose === purpose)
-    && (!query || [item.name, item.originalName, item.summary, item.description, item.relativePath, item.id, ...(item.tags ?? [])].some(value => value?.toLocaleLowerCase().includes(query))));
+  const scoped = items.filter(item => !isLora || scope === "all" || loraCatalogSection(item) === scope);
+  const visible = filterLoraCatalogItems(scoped, filter);
   const ids = new Set(selection?.ids);
+  const renderItem = (item: ResourceCatalogItem) => <ResourceCatalogCard key={item.id} item={item} onSelect={selection ? undefined : onSelect} onInspect={onInspect} busy={busy} selected={ids.has(item.id)} onToggle={selection ? () => selection.onChange(ids.has(item.id) ? selection.ids.filter(id => id !== item.id) : [...selection.ids, item.id]) : undefined} />;
   return <div className="resource-picker">
     <div className="resource-picker-toolbar">
-      <div className="resource-picker-filters">
-        <label>搜索{isLora ? " LoRA" : "资源"}<input type="search" placeholder="中文名、原名、说明或标签" value={search} onChange={event => setSearch(event.target.value)} /></label>
-        {isLora && <><label>用途分类<select value={purpose} onChange={event => setPurpose(event.target.value)}><option value="">全部用途</option>{loraPurposes.map(value => <option key={value}>{value}</option>)}</select></label>
-        <label>资源范围<select value={scope} onChange={event => setScope(event.target.value)}><option value="registered">已登记</option><option value="raw">未登记／训练 checkpoint</option><option value="all">全部资源</option></select></label></>}
-      </div>
+      {isLora ? <><LoraCatalogFilters items={scoped} filter={filter} onChange={setFilter} showMetadata={scope === "registered" || scope === "all"} /><label className="resource-picker-scope">资源范围<select aria-label="资源范围" value={scope} onChange={event => { setScope(event.target.value); setFilter(emptyLoraCatalogFilter); }}><option value="registered">已登记</option><option value="raw">未登记文件</option><option value="checkpoints">训练 checkpoint</option><option value="all">全部资源</option></select></label></> : <div className="resource-picker-filters"><label>搜索资源<input type="search" placeholder="名称、说明或标签" value={filter.search} onChange={event => setFilter({ ...filter, search: event.target.value })} /></label></div>}
       <div className="resource-picker-actions"><span>{visible.length} 项{selection ? ` · 已选择 ${ids.size} 项` : ""}</span>{selection && <><button type="button" className="button button--quiet" disabled={busy || !visible.length || visible.every(item => ids.has(item.id))} onClick={() => selection.onChange([...new Set([...selection.ids, ...visible.map(item => item.id)])])}>选择筛选结果（{visible.length}）</button><button type="button" className="button button--quiet" disabled={busy || !ids.size} onClick={() => selection.onChange([])}>清空选择</button></>}</div>
       {selection && ids.size > 0 && <div className="resource-picker-selected" aria-label="已选 LoRA">{items.filter(item => ids.has(item.id)).map(item => <button type="button" className="button button--quiet" disabled={busy} key={item.id} aria-label={`移除 ${item.name}`} onClick={() => selection.onChange(selection.ids.filter(id => id !== item.id))}>{item.name} ×</button>)}</div>}
     </div>
-    {visible.length ? <div className="resource-catalog-grid">{visible.map(item => <ResourceCatalogCard key={item.id} item={item} onSelect={selection ? undefined : onSelect} onInspect={onInspect} busy={busy} selected={ids.has(item.id)} onToggle={selection ? () => selection.onChange(ids.has(item.id) ? selection.ids.filter(id => id !== item.id) : [...selection.ids, item.id]) : undefined} />)}</div> : <div className="empty-card">{items.length ? "没有匹配的资源，请调整搜索、用途或资源范围。" : empty}</div>}
+    {isLora ? <GroupedLoraCatalog items={visible} renderItem={renderItem} empty={items.length ? "没有匹配的资源，请调整筛选条件。" : empty} /> : visible.length ? <div className="resource-catalog-grid">{visible.map(renderItem)}</div> : <div className="empty-card">{empty}</div>}
   </div>;
 }
 
