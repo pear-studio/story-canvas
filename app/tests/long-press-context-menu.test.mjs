@@ -50,6 +50,22 @@ test("滑动或第二根手指介入会取消尚未触发的长按", () => {
   }
 });
 
+test("长按松手落到浮层上不误选菜单，下一次主动点击不受抑制", () => {
+  const { controller, advance } = harness();
+  const source = {};
+  const menuItem = {};
+  controller.start(touch(source), () => {});
+  advance(700);
+  controller.finish(1);
+  assert.equal(controller.consumeClick(menuItem), true);
+
+  controller.start(touch(source), () => {});
+  advance(700);
+  controller.finish(1);
+  controller.cancelForAdditionalPointer(touch(menuItem));
+  assert.equal(controller.consumeClick(menuItem), false);
+});
+
 test("浏览器先产生原生 contextmenu 时沿用原有右键入口且不再重复触发长按", () => {
   const { controller, advance } = harness();
   const target = { contains: (value) => value === target };

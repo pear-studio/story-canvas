@@ -42,5 +42,5 @@ test('项目 LoRA 默认收起，角色 LoRA 归入引用 Prompt，覆盖与恢�
  await mkdir('C:/Workspace/story-canvas/Saved/Tests/lora-inheritance',{recursive:true});await page.screenshot({path:'C:/Workspace/story-canvas/Saved/Tests/lora-inheritance/page.png',fullPage:true});assert.deepEqual(errors,[]);
  await page.getByTitle('展开角色引用').click();await page.getByTitle('展开场景引用').click();
  await page.locator('#draft').evaluate(e=>{e.style.display='none';});
- for(const width of [700,390]){await page.setViewportSize({width,height:900});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));await page.screenshot({path:`C:/Workspace/story-canvas/Saved/Tests/lora-inheritance/compact-${width}.png`,fullPage:true});}
+ for(const width of [700,390]){await page.setViewportSize({width,height:900});await page.waitForFunction(()=>document.documentElement.scrollWidth<=window.innerWidth);await page.screenshot({path:`C:/Workspace/story-canvas/Saved/Tests/lora-inheritance/compact-${width}.png`,fullPage:true});}
 });

@@ -27,10 +27,13 @@
 .prompt-dictionary-description-section h3 { margin: 0 0 12px; font-size: var(--text-section-title); font-weight: 650; line-height: 1.5; }
 .prompt-dictionary-description-body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--text-body); line-height: 1.8; }
 .prompt-dictionary-original-section .prompt-dictionary-description-body { color: #52615c; }
+.prompt-dictionary-details-header > div { flex: 1; }
+.prompt-dictionary-reference { color: var(--green); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; -webkit-touch-callout: none; }
+.prompt-dictionary-details .navigation-context-menu__label { white-space: normal; overflow-wrap: anywhere; }
 @media (max-width: 520px) {
   .prompt-dictionary-details-header { padding: 18px 16px 14px; }
   .prompt-dictionary-details-content { padding: 18px 16px 22px; }
-  .prompt-dictionary-detail-facts { grid-template-columns: 65px minmax(0, 1fr); gap: 10px; }
+  .prompt-dictionary-detail-facts { grid-template-columns: 5em minmax(0, 1fr); gap: 10px; }
   .prompt-dictionary-suggestion-row { gap: 3px; }
   .prompt-dictionary-frequency-button { padding-inline: 5px; gap: 4px; }
 }

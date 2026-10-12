@@ -124,6 +124,8 @@ test("标签底色和自动释义常驻，补全只替换句内标记并保留�
   await input.fill(",blue");
   await options.first().click();
   assert.equal(await input.evaluate(promptText), ",blue eyes");
+  // 上一次补全的光标恢复完成后，再开始下一次独立编辑。
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
   await input.fill("a person with {blue");
   await options.first().click();
   assert.equal(await input.evaluate(promptText), "a person with {blue eyes}");
@@ -157,6 +159,211 @@ test("编辑已有词条时用完整文字容错搜索，近似候选只替换�
     await options.first().click();
     assert.equal(await input.evaluate(promptText), expected);
   }
+});
+
+const referenceEntries = Object.fromEntries([
+  ['long_hair', '长发', 'Long hair. See [[short_hair|短发]] and [[smile|微笑]].\n[[not_in_dictionary|未收录]] [[series_name|作品]]'],
+  ['short_hair', '短发', 'Short hair. See [[smile]].'],
+  ['smile', '微笑', 'A smile. See [[long_hair|长发]].'],
+  ['blue_eyes', '蓝眼睛', 'Blue eyes.'],
+  ['series_name', '作品', 'A copyright tag.'],
+].map(([tag, label, body]) => [tag, { source_text: tag, prompt_text: tag.replaceAll('_', ' '), display_text: label, matched: true, allowed: tag !== 'series_name', original_description: body, description: body, description_language: 'original' }]));
+
+async function referenceEditor(t, { readonly = false, mobile = false } = {}) {
+  const { page } = await editor(t);
+  await page.route('**/api/prompt-dictionary**', route => {
+    const request = route.request();
+    return route.fulfill({ json: request.method() === 'POST'
+      ? { available: true, matches: request.postDataJSON().prompts.map(prompt => ({ ...(referenceEntries[prompt.replaceAll(' ', '_')] ?? { matched: false, allowed: false }), prompt_text: prompt })) }
+      : { available: true, suggestions: [referenceEntries.long_hair], has_more: false } });
+  });
+  if (mobile) await page.setViewportSize({ width: 390, height: 700 });
+  await page.goto(`${url}?references${readonly ? '&readonly' : ''}`);
+  await page.locator('#host').evaluate(e => { e.style.cssText = 'width:100%;margin-top:0'; });
+  const input = page.getByRole(readonly ? 'textbox' : 'combobox', { name: readonly ? '人物第 1 项 Prompt' : '人物·甲第 1 项 Prompt' });
+  await input.getByRole('button', { name: '查看 长发 的词条说明' }).waitFor();
+  const read = async () => JSON.parse(await page.locator('output').textContent());
+  const open = async () => {
+    await input.getByRole('button', { name: '查看 长发 的词条说明' }).click();
+    await page.getByRole('dialog', { name: '长发', exact: true }).waitFor();
+  };
+  return { page, input, read, open };
+}
+
+test('词条引用连续浏览和返回保持草稿，替换始终作用于最初词条并保留权重与角色', async t => {
+  const { page, input, read, open } = await referenceEditor(t);
+  const before = await read();
+  await open();
+  await page.getByRole('link', { name: '短发 · short hair', exact: true }).click();
+  await page.getByRole('dialog', { name: '短发', exact: true }).waitFor();
+  await page.getByRole('link', { name: '微笑 · smile', exact: true }).click();
+  await page.getByRole('dialog', { name: '微笑', exact: true }).waitFor();
+  await page.getByRole('button', { name: '返回上一词条' }).click();
+  await page.getByRole('dialog', { name: '短发', exact: true }).waitFor();
+  assert.deepEqual(await read(), before);
+  await page.getByRole('link', { name: '微笑 · smile', exact: true }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: '替换「long_hair」', exact: true }).click();
+  await page.getByRole('dialog').waitFor({ state: 'hidden' });
+  assert.deepEqual((await read()).person[0], { ...before.person[0], prompt_text: 'smile' });
+  assert.deepEqual((await read()).person.slice(1), before.person.slice(1));
+  assert.equal(await input.evaluate(e => document.activeElement === e), true);
+  await page.keyboard.press('Control+z');
+  assert.deepEqual(await read(), before);
+});
+
+for (const action of ['insert', 'negative']) test(`词条引用 ${action} 写入正确位置，保留来源且一次可撤销`, async t => {
+  const { page, read, open } = await referenceEditor(t);
+  const before = await read();
+  await open();
+  await page.getByRole('link', { name: '短发 · short hair', exact: true }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: action === 'insert' ? '紧随原词条后加入' : '加入负向词条', exact: true }).click();
+  await page.getByRole('dialog').waitFor({ state: 'hidden' });
+  const after = await read();
+  if (action === 'insert') {
+    assert.deepEqual(after.person.map(e => e.prompt_text), ['long_hair', 'short hair', 'blue_eyes', 'smile']);
+    assert.deepEqual(after.person.filter((_, i) => i !== 1), before.person);
+    assert.equal(after.person[1].role, 'alice');
+    assert.equal(after.person[1].weight ?? 1, 1);
+  } else {
+    assert.deepEqual(after.person, before.person);
+    assert.equal(after.avoid[0].prompt_text, 'short hair');
+    assert.equal(after.avoid[0].role, undefined);
+  }
+  await page.waitForFunction(action => document.activeElement?.getAttribute('aria-label') === (action === 'insert' ? '人物·甲第 2 项 Prompt' : '避免第 1 项 Prompt'), action);
+  await page.keyboard.press('Control+z');
+  assert.deepEqual(await read(), before);
+});
+
+test('点击重复标签的说明按该标签位置替换，保留括号权重和未提交草稿，撤销恢复草稿', async t => {
+  const { page, read } = await referenceEditor(t);
+  const input = page.getByRole('combobox', { name: '场景第 1 项 Prompt' });
+  const draft = 'beside {long_hair}, ({long_hair}:1.3), outside';
+  const before = await read();
+  await input.fill(draft);
+  await input.press('Control+Home');
+  await input.getByRole('button', { name: '查看 长发 的词条说明' }).nth(1).click();
+  assert.deepEqual(await read(), before, '打开详情不提交草稿');
+  await page.getByRole('link', { name: '短发 · short hair', exact: true }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: '替换「long_hair」', exact: true }).click();
+  await page.getByRole('dialog').waitFor({ state: 'hidden' });
+  assert.equal(await input.evaluate(promptText), 'beside {long_hair}, ({short hair}:1.3), outside');
+  await page.keyboard.press('Control+z');
+  assert.equal(await input.evaluate(promptText), draft);
+  assert.equal((await read()).setting[0].prompt_text, draft);
+});
+
+test('手机引用长按弹菜单不触发跳转，滚动手势不触发菜单，Escape 只关闭菜单', async t => {
+  const { page, open, read } = await referenceEditor(t, { mobile: true });
+  await open();
+  const link = page.getByRole('link', { name: '短发 · short hair', exact: true });
+  await link.scrollIntoViewIfNeeded();
+  const bounds = await link.boundingBox();
+  const touch = await page.context().newCDPSession(page);
+  await touch.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+  const point = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] });
+  await page.getByRole('menuitem', { name: '加入负向词条' }).waitFor();
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await page.getByRole('dialog', { name: '长发', exact: true }).waitFor();
+  const rect = await page.getByRole('menu').boundingBox();
+  assert.ok(rect.x >= 0 && rect.y >= 0 && rect.x + rect.width <= 390 && rect.y + rect.height <= 700);
+  await page.screenshot({ path: fileURLToPath(new URL('../../../Saved/Tests/prompt-reference-menu-mobile.png', import.meta.url)) });
+  await page.keyboard.press('Escape');
+  assert.equal(await page.getByRole('menu').count(), 0);
+  assert.equal(await page.getByRole('dialog').count(), 1);
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] });
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...point, y: point.y - 30 }] });
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await page.waitForTimeout(800);
+  assert.equal(await page.getByRole('menu').count(), 0);
+  await link.scrollIntoViewIfNeeded();
+  const nextBounds = await link.boundingBox();
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: nextBounds.x + nextBounds.width / 2, y: nextBounds.y + nextBounds.height / 2 }] });
+  await page.getByRole('menuitem', { name: '加入负向词条' }).waitFor();
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await page.getByRole('menuitem', { name: '加入负向词条' }).click();
+  assert.equal((await read()).avoid[0].prompt_text, 'short hair');
+});
+
+test('只读详情和不适用或未收录引用仅可查看，查询返回时不重新打开已关闭菜单', async t => {
+  const { page, open } = await referenceEditor(t, { readonly: true });
+  await open();
+  await page.getByRole('link', { name: '短发 · short hair', exact: true }).click({ button: 'right' });
+  await page.getByRole('menu', { name: '短发 · short hair', exact: true }).waitFor();
+  assert.deepEqual(await page.getByRole('menuitem').allTextContents(), ['查看词条说明']);
+  await page.getByRole('menuitem', { name: '查看词条说明' }).click();
+  await page.getByRole('dialog', { name: '短发', exact: true }).waitFor();
+  await page.getByRole('button', { name: '返回上一词条' }).click();
+  for (const name of ['作品 · series name', '未收录 · not in dictionary']) {
+    await page.getByRole('link', { name, exact: true }).click({ button: 'right' });
+    await page.getByRole('menuitem', { name: name.startsWith('作品') ? '此词条不适用于当前编辑范围' : '本地词库未收录此引用' }).waitFor();
+    assert.equal(await page.getByRole('menuitem', { name: /^替换|加入/ }).count(), 0);
+    await page.keyboard.press('Escape');
+  }
+  await page.getByRole('button', { name: '关闭词条说明' }).click();
+  let release;
+  const pending = new Promise(resolve => { release = resolve; });
+  await page.route('**/api/prompt-dictionary/matches', async route => {
+    await pending;
+    await route.fulfill({ json: { available: true, matches: route.request().postDataJSON().prompts.map(prompt => ({ ...(referenceEntries[prompt] ?? { matched: false, allowed: false }), prompt_text: prompt })) } });
+  });
+  await open();
+  await page.getByRole('link', { name: '微笑 · smile', exact: true }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: '正在读取词条…' }).waitFor();
+  await page.getByRole('heading', { name: '长发', exact: true }).click();
+  release();
+  await page.waitForTimeout(100);
+  assert.equal(await page.getByRole('menu').count(), 0);
+});
+
+test('引用读取的迟到结果不覆盖后开的词条，未收录引用可返回且不修改草稿', async t => {
+  const { page, open, read } = await referenceEditor(t);
+  const before = await read();
+  let release;
+  const delayed = new Promise(resolve => { release = resolve; });
+  await page.route('**/api/prompt-dictionary/matches', async route => {
+    await delayed;
+    await route.fulfill({ json: { available: true, matches: route.request().postDataJSON().prompts.map(prompt => ({ ...(referenceEntries[prompt] ?? { matched: false, allowed: false }), prompt_text: prompt })) } });
+  });
+  await open();
+  await page.getByRole('link', { name: '短发 · short hair', exact: true }).click();
+  await page.getByRole('status').filter({ hasText: '正在读取词条' }).waitFor();
+  await page.getByRole('link', { name: '微笑 · smile', exact: true }).click();
+  release();
+  await page.getByRole('dialog', { name: '微笑', exact: true }).waitFor();
+  await page.waitForTimeout(100);
+  assert.equal(await page.getByRole('dialog', { name: '微笑', exact: true }).count(), 1);
+  await page.getByRole('button', { name: '返回上一词条' }).click();
+  await page.getByRole('link', { name: '未收录 · not in dictionary', exact: true }).click();
+  await page.getByRole('dialog', { name: 'not_in_dictionary', exact: true }).waitFor();
+  assert.match(await page.getByRole('dialog').textContent(), /本地词库未收录此引用/);
+  await page.getByRole('button', { name: '返回上一词条' }).click();
+  await page.getByRole('dialog', { name: '长发', exact: true }).waitFor();
+  assert.deepEqual(await read(), before);
+});
+
+test('说明引用批量补齐中英文，重复引用共用查询，无译名保留英文，菜单复用结果', async t => {
+  const { page, open, read } = await referenceEditor(t);
+  const before = await read();
+  const requests = [];
+  await page.route('**/api/prompt-dictionary/matches', route => {
+    const prompts = route.request().postDataJSON().prompts;
+    requests.push(prompts);
+    return route.fulfill({ json: { available: true, matches: prompts.map(prompt => ({
+      ...(referenceEntries[prompt] ?? { matched: true, allowed: true, source_text: prompt, display_text: prompt.replaceAll('_', ' ') }), prompt_text: prompt,
+      ...(prompt === 'short_hair' ? { original_description: '[[smile]] [[smile|笑容]] [[english_only]]' } : {}),
+    })) } });
+  });
+  await open();
+  await page.getByRole('link', { name: '短发 · short hair', exact: true }).click();
+  await page.getByRole('link', { name: '微笑 · smile', exact: true }).waitFor();
+  await page.getByRole('link', { name: '笑容 · smile', exact: true }).waitFor();
+  assert.equal(await page.getByRole('link', { name: 'english only', exact: true }).count(), 1);
+  assert.deepEqual(requests, [['short_hair', 'smile', 'not_in_dictionary', 'series_name'], ['english_only']]);
+  await page.getByRole('link', { name: '微笑 · smile', exact: true }).click({ button: 'right' });
+  await page.getByRole('menu', { name: '微笑 · smile', exact: true }).waitFor();
+  assert.equal(requests.length, 2, '菜单不重复请求已读取的引用');
+  assert.deepEqual(await read(), before);
 });
 
 for (const mobile of [false, true]) for (const keyboard of [false, true]) {

@@ -28,8 +28,8 @@ export function createLongPressContextMenuController({
     return activated;
   }
 
-  function validSuppression(target) {
-    if (!suppression || suppression.expiresAt < now() || !contains(suppression.target, target)) {
+  function validSuppression(target, allowRetargetedClick = false) {
+    if (!suppression || suppression.expiresAt < now() || (!allowRetargetedClick && !contains(suppression.target, target))) {
       if (suppression?.expiresAt < now()) suppression = null;
       return null;
     }
@@ -70,10 +70,13 @@ export function createLongPressContextMenuController({
       return clearActive(true);
     },
     cancelForAdditionalPointer(pointer) {
+      if (pointer.isPrimary) suppression = null;
       if (pointer.pointerType === "touch" && !pointer.isPrimary) clearActive(true);
     },
     consumeClick(target) {
-      const remembered = validSuppression(target);
+      // 菜单可能移到手指下方，浏览器会把松手后的 click 发给菜单项。
+      // 只吞掉本次手势的点击；新的 pointerdown 已清除抑制，不影响主动选择。
+      const remembered = validSuppression(target, true);
       if (!remembered?.click) return false;
       remembered.click = false;
       return true;

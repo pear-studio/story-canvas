@@ -3,13 +3,14 @@ import { promptWeightPresets } from "../shared/prompt-weight-presets.mjs";
 import { FloatingPanel } from "./FloatingPanel";
 import { InlinePromptInput, type InlinePromptHandle } from "./InlinePromptInput";
 import { useDismissableLayer } from "./use-dismissable-layer";
-import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { activePromptDictionarySuggestion, canSearchPromptDictionary, inferUserPromptType, mergePromptDictionarySuggestions, shouldOpenPromptDictionarySearch } from "./prompt-fragment-input";
 import { type PromptDictionaryMatch, usePromptDictionaryMatches } from "./prompt-display";
 import { promptTagMarkerErrors, promptCompletionSpan } from "../shared/prompt-tags.mjs";
 import { placePromptSuggestions } from "./prompt-suggestion-placement";
-import "./prompt-dictionary-details.css";
+import { PromptDictionaryDetailsDialog, dictionaryCategoryLabels as categoryShortLabels, dictionaryFrequency as frequencyLabel, type DictionaryEditAction } from "./PromptDictionaryDetailsDialog";
+import type { PromptTagSpan } from "../shared/prompt-tags.mjs";
 import "./prompt-compact.css";
 
 
@@ -65,56 +66,6 @@ export type PromptDictionarySuggestion = {
 
 function hasDictionaryDetails(entry: PromptDictionaryMatch | undefined): entry is PromptDictionaryMatch {
   return Boolean(entry?.source_text);
-}
-
-function PromptDictionaryDetailsDialog({ entry, onClose }: { entry: PromptDictionaryMatch; onClose: () => void }) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
-  const titleId = useId();
-  useLayoutEffect(() => {
-    const dialog = dialogRef.current;
-    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    dialog?.showModal();
-    return () => {
-      dialog?.close();
-      if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
-    };
-  }, []);
-  const sourceTag = entry.source_text || entry.prompt_text.replaceAll(" ", "_");
-  const sourcePath = /^\d+$/.test(sourceTag) ? `~${sourceTag}` : sourceTag;
-  const originalDescription = entry.original_description;
-  const frequency = frequencyLabel(entry.post_count);
-  const providerLabels: Record<string, string> = { "0": "通用标签", "1": "画师", "3": "作品", "4": "角色", "5": "元信息" };
-  const chips = (values: string[] | undefined) => values?.length
-    ? <span className="prompt-dictionary-detail-chips">{values.map((value) => <span key={value}>{value}</span>)}</span>
-    : <span className="prompt-dictionary-detail-empty">暂无</span>;
-  return createPortal(<dialog className="prompt-dictionary-details" ref={dialogRef} aria-labelledby={titleId}
-    onCancel={(event) => { event.preventDefault(); onClose(); }}
-    onKeyDown={(event) => event.stopPropagation()}
-    onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-    <header className="prompt-dictionary-details-header">
-      <div><h2 id={titleId}>{entry.display_text || entry.prompt_text}</h2><code>{sourceTag}</code></div>
-      <button type="button" onClick={onClose} aria-label="关闭词条说明">×</button>
-    </header>
-    <div className="prompt-dictionary-details-content">
-      <dl className="prompt-dictionary-detail-facts">
-        <dt>使用频率</dt><dd>{frequency ? `${frequency.label} · ${entry.post_count!.toLocaleString("zh-CN")} 次使用` : "暂无数据"}</dd>
-        <dt>标签类型</dt><dd>{providerLabels[entry.provider_type ?? ""] ?? "暂无"}</dd>
-        <dt>分类</dt><dd>{chips(entry.categories?.map((id) => categoryShortLabels[id] ?? id))}</dd>
-        <dt>关键词</dt><dd>{chips(entry.keywords)}</dd>
-        <dt>标签别名</dt><dd>{chips(entry.aliases)}</dd>
-        <dt>其他名称</dt><dd>{chips(entry.other_names)}</dd>
-        <dt>来源</dt><dd><a href={`https://danbooru.donmai.us/wiki_pages/${encodeURIComponent(sourcePath)}`} target="_blank" rel="noreferrer">Danbooru Wiki ↗</a></dd>
-      </dl>
-      {entry.description_language === "zh" && entry.description && <section className="prompt-dictionary-description-section">
-        <h3>中文说明</h3><div className="prompt-dictionary-description-body">{entry.description}</div>
-      </section>}
-      <section className="prompt-dictionary-description-section prompt-dictionary-original-section">
-        <h3>原文说明</h3>{originalDescription
-          ? <div className="prompt-dictionary-description-body" lang="en">{originalDescription}</div>
-          : <p className="prompt-dictionary-detail-empty">暂无原文说明。</p>}
-      </section>
-    </div>
-  </dialog>, document.body);
 }
 
 export function withPromptType(fragment: PromptFragment, promptType: PromptType) {
@@ -223,15 +174,6 @@ export const promptTypeShortLabels: Record<PromptType, string> = {
   custom_description: "描述",
 };
 
-const categoryShortLabels: Record<string, string> = { population: "人数", person: "人物", appearance: "外观", action: "动作",  setting: "场景", camera: "镜头", avoid: "避免", identity: "身份", hair: "发型", face: "面部", body: "身体", clothing: "服装", accessories: "配饰", equipment: "装备" };
-
-function frequencyLabel(postCount: number | null | undefined) {
-  if (!Number.isFinite(postCount)) return null;
-  if ((postCount ?? 0) >= 1000) return { label: "常用", tone: "common" };
-  if ((postCount ?? 0) >= 100) return { label: "低频", tone: "low" };
-  return { label: "稀有", tone: "rare" };
-}
-
 function compactLabel(label: string) {
   const words = label.trim().split(/\s+/).filter(Boolean);
   if (words.length > 1) return words.slice(0, 2).map((word) => Array.from(word)[0]).join("").toUpperCase();
@@ -263,6 +205,10 @@ function issueBelongsToFragment(issue: PromptAuditIssue, fragment: PromptFragmen
   return Boolean(issue.path?.includes(fragment.id));
 }
 
+type DictionarySource = { text: string; originalText: string; span: ReturnType<typeof promptCompletionSpan> };
+type DictionaryEditRequest = { categoryId: string; fragmentId: string; source: DictionarySource; action: DictionaryEditAction; entry: PromptDictionaryMatch };
+type DictionaryEditHandler = (request: DictionaryEditRequest) => { text: string } | null;
+
 function PromptFragmentRow({
   categoryId,
   categoryLabel,
@@ -280,6 +226,8 @@ function PromptFragmentRow({
   onChange,
   onDelete,
   onDragStart,
+  onDictionaryEdit,
+  canAddNegative = false,
 }: {
   categoryId: string;
   categoryLabel: string;
@@ -298,6 +246,8 @@ function PromptFragmentRow({
   onChange: (fragment: PromptFragment, metadata?: PromptEditMetadata) => void;
   onDelete: () => void;
   onDragStart: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+  onDictionaryEdit?: DictionaryEditHandler;
+  canAddNegative?: boolean;
 }) {
   const listboxId = useId();
   const [queryFocused, setQueryFocused] = useState(false);
@@ -319,6 +269,7 @@ function PromptFragmentRow({
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
   const [detailEntry, setDetailEntry] = useState<PromptDictionaryMatch | null>(null);
   const dictionaryDetailsOpen = useRef(false);
+  const dictionarySource = useRef<DictionarySource | null>(null);
   const [deferEmptyError, setDeferEmptyError] = useState(() => !fragment.prompt_text.trim());
   const [weightMenuOpen, setWeightMenuOpen] = useState(false);
   const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
@@ -746,9 +697,33 @@ function PromptFragmentRow({
     maxHeight: suggestionPlacement.maxHeight,
     transform: suggestionPlacement.openAbove ? "translateY(-100%)" : undefined,
   } : undefined;
-  function openDictionaryDetails(entry: PromptDictionaryMatch) {
+  function openDictionaryDetails(entry: PromptDictionaryMatch, tagSpan?: PromptTagSpan) {
+    const text = queryDraftRef.current;
+    let span = promptCompletionSpan(text, queryCaret);
+    if (tagSpan) {
+      let start = tagSpan.start + (tagSpan.marked ? 1 : 0);
+      let end = tagSpan.end - (tagSpan.marked ? 1 : 0);
+      while (start < end && /\s/.test(text[start])) start++;
+      while (end > start && /\s/.test(text[end - 1])) end--;
+      span = { start, end, query: text.slice(start, end), closeBrace: false };
+    }
+    dictionarySource.current = { text, originalText: fragmentRef.current.prompt_text, span };
     dictionaryDetailsOpen.current = true;
     setDetailEntry(entry);
+  }
+  function useDictionaryEntry(action: DictionaryEditAction, entry: PromptDictionaryMatch) {
+    const source = dictionarySource.current;
+    if (!source || toggleOnly || !onDictionaryEdit) return false;
+    const result = onDictionaryEdit({ categoryId, fragmentId: fragment.id, source, action, entry });
+    if (!result) return false;
+    setQueryDraft(result.text);
+    fragmentRef.current = { ...fragmentRef.current, prompt_text: result.text };
+    closeQuerySearch();
+    if (action === "replace") {
+      const caret = source.span.start + (entry.source_text || entry.prompt_text).replaceAll("_", " ").length + (source.span.closeBrace ? 1 : 0);
+      requestAnimationFrame(() => promptInputRef.current?.setSelectionRange(caret, caret));
+    }
+    return true;
   }
   const suggestionPanel = suggestionPlacement && queryResultsVisible
     ? createPortal(<FloatingPanel className="prompt-fragment-suggestions prompt-fragment-suggestions--portal" id={listboxId} role="listbox" aria-busy={pagingState === "loading"} ref={suggestionsRef} style={suggestionPanelStyle} onScroll={handleSuggestionScroll}>{suggestions.map((suggestion, suggestionIndex) => {
@@ -803,7 +778,7 @@ function PromptFragmentRow({
           onKeyDown={handleQueryKeyDown} onValueChange={(text, caret) => { setQueryCaret(caret); updateQueryDraft(text); }} />
       </div>
       <button ref={weightTriggerRef} type="button" className="prompt-fragment-weight-button" disabled={toggleOnly && upstreamWeight === undefined} onPointerDown={(event) => event.stopPropagation()} onClick={toggleWeightMenu} title={fragment.inheritance ? Object.hasOwn(fragment.inheritance, 'weight') ? '权重已覆盖，点击修改或恢复继承' : '权重随上游，点击设置覆盖' : '点击修改权重'} aria-haspopup="dialog" aria-expanded={weightMenuOpen} aria-label={`${categoryLabel}第 ${index + 1} 项权重 ${promptWeightLabel(fragment.weight)}`}>{promptWeightLabel(fragment.weight)}{fragment.inheritance && Object.hasOwn(fragment.inheritance, 'weight') ? ' •' : ''}</button>
-      {mobileLayout && <button ref={actionsTriggerRef} type="button" className="prompt-fragment-options-button" onPointerDown={(event) => event.stopPropagation()} onClick={() => setActionsMenuOpen(open => !open)} title="词条选项" aria-haspopup="dialog" aria-expanded={actionsMenuOpen} aria-label={`${categoryLabel}第 ${index + 1} 项选项`}>···</button>}
+      {mobileLayout && <button ref={actionsTriggerRef} type="button" className="prompt-fragment-options-button" onPointerDown={(event) => event.stopPropagation()} onClick={() => setActionsMenuOpen(open => !open)} title="词条选项" aria-haspopup="dialog" aria-expanded={actionsMenuOpen} aria-label={`${categoryLabel}第 ${index + 1} 项选项`}>⋯</button>}
       {mobileLayout && actionsMenuOpen && <div className="prompt-fragment-weight-menu" ref={actionsMenuRef} role="dialog" aria-label={`${categoryLabel}第 ${index + 1} 项选项`} onPointerDown={(event) => event.stopPropagation()}>
         <strong>{categoryLabel}第 {index + 1} 项选项</strong>
         <div className="prompt-fragment-mobile-actions">{enabledControl}{deleteControl}</div>
@@ -827,11 +802,11 @@ function PromptFragmentRow({
     {markerErrors.length > 0 && <div className="prompt-fragment-issues" role="alert">{markerErrors.map(message => <p className="is-error" key={message}>{message}</p>)}</div>}
     {visibleFragmentIssues.length > 0 && <div className="prompt-fragment-issues">{visibleFragmentIssues.map((issue, issueIndex) => <p className={issue.severity === "error" ? "is-error" : "is-warning"} key={`${issue.code ?? "issue"}-${issueIndex}`}><b>{issue.severity === "error" ? "错误" : "警告"}</b>{issueText(issue)}</p>)}</div>}
     {suggestionPanel}
-    {detailEntry && <PromptDictionaryDetailsDialog entry={detailEntry} onClose={() => { setDetailEntry(null); dictionaryDetailsOpen.current = false; }} />}
+    {detailEntry && <PromptDictionaryDetailsDialog entry={detailEntry} scope={scope} actions={!toggleOnly && onDictionaryEdit ? { sourceLabel: dictionarySource.current?.span.query || "当前词条", canAddNegative, onUse: useDictionaryEntry } : undefined} onClose={() => { setDetailEntry(null); dictionaryDetailsOpen.current = false; }} />}
   </article>;
 }
 
-export function PromptFragmentList({ categoryId, categoryLabel, scope, rowScopeKey = "", fragments, roles, issues = [], toggleOnly = false, upstreamWeights, upstreamEnabled, onPersonDragStart, onChange }: {
+export function PromptFragmentList({ categoryId, categoryLabel, scope, rowScopeKey = "", fragments, roles, issues = [], toggleOnly = false, upstreamWeights, upstreamEnabled, onPersonDragStart, onDictionaryEdit, canAddNegative, onChange }: {
   categoryId: string;
   categoryLabel: string;
   scope: PromptDictionaryScope;
@@ -842,6 +817,8 @@ export function PromptFragmentList({ categoryId, categoryLabel, scope, rowScopeK
   toggleOnly?: boolean;
   /** 人物分组的跨组排序由外层编辑器统一处理（指针拖拽），行内列表不自行排序。 */
   onPersonDragStart?: (event: ReactPointerEvent<HTMLButtonElement>, fragmentId: string) => void;
+  onDictionaryEdit?: DictionaryEditHandler;
+  canAddNegative?: boolean;
   upstreamWeights?: Record<string, number>;
   upstreamEnabled?: Record<string, boolean>;
   onChange: (fragments: PromptFragment[], metadata?: PromptEditMetadata) => void;
@@ -893,7 +870,7 @@ export function PromptFragmentList({ categoryId, categoryLabel, scope, rowScopeK
   return <div className={`prompt-fragment-list ${roles ? "has-roles" : ""}`} ref={listRef} onPointerMove={(event) => moveDrag(event.clientY, event.pointerId)} onPointerUp={(event) => finishDrag(event.pointerId)} onPointerCancel={(event) => finishDrag(event.pointerId, true)}>
     {fragments.map((fragment, index) => {
       const dragPosition = drag?.from === index ? "source" : drag && drag.to !== drag.from && drag.to === index ? (drag.to < drag.from ? "before" : "after") : undefined;
-      return <div className="prompt-fragment-entry" key={`${rowScopeKey}:${fragment.id}`}><PromptFragmentRow categoryId={categoryId} categoryLabel={categoryLabel} scope={scope} fragment={fragment} dictionaryMatch={dictionaryMatches[fragment.prompt_text.trim()]} dictionaryMatches={dictionaryMatches} index={index} roles={roles} issues={issues} dragPosition={dragPosition} toggleOnly={toggleOnly} upstreamWeight={upstreamWeights?.[fragment.id]} upstreamEnabled={upstreamEnabled?.[fragment.id]} onChange={(next, metadata) => onChange(fragments.map((current) => current.id === fragment.id ? next : current), metadata)} onDelete={() => onChange(fragments.filter((current) => current.id !== fragment.id))} onDragStart={categoryId === "person" && onPersonDragStart ? (event) => onPersonDragStart(event, fragment.id) : (event) => startDragging(event, index)} /></div>;
+      return <div className="prompt-fragment-entry" key={`${rowScopeKey}:${fragment.id}`}><PromptFragmentRow onDictionaryEdit={onDictionaryEdit} canAddNegative={canAddNegative} categoryId={categoryId} categoryLabel={categoryLabel} scope={scope} fragment={fragment} dictionaryMatch={dictionaryMatches[fragment.prompt_text.trim()]} dictionaryMatches={dictionaryMatches} index={index} roles={roles} issues={issues} dragPosition={dragPosition} toggleOnly={toggleOnly} upstreamWeight={upstreamWeights?.[fragment.id]} upstreamEnabled={upstreamEnabled?.[fragment.id]} onChange={(next, metadata) => onChange(fragments.map((current) => current.id === fragment.id ? next : current), metadata)} onDelete={() => onChange(fragments.filter((current) => current.id !== fragment.id))} onDragStart={categoryId === "person" && onPersonDragStart ? (event) => onPersonDragStart(event, fragment.id) : (event) => startDragging(event, index)} /></div>;
     })}
     {categoryIssues.length > 0 && <div className="prompt-fragment-category-issues">{categoryIssues.map((issue, index) => <p className={issue.severity === "error" ? "is-error" : "is-warning"} key={`${issue.code ?? "category"}-${index}`}>{issueText(issue)}</p>)}</div>}
   </div>;
@@ -987,6 +964,46 @@ function CategoryPromptEditor({ categories, scope, fragments, roles, issues = []
   const populatedCategories = categories.filter((category) => showEmptyCategories || (fragments[category.id] ?? []).length > 0);
   const emptyCategories = showEmptyCategories ? [] : categories.filter((category) => (fragments[category.id] ?? []).length === 0);
 
+  function editDictionary({ categoryId, fragmentId, source, action, entry }: DictionaryEditRequest) {
+    const entries = fragments[categoryId] ?? [];
+    const index = entries.findIndex(fragment => fragment.id === fragmentId);
+    const original = entries[index];
+    if (toggleOnly || !original || original.prompt_text !== source.originalText || !entry.matched || !entry.allowed || !entry.source_text) return null;
+    if (action === "negative" && !categories.some(category => category.id === "avoid")) return null;
+    const tag = entry.source_text.replaceAll("_", " ");
+    const draftSource = { ...original, prompt_text: source.text };
+    const draft = { ...fragments, [categoryId]: entries.map((fragment, i) => i === index ? draftSource : fragment) };
+    let text = source.text;
+    let next = draft;
+    let insertedId: string | null = null;
+    if (action === "replace") {
+      const span = source.span;
+      text = source.text.slice(0, span.start) + tag + (span.closeBrace ? "}" : "") + source.text.slice(span.end);
+      const replacement = withPromptType({ ...draftSource, prompt_text: text }, span.start === 0 && span.end === source.text.length ? "danbooru" : "custom_description");
+      next = { ...draft, [categoryId]: draft[categoryId].map((fragment, i) => i === index ? replacement : fragment) };
+    } else {
+      const target = action === "negative" ? "avoid" : categoryId;
+      const created = createFragment(target);
+      const added: PromptFragment = { id: created.id, prompt_type: "danbooru", prompt_text: tag, ...(action === "insert" && original.role ? { role: original.role } : {}) };
+      const targetEntries = [...(draft[target] ?? [])];
+      targetEntries.splice(action === "insert" ? index + 1 : targetEntries.length, 0, added);
+      next = { ...draft, [target]: targetEntries };
+      insertedId = added.id;
+    }
+    // 查看详情不提交草稿；执行动作时先保存输入状态，让一次撤销只撤销该动作。
+    if (original.prompt_text !== source.text) history.apply(draft);
+    history.apply(next);
+    if (insertedId) requestAnimationFrame(() => {
+      const input = editorRef.current?.querySelector<HTMLElement>(`[data-fragment-id="${CSS.escape(insertedId!)}"] [role="combobox"]`);
+      if (!input) return;
+      input.scrollIntoView({ block: "nearest" });
+      input.focus({ preventScroll: true });
+      const range = document.createRange(); range.selectNodeContents(input); range.collapse(false);
+      const selection = window.getSelection(); selection?.removeAllRanges(); selection?.addRange(range);
+    });
+    return { text };
+  }
+
   function addFragment(categoryId: string) {
     const entries = fragments[categoryId] ?? [];
     history.apply({ ...fragments, [categoryId]: [...entries, createFragment(categoryId)] });
@@ -1012,14 +1029,14 @@ function CategoryPromptEditor({ categories, scope, fragments, roles, issues = []
                 if (!role.id && !groupEntries.length && !personIndicator) return null;
                 return <section key={role.id} className={`prompt-person-group ${groupEntries.length ? "" : "is-empty"} ${personIndicator?.roleId === role.id ? "is-drop-target" : ""}`} data-person-role={role.id} aria-label={role.label} title={role.label} style={{ "--person-color": role.color ?? "#929a96" } as CSSProperties}>
                   {personIndicator?.roleId === role.id && personIndicator.line !== null && <span className="prompt-person-drop-line" aria-hidden="true" style={{ top: personIndicator.line }} />}
-                  <PromptFragmentList categoryId="person" categoryLabel={`人物·${role.label}`} scope={scope} rowScopeKey={historyScopeKey} fragments={groupEntries} roles={roles} issues={issues} toggleOnly={toggleOnly} upstreamWeights={upstreamWeights} upstreamEnabled={upstreamEnabled} onPersonDragStart={startPersonDrag} onChange={(next, metadata) => {
+                  <PromptFragmentList onDictionaryEdit={editDictionary} canAddNegative={categories.some(category => category.id === "avoid")} categoryId="person" categoryLabel={`人物·${role.label}`} scope={scope} rowScopeKey={historyScopeKey} fragments={groupEntries} roles={roles} issues={issues} toggleOnly={toggleOnly} upstreamWeights={upstreamWeights} upstreamEnabled={upstreamEnabled} onPersonDragStart={startPersonDrag} onChange={(next, metadata) => {
                     const ids = new Set(groupEntries.map(entry => entry.id)); let cursor = 0;
                     const combined = entries.flatMap(entry => ids.has(entry.id) ? (cursor < next.length ? [next[cursor++]] : []) : [entry]);
                     history.apply({ ...fragments, person: [...combined, ...next.slice(cursor)] }, metadata);
                   }} />
                 </section>;
               });
-            })() : <PromptFragmentList categoryId={category.id} categoryLabel={category.label} scope={scope} rowScopeKey={historyScopeKey} fragments={entries} issues={issues} toggleOnly={toggleOnly} upstreamWeights={upstreamWeights} upstreamEnabled={upstreamEnabled} onChange={(next, metadata) => history.apply({ ...fragments, [category.id]: next }, metadata)} />}
+            })() : <PromptFragmentList onDictionaryEdit={editDictionary} canAddNegative={categories.some(category => category.id === "avoid")} categoryId={category.id} categoryLabel={category.label} scope={scope} rowScopeKey={historyScopeKey} fragments={entries} issues={issues} toggleOnly={toggleOnly} upstreamWeights={upstreamWeights} upstreamEnabled={upstreamEnabled} onChange={(next, metadata) => history.apply({ ...fragments, [category.id]: next }, metadata)} />}
           </div>
         </section>;
       })}
@@ -1041,7 +1058,7 @@ export function ReadonlyPromptFragmentEditor({ categories, scope, fragments, rol
   const allFragments = categories.flatMap((category) => fragments[category.id] ?? []);
   const dictionaryMatches = usePromptDictionaryMatches(allFragments, scope);
   return <div className="prompt-fragment-editor prompt-fragment-editor--readonly prompt-compact">
-    {detailEntry && <PromptDictionaryDetailsDialog entry={detailEntry} onClose={() => setDetailEntry(null)} />}
+    {detailEntry && <PromptDictionaryDetailsDialog entry={detailEntry} scope={scope} onClose={() => setDetailEntry(null)} />}
     <PromptFragmentTableHeader roles={Boolean(roles)} compact />
     {categories.map((category) => {
       const entries = fragments[category.id] ?? [];

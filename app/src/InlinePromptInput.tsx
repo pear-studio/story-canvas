@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, type HTMLAttributes, type RefObject } from "react";
-import { promptTagSpans } from "../shared/prompt-tags.mjs";
+import { promptTagSpans, type PromptTagSpan } from "../shared/prompt-tags.mjs";
 import type { PromptDictionaryMatch } from "./prompt-display";
 
 export type InlinePromptHandle = { setSelectionRange: (start: number, end: number) => void };
@@ -41,7 +41,7 @@ type Props = Omit<HTMLAttributes<HTMLDivElement>, "onChange" | "onSelect"> & {
   inputRef?: RefObject<InlinePromptHandle | null>;
   onValueChange?: (value: string, caret: number) => void;
   onCaretChange?: (caret: number) => void;
-  onDetails: (entry: PromptDictionaryMatch) => void;
+  onDetails: (entry: PromptDictionaryMatch, span?: PromptTagSpan) => void;
 };
 
 export function InlinePromptInput({ value, matches, readOnly, inputRef, onValueChange, onCaretChange, onDetails, ...props }: Props) {
@@ -73,7 +73,7 @@ export function InlinePromptInput({ value, matches, readOnly, inputRef, onValueC
         note.setAttribute("aria-label", `查看 ${entry.display_text || entry.prompt_text} 的词条说明`);
         note.setAttribute("aria-haspopup", "dialog");
         note.onpointerdown = event => event.preventDefault();
-        note.onclick = () => latest.current.onDetails(entry);
+        note.onclick = () => latest.current.onDetails(entry, span);
         fragment.append(note);
       }
       cursor = span.end;
