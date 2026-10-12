@@ -52,7 +52,7 @@ const resourceId = { resource_id: string('resource.lora.list 返回的 ID') };
 async function loras() {
   const list = await get('/api/lora-resources');
   return { errors: list.errors, items: [
-    ...list.resources.map(({ resource, status, reason, storage, owner_project_id }) => ({ id: resource.id, name: resource.name, registered: true, status, reason, storage, owner_project_id, architecture_family: resource.architecture.family, relative_path: resource.file.relative_path })),
+    ...list.resources.map(entry => ({ id: entry.resource.id, name: entry.resource.name, registered: true, ...pick(entry,['status','reason','storage','owner_project_id']), architecture_family: entry.resource.architecture.family, relative_path: entry.resource.file.relative_path })),
     ...list.raw.map(({ id, name, relative_path }) => ({ id, name, relative_path, registered: false, architecture_family: 'unknown' })),
   ] };
 }

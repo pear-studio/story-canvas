@@ -712,6 +712,31 @@ test('项目设置经真实 HTTP Adapter 读写，旧 revision 拒绝且材料�
   assert.equal((await run('material.list')).total, 0);
 });
 
+test('LoRA 查询混合归属及缺失可选字段时返回无损 JSON，过滤和分页保持可用', async t => {
+  const entry = (id, scope = {}) => ({resource:{id,name:id,architecture:{family:'anima'},file:{relative_path:`loras/${id}.safetensors`}},status:'available',...scope});
+  const resources = [entry('lora-repo',{storage:'repository'}),entry('lora-local',{storage:'local',reason:null}),entry('lora-project',{storage:'project',owner_project_id:'demo',reason:'missing'})];
+  const raw = [{id:'raw-test',name:'raw-test',relative_path:'loras/raw-test.safetensors'}];
+  const f = await fixture(t,(req,res)=>{
+    assert.equal(req.url,'/api/lora-resources');
+    res.end(JSON.stringify({resources,raw,errors:[]}));
+  });
+  const list = await f.tool.execute({operation:'resource.lora.list',args:{}});
+  assert.deepEqual(list,JSON.parse(JSON.stringify(list)),'DSH 拒绝 undefined，不能只检查 JSON.stringify 后的结果');
+  assert.equal(list.total,4);
+  assert.equal(Object.hasOwn(list.items[0],'owner_project_id'),false);
+  assert.equal(Object.hasOwn(list.items[0],'reason'),false);
+  assert.equal(list.items[1].reason,null);
+  assert.equal(list.items[2].owner_project_id,'demo');
+  assert.equal(list.items[2].reason,'missing');
+  assert.equal(list.items[3].registered,false);
+  for(const args of [{query:'local'},{offset:2,limit:1},{query:'absent'}]) {
+    const result=await f.tool.execute({operation:'resource.lora.list',args});
+    assert.deepEqual(result,JSON.parse(JSON.stringify(result)));
+    assert.equal(result.total,args.query==='absent'?0:args.query?1:4);
+    if(args.offset)assert.equal(result.next_offset,3);
+  }
+});
+
 test('LoRA 工具查询未登记资源、保留其他调整，替换和删除保留基础值且不覆盖陈旧读取', async t => {
   let rev = 'r1';
   let document = { version: 1, profiles: { base: { changes: [{ target: 'prompt.text', original: { exists: true, value: '' }, project: { exists: true, value: 'neutral' } }] } } };
