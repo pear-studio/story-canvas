@@ -1,4 +1,5 @@
 import { inspectionGenerationSignature } from "./generation-signature.mjs";
+import { iterationCandidateIds } from '../shared/candidate-iteration.mjs';
 import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, realpath, rm } from "node:fs/promises";
 import path from "node:path";
@@ -131,7 +132,8 @@ export async function deletePageCandidates(projectRoot, projectId, value) {
     if (value.expected_signature !== undefined && value.expected_signature !== currentSignature) {
       fail("candidate_generation_signature_stale", [], 409);
     }
-    requestedIds = available.filter((record) => record.generation_signature !== currentSignature).map((record) => record.candidate_id);
+    const retained = iterationCandidateIds(available);
+    requestedIds = available.filter((record) => !retained.has(record.candidate_id) && record.generation_signature !== currentSignature).map((record) => record.candidate_id);
   }
   const byId = new Map(available.map((record) => [record.candidate_id, record]));
   const missing = requestedIds.filter((candidateId) => !byId.has(candidateId));

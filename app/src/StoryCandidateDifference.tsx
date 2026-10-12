@@ -25,15 +25,17 @@ export function StoryCandidateDifference({ projectId, row, onClose }: { projectI
   return <Modal size="workspace" className="candidate-difference-modal" title="候选差异详情" subtitle={row.title} onClose={onClose} footer={<button type="button" className="button" onClick={onClose}>关闭</button>}>
     <p>比较候选生成时的记录与当前已保存的生成条件；没有候选也会列入补齐范围。</p>
     <p>{row.all_candidate_ids.length ? `共 ${row.all_candidate_ids.length} 张候选，扫描时 ${row.matched} 张相符、${row.candidate_ids.length} 张不符。` : '本页没有候选图，没有旧 Prompt 可比较。'}</p>
+    {Boolean(row.retained_iteration_ids?.length) && <p>迭代图及其来源共 {row.retained_iteration_ids!.length} 张，不在“清理不符候选”的删除范围内。</p>}
     {current && current.generation_signature !== row.signature && <p>扫描后页面状态已变化，请关闭并重新扫描后再生成或清理。</p>}
     {error && <p role="alert">{error}</p>}
     {!current && !error && <p role="status">正在读取当前 Prompt…</p>}
     {current?.blockers.map((issue, index) => <p key={index}>{issue.message}</p>)}
-    {candidateId && <label>比较候选 <select aria-label="比较候选" value={candidateId} onChange={event => setCandidateId(event.target.value)}>{row.all_candidate_ids.map((id, index) => <option key={id} value={id}>候选 {index + 1} · {row.candidate_ids.includes(id) ? '不符' : '相符'} · {id.slice(-8)}</option>)}</select></label>}
+    {candidateId && <label>比较候选 <select aria-label="比较候选" value={candidateId} onChange={event => setCandidateId(event.target.value)}>{row.all_candidate_ids.map((id, index) => <option key={id} value={id}>候选 {index + 1} · {row.retained_iteration_ids?.includes(id) ? '迭代保留' : row.candidate_ids.includes(id) ? '不符' : '相符'} · {id.slice(-8)}</option>)}</select></label>}
     {candidateError && <p role="alert">候选详情读取失败：{candidateError}</p>}
     {candidateId && !candidate && !candidateError && <p role="status">正在读取候选记录…</p>}
     {candidate && <p>生成时间：{candidate.completed_at ?? candidate.created_at ?? '未记录'} · Seed：{candidate.seed ?? '未记录'}</p>}
-    {current && (!candidateId || candidate) && (['positive', 'negative'] as const).map(polarity => {
+    {candidate?.iteration && <section className="candidate-prompt-comparison"><h3>本次修改要求</h3><pre>{candidate.generation.prompt.sections.find(section => section.kind === 'page')?.text ?? candidate.generation.prompt.positive}</pre><p>迭代指令独立于页面 Prompt，不参与页面生成条件比较。</p></section>}
+    {current && !candidate?.iteration && (!candidateId || candidate) && (['positive', 'negative'] as const).map(polarity => {
       const before = candidate?.generation.prompt[polarity] ?? '', after = current.prompt[polarity];
       if (!before && !after) return null;
       const difference = comparePromptText(before, after, promptParts(before), promptParts(after));

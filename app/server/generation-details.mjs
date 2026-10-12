@@ -43,6 +43,7 @@ export function candidateDetailProjection(detail) {
     : Number.isSafeInteger(detail?.seed) ? detail.seed : null;
   return {
     candidate_id: typeof detail?.candidate_id === "string" ? detail.candidate_id : "",
+    ...(detail?.iteration ? { iteration: structuredClone(detail.iteration) } : {}),
     created_at: typeof detail?.created_at === "string" ? detail.created_at : null,
     completed_at: typeof detail?.completed_at === "string" ? detail.completed_at : null,
     seed,

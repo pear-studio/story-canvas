@@ -108,7 +108,7 @@ export function StoryCandidateRefresh({ projectId, pages, busy, scopeLabel = "�
           </select></label>}
         </div>
         <p className="story-candidate-refresh-help">{session.action === "clean"
-          ? cleanAll ? "删除以下页面的全部候选，无法撤销。" : "仅删除与当前已保存的生成条件不符的候选，无法撤销。"
+          ? cleanAll ? "删除以下页面的全部候选，无法撤销。" : "删除与当前已保存的生成条件不符的候选，保留迭代图及其来源。删除无法撤销。"
           : scope === "missing" ? "缺失包括：尚无候选图，以及已有候选但都与当前生成条件不符。" : "为所有可生成的页面新增候选。"}</p>
         <div className="story-candidate-refresh-summary" role="status">
           <span>{targets.length ? `${targets.length} 页${session.action === "generate" ? ` · 每页 ${perPage} 张` : ""}` : "没有需要处理的页面"}</span>
@@ -117,7 +117,7 @@ export function StoryCandidateRefresh({ projectId, pages, busy, scopeLabel = "�
         {session.action === "generate" && <p>尚无候选 {session.rows.filter(row => row.status === 'ready' && !row.all_candidate_ids.length).length} 页 · 已有候选但无相符结果 {session.rows.filter(row => row.status === 'ready' && row.all_candidate_ids.length > 0 && !row.matched).length} 页 · 已有相符候选 {session.rows.filter(row => row.status === 'ready' && row.matched > 0).length} 页</p>}
         {targets.length > 0 && <ul className="story-candidate-refresh-pages">{targets.map((row) => <li key={row.page_key.page_id}>
           <span>第 {String(row.number).padStart(2, "0")} 页 · {row.title}</span>
-          {session.action === "clean" ? <span>删除 {deleteIds(row).length} 张，保留 {cleanAll ? 0 : row.matched} 张</span> : <span>{!row.all_candidate_ids.length ? "尚无候选" : row.matched ? "已有相符候选" : "已有候选不符"} · 生成 {perPage} 张</span>}
+          {session.action === "clean" ? <span>删除 {deleteIds(row).length} 张，保留 {row.all_candidate_ids.length - deleteIds(row).length} 张</span> : <span>{!row.all_candidate_ids.length ? "尚无候选" : row.matched ? "已有相符候选" : "已有候选不符"} · 生成 {perPage} 张</span>}
           <button type="button" className="button button--quiet" onClick={() => setDetailRow(row)}>查看详情</button>
         </li>)}</ul>}
         {([ ["unavailable", "无法编译，已跳过"], ["active", "已有生成任务，已跳过"] ] as const).map(([status, label]) => {

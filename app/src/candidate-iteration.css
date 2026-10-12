@@ -1,0 +1,31 @@
+.modal-backdrop:has(> .candidate-iteration-dialog) { top: var(--iteration-top, 0); bottom: auto; height: var(--iteration-height, 100dvh); box-sizing: border-box; }
+.modal.candidate-iteration-dialog { width: min(900px, 100%); max-height: 100%; padding: 0; }
+.candidate-iteration-dialog .modal__body { min-height: 0; overflow: auto; padding: 16px; }
+.candidate-iteration-dialog .modal__footer { display: flex; justify-content: flex-end; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--line); }
+.candidate-iteration-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; }
+.candidate-iteration-preview { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 12px; min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: #edf1ee; color: var(--ink); cursor: zoom-in; }
+.candidate-iteration-preview img { display: block; object-fit: contain; width: 100%; min-height: 0; max-height: 55dvh; }
+.candidate-iteration-fields { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.candidate-iteration-fields label { display: flex; flex-direction: column; gap: 8px; }
+.candidate-iteration-fields textarea, .candidate-iteration-fields input, .candidate-iteration-fields select { box-sizing: border-box; max-width: 100%; width: 100%; font: inherit; padding: 10px; border: 1px solid var(--line); border-radius: 6px; }
+.candidate-iteration-fields textarea { resize: vertical; min-height: 120px; }
+.candidate-iteration-fields details > label { margin-top: 12px; }
+.candidate-iteration-loras > label { flex-direction: row; align-items: center; min-height: 44px; }
+.candidate-iteration-loras input[type="checkbox"] { width: 18px; height: 18px; flex: none; }
+.candidate-iteration-loras p, .candidate-iteration-loras ul { margin: 4px 0; font-size: var(--text-label); color: var(--muted); overflow-wrap: anywhere; }
+.candidate-iteration-loras ul { padding-left: 20px; }
+.candidate-iteration-note { color: var(--muted); font-size: var(--text-label); margin: 0; }
+.candidate-iteration-error { color: #a32e2e; overflow-wrap: anywhere; margin: 0; }
+.candidate-iteration-badge { display: block; font-size: 11px; text-align: center; }
+.candidate-source-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+@media (max-width: 700px) {
+  .modal-backdrop:has(> .candidate-iteration-dialog) { padding: 0; }
+  .modal.candidate-iteration-dialog { width: 100%; height: 100%; max-width: none; border-radius: 0; }
+  .candidate-iteration-dialog .modal__header { padding-top: max(12px, env(safe-area-inset-top)); }
+  .candidate-iteration-dialog .modal__footer { padding-bottom: max(12px, env(safe-area-inset-bottom)); flex: none; }
+  .candidate-iteration-dialog .modal__footer button { min-height: 44px; flex: 1; }
+  .candidate-iteration-form { display: flex; flex-direction: column; gap: 16px; }
+  .candidate-iteration-preview img { max-height: 30dvh; }
+  .candidate-iteration-dialog.is-typing .candidate-iteration-preview { display: none; }
+  .candidate-iteration-fields textarea, .candidate-iteration-fields input, .candidate-iteration-fields select { font-size: 16px; }
+}

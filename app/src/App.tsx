@@ -25,6 +25,7 @@ import { canUseWorkbenchShortcut, isWorkbenchModalOpen } from "./workbench-short
 import { responseJson } from "./api-response";
 import ComparisonExperimentsView from "./ComparisonExperimentsView";
 import { GenerationDetailsPanel } from "./GenerationDetailsPanel";
+import { iterateCandidate, loadProjectQwenLoras, type CandidateIterationRequest } from './project-workbench-client';
 import GlobalModelsView, { type GlobalResources } from "./GlobalModelsView";
 import LoraTrainingView, { type LoraDatasetSummary } from "./LoraTrainingView";
 import { NamedEntityCreateDialog } from "./NamedEntityCreateDialog";
@@ -509,8 +510,8 @@ function candidateGeneratedAt(value: string | null) {
 
 function candidateDetailWorkspace(detail: CandidateDetail): CandidateWorkspaceDetail {
   return {
-    title: "候选生成详情",
-    body: <><p className="candidate-detail-summary-line">Seed {detail.seed ?? "—"} · {candidateGeneratedAt(detail.completed_at ?? detail.created_at)}</p><GenerationDetailsPanel details={detail.generation} /></>,
+    title: detail.iteration ? "迭代候选生成详情" : "候选生成详情",
+    body: <><p className="candidate-detail-summary-line">Seed {detail.seed ?? "—"} · {candidateGeneratedAt(detail.completed_at ?? detail.created_at)}</p>{detail.iteration && <p>来源候选：{detail.iteration.source_candidate_id}</p>}<GenerationDetailsPanel details={detail.generation} /></>,
   };
 }
 
@@ -764,6 +765,14 @@ export function PageWorkspace({ letteringLocale="zh",onLetteringLocaleChange,edi
     }
   }
 
+  const loadIterationLoras = useCallback(() => loadProjectQwenLoras(projectId), [projectId]);
+  async function startCandidateIteration(candidate: { candidate_id: string }, request: CandidateIterationRequest) {
+    const result = await iterateCandidate(projectId, page.page_key, candidate.candidate_id, request);
+    if (!isCurrentWorkspace()) return;
+    setTrackedTaskIds(current => [...new Set([...current, result.task.task_id])]);
+    notify({ kind: "success", message: "已提交候选迭代任务" });
+  }
+
   function changeGenerationCount(count: 1 | 3) {
     setGenerationCount(count);
     window.localStorage.setItem(generationCountStorageKey, String(count));
@@ -844,7 +853,7 @@ export function PageWorkspace({ letteringLocale="zh",onLetteringLocaleChange,edi
     <PaneResizeHandle className="pane-resizer--editor" label="调整页面事实栏宽度" value={editorWidth} defaultValue={44} min={32} max={64} unit="%" onChange={onEditorWidthChange} />
     {isTextPage
       ? <TextPageWorkspace locale={letteringLocale} onDesktopActionsTarget={setDesktopActionsTarget} projectId={projectId} pageId={page.page_id} canvas={artworkCanvas} dimensionError={renderCapabilities.text_page?.error ?? (!textDimensions ? "无法确定成品尺寸，请检查生成设置。" : null)} dirty={pageDirty} disabled={busy || submittingGeneration} onLetteringTarget={setLetteringTarget} onOutput={async () => { if (!await editorSaveLettering.current?.()) return null; if (!isCurrentWorkspace()) return null; return (await startFinishedPage(projectId, page.page_key,undefined,letteringLocale)).job; }} />
-      : <WorkbenchCandidateWorkspace onDesktopActionsTarget={setDesktopActionsTarget} finishedOutput={{locale:letteringLocale, projectId, pageId: page.page_id, onOutput: async (candidateId) => { if (!await editorSaveLettering.current?.()) return null; if (!isCurrentWorkspace()) return null; return (await startFinishedPage(projectId, page.page_key, candidateId,letteringLocale)).job; } }} pageIdentity={workspaceIdentity} pageTitle={page.title} canvas={previewCanvas} onPreviewCanvasChange={setPreviewCanvas} ownerLabel={location.breadcrumb.at(-2)} media={media} mediaStatus={mediaStatus} mediaError={mediaError} onReloadMedia={() => refreshPageMedia(false, true)} candidateWidth={candidateWidth} factReady={factReady} currentGenerationSignature={!pageDirty && renderInspection && renderInspectionKey === inspectionDepsKey ? renderInspection.generation_signature : null} mediaReady={mediaStatus === "ready"} generationReady={Boolean(renderInspection?.ready) && renderInspectionKey === inspectionDepsKey} busy={busy || submittingGeneration} busyReason={submittingGeneration ? "正在提交任务" : undefined} generationDisabledReason={renderInspectionKey === inspectionDepsKey && renderInspection ? renderInspection.blockers.map(promptIssueSummary).join("；") || capabilityBlocker : renderInspectionError || "正在编译当前 Prompt"} generationProblems={generationProblems} onLetteringTarget={setLetteringTarget} onFullscreenLetteringTarget={setFullscreenLetteringTarget} onCandidateWidthChange={onCandidateWidthChange} onGenerate={(request) => startCurrentPage(request)} generationCount={generationCount} onGenerationCountChange={changeGenerationCount} onSaveAndGenerate={saveAndGenerate} pageDirty={pageDirty} onSaveAll={async () => { await editorSaveAll.current?.(); }} onDiscardAll={() => editorDiscardAll.current?.()} onDeleteCandidates={async (request) => { mediaMutationPending.current += 1; mediaRequestGuard.current.cancel(); try { const receipt = await deleteCandidates(projectId, page.page_key, request); if (!isCurrentWorkspace()) return false; await refreshPageMedia(false, true); if (receipt.failed_candidates?.length) { notify({ kind: "error", message: `已删除 ${receipt.deleted_candidate_ids.length} 张，${receipt.failed_candidates.length} 张删除失败；无需等待生成结束，可继续工作。` }); return false; } return true; } catch (error) { if (isCurrentWorkspace()) { setInspectionNonce((value) => value + 1); notify({ kind: "error", message: error instanceof Error ? error.message : String(error) }); } return false; } finally { mediaMutationPending.current -= 1; } }} onLoadCandidateDetail={async (candidate) => candidateDetailWorkspace((await loadCandidateDetail(projectId, page.page_key, candidate.candidate_id)).detail)} />}
+      : <WorkbenchCandidateWorkspace onLoadIterationLoras={loadIterationLoras} onIterateCandidate={startCandidateIteration} onDesktopActionsTarget={setDesktopActionsTarget} finishedOutput={{locale:letteringLocale, projectId, pageId: page.page_id, onOutput: async (candidateId) => { if (!await editorSaveLettering.current?.()) return null; if (!isCurrentWorkspace()) return null; return (await startFinishedPage(projectId, page.page_key, candidateId,letteringLocale)).job; } }} pageIdentity={workspaceIdentity} pageTitle={page.title} canvas={previewCanvas} onPreviewCanvasChange={setPreviewCanvas} ownerLabel={location.breadcrumb.at(-2)} media={media} mediaStatus={mediaStatus} mediaError={mediaError} onReloadMedia={() => refreshPageMedia(false, true)} candidateWidth={candidateWidth} factReady={factReady} currentGenerationSignature={!pageDirty && renderInspection && renderInspectionKey === inspectionDepsKey ? renderInspection.generation_signature : null} mediaReady={mediaStatus === "ready"} generationReady={Boolean(renderInspection?.ready) && renderInspectionKey === inspectionDepsKey} busy={busy || submittingGeneration} busyReason={submittingGeneration ? "正在提交任务" : undefined} generationDisabledReason={renderInspectionKey === inspectionDepsKey && renderInspection ? renderInspection.blockers.map(promptIssueSummary).join("；") || capabilityBlocker : renderInspectionError || "正在编译当前 Prompt"} generationProblems={generationProblems} onLetteringTarget={setLetteringTarget} onFullscreenLetteringTarget={setFullscreenLetteringTarget} onCandidateWidthChange={onCandidateWidthChange} onGenerate={(request) => startCurrentPage(request)} generationCount={generationCount} onGenerationCountChange={changeGenerationCount} onSaveAndGenerate={saveAndGenerate} pageDirty={pageDirty} onSaveAll={async () => { await editorSaveAll.current?.(); }} onDiscardAll={() => editorDiscardAll.current?.()} onDeleteCandidates={async (request) => { mediaMutationPending.current += 1; mediaRequestGuard.current.cancel(); try { const receipt = await deleteCandidates(projectId, page.page_key, request); if (!isCurrentWorkspace()) return false; await refreshPageMedia(false, true); if (receipt.failed_candidates?.length) { notify({ kind: "error", message: `已删除 ${receipt.deleted_candidate_ids.length} 张，${receipt.failed_candidates.length} 张删除失败；无需等待生成结束，可继续工作。` }); return false; } return true; } catch (error) { if (isCurrentWorkspace()) { setInspectionNonce((value) => value + 1); notify({ kind: "error", message: error instanceof Error ? error.message : String(error) }); } return false; } finally { mediaMutationPending.current -= 1; } }} onLoadCandidateDetail={async (candidate) => candidateDetailWorkspace((await loadCandidateDetail(projectId, page.page_key, candidate.candidate_id)).detail)} />}
   </div>;
 }
 

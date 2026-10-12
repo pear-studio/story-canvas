@@ -15,6 +15,7 @@ import { createRenderTask, readRenderTask } from "./render-task-storage.mjs";
 import { compilePageRenderTarget, PageRenderError, resolveExactPageIdentity, resolvePageIdentity } from "./page-render-resolver.mjs";
 import { hashCanonicalJson } from "./workflow-definition.mjs";
 import { selectedPagePrompt } from "./page-rewrite.mjs";
+import { prepareCandidateIteration } from './candidate-iteration.mjs';
 
 function fail(code, details = [], status = 422) {
   throw new PageRenderError(code, details, status);
@@ -82,6 +83,7 @@ function compileTask({ resolved, projectDirectory, projectId, taskId, count, see
     return {
       id: `${itemPrefix}.candidate-${String(index + 1).padStart(3, "0")}`,
       ...storageIdentity,
+      ...(resolved.iteration ? { iteration: structuredClone(resolved.iteration) } : {}),
       ...(compiled.video_settings ? {video_settings:structuredClone(compiled.video_settings)} : {}),
       absolute_file: path.resolve(candidateFilePath(projectDirectory, resolved.page_key, storageIdentity.candidate_id)),
       task: taskId,
@@ -150,6 +152,10 @@ async function compileAndPersistExactPageRenderTask(
   });
   resolved.compiled_page = await selectedPagePrompt({ projectDirectory: project.projectDirectory, resolved, promptSource });
 
+  return persistResolvedTask({ resolved, project, projectId, taskId, count, seed });
+}
+
+async function persistResolvedTask({ resolved, project, projectId, taskId, count, seed }) {
   const task = compileTask({
     resolved,
     projectDirectory: project.projectDirectory,
@@ -182,6 +188,14 @@ export async function compileAndPersistPageRenderTask(
   const project = await resolveProjectLocation(path.resolve(projectRoot), projectId);
   const identity = await resolvePageIdentity(project.projectDirectory, pageId);
   return compileAndPersistExactPageRenderTask(projectRoot, projectId, identity.page_key, options);
+}
+
+export async function compileAndPersistCandidateIterationTask(projectRoot, projectId, value, { repositoryRoot = path.resolve(projectRoot), taskId = createRenderTaskId() } = {}) {
+  const count = normalizeCount(value?.count ?? 1);
+  const seed = normalizeSeed(value?.seed, count);
+  const project = await resolveProjectLocation(path.resolve(projectRoot), projectId);
+  const resolved = await prepareCandidateIteration({ repositoryRoot, projectDirectory: project.projectDirectory, value });
+  return persistResolvedTask({ resolved, project, projectId, taskId, count, seed });
 }
 
 export async function compileAndPersistWorkbenchRenderTask(

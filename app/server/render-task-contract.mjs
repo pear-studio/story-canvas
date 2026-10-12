@@ -28,7 +28,7 @@ const frozenSnapshotFields = new Set([
 ]);
 const frozenItemFields = new Set([
   "id", "task", "page_key", "seed", "candidate_id", "file", "positive_prompt", "negative_prompt", "prompt_parts",
-  "loras", "status", "reference_images", "video_settings",
+  "loras", "status", "reference_images", "video_settings", "iteration",
   "render_route", "prompt_id", "generated_at", "discarded_at", "absolute_file",
 ]);
 function clone(value) { return structuredClone(value); }
@@ -181,6 +181,7 @@ function promptItemBindingFingerprint(item) {
     loras: item?.loras ?? null,
     reference_images: item?.reference_images ?? [],
     video_settings: item?.video_settings ?? null,
+    ...(item?.iteration ? { iteration: item.iteration } : {}),
   });
 }
 
@@ -272,9 +273,9 @@ function scaledDimension(value, scale) {
   return Math.max(64, Math.round((value * scale) / 8) * 8);
 }
 
-export function resolveRenderRecipe(parameters, canvas) {
+export function resolveRenderRecipe(parameters, canvas, sourceDimensions = null) {
   const declared = clone(parameters);
-  const resolution = declared?.resolutions?.[canvas];
+  const resolution = sourceDimensions ?? declared?.resolutions?.[canvas];
   const width = Number(resolution?.width);
   const height = Number(resolution?.height);
   if (!Number.isInteger(width) || width < 1 || !Number.isInteger(height) || height < 1) {
@@ -356,6 +357,11 @@ export function buildWorkflow(definition, profile, recipe, item) {
       workflow[id] = { class_type: "LoadImage", inputs: { image: referenceImageFilename(identity) } };
       encoder.inputs['images.image_' + (index + 1)] = [id, 0];
     });
+    if (item.iteration) {
+      encoder.inputs.resolution = 0;
+      const encoderId = Object.keys(workflow).find(id => workflow[id] === encoder);
+      for (const node of Object.values(workflow)) if (node.class_type === 'KSampler') node.inputs.latent_image = [encoderId, 2];
+    }
   }
   return workflow;
 }
@@ -435,7 +441,7 @@ export function compileFrozenExecutionUnits({ items, purpose, snapshot, profile,
     const { route, definition, recipe: frozenRecipe } = resolveRenderUnitPlan(unit.items, {
       purpose, snapshot, resolvedProfile: profile,
     });
-    const recipe = resolveRenderRecipe(frozenRecipe, canvas);
+    const recipe = resolveRenderRecipe(frozenRecipe, canvas, unit.items[0].iteration ? unit.items[0].reference_images[0] : null);
     if (unit.batch) {
       const topology = (item) => ({
         page_key: item.page_key,
@@ -627,6 +633,17 @@ export function validateFrozenRenderTask(task) {
     throw new Error("冻结渲染任务的条目 ID 集合无效");
   }
   for (const item of task.items) {
+    if (item.iteration !== undefined) {
+      const source = item.reference_images?.[0], edit = item.iteration;
+      if (!edit || Object.keys(edit).sort().join(',') !== 'source_candidate_id,source_image_sha256'
+        || task.snapshot.profile.architecture_family !== 'qwen-image-2-1' || item.reference_images?.length !== 1
+        || !/^candidate-[a-f0-9-]{36}$/.test(edit.source_candidate_id) || !sha256Pattern.test(edit.source_image_sha256)
+        || source.source_sha256 !== edit.source_image_sha256
+        || source.candidate_file !== `Outputs/pages/${item.page_key.page_id}/${edit.source_candidate_id}/image.png`
+        || ![source.width, source.height].every(size => Number.isInteger(size) && size >= 32 && size % 32 === 0)
+        || task.snapshot.canvas !== `${source.width}:${source.height}`) throw new Error('候选迭代来源契约无效');
+      referenceImageFilename(source);
+    }
     if(task.snapshot.profile.architecture_family==='minimax-h3') {
       const v=item.video_settings;
       if(!v||Object.keys(v).some(k=>!['requested_seconds','frames','fps','duration_seconds','loop','quality','steps'].includes(k)))throw Error('H3 冻结视频参数缺失或包含未知字段');

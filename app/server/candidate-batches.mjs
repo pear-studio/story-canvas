@@ -1,4 +1,5 @@
 import {readPageMedia} from './page-media.mjs';
+import {iterationCandidateIds} from '../shared/candidate-iteration.mjs';
 import {readRenderTaskBusiness} from './render-task-storage.mjs';
 import {deletePageCandidates} from './candidate-delete.mjs';
 import {hashCanonicalJson} from './workflow-definition.mjs';
@@ -34,8 +35,10 @@ export function planCandidateCleanup(snapshot,keepTaskId) {
   const keep=keepTaskId?snapshot.groups.find(g=>g.task_id===keepTaskId):snapshot.groups[0];
   if(!keep)throw new ApiError(404,'candidate_batch_not_found');
   if(!keepTaskId && keep.status!=='completed')throw new ApiError(409,'candidate_batch_not_completed',['最新批次未成功完成，请指定要保留的任务或等待完成']);
+  const retained = iterationCandidateIds(snapshot.groups.flatMap(group => group.candidates));
+  const kept = new Set([...keep.candidates.map(candidate => candidate.candidate_id), ...retained]);
   return {page_key:snapshot.page_key,expected_fingerprint:snapshot.fingerprint,keep_task_id:keep.task_id,
-    keep_candidate_ids:keep.candidates.map(c=>c.candidate_id),delete_candidate_ids:snapshot.groups.filter(g=>g.task_id!==keep.task_id).flatMap(g=>g.candidates.map(c=>c.candidate_id)),
+    keep_candidate_ids:[...kept],delete_candidate_ids:snapshot.groups.flatMap(g=>g.candidates.filter(c=>!kept.has(c.candidate_id)).map(c=>c.candidate_id)),
     expected_count:keep.expected_count,complete:keep.complete};
 }
 export async function previewCandidateCleanup(context,rows) {

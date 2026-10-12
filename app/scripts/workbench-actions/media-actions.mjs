@@ -34,7 +34,7 @@ export const mediaActions = {
   'reference.delete': reference('删除指定参考图引用', 'delete', { expected_sha256:string('读取时 sha256'), id:string('参考图 ID') }, ['expected_sha256','id'], a=>({expected_sha256:a.expected_sha256,id:a.id})),
   'reference.reorder': reference('调整参考图顺序', 'reorder', { expected_sha256:string('读取时 sha256'), ids:array('全部参考图 ID，不能缺项或重复') }, ['expected_sha256','ids'], a=>({expected_sha256:a.expected_sha256,ids:a.ids})),
   'candidate.list': post('分页读取单张候选与可直接读图的路径', 'page-media', { page_key:pageKey,task_id:string('可选：仅某个生成任务的候选'),...pagination }, {required:['page_key'],freshMedia:true,body:a=>({page_key:a.page_key}),
-    transform:(r,a)=>({page_key:a.page_key,...paginate(r.value.media.candidates.filter(c=>!a.task_id||c.task_id===a.task_id).map(({candidate_id,task_id,absolute_file,generated_at,media_kind,video,absolute_video,absolute_review})=>({candidate_id,task_id,absolute_file,generated_at,...(media_kind==='video'?{media_kind,video,absolute_video,absolute_review,review_hint:mediaReviewHint}:{})})),a)}),
+    transform:(r,a)=>({page_key:a.page_key,...paginate(r.value.media.candidates.filter(c=>!a.task_id||c.task_id===a.task_id).map(({candidate_id,task_id,absolute_file,generated_at,media_kind,video,absolute_video,absolute_review,iteration})=>({candidate_id,task_id,absolute_file,generated_at,...(iteration?{iteration}:{}),...(media_kind==='video'?{media_kind,video,absolute_video,absolute_review,review_hint:mediaReviewHint}:{})})),a)}),
     details:'图片必须通过本操作或 candidate.sheet/task.results 查询，不用 glob 扫描 Outputs。每个 candidate_id/目录只是一张图，不是一批。task_id 相同才是同次生成。用返回的 absolute_file 读图，不猜路径。按批次查询/清理用 candidate.batches 和 candidate.cleanup.preview/apply。'}),
   'candidate.batches': post('按生成任务分组查询一页候选批次','candidate-batches/read',{locale:finishedLocale,page_key:pageKey,...pagination},{required:['page_key'],body:a=>({page_key:a.page_key}),
     transform:(r,a)=>({page_key:a.page_key,candidate_count:r.value.groups.reduce((n,g)=>n+g.available_count,0),...paginate(r.value.groups.map(({candidates,...g})=>g),a)}),
@@ -89,7 +89,8 @@ mediaActions['candidate.inspect'].helpTopics={signature:{
 mediaActions['candidate.cleanup.preview'].details+=' 常规更新先 generation.run 并等待成功发布，核验新候选匹配当前输入后显式指定 keep_task_id；失败或输入变化时不先删旧图。先 finished.inspect 检查 record 的候选引用并保留，删除接口不会自动保护成品引用；需要保留部分旧候选时不用整批 apply，改用 candidate.delete 指定可删 ID。正式 reference.save 已复制到 materials 的素材独立于候选。generation.regenerate 和 batch clear_candidates 在提交成功后、新图成功前就删除旧图，不适用于此顺序。匹配细则查 candidate.inspect 的 signature topic。';
 mediaActions['candidate.cleanup.apply'].details+=' 成品引用须在预览阶段核验，本操作不额外保护仍被成品引用的候选。';
 mediaActions['candidate.delete'].details+=' 先 finished.inspect 保留成品 record 仍引用的候选，本接口不会自动检查该引用；已复制为正式材料的参考图独立保存。';
-mediaActions['candidate.scan'].details='按当前编译条件返回 signature、匹配数及不匹配 candidate_ids；不是 Prompt 文本差异或选图建议。输入检查不完整不能据此删除。匹配细则查 candidate.inspect 的 signature topic；H3 另核对冻结视频设置。';
+mediaActions['candidate.scan'].details='按当前编译条件返回 signature、匹配数及不匹配 candidate_ids；retained_iteration_ids 为保留的迭代与现存来源链，不列入过期清理。不是 Prompt 文本差异或选图建议。输入检查不完整不能据此删除。匹配细则查 candidate.inspect 的 signature topic；H3 另核对冻结视频设置。';
+mediaActions['candidate.cleanup.preview'].details+=' 迭代图及现存来源链自动保留，因此 kept 可大于所选任务张数；确需删除用 candidate.delete 明确指定。';
 mediaActions['candidate.clean'].details+=' 删除前检查 finished.inspect 的候选引用；本接口不保护成品依赖。不完整 signature 或 H3 视频参数不能单靠扫描判断。';
 mediaActions['finished.inspect'].details+=' record 中保留源 candidate_id；候选清理前据此判断依赖。成品媒体独立保存，记录引用不会被候选删除接口自动维护。';
 mediaActions['lettering.page.read'].details+=' 颜色由 lettering.settings 管理；旁白固定顶部或底部字幕条，不拖动。其他对白可调位置和尺寸，心声另有字号、方向和随机排列；可写字段以读取结果和 Schema 为准。文字页排版共用预览及输出，溢出阻止输出。';

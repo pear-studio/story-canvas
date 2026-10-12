@@ -52,6 +52,7 @@ export type CharacterPromptDocument = {
   variants: Record<string, CharacterPromptVariant>;
 };
 export type Candidate = {
+  iteration?: { source_candidate_id: string; source_image_sha256: string };
   media_kind?:'video';video_url?:string;review_url?:string;video?:{width:number;height:number;frames:number;fps:number;duration_seconds:number;loop:boolean};
   candidate_id: string;
   file: string;
@@ -367,6 +368,7 @@ export async function startPageRender(
 }
 
 export type StoryCandidateRefreshPage = {
+  retained_iteration_ids?: string[];
   page_key: PageKey;
   status: "ready" | "active" | "unavailable";
   signature: string | null;
@@ -546,6 +548,7 @@ export async function saveLetteringSettings(projectId: string, settings: Letteri
 }
 
 export type CandidateDetail = {
+  iteration?: { source_candidate_id: string; source_image_sha256: string };
   candidate_id: string;
   created_at: string | null;
   completed_at: string | null;
@@ -558,6 +561,21 @@ export async function loadCandidateDetail(projectId: string, pageKey: WorkbenchP
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ page_key: pageKey, candidate_id: candidateId }),
+  }));
+}
+
+export type CandidateIterationRequest = { instruction: string; count: number; seed?: number; use_project_loras?: boolean };
+export type IterationLora = { filename: string; weight: number };
+export async function loadProjectQwenLoras(projectId: string): Promise<IterationLora[]> {
+  const result = await workbenchResponseJson<{ render_profiles: Array<{ id: string; configuration_error?: string; inspection?: { project_override: { blocked: boolean }; style_loras: Record<string, IterationLora> } }> }>(await readFacts(`/api/projects/${encodeURIComponent(projectId)}/render-profile?profile_id=qwen-image-2-1`));
+  const profile = result.render_profiles.find(profile => profile.id === 'qwen-image-2-1');
+  if (!profile?.inspection || profile.configuration_error || profile.inspection.project_override.blocked) throw new Error('项目 Qwen 配置不可用，请检查生成设置。');
+  return Object.values(profile.inspection.style_loras);
+}
+export async function iterateCandidate(projectId: string, pageKey: PageKey, candidateId: string, options: CandidateIterationRequest) {
+  return workbenchResponseJson<{ task: { task_id: string; status: string; count: number } }>(await mutateDerived(`${base(projectId)}/candidate-iterate`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ page_key: pageKey, candidate_id: candidateId, ...options }),
   }));
 }
 

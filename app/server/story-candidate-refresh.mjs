@@ -1,4 +1,5 @@
 import { inspectionGenerationSignature } from "./generation-signature.mjs";
+import { iterationCandidateIds } from '../shared/candidate-iteration.mjs';
 import { deletePageCandidates } from "./candidate-delete.mjs";
 import { readPageMedia } from "./page-media.mjs";
 import { validatePageKey } from "./page-key.mjs";
@@ -36,7 +37,9 @@ export async function inspectStoryCandidates({ projectRoot, projectDirectory, pr
       if (!result.signature) continue;
       result.status = "ready";
       result.matched = media.candidates.filter((item) => item.generation_signature === result.signature).length;
-      result.candidate_ids = media.candidates.filter((item) => item.generation_signature !== result.signature).map((item) => item.candidate_id);
+      const retained = iterationCandidateIds(media.candidates);
+      result.retained_iteration_ids = [...retained];
+      result.candidate_ids = media.candidates.filter((item) => !retained.has(item.candidate_id) && item.generation_signature !== result.signature).map((item) => item.candidate_id);
     }
   }));
   return results;

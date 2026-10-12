@@ -1297,6 +1297,9 @@ html:has(.story-overview) { scrollbar-gutter: stable; }
 .project-lora-settings > header > div { display: grid; gap: 4px; }
 .project-lora-settings > header h4 { margin: 0; font-size: 16px; }
 .project-lora-settings > header p { font-size: 13px; }
+.project-lora-profile-select { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.project-lora-profile-select select { max-width: 100%; min-height: 40px; font: inherit; }
+.project-lora-settings > p { margin: 0; color: var(--muted); font-size: 13px; }
 .project-lora-settings__notice { color: var(--green) !important; font-size: 13px !important; }
 .project-lora-current-list { display: grid; gap: 10px; }
 .project-lora-current-list > article { min-width: 0; padding: 10px; display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 14px; border: 1px solid var(--line); border-radius: 11px; background: #f7faf7; }

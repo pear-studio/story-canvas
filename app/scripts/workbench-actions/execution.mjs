@@ -4,6 +4,11 @@ import { submitGenerationBatch } from './generation-batch.mjs';
 import {regeneratePage} from './regenerate-page.mjs';
 const gen = (summary, suffix, fields, options={}) => endpoint(summary,'POST',a=>projectPath(a,suffix),fields,{project:true,capability:'generation',...options});
 export const executionActions = {
+  'candidate.iterate': gen('用 Qwen 迭代指定静态候选','workbench/candidate-iterate',{
+    page_key:pageKey,candidate_id:string('candidate.list 返回的来源候选 ID'),instruction:{...string('本次修改要求，原样记录；不继承页面 Prompt 或上一轮指令'),minLength:1,maxLength:8000},
+    use_project_loras:boolean('默认true，使用项目Qwen配置中的风格LoRA；false仅本次停用，不改项目设置'),
+    count:{type:'integer',minimum:1,maximum:3,description:'数量，默认1'},seed:{type:'integer',minimum:0,maximum:2147483647,description:'可选起始种子，全部候选须在有效范围内'},
+  },{required:['page_key','candidate_id','instruction'],body:a=>({page_key:a.page_key,candidate_id:a.candidate_id,instruction:a.instruction,count:a.count,seed:a.seed,use_project_loras:a.use_project_loras}),details:'须有用户修图生成授权。Anima/Qwen 插画页均可用；使用指定候选、本次指令和项目 Qwen-Image-2.1 配置，默认加载其中的风格 LoRA 并自动前置去重后的触发词；use_project_loras:false 仅本次停用。不会带入页面/角色的 LoRA、项目 Prompt 或历史指令，不改页面事实。版本和权重在项目生成设置管理，提交时冻结，后续配置变化不影响已提交任务。保持来源尺寸（对齐32像素），默认1张。输入图片和指令随任务冻结，后续修改/删除来源不改变已排队任务。结果发布到原页面，记录直接来源。task.wait 等待同一任务，candidate.inspect 查看指令与来源；提交结果不明先 task.list，不能直接重提。迭代及其现存来源链不参与过期/整批清理，需要删除时明确 candidate.delete。'}),
   'generation.run': gen('为一页生成候选图','workbench/render',{page_key:pageKey,count:{type:'integer',minimum:1,maximum:3,description:'候选数量，插画默认3，动态页默认1'},seed:{type:'integer',minimum:0,description:'可选随机种子'},prompt_source:{...string('默认 original；rewrite 使用已有 Qwen 优化稿'),enum:['original','rewrite']}},{required:['page_key'],details:'须已有用户生成授权。提交时冻结独立快照；同页已有任务也可再次提交，后续编辑不改变已提交任务。使用该页模型与画幅，调整用 page.render.read/set。插画默认三张，H3 动态页默认一段，全部保留；多页用 generation.batch。返回任务，task.wait 等待终态，task.inspect 即时查询。超时先查任务，不重复提交。纯字幕或时间过渡用文字页 page.create page_kind:text，finished.output 输出，不生成候选。',body:a=>({page_key:a.page_key,count:a.count,seed:a.seed,prompt_source:a.prompt_source})}),
   'generation.rewrite': gen('运行页面 Prompt 模型重写','workbench/page-rewrite',{page_key:pageKey},{body:a=>({page_key:a.page_key}),details:'调用已配置重写模型；可能耗时。generation.rewrite.read 查看结果，不自动重新运行。'}),
   'generation.refresh': gen('按已扫描的生成条件补齐或重新出图','workbench/story-candidate-refresh',{page_key:pageKey,scope:{...string('范围'),enum:['missing','all']},expected_signature:string('candidate.scan 返回的 signature'),count:{type:'integer',minimum:1,maximum:3,description:'张数'}},{body:a=>({action:'generate',page_key:a.page_key,scope:a.scope,expected_signature:a.expected_signature,count:a.count}),details:'先 candidate.scan，再按授权选择补齐或全部生成；条件变化拒绝。'}),
@@ -20,6 +25,9 @@ executionActions['generation.run'].recover=(error,args)=>error.code==='text_page
   : (!error.status || error.status>=500)
     ? {message:'提交结果不确定，先核查当前队列及历史中的该页任务，不能直接重提。',next:{operation:'task.list',args:{project_id:args.project_id}}}
     : {message:'本次未提交。检查该页生成诊断，修正后再提交。',next:{operation:'generation.page.inspect',args:{project_id:args.project_id,page_key:args.page_key}}};
+executionActions['candidate.iterate'].recover=(error,args)=>(!error.status || error.status>=500)
+  ? {message:'提交结果不确定，先核查队列及历史中的该页任务，不重复提交。',next:{operation:'task.list',args:{project_id:args.project_id}}}
+  : {message:'本次未提交。核对来源候选、修改要求及参数后再操作。',next:{operation:'candidate.list',args:{project_id:args.project_id,page_key:args.page_key}}};
 executionActions['generation.batch']={
   summary:'批量提交多页候选并返回整批等待入口',capability:'generation',
   parameters:schema({...projectId,clear_candidates:boolean('显式清空旧候选并生成；须已有删除授权；默认false'),page_keys:{type:'array',items:pageKey,minItems:1,maxItems:32,description:'明确授权的页面，不可重复，最多32页'},

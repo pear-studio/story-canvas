@@ -13,7 +13,10 @@ export function isReferenceImageFile(file) {
 }
 
 export function referenceImageFilename(identity) {
-  if (!identity || !/^[a-f0-9]{64}$/.test(identity.sha256) || !isReferenceImageFile(identity.material_file)
+  const validSource = identity && (identity.candidate_file
+    ? /^Outputs\/pages\/[a-z0-9][a-z0-9-]*\/candidate-[a-f0-9-]{36}\/image\.png$/.test(identity.candidate_file) && !identity.material_file
+    : isReferenceImageFile(identity.material_file));
+  if (!identity || !/^[a-f0-9]{64}$/.test(identity.sha256) || !validSource
     || !/^[a-f0-9]{64}$/.test(identity.source_sha256)) throw new Error("参考图冻结身份无效");
   return `StoryCanvas/references/${identity.sha256}.png`;
 }

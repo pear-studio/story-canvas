@@ -16,7 +16,7 @@ import {readCandidateBatches,previewCandidateCleanup,applyCandidateCleanup} from
 import { ApiError, configuredPath, readJsonBody, sendJson } from "./http-support.mjs";
 import { readWritingCorpusContext } from "./writing-corpus.mjs";
 import { primaryComfyUiUrl } from "./comfy-endpoint-selector.mjs";
-import { compileAndPersistWorkbenchRenderTask, runCompiledPageRenderTask } from "./page-render.mjs";
+import { compileAndPersistWorkbenchRenderTask, compileAndPersistCandidateIterationTask, runCompiledPageRenderTask } from "./page-render.mjs";
 import { generationReference } from "./generation-queue.mjs";
 import { submitGenerationTask } from "./generation-lifecycle.mjs";
 import { inspectPageRender } from "./page-render-inspection.mjs";
@@ -118,15 +118,17 @@ export async function handleWorkbenchRequest({
     });
     sendOperation(200,result);return true;
   }
-  async function startRender(projectDirectory, safeProjectId, value) {
+  async function startRender(projectDirectory, safeProjectId, value, iteration = false) {
     if (workbenchRenderLauncher) return workbenchRenderLauncher({
       repositoryRoot: projectRoot,
       projectDirectory,
       projectId: safeProjectId,
       value,
       config,
+      iteration,
     });
-    const compiled = await compileAndPersistWorkbenchRenderTask(projectRoot, safeProjectId, value, {
+    const compile = iteration ? compileAndPersistCandidateIterationTask : compileAndPersistWorkbenchRenderTask;
+    const compiled = await compile(projectRoot, safeProjectId, value, {
       localConfig: config,
       repositoryRoot: projectRoot,
     });
@@ -495,6 +497,14 @@ export async function handleWorkbenchRequest({
     const result = await mutateDerived(projectId, async ({ projectDirectory, projectId: safeProjectId }) => {
       return startRender(projectDirectory, safeProjectId, value);
     });
+    sendOperation(202, result, { task: result.value });
+    return true;
+  }
+
+  const candidateIterationMatch = /^\/api\/projects\/([^/]+)\/workbench\/candidate-iterate\/?$/.exec(decodedPath);
+  if (request.method === 'POST' && candidateIterationMatch) {
+    const value = await readJsonBody(request);
+    const result = await mutateDerived(candidateIterationMatch[1], ({ projectDirectory, projectId }) => startRender(projectDirectory, projectId, value, true));
     sendOperation(202, result, { task: result.value });
     return true;
   }

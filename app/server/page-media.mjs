@@ -26,6 +26,7 @@ async function projectCandidate(record, projectDirectory, projectId) {
   if (!resolved || path.resolve(resolved.target) !== path.resolve(expectedFile)) return null;
   return {
     candidate_id: record.candidate_id,
+    ...(record.iteration ? { iteration: structuredClone(record.iteration) } : {}),
     file: record.file,
     absolute_file: expectedFile,
     url: mediaUrl(projectId, record.file),

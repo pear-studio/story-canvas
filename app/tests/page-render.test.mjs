@@ -55,6 +55,8 @@ import { auditSavedPagePrompt, preparePromptWriteAudit } from "../server/prompt-
 import { handleWorkbenchRequest } from "../server/workbench-http.mjs";
 import { inspectStoryCandidates, executeStoryCandidateRefresh } from "../server/story-candidate-refresh.mjs";
 import { inspectionGenerationSignature, taskGenerationSignature } from "../server/generation-signature.mjs";
+import { compileAndPersistCandidateIterationTask } from '../server/page-render.mjs';
+import { deletePageCandidates } from '../server/candidate-delete.mjs';
 import { readPageRewriteState, rewriteSource, savePageRewriteResult } from "../server/page-rewrite.mjs";
 
 const sourceRepositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -418,6 +420,26 @@ async function mutateSave(fixture, draft) {
     operations.close();
   }
 }
+
+test('过期候选扫描与删除保留迭代及原图，但仍清理无关旧图', async context => {
+  const fixture = await createFixture(context);
+  await prepareWriteAuditFixture(fixture);
+  const key = { page_id: 'page-001' };
+  const options = { projectRoot: fixture.repositoryRoot, projectDirectory: fixture.projectDirectory, projectId: fixture.projectId, config: {}, pageKeys: [key] };
+  const source = await compileAndPersistWorkbenchRenderTask(fixture.repositoryRoot, fixture.projectId, { page_key: key, count: 2 });
+  const sharp = (await import('sharp')).default;
+  const png = await sharp({ create: { width: 64, height: 96, channels: 3, background: '#777777' } }).png().toBuffer();
+  for (const item of source.task.items) await publishCandidateResult(fixture.projectDirectory, source.task, item, png, { warm: false });
+  const edit = await compileAndPersistCandidateIterationTask(fixture.repositoryRoot, fixture.projectId, { page_key: key, candidate_id: source.task.items[0].candidate_id, instruction: '修复右手' });
+  await publishCandidateResult(fixture.projectDirectory, edit.task, edit.task.items[0], png, { warm: false });
+  const target = path.join(fixture.projectDirectory, 'pages/page-001.prompt.json');
+  const changed = await readJson(target); changed.models.qwen.text = '新的画面'; await writeJson(target, changed);
+  const [scan] = await inspectStoryCandidates(options);
+  assert.deepEqual(scan.candidate_ids, [source.task.items[1].candidate_id]);
+  assert.equal(scan.retained_iteration_ids.length, 2);
+  const removed = await deletePageCandidates(fixture.repositoryRoot, fixture.projectId, { page_key: key, generation_mismatch: true, expected_signature: scan.signature });
+  assert.deepEqual(removed.deleted_candidate_ids, [source.task.items[1].candidate_id]);
+});
 
 test("剧情批量刷新只删除确认过的不符候选，Prompt 变化时拒绝执行", async (context) => {
   const fixture = await createFixture(context);

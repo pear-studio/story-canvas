@@ -106,6 +106,7 @@ export default function ProjectGenerationSettingsView({ projectId, project, busy
   const [inspectionLoading, setInspectionLoading] = useState(false);
   const [profilePicker, setProfilePicker] = useState(false);
   const [selectedAdjustmentId, setSelectedAdjustmentId] = useState(project.default_render_profile);
+  const [loraProfileId, setLoraProfileId] = useState(project.default_render_profile);
   const [resettingTarget, setResettingTarget] = useState("");
   const [overrideDocument, setOverrideDocument] = useState<OverrideDocument | null>(null);
   const [overrideBusy, setOverrideBusy] = useState(false);
@@ -140,13 +141,15 @@ export default function ProjectGenerationSettingsView({ projectId, project, busy
   }, [projectId, loraPicker]);
   const ordered = useMemo(() => [...profiles].sort((left, right) => Number(right.id === project.default_render_profile) - Number(left.id === project.default_render_profile) || left.name.localeCompare(right.name, "zh-CN")), [profiles, project.default_render_profile]);
   const current = profiles.find((profile) => profile.id === project.default_render_profile) ?? null;
+  const loraProfile = profiles.find((profile) => profile.id === loraProfileId) ?? current;
+  useEffect(() => { setLoraProfileId(project.default_render_profile); }, [projectId, project.default_render_profile]);
   const selectedAdjustment = profiles.find((profile) => profile.id === selectedAdjustmentId) ?? current;
   const selectedAdjustmentCurrent = selectedAdjustment?.id === current?.id;
   const inspected = inspectionOverride?.id === inspectionId ? inspectionOverride : profiles.find((profile) => profile.id === inspectionId) ?? null;
-  const styleLoras = Object.values(current?.inspection?.style_loras ?? {});
+  const styleLoras = Object.values(loraProfile?.inspection?.style_loras ?? {});
   const activeLoraBySha = new Map(styleLoras.map((lora) => [lora.sha256, lora]));
-  const registeredResources = (loraResources?.resources ?? []).filter(({ resource }) => resource.architecture.family === current?.architecture_family);
-  const rawResources = (loraResources?.raw ?? []).map((raw) => ({ raw, resource: { id: raw.id, name: raw.name, file: { relative_path: raw.relative_path, sha256: raw.sha256, size_bytes: raw.size_bytes }, architecture: { family: current?.architecture_family ?? "other", prompt_family: current?.prompt_family ?? "universal" }, base_models: [], activation: { trigger_words: [], tags: [] }, recommended_generation: { weight: { default: 1, minimum: null, maximum: null, status: "untested" }, clip_skip: null, sampler: null, scheduler: null, steps: null, cfg: null, status: "untested" }, description: "未登记的本机 LoRA", usage_notes: "", source: { type: "local_file" }, previews: [], examples: [] } satisfies LoraResourceDefinition }));
+  const registeredResources = (loraResources?.resources ?? []).filter(({ resource }) => resource.architecture.family === loraProfile?.architecture_family);
+  const rawResources = (loraResources?.raw ?? []).map((raw) => ({ raw, resource: { id: raw.id, name: raw.name, file: { relative_path: raw.relative_path, sha256: raw.sha256, size_bytes: raw.size_bytes }, architecture: { family: loraProfile?.architecture_family ?? "other", prompt_family: loraProfile?.prompt_family ?? "universal" }, base_models: [], activation: { trigger_words: [], tags: [] }, recommended_generation: { weight: { default: 1, minimum: null, maximum: null, status: "untested" }, clip_skip: null, sampler: null, scheduler: null, steps: null, cfg: null, status: "untested" }, description: "未登记的本机 LoRA", usage_notes: "", source: { type: "local_file" }, previews: [], examples: [] } satisfies LoraResourceDefinition }));
   const selectableResources = [
     ...registeredResources.map((entry) => ({ resource: entry.resource, catalogItem: loraResourceCatalogItem(entry) })),
     ...rawResources.map(({ raw, resource }) => ({ resource, catalogItem: rawLoraCatalogItem(raw) })),
@@ -206,7 +209,7 @@ export default function ProjectGenerationSettingsView({ projectId, project, busy
   }
 
   async function updateStyleLora(resource: LoraResourceDefinition | null, action: "add" | "remove", selectedActive?: RenderProfileInspectionProjection["style_loras"][string]) {
-    if (!current?.inspection || overrideBusy) return;
+    if (!loraProfile?.inspection || overrideBusy) return;
     const active = selectedActive ?? (resource ? activeLoraBySha.get(resource.file.sha256) : undefined);
     const id = active?.id ?? resource?.id;
     if (!id || (action === "add" && !resource)) return;
@@ -214,40 +217,40 @@ export default function ProjectGenerationSettingsView({ projectId, project, busy
     setOverrideBusy(true); setLoraNotice("");
     try {
       const document = await readOverrideDocument();
-      const group = document.profiles[current.id] ?? { changes: [] };
+      const group = document.profiles[loraProfile.id] ?? { changes: [] };
       let changes = group.changes.filter((change) => change.target !== `style_loras.${id}`);
       if (action === "add") changes.push({ target: `style_loras.${id}`, original: { exists: false }, project: { exists: true, value: loraDefinition(resource!) } });
       else if (active) changes = removeLoraChanges(group.changes, active);
-      await putOverrideDocument({ ...document, profiles: { ...document.profiles, [current.id]: { ...group, changes } } });
+      await putOverrideDocument({ ...document, profiles: { ...document.profiles, [loraProfile.id]: { ...group, changes } } });
       if (action === "add") closeLoraPicker();
     } catch (error) { setLoraNotice(`LoRA 更新失败：${error instanceof Error ? error.message : String(error)}`); }
     finally { setOverrideBusy(false); }
   }
 
   async function replaceStyleLora(resource: LoraResourceDefinition, selectedActive: RenderProfileInspectionProjection["style_loras"][string]) {
-    if (!current?.inspection || overrideBusy || selectedActive.sha256 === resource.file.sha256) return;
+    if (!loraProfile?.inspection || overrideBusy || selectedActive.sha256 === resource.file.sha256) return;
     if (!await confirmDiscardPromptDrafts()) return;
     setOverrideBusy(true); setLoraNotice("");
     try {
       const document = await readOverrideDocument();
-      const group = document.profiles[current.id] ?? { changes: [] };
+      const group = document.profiles[loraProfile.id] ?? { changes: [] };
       const target = `style_loras.${resource.id}`;
       const changes = removeLoraChanges(group.changes, selectedActive).filter((change) => change.target !== target);
       changes.push({ target, original: { exists: false }, project: { exists: true, value: loraDefinition(resource) } });
-      await putOverrideDocument({ ...document, profiles: { ...document.profiles, [current.id]: { ...group, changes } } });
+      await putOverrideDocument({ ...document, profiles: { ...document.profiles, [loraProfile.id]: { ...group, changes } } });
       closeLoraPicker();
     } catch (error) { setLoraNotice(`LoRA 替换失败：${error instanceof Error ? error.message : String(error)}`); }
     finally { setOverrideBusy(false); }
   }
 
   async function updateStyleLoraWeight(lora: RenderProfileInspectionProjection["style_loras"][string], weight: number) {
-    if (!current?.inspection || overrideBusy || !Number.isFinite(weight) || weight < -2 || weight > 2) return;
+    if (!loraProfile?.inspection || overrideBusy || !Number.isFinite(weight) || weight < -2 || weight > 2) return;
     if (!await confirmDiscardPromptDrafts()) return;
     const target = `style_loras.${lora.id}`;
     setOverrideBusy(true); setLoraNotice("");
     try {
       const document = await readOverrideDocument();
-      const group = document.profiles[current.id] ?? { changes: [] };
+      const group = document.profiles[loraProfile.id] ?? { changes: [] };
       const weightTarget = `${target}.weight`;
       const whole = group.changes.find((change) => change.target === target);
       const legacyWeight = group.changes.find((change) => change.target === weightTarget);
@@ -258,7 +261,7 @@ export default function ProjectGenerationSettingsView({ projectId, project, busy
         const original = legacyWeight?.original ?? { exists: true as const, value: lora.weight ?? 1 };
         if (original.exists && original.value !== weight) changes.push({ target: weightTarget, original, project: { exists: true, value: weight } });
       }
-      await putOverrideDocument({ ...document, profiles: { ...document.profiles, [current.id]: { ...group, changes } } });
+      await putOverrideDocument({ ...document, profiles: { ...document.profiles, [loraProfile.id]: { ...group, changes } } });
     } catch (error) { setLoraNotice(`LoRA 权重保存失败：${error instanceof Error ? error.message : String(error)}`); }
     finally { setOverrideBusy(false); }
   }
@@ -323,10 +326,12 @@ export default function ProjectGenerationSettingsView({ projectId, project, busy
   const selectedOverrideStatus = selectedOverride?.blocked ? "conflict" : selectedOverride?.changes.length ? "applied" : "none";
   return <UtilityPage title="生成设置" description="基模、LoRA、画面比例与项目调整">
     <section className="settings-card project-generation-settings-card"><header className="project-generation-settings-card__header"><div><span className="settings-eyebrow">当前项目</span><h3>当前生成设置</h3><p>基模会带入对应的 Prompt 和采样方案；画面比例只影响之后的新生成。</p></div><div className="card-actions"><button className="button" type="button" disabled={busy || loading} onClick={() => setProfilePicker(true)}>选择基模</button></div></header>
-      <div className="project-generation-summary__facts"><div><span>基模</span><b>{current?.name ?? project.default_render_profile}</b></div><div><span>画面比例</span><b>{project.canvas}</b></div><div><span>项目 LoRA</span><b>{styleLoras.length ? `${styleLoras.length} 项` : "未启用"}</b></div></div>
+      <div className="project-generation-summary__facts"><div><span>基模</span><b>{current?.name ?? project.default_render_profile}</b></div><div><span>画面比例</span><b>{project.canvas}</b></div><div><span>项目 LoRA</span><b>{Object.keys(current?.inspection?.style_loras ?? {}).length ? `${Object.keys(current!.inspection!.style_loras).length} 项` : "未启用"}</b></div></div>
       <section className="project-generation-canvas project-generation-canvas--inline"><header><div><h4>画面比例</h4><p>已有图片不会改变。{!canvasChoices.some(c => c.value === project.canvas) && ` 当前默认仍为原画幅 ${project.canvas}。`}</p></div></header><div className="canvas-choice-list">{canvasChoices.map(({value: canvas, label, width, height}) => <button type="button" role="radio" aria-checked={project.canvas === canvas} className={`canvas-choice ${project.canvas === canvas ? "is-selected" : ""}`} disabled={busy} key={canvas} onClick={() => void saveChoice({ canvas })}><span className={`canvas-choice__preview canvas-choice__preview--${canvas.replace(":", "-")}`} /><b>{label} {canvas}</b><small>{width}×{height}</small></button>)}</div></section>
-      <section className="project-lora-settings"><header><div><h4>项目 LoRA</h4><p>启用后按项目权重加载；资源提供的触发词自动加入 Positive。</p></div><button className="button" type="button" disabled={overrideBusy || !current?.inspection} onClick={() => { setReplaceLora(null); setLoraPicker(true); }}>选择 LoRA</button></header>
-        {!loraResources && <div className="project-prompt-override__readonly">正在读取 LoRA 资源…</div>}{loraResources && !styleLoras.length && <div className="project-prompt-override__readonly">当前项目未启用 LoRA。</div>}
+      <section className="project-lora-settings"><header><div><h4>项目 LoRA</h4><p>启用后按项目权重加载；资源提供的触发词自动加入 Positive。</p></div><button className="button" type="button" disabled={overrideBusy || !loraProfile?.inspection} onClick={() => { setReplaceLora(null); setLoraPicker(true); }}>选择 LoRA</button></header>
+        <label className="project-lora-profile-select">LoRA 所属模型<select aria-label="LoRA 所属模型" value={loraProfile?.id ?? ""} disabled={overrideBusy} onChange={event => { setLoraProfileId(event.target.value); setLoraNotice(""); }}>{ordered.map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label>
+        <p>选择要配置 LoRA 的模型，不会改变页面模型或新页默认基模。Qwen 候选迭代也使用这里的 LoRA。</p>
+        {!loraResources && <div className="project-prompt-override__readonly">正在读取 LoRA 资源…</div>}{loraResources && !styleLoras.length && <div className="project-prompt-override__readonly">该模型尚未启用项目 LoRA。</div>}
         {styleLoras.length > 0 && <div className="project-lora-current-list">{styleLoras.map((lora) => {
           const registered = (loraResources?.resources ?? []).find(({ resource }) => resource.file.sha256 === lora.sha256);
           const raw = (loraResources?.raw ?? []).find((resource) => resource.sha256 === lora.sha256);
@@ -344,6 +349,6 @@ export default function ProjectGenerationSettingsView({ projectId, project, busy
     </section>
     {profilePicker && <Modal size="workspace" title="选择基模" subtitle="当前项目" onClose={() => setProfilePicker(false)} busy={busy} ariaLabel="选择基模"><div className="profile-picker-body"><ResourcePicker items={basePickerItems} busy={busy} empty="没有其他可选择的基模。" onInspect={(item) => { const profile = profiles.find((entry) => entry.id === item.id); if (!profile) return; setProfilePicker(false); void inspectProfile(profile); }} onSelect={(item) => { const profile = profiles.find((entry) => entry.id === item.id); if (!profile) return; void (async () => { if (await saveChoice({ default_render_profile: profile.id })) setProfilePicker(false); })(); }} /></div></Modal>}
     {inspectionId && <Modal size="workspace" title={inspected?.name ?? "模型配置"} subtitle="模型配置" onClose={() => { setInspectionId(""); setInspectionOverride(null); }} ariaLabel={`查看模型配置：${inspected?.name ?? inspectionId}`}><div className="profile-inspection-body">{inspectionLoading ? <section className="panel"><p>正在读取完整配置…</p></section> : inspected?.inspection ? <RenderProfileInspection inspection={inspected.inspection} isCurrent={inspected.id === project.default_render_profile} /> : <section className="panel"><h3>配置详情不可用</h3><p>{inspected?.errors.join("；") || "资源目录没有返回可检查内容。"}</p></section>}</div></Modal>}
-    {loraPicker && <Modal size="workspace" title="选择 LoRA" subtitle={current?.name ?? "当前基模"} onClose={closeLoraPicker} busy={overrideBusy} ariaLabel="选择 LoRA"><div className="lora-picker-body"><div className="lora-picker-summary"><b>{replaceLora ? `为「${replaceLora.name ?? replaceLora.filename ?? replaceLora.id}」选择替代资源` : `选择 LoRA`}</b><p>{replaceLora ? "选择后将替换当前项；项目权重仍在生成设置中管理。" : "选择后将加入当前项目；项目权重和已启用 LoRA 仍在生成设置中管理。"}</p></div><ResourcePicker items={selectableResources.map((entry) => entry.catalogItem)} busy={overrideBusy} empty="当前没有其他可选择的 LoRA。" onSelect={(item) => { const resource = selectableResourceById.get(item.id); if (!resource) return; if (replaceLora) void replaceStyleLora(resource, replaceLora); else void updateStyleLora(resource, "add"); }} />{(loraResources?.errors.length ?? 0) > 0 && <div className="project-prompt-override__readonly">另有 {loraResources!.errors.length} 条 LoRA 资源记录无效，已隐藏。</div>}</div></Modal>}
+    {loraPicker && <Modal size="workspace" title="选择 LoRA" subtitle={loraProfile?.name ?? "LoRA 所属模型"} onClose={closeLoraPicker} busy={overrideBusy} ariaLabel="选择 LoRA"><div className="lora-picker-body"><div className="lora-picker-summary"><b>{replaceLora ? `为「${replaceLora.name ?? replaceLora.filename ?? replaceLora.id}」选择替代资源` : `选择 LoRA`}</b><p>{replaceLora ? "选择后将替换当前项；项目权重仍在生成设置中管理。" : "选择后将加入当前项目；项目权重和已启用 LoRA 仍在生成设置中管理。"}</p></div><ResourcePicker items={selectableResources.map((entry) => entry.catalogItem)} busy={overrideBusy} empty="当前没有其他可选择的 LoRA。" onSelect={(item) => { const resource = selectableResourceById.get(item.id); if (!resource) return; if (replaceLora) void replaceStyleLora(resource, replaceLora); else void updateStyleLora(resource, "add"); }} />{(loraResources?.errors.length ?? 0) > 0 && <div className="project-prompt-override__readonly">另有 {loraResources!.errors.length} 条 LoRA 资源记录无效，已隐藏。</div>}</div></Modal>}
   </UtilityPage>;
 }

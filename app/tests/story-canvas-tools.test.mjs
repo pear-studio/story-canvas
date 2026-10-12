@@ -7,6 +7,17 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { validate } from '../scripts/workbench-actions/contract.mjs';
 const repositoryRoot = fileURLToPath(new URL('../../', import.meta.url));
+test('候选迭代独立提交且受 generation 能力限制', async t => {
+ const f = await fixture(t, (_request, response) => response.end(JSON.stringify({ task: { task_id: 'iteration-test', status: 'queued' } })));
+ const args = { project_id: 'demo', page_key: { page_id: 'page-001' }, candidate_id: 'candidate-source', instruction: '修复右手', count: 1 };
+ await f.tool.execute({ operation: 'candidate.iterate', args });
+ assert.equal(f.requests[0].url, '/api/projects/demo/workbench/candidate-iterate');
+ assert.deepEqual(f.requests[0].body, { page_key: args.page_key, candidate_id: args.candidate_id, instruction: args.instruction, count: 1 });
+ await f.tool.execute({ operation: 'candidate.iterate', args: { ...args, use_project_loras: false } });
+ assert.equal(f.requests[1].body.use_project_loras, false);
+ const help = await f.tool.execute({ operation: 'help', target: 'candidate.iterate' });
+ assert.ok(help.details.includes('不改页面事实'));
+});
 async function fixture(t, responder = () => assert.fail('不应发送请求')) {
   const testsRoot = path.join(repositoryRoot, 'Saved', 'Tests');
   await mkdir(testsRoot, { recursive: true });
@@ -800,7 +811,7 @@ test('完整能力只有一份，限制按 Agent 生效且执行前拦截，撤�
       }
     }
   }
-  assert.equal(blocked,15);
+  assert.equal(blocked,16);
   assert.equal(f.requests.length,0);
   assert.equal((await failure(f.tool,{operation:'api.request',args:{method:'POST',path:'/api/projects/demo/workbench/render'}})).error,'unknown_operation');
   await assert.rejects(f.tool.execute({operation:'training.image.crop',args:{dataset_id:'demo',item_id:'x',crop:{},etag:'r',upscale:true}},{agent:lite}),e=>JSON.parse(e.message).error==='invalid_arguments');

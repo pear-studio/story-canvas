@@ -2,7 +2,8 @@ import { hashCanonicalJson } from "./workflow-definition.mjs";
 
 // 只比较影响出图的条件；种子、文件名和展示名称不参与匹配。
 export function generationConditions({ profile, recipe, workflow, canvas, item }) {
-  const resolution = recipe?.resolutions?.[canvas];
+  const source = item?.iteration ? item.reference_images?.[0] : null;
+  const resolution = source ? { width: source.width, height: source.height } : recipe?.resolutions?.[canvas];
   if (!profile?.models || !resolution || !workflow?.template_sha256 || !workflow?.manifest_sha256
     || typeof item?.positive_prompt !== "string" || typeof item?.negative_prompt !== "string") return null;
   const models = Object.fromEntries(Object.entries(profile.models).map(([role, model]) => [role, model.sha256]));
@@ -12,6 +13,7 @@ export function generationConditions({ profile, recipe, workflow, canvas, item }
   const { $schema, id, name, resolutions, dimensions, ...sampling } = recipe;
   return {
     version: 1,
+    ...(item.iteration ? { iteration: true } : {}),
     prompt: { positive: item.positive_prompt, negative: item.negative_prompt },
     models, loras,
     reference_images: (item.reference_images ?? []).map(image => image.sha256),

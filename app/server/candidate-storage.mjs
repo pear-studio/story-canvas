@@ -124,6 +124,7 @@ export async function publishCandidateResult(projectDirectory, task, item, image
   }
   const file = candidateFileRelativePath(item.page_key, item.candidate_id);
   const result = { version: 1, candidate_id: item.candidate_id, page_key: structuredClone(item.page_key), file,
+    ...(item.iteration ? { iteration: structuredClone(item.iteration) } : {}),
     status: "available", task_id: task.id, item_id: item.id, seed: item.seed ?? null,
     generated_at: item.generated_at ?? task.completed_at ?? new Date().toISOString(),
     generation_signature: taskGenerationSignature(task, item) };
