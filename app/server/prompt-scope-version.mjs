@@ -1,4 +1,4 @@
-import { hashCanonicalJson } from './workflow-definition.mjs';
+import { editFingerprint } from './edit-fingerprint.mjs';
 import { ApiError } from './http-support.mjs';
 import { emptySettingPrompt, emptySettingVariant, modelPrompt, promptModelEntries } from './model-prompts.mjs';
 
@@ -33,7 +33,7 @@ export function settingPromptScopeDocument({target,document,visual}) {
 }
 
 export function promptScopeVersion({projectId,target,document,dependencies}) {
-  return hashCanonicalJson({protocol:PROMPT_EDIT_PROTOCOL,project_id:projectId,target,document,dependencies});
+  return editFingerprint({domain:'prompt',project_id:projectId,target},{protocol:PROMPT_EDIT_PROTOCOL,document,dependencies});
 }
 
 // 同一文件内其他模型／子设定的变化不使本 scope 失效；Anima 子设定明确依赖基础。

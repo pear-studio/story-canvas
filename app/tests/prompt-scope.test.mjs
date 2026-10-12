@@ -158,7 +158,10 @@ test('Agent 机位局部更新、清除与自由镜头独立，错误不落盘',
  const render=await readPageRenderDraft(f.root,'demo',page.page_id);
  await commitPageRender(f.root,{project_id:'demo',page_id:page.page_id,target:{relative_path:render.definition.targetRelative,sha256:hashCanonicalJson(render.definition.targetBaseline??render.definition.persisted)},upstream:render.definition.upstream},()=>({...render.definition.persisted,model_id:'anima',profile_id:'anima-base-v1'}));
  const target={kind:'page',id:page.page_id};
- let r=await f.save(await f.read(target),{camera:[{description:'through the window'}],camera_settings:{direction:'side',shot:'full_body'}});
+ const initial=await f.read(target);
+ assert.deepEqual(initial.camera_preview,[]);
+ assert.deepEqual(initial.camera_help,{operation:'help',target:'prompt.save',topic:'camera'});
+ let r=await f.save(initial,{camera:[{description:'through the window'}],camera_settings:{direction:'side',shot:'full_body'}});
  r=await f.save(r,{camera_settings:{motionLines:true}});
  assert.deepEqual(r.document.camera_settings,{direction:'side',shot:'full_body',motionLines:true});
  assert.deepEqual(r.camera_preview,['from_side','full_body','motion_lines']);

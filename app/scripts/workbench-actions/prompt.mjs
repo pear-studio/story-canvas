@@ -6,13 +6,14 @@ import { pageEditHelp } from './page-edit-help.mjs';
 const target = schema({kind:{...string('目标类型'),enum:['page','character','scene']},id:string('页面、角色或场景 ID'),model_id:{...string('anima 或 qwen；页面省略用活动模型，设定必须提供'),enum:['anima','qwen','h3']},scope:{...string('仅角色／场景必填：基础或单个子设定'),enum:['base','variant']},variant_id:string('scope:variant 必填；其他情况省略')},['kind','id']);
 const sourceVersions = object('读取回执中的来源版本；新引用先用 prompt.sources 查询，再合并进此对象');
 const fields = {project_id:string('项目 ID'),target};
-const saveFields = {target,expected_sha256:string('prompt.read 原样返回的范围版本'),source_versions:sourceVersions,changes:object('窄范围的修改；对象递归合并、数组整项替换、null删除键')};
-const details = '页面默认读取活动模型的本页 Prompt，target 不填 scope；角色／场景必须明确 model_id、scope:base 或 scope:variant + variant_id。返回 document 和直接可用的 save.args。document 不带 models/$schema 外壳；Anima base 为 {identity}，Qwen base 为 {prompt_name}，variant 为单个子设定对象。同时返回实际角色引用和继承词；document 仍只含本次可写范围，继承展示不得写回。不展开最终组装全文。';
+const saveFields = {target,expected_sha256:string('本目标 prompt.read 原样返回的带目标标识版本凭据，不能跨页或跨范围复用'),source_versions:sourceVersions,changes:object('窄范围的修改；对象递归合并、数组整项替换、null删除键')};
+const details = '页面默认读取活动模型的本页 Prompt，target 不填 scope；角色／场景必须明确 model_id、scope:base 或 scope:variant + variant_id。返回 document 和直接可用的 save.args。document 不带 models/$schema 外壳；Anima base 为 {identity}，Qwen base 为 {prompt_name}，variant 为单个子设定对象。多目标优先 prompt.batch.read/save（最多16项，继承来源去重）。同时返回实际角色引用和继承词；document 仍只含本次可写范围，继承展示不得写回。不展开最终组装全文。';
 const saveRules = 'Anima 页面可用 changes.person_groups:[{character_id,entries}] 替换指定角色的本页 person 词；character_id:null 为未绑定组，组内条目不填 character_id，[]清空该组。不能和 person 同传；其他组原顺序不变，新增词放到该组最后原槽位之后，无原槽位则追加末尾。计划必须基于本次读据正文，不给旧数组换新指纹。 使用原读取回执的 save.args 加 changes。对象递归合并；数组完整替换，[]清空；null删除键以恢复继承。不能写入 models/$schema 外壳或其他范围。Anima 本页词条不带 id；共享词改字／排序保留 id，新增省略 id，由服务端生成。数组替换时保留未修改词。相关上游或本范围变化报409，重读判断，不仅换指纹。单项成功只返回版本、changed_fields和诊断，不回显 document 或继承展开；核验正文按需 prompt.read；批量返回 all_saved、逐项 status、changed_fields（成功）或 requested_fields（未完成）、target、expected_sha256、source_versions，不重复回显正文和操作外壳；诊断与 saved 分开。切换场景、子设定或 standalone→settings 前，用 prompt.sources 读取新来源，再将 source_versions 合入原保存参数；不能替换原 expected_sha256。';
 const helpTopics = Object.fromEntries(Object.entries(pageEditHelp).filter(([key])=>key!=='dialogue'));
 const post = async (action,args,execution={}) => (await requestWorkbench(`/api/agent/prompt/${action}`,{method:'POST',body:args,signal:execution.signal})).value;
 const sourceErrors = new Set(['prompt_source_conflict','prompt_source_read_required']);
 const recover = (error,args) => {
+  if(error.code==='edit_receipt_target_mismatch'||error.code==='invalid_prompt_fingerprint')return {message:'读据无效或不属于此目标；读取该目标，核对正文后使用它自己的 save.args。',next:{operation:'prompt.read',args:{project_id:args.project_id,target:args.target}}};
   if ([400,422].includes(error.status) && /^(invalid_|prompt_source_requires_|prompt_source_target_)/.test(error.code ?? '')) return {action:'correct_changes',message:'本项未保存；按 details 修正字段后使用原保存参数提交，无需重读。若随后发生版本冲突再重读判断。'};
   const sources=sourceErrors.has(error.code)&&Array.isArray(error.details)?error.details.filter(value=>typeof value==='string'):[];
   if(sources.length) return {message:'读取列出的来源并判断原修改是否仍适用，再合并 source_versions；保留原 expected_sha256，不盲目换版本重放。',
@@ -54,6 +55,7 @@ async function batch(args,execution,saving) {
     }
   }
   const sourcePool = [], sourceIds = new Map();
+  const cameraHelp=results.find(result=>result.camera_help)?.camera_help;
   for (const [index,result] of results.entries()) {
     if(saving && result.status!=='saved') result.requested_fields=Object.keys(rows[index].changes);
     if (result.save) {
@@ -70,15 +72,16 @@ async function batch(args,execution,saving) {
       delete result.inherited_sources;
     }
     delete result.read_hint;
+    delete result.camera_help;
 
   }
-  return {...(saving?{all_saved:results.every(r=>r.status==='saved'),message:results.every(r=>r.status==='saved')?'本批全部保存成功；可生成性另看 audit。':'本批未全部保存：按逐项 status 和 requested_fields 修复失败项，unknown 先核实；成功项无需重放，补救后核对原计划字段是否全部完成。'}:{}),...(!saving?{read_hint:'document 仅为本页词；references.characters 是画面引用，与对白说话人独立；解除引用保留对白，清理角色绑定词及继承调整；用各项 references.edit 进入编辑，不自动删除角色。inherited_source_refs 指向 sources 中已应用本页调整的继承词。含 base_ref 的来源先取该基准展示，再按 key 用自身 entries 完整替换同名条目；未列出的保持基准，最多一层。这是只读展示复用，不是上游默认值，不要复制回 document。角色增删先 page.editor.read(section:content) 再保存 characters；人数和对白不会解除引用。Anima 角色词优先用 person_groups 编辑；bindings 为0起始位置，diagnostics 提供归属和权重证据，不自动删词。'}:{}),...(sourcePool.length?{sources:compactSourcePool(sourcePool)}:{}),results,counts:results.reduce((counts,row)=>(counts[row.status]=(counts[row.status]??0)+1,counts),{}),...(recoveries.length?{recoveries}:{}),save:{operation:'prompt.batch.save',args:{project_id:args.project_id},items_parameter:'items',usage:`逐项取 target、expected_sha256、source_versions，加 changes；不要回传 document/references/继承展示。${batchDependencies}`}};
+  return {...(cameraHelp?{camera_help:cameraHelp}:{}),...(saving?{all_saved:results.every(r=>r.status==='saved'),message:results.every(r=>r.status==='saved')?'本批全部保存成功；可生成性另看 audit。':'本批未全部保存：按逐项 status 和 requested_fields 修复失败项，unknown 先核实；成功项无需重放，补救后核对原计划字段是否全部完成。'}:{}),...(!saving?{read_hint:'document 仅为本页词；references.characters 是画面引用，与对白说话人独立；解除引用保留对白，清理角色绑定词及继承调整；用各项 references.edit 进入编辑，不自动删除角色。inherited_source_refs 指向 sources 中已应用本页调整的继承词。含 base_ref 的来源先取该基准展示，再按 key 用自身 entries 完整替换同名条目；未列出的保持基准，最多一层。这是只读展示复用，不是上游默认值，不要复制回 document。角色增删先 page.editor.read(section:content) 再保存 characters；人数和对白不会解除引用。Anima 角色词优先用 person_groups 编辑；bindings 为0起始位置，diagnostics 提供归属和权重证据，不自动删词。'}:{}),...(sourcePool.length?{sources:compactSourcePool(sourcePool)}:{}),results,counts:results.reduce((counts,row)=>(counts[row.status]=(counts[row.status]??0)+1,counts),{}),...(recoveries.length?{recoveries}:{}),save:{operation:'prompt.batch.save',args:{project_id:args.project_id},items_parameter:'items',usage:`逐项取 target、expected_sha256、source_versions，加 changes；不要回传 document/references/继承展示。${batchDependencies}`}};
 }
 
 export const promptActions = {
   'prompt.camera.migrate':{summary:'显式迁移旧机位词条到独立参数',parameters:schema({project_id:fields.project_id,apply:{type:'boolean'},fingerprint:string('预览返回的指纹')},['project_id']),details:'默认仅预览；确认后 apply:true 与 fingerprint 执行。提取已知机位，取消的选项与特殊权重／关闭词保留为独立 Prompt；不生成图片。保存前备份。',execute:async(args,execution)=>(await requestWorkbench('/api/agent/camera-migration',{method:'POST',body:args,signal:execution.signal})).value},
   'prompt.check':{summary:'分页检查项目 Prompt 的引用、绑定与重复线索',parameters:schema({project_id:fields.project_id,chapter_id:string('限定章节'),sequence_id:string('限定单元'),model_id:{...string('省略逐页活动模型；不检查其他分支'),enum:['anima','qwen']},...pagination},['project_id']),details:'按正式页面索引分页，默认20页最多50页。返回本分页问题计数、每页最多3个样例及详情入口；继续 next_offset 直到 null，失败页和 incomplete 不能当通过。未绑定、相同文字只是核对线索，不自动删词；不同角色或权重不能合并。各页为独立观察，不是全项目快照或保存凭证。修改前 prompt.read，基于该正文生成 changes。',execute:(args,execution)=>post('check',args,execution)},
-  'prompt.read':{summary:'读取页面或设定的单模型 Prompt 范围',parameters:schema(fields),details,helpTopics,example:{project_id:'demo',target:{kind:'page',id:'page-001'}},execute:(args,execution)=>post('read',args,execution)},
+  'prompt.read':{summary:'读取单个 Prompt；多页优先 prompt.batch.read 去重继承',parameters:schema(fields),details,helpTopics,example:{project_id:'demo',target:{kind:'page',id:'page-001'}},execute:async(args,execution)=>({...await post('read',args,execution),batch_help:{operation:'help',target:'prompt.batch.read'}})},
   'prompt.save':{summary:'修改已读取的 Prompt 范围，保留其余内容',parameters:schema({project_id:fields.project_id,...saveFields},['project_id','target','expected_sha256','changes']),details:saveRules,helpTopics,recover,execute:async(args,execution)=>{
     const value=await post('save',args,execution);
     return {saved:value.saved,target:value.target,save:value.save,changed_fields:Object.keys(args.changes),

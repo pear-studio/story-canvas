@@ -780,6 +780,8 @@ export async function commitStoryOutlineTarget(projectRoot, context, readDocumen
 export async function readStoryContext(projectRoot, projectId, sequenceId) {
   const project = await resolveProjectLocation(path.resolve(projectRoot), projectId);
   const outline = await readValidatedOutline(project.projectDirectory);
+  if(sequenceId===undefined) return {synopsis:outline.synopsis,chapters:outline.chapters.map(({id,title,sequences})=>({id,title,sequences:sequences.map(({id,title})=>({id,title}))})),
+    read_hint:'仅返回故事目录，不展开页面和 Prompt；章节梗概用 chapter.read，单元梗概用 sequence.read，页面目录用 page.list。'};
   const chapter = outline.chapters.find(item => item.sequences.some(sequence => sequence.id === sequenceId));
   if (!chapter) fail("story_outline_target_not_found", ["sequence", sequenceId]);
   return { synopsis: outline.synopsis, chapter: { id: chapter.id, title: chapter.title, summary: chapter.summary,

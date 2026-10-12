@@ -1,4 +1,5 @@
 import { readFactDraft, saveFactDraft } from "./fact-drafts.mjs";
+import { creationEditReceipt } from './creation-edit-receipt.mjs';
 import { randomBytes } from "node:crypto";
 
 import { hashCanonicalJson } from "./workflow-definition.mjs";
@@ -89,15 +90,25 @@ function findSequence(outline, sequenceId) {
   fail("story_sequence_not_found", [String(sequenceId)]);
 }
 
-export async function createWorkbenchChapter(projectRoot, projectId, title, afterChapterId = null) {
+export async function createWorkbenchChapter(projectRoot, projectId, title, afterChapterId = null, summary = '待补充章节梗概。') {
   const cleanTitle = requireText(title, "章节标题");
-  return editStoryOutline(projectRoot, projectId, (outline) => {
+  const result = await editStoryOutline(projectRoot, projectId, (outline) => {
     const occupied = new Set(outline.chapters.map((chapter) => chapter.id));
     const chapterId = readableId(cleanTitle, "chapter", occupied);
     const position = afterChapterId === null ? outline.chapters.length : findChapter(outline, afterChapterId).index + 1;
-    outline.chapters.splice(position, 0, { id: chapterId, title: cleanTitle, summary: "待补充章节梗概。", sequences: [] });
+    outline.chapters.splice(position, 0, { id: chapterId, title: cleanTitle, summary, sequences: [] });
     return { chapter_id: chapterId };
   });
+  return {...result,...await outlineCreationReceipt(projectRoot,projectId,'chapter',result.chapter_id)};
+}
+
+async function outlineCreationEdit(projectRoot,projectId,kind,targetId) {
+  const draft=await readFactDraft(projectRoot,{domain:'story',kind,projectId,targetId});
+  return {document:draft.document,save:{operation:`${kind}.save`,args:{project_id:projectId,[`${kind}_id`]:targetId,expected_sha256:draft.expected_sha256,expected_context_sha256:draft.expected_context_sha256},document_parameter:'document'}};
+}
+
+function outlineCreationReceipt(projectRoot,projectId,kind,targetId) {
+  return creationEditReceipt(()=>outlineCreationEdit(projectRoot,projectId,kind,targetId),{operation:`${kind}.read`,args:{project_id:projectId,[`${kind}_id`]:targetId}});
 }
 
 export async function renameWorkbenchChapter(projectRoot, projectId, chapterId, title) {
@@ -124,17 +135,18 @@ export async function deleteWorkbenchChapter(projectRoot, projectId, chapterId) 
   });
 }
 
-export async function createWorkbenchSequence(projectRoot, projectId, chapterId, title, afterSequenceId = null) {
+export async function createWorkbenchSequence(projectRoot, projectId, chapterId, title, afterSequenceId = null, summary = '待补充情节单元梗概。') {
   const cleanTitle = requireText(title, "Sequence 标题");
-  return editStoryOutline(projectRoot, projectId, (outline) => {
+  const result = await editStoryOutline(projectRoot, projectId, (outline) => {
     const { chapter } = findChapter(outline, chapterId);
     const occupied = new Set(outline.chapters.flatMap((entry) => entry.sequences.map((sequence) => sequence.id)));
     const sequenceId = readableId(cleanTitle, "sequence", occupied);
     const anchor = afterSequenceId === null ? null : chapter.sequences.findIndex(sequence => sequence.id === afterSequenceId);
     if (anchor === -1) fail("story_sequence_not_found", [String(afterSequenceId)]);
-    chapter.sequences.splice(anchor === null ? chapter.sequences.length : anchor + 1, 0, { id: sequenceId, title: cleanTitle, summary: "待补充情节单元梗概。" });
+    chapter.sequences.splice(anchor === null ? chapter.sequences.length : anchor + 1, 0, { id: sequenceId, title: cleanTitle, summary });
     return { chapter_id: chapterId, sequence_id: sequenceId };
   });
+  return {...result,...await outlineCreationReceipt(projectRoot,projectId,'sequence',result.sequence_id)};
 }
 
 export async function renameWorkbenchSequence(projectRoot, projectId, sequenceId, title) {

@@ -238,7 +238,7 @@ export async function handleWorkbenchRequest({
     const [projectId, action] = navigationActionMatch.slice(1);
     const value = await readJsonBody(request);
     const operations = {
-      "create-page": () => createWorkbenchPage(projectRoot, projectId, value?.owner, { templateId: value?.template_id, pageKind: value?.page_kind, afterPageId: value?.after_page_id, beforePageId: value?.before_page_id, characterId: value?.character_id, variantId: value?.variant_id }),
+      "create-page": () => createWorkbenchPage(projectRoot, projectId, value?.owner, { templateId: value?.template_id, pageKind: value?.page_kind, afterPageId: value?.after_page_id, beforePageId: value?.before_page_id, characterId: value?.character_id, variantId: value?.variant_id, content:value?.content }),
       "move-page": () => moveWorkbenchPage(projectRoot, projectId, value?.page_id, value?.owner, { beforePageId: value?.before_page_id, afterPageId: value?.after_page_id }),
       "duplicate-page": () => duplicateWorkbenchPage(projectRoot, projectId, value?.page_id),
       "delete-page": () => deleteWorkbenchPage(projectRoot, projectId, value?.page_id),
@@ -249,11 +249,11 @@ export async function handleWorkbenchRequest({
       "move-scene-variant": () => moveWorkbenchSceneVariant(projectRoot, projectId, value?.scene_id, value?.variant_id, value?.before_variant_id ?? null),
       "delete-scene-variant": () => deleteWorkbenchSceneVariant(projectRoot, projectId, value?.scene_id, value?.variant_id),
       "rename-scene-variant": () => renameWorkbenchSceneVariant(projectRoot, projectId, value?.scene_id, value?.old_id, value?.new_id),
-      "create-chapter": () => createWorkbenchChapter(projectRoot, projectId, value?.title, value?.after_chapter_id ?? null),
+      "create-chapter": () => createWorkbenchChapter(projectRoot, projectId, value?.title, value?.after_chapter_id ?? null, value?.summary),
       "rename-chapter": () => renameWorkbenchChapter(projectRoot, projectId, value?.chapter_id, value?.title),
       "move-chapter": () => moveWorkbenchChapter(projectRoot, projectId, value?.chapter_id, value?.before_chapter_id ?? null),
       "delete-chapter": () => deleteWorkbenchChapter(projectRoot, projectId, value?.chapter_id),
-      "create-sequence": () => createWorkbenchSequence(projectRoot, projectId, value?.chapter_id, value?.title, value?.after_sequence_id ?? null),
+      "create-sequence": () => createWorkbenchSequence(projectRoot, projectId, value?.chapter_id, value?.title, value?.after_sequence_id ?? null, value?.summary),
       "rename-sequence": () => renameWorkbenchSequence(projectRoot, projectId, value?.sequence_id, value?.title),
       "move-sequence": () => moveWorkbenchSequence(projectRoot, projectId, value?.sequence_id, value?.chapter_id, value?.before_sequence_id ?? null),
       "delete-sequence": () => deleteWorkbenchSequence(projectRoot, projectId, value?.sequence_id),

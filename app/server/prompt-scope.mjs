@@ -1,7 +1,8 @@
 import {normalizeCameraSettings,cameraPromptPreview} from '../shared/camera-prompt.mjs';
 import {promptSourceView, promptPageDiagnostics} from '../shared/prompt-source-view.mjs';
 import {applyPersonGroups} from './prompt-person-edit.mjs';
-import { readFactDraft, saveFactDraft, fingerprintErrors } from './fact-drafts.mjs';
+import { readFactDraft, saveFactDraft } from './fact-drafts.mjs';
+import { assertEditFingerprint } from './edit-fingerprint.mjs';
 import { applyDocumentChanges } from './page-edit-context.mjs';
 import { resolveProjectLocation } from './project-operations.mjs';
 import { modelPrompt, replaceModelPrompt, promptModelEntries } from './model-prompts.mjs';
@@ -45,7 +46,10 @@ export async function readPromptScope(options) {
   const result = receipt(state,options.projectId);
   if (state.target.kind === 'page') {
     const {narrative,sources} = state;
-    if(state.target.model_id==='anima')result.camera_preview=cameraPromptPreview(state.document.camera_settings);
+    if(state.target.model_id==='anima'){
+      result.camera_preview=cameraPromptPreview(state.document.camera_settings);
+      result.camera_help={operation:'help',target:'prompt.save',topic:'camera'};
+    }
     result.references = {characters:narrative.characters ?? [],composition:state.document.composition ?? 'settings',
       edit:{operation:'page.editor.read',args:{project_id:options.projectId,page_key:{page_id:state.target.id},section:'content'}}};
     result.inherited_sources = Object.entries(sources).map(([key,value])=>promptSourceView(key,value,state.document));
@@ -71,11 +75,9 @@ export async function readPromptScope(options) {
 }
 
 export async function savePromptScope(options) {
-  const errors = fingerprintErrors({expected_sha256:options.expectedSha256},['expected_sha256']);
-  if (errors.length) throw new ApiError(400,'invalid_prompt_fingerprint',errors);
   if (!record(options.changes) || !Object.keys(options.changes).length) throw new ApiError(400,'invalid_prompt_changes',['changes 必须是非空对象']);
   const state = await currentScope(options);
-  if (options.expectedSha256 !== state.version) throw new ApiError(409,'prompt_scope_conflict',[{target:state.target,message:'本次范围或必要上游已变化；重读判断后再编辑'}]);
+  assertEditFingerprint(options.expectedSha256,state.version,{invalidCode:'invalid_prompt_fingerprint',conflictCode:'prompt_scope_conflict'});
   const {person_groups,...changes} = options.changes;
   if (person_groups !== undefined) {
     if (state.target.kind !== 'page' || state.target.model_id !== 'anima' || Object.hasOwn(changes,'person')) throw new ApiError(400,'invalid_person_groups',['仅 Anima 页面可用，不能与 person 同时提交']);

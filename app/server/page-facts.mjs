@@ -1,4 +1,5 @@
 import {cleanRemovedPageCharacters} from './page-character-cleanup.mjs';
+import {creationEditReceipt} from './creation-edit-receipt.mjs';
 import {readTranslationDocument,translationPath} from './page-translations.mjs';
 import { cleanRemovedReferences, removeUnusedFile, savePageReferenceInputs } from './reference-materials.mjs';
 import { pageSettingsFromDefaults, readPageRenderSettings } from './page-render-settings.mjs';
@@ -59,7 +60,7 @@ async function newPageId(directory,index) {
   for(;;){const id=`page-${randomBytes(6).toString('hex')}`;if(index.pages.some(page=>page.page_id===id))continue;
     if(await lstat(path.join(directory,pageRelativePath(id,'content'))).then(()=>true,error=>error.code==='ENOENT'?false:Promise.reject(error)))continue;return id;}
 }
-export async function createPage(root,projectId,owner,{templateId=null,afterPageId=null,beforePageId=null,pageKind=null,characterId,variantId,beforeCommit}={}) {
+export async function createPage(root,projectId,owner,{templateId=null,afterPageId=null,beforePageId=null,pageKind=null,characterId,variantId,content:initialContent,beforeCommit}={}) {
   const project=await projectAt(root,projectId), directory=project.projectDirectory;
   const projectDocument=await optionalJson(directory,'project.json');
   const bundle=await compileEffectiveRenderProfile({repositoryRoot:root,projectRoot:directory,profileId:projectDocument.default_render_profile});
@@ -91,11 +92,20 @@ export async function createPage(root,projectId,owner,{templateId=null,afterPage
     }
     prompt=makeModelPromptDocument(STORY_PAGE_PROMPT_SCHEMA_ID,render.model_id,native);
   }
+  if(initialContent!==undefined){
+    if(!initialContent||typeof initialContent!=='object'||Array.isArray(initialContent)||Object.keys(initialContent).some(key=>!['title','scene_description','characters','dialogue','body','display_title','text_layout'].includes(key)))fail('invalid_page_document',['content 仅接受页面正文可编辑字段；页面类型使用 page_kind。']);
+    try{content=prepareStoryPageNarrativeForPersistence({...content,...clone(initialContent)},{createDialogueId:()=>`dialogue-${randomBytes(6).toString('hex')}`});}
+    catch(error){if(error instanceof TypeError)fail('invalid_page_document',[error.message]);throw error;}
+  }
   assertValid(validateStoryPageNarrativeDocument(content));assertValid(validateStoryPagePromptDocument(prompt));
   insertEntry(next,{page_id:id,...owner},{afterPageId,beforePageId});
   if(beforeCommit)await beforeCommit({page_id:id,content_file:path.join(directory,pageRelativePath(id,'content')),prompt_file:path.join(directory,pageRelativePath(id,'prompt')),index_file:path.join(directory,'pages/index.json')});
   await commitFactChanges(directory,[{relative:pageRelativePath(id,'content'),before:null,after:content},{relative:pageRelativePath(id,'prompt'),before:null,after:prompt},{relative:pageRelativePath(id,'render'),before:null,after:render},{relative:'pages/index.json',before:index,after:next}]);
-  return {page_id:id,page_key:{page_id:id},...owner,template_id:templateId,content_file:path.join(directory,pageRelativePath(id,'content')),prompt_file:path.join(directory,pageRelativePath(id,'prompt')),index_file:path.join(directory,'pages/index.json')};
+  const receipt=await creationEditReceipt(async()=>{
+    const {readPageEditContext}=await import('./page-edit-context.mjs');
+    return readPageEditContext({projectRoot:root,projectId,pageKey:{page_id:id},section:'content'});
+  },{operation:'page.editor.read',args:{project_id:projectId,page_key:{page_id:id},section:'content'}});
+  return {page_id:id,page_key:{page_id:id},...owner,template_id:templateId,...receipt,content_file:path.join(directory,pageRelativePath(id,'content')),prompt_file:path.join(directory,pageRelativePath(id,'prompt')),index_file:path.join(directory,'pages/index.json')};
 }
 export async function movePage(root,projectId,pageId,owner,{beforePageId=null,afterPageId=null}={}) {
   const {projectDirectory:directory}=await projectAt(root,projectId);await assertPageOwner(directory,owner);
