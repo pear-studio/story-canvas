@@ -229,7 +229,8 @@ function CandidateGrid({ candidates, aspectRatio, selectedIds, previewFile, disa
   }, [candidates, layout]);
 
   useEffect(() => {
-    if (!previewFile) return;
+    // 历史窗口每次从顶部的最新候选开始；仅常驻栏跟随当前预览滚动。
+    if (layout !== "rail" || !previewFile) return;
     const candidate = candidates.find((item) => item.file === previewFile);
     const item = candidate ? items.current.get(candidateKey(candidate)) : null;
     const scroller = host.current;
@@ -242,7 +243,7 @@ function CandidateGrid({ candidates, aspectRatio, selectedIds, previewFile, disa
     else if (bottom > scroller.scrollTop + scroller.clientHeight) scroller.scrollTop = bottom - scroller.clientHeight;
     if (left < scroller.scrollLeft) scroller.scrollLeft = left;
     else if (right > scroller.scrollLeft + scroller.clientWidth) scroller.scrollLeft = right - scroller.clientWidth;
-  }, [previewFile]);
+  }, [previewFile, layout]);
 
   function orderedSelection(values: Set<string>) {
     return new Set(ids.filter((id) => values.has(id)));

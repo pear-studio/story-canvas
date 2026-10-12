@@ -40,6 +40,29 @@ for(const width of [360,390,980])test(`候选从底栏打开，正文和成品�
  await dialog.getByRole('button',{name:'关闭',exact:true}).click();
  assert.equal(await dialog.count(),0);
 });
+for(const width of [360,390])test(`历史候选首次和重开都从顶部显示最新候选 ${width}`,async t=>{
+ const page=await open(t,width,'thumbnails');
+ await page.route('**/candidate-*.svg*',r=>r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="200" height="300"><rect width="200" height="300" fill="teal"/></svg>'}));
+ const trigger=page.getByRole('button',{name:'查看候选图，共 9 张'});
+ await trigger.click();
+ const dialog=page.getByRole('dialog',{name:'历史候选',exact:true});
+ const grid=dialog.getByRole('listbox',{name:'历史候选列表',exact:true});
+ await grid.waitFor();
+ assert.equal(await grid.evaluate(element=>element.scrollTop),0);
+ assert.ok(await grid.evaluate(element=>element.scrollHeight>element.clientHeight),'必须有足够候选产生滚动');
+ // 保留最旧候选为当前预览后重新打开，不能再次定位到列表底部。
+ await grid.getByRole('option').last().click();
+ const lightbox=page.getByRole('dialog',{name:'测试页 候选图',exact:true});
+ if(await lightbox.count())await page.getByRole('button',{name:'关闭全屏图片'}).click();
+ await dialog.getByRole('button',{name:'关闭',exact:true}).click();
+ await trigger.click();
+ await grid.waitFor();
+ await page.waitForFunction(()=>document.querySelector('.candidate-grid--history')?.scrollTop===0);
+ assert.equal(await grid.evaluate(element=>element.scrollTop),0);
+ const first=await grid.getByRole('option').first().boundingBox(),bounds=await grid.boundingBox();
+ assert.ok(first.y>=bounds.y&&first.y+first.height<=bounds.y+bounds.height,'首屏可见最新候选');
+});
+
 test('空候选和读取失败可在面板中查看并刷新，桌面保留原工作区',async t=>{
  const page=await open(t,390,'empty&error');
  await page.getByRole('button',{name:'查看候选图，共 0 张'}).click();
