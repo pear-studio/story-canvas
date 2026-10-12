@@ -5,7 +5,7 @@ const scope={...string('词库范围'),enum:['page','character','render_profile'
 const prompt=string('短语，最多500字');
 const pick=(value,keys)=>Object.fromEntries(keys.filter(key=>value[key]!==undefined).map(key=>[key,value[key]]));
 function summary(entry) {
-  const result=pick(entry,['prompt_text','matched','allowed','display_text','provider_category','post_count']);
+  const result=pick(entry,['prompt_text','matched','allowed','display_text','provider_category','post_count','approximate']);
   if(entry.description) {
     result.description=entry.description.slice(0,80);
     if(entry.description.length>80)result.description_truncated=true;
@@ -19,7 +19,7 @@ export const dictionaryActions={
   },{required:['scope','q'],query:a=>({...a,limit:a.limit??12}),transform:({value},args)=>({
     ...status(value),items:value.suggestions.map(summary),offset:args.offset??0,
     next_offset:value.has_more?(args.offset??0)+value.suggestions.length:null,
-  }),details:'默认12条、最多50条；只返回词条、中文名、频次与最多80字符释义，不返回别名和长文。next_offset 非空可继续翻页。完整释义用 dictionary.inspect，传返回的 prompt_text。'}),
+  }),details:'默认12条、最多50条；只返回词条、中文名、频次与最多80字符释义，不返回别名和长文。准确匹配优先；至少3个字母、文字或数字时补充漏字、错字、相邻字符交换和词块调序结果，approximate:true 表示近似匹配。短查询最多1处编辑，有效字符至少8个时最多2处，空格和标点不计入放宽门槛；词块调序依赖分词，不理解整句语义。next_offset 非空可继续翻页。完整释义用 dictionary.inspect，传返回的 prompt_text；matches 和 inspect 仍只精确查询，不自动纠正输入。'}),
   'dictionary.matches':endpoint('批量检查词条是否存在及适用','POST','/api/prompt-dictionary/matches',{
     scope,prompts:{...array('1–50个短语，每条最多500字',prompt,50),minItems:1},
   },{body:a=>a,transform:({value})=>({...status(value),items:value.matches.map(summary)}),

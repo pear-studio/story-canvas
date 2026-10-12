@@ -39,6 +39,7 @@
     "test:finished-ui": "npm run build && node --test tests/browser/finished-pages.test.mjs tests/browser/text-pages.test.mjs tests/browser/translations.test.mjs"
   },
   "dependencies": {
+    "fast-fuzzy": "1.12.0",
     "playwright": "1.62.1",
     "pngjs": "^7.0.0",
     "react": "19.2.6",

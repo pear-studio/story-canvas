@@ -41,3 +41,21 @@ test("补全范围只覆盖光标所在标签，保留花括号、权重和后�
   assert.equal(promptCompletionSpan(",blue", 5).query, "blue");
   assert.equal(promptCompletionSpan("a person with {blue", 19).closeBrace, true);
 });
+
+test("光标在标签开头、中间和结尾时始终搜索完整标签，并保持替换边界", () => {
+  for (const [text, prefix, suffix, closeBrace] of [
+    ["night, looking bak, rain", "night, ", ", rain", false],
+    ["night，(looking bak:1.2)，rain", "night，(", ":1.2)，rain", false],
+    ["a person with ({looking bak}:0.8), rain", "a person with ({", "}:0.8), rain", false],
+    ["a person with {looking bak", "a person with {", "", true],
+    ["night, {looking bak, rain", "night, {", ", rain", true],
+  ]) {
+    for (const offset of [0, 3, "looking bak".length]) {
+      const span = promptCompletionSpan(text, prefix.length + offset);
+      assert.equal(span.query, "looking bak", `${text} @ ${offset}`);
+      assert.equal(span.closeBrace, closeBrace);
+      const replacement = "looking back" + (span.closeBrace ? "}" : "");
+      assert.equal(text.slice(0, span.start) + replacement + text.slice(span.end), prefix + replacement + suffix);
+    }
+  }
+});

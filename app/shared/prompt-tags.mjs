@@ -57,8 +57,9 @@ export function promptCompletionSpan(text, caret) {
   const brace = before.lastIndexOf("{");
   if (brace > before.lastIndexOf("}")) {
     const closing = text.indexOf("}", caret);
-    const end = closing < 0 ? caret : closing;
-    return { start: brace + 1, end, query: text.slice(brace + 1, caret).trim(), closeBrace: closing < 0 };
+    const boundary = text.slice(caret).search(/[,，:\n(){}]/);
+    const end = closing < 0 ? (boundary < 0 ? text.length : caret + boundary) : closing;
+    return { start: brace + 1, end, query: text.slice(brace + 1, end).trim(), closeBrace: closing < 0 };
   }
   let start = Math.max(before.lastIndexOf(","), before.lastIndexOf("，")) + 1;
   let end = text.slice(caret).search(/[,，]/);
@@ -67,5 +68,5 @@ export function promptCompletionSpan(text, caret) {
   while (end > start && /\s/.test(text[end - 1])) end--;
   const weighted = /^\((.*):\s*\d+(?:\.\d+)?\s*\)$/s.exec(text.slice(start, end));
   if (weighted) { start++; end = start + weighted[1].length; }
-  return { start, end, query: text.slice(start, Math.min(caret, end)).trim(), closeBrace: false };
+  return { start, end, query: text.slice(start, end).trim(), closeBrace: false };
 }

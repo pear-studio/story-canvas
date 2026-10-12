@@ -215,3 +215,41 @@ test("搜索和匹配必须显式提供合法 scope", () => {
   assert.throws(() => searchPromptDictionary(entries, "rain"), /未知 Prompt 词库作用域/);
   assert.throws(() => matchPromptDictionary(entries, ["rain"], { scope: "project" }), /未知 Prompt 词库作用域/);
 });
+
+test("容错搜索支持中英文漏字、多字、错字和相邻交换，返回标准词但不影响精确校验", () => {
+  const entries = buildPromptDictionary("looking_back,0,100,looking_over_shoulder\nhead_down,0,50,", "looking_back,回头看\nhead_down,低头");
+  for (const query of ["looking bak", "looking baack", "looking bock", "looknig back", "lookng bak", "sholder", "回看", "低着头"]) {
+    const results = searchPromptDictionary(entries, query, { scope: "page" });
+    // 两字查询仍保持严格匹配，不放宽成一字误差。
+    if (query === "回看") { assert.deepEqual(results, []); continue; }
+    const expected = query === "低着头" ? "head down" : "looking back";
+    assert.equal(results[0]?.prompt_text, expected, query);
+    assert.equal(results[0].approximate, true, query);
+    assert.equal(matchPromptDictionary(entries, [query], { scope: "page" })[0].matched, false, query);
+  }
+  assert.equal(searchPromptDictionary(entries, "looking back", { scope: "page" })[0].approximate, undefined, "近似标记不能污染后续准确查询");
+  assert.equal(entries[0].approximate, undefined);
+});
+
+test("中文词块调序和英文调序拼写容错只匹配同一证据", () => {
+  const entries = buildPromptDictionary("red_hair,0,100,\nlooking_back,0,80,\nhair_ribbon,0,200,red_ribbon", "red_hair,红色头发");
+  for (const query of ["头发红色", "头发 红色", "back looknig"]) {
+    const [result] = searchPromptDictionary(entries, query, { scope: "page" });
+    assert.equal(result?.prompt_text, query === "back looknig" ? "looking back" : "red hair", query);
+    assert.equal(result.approximate, true);
+  }
+  assert.ok(!searchPromptDictionary(entries, "hair red", { scope: "page" }).some(e => e.prompt_text === "hair ribbon"), "不能跨标签与别名拼出查询");
+});
+
+test("原有结果始终领先，近似结果先比较相似度再比较频次；分页不丢失标记", () => {
+  const entries = buildPromptDictionary("looking_bak,0,1,\nlooking_back,0,2,\nlocking_back,0,99999,\nlooking_bak_artist,1,999999,");
+  const all = searchPromptDictionary(entries, "looking bak", { scope: "page", limit: 50 });
+  assert.deepEqual(all.map(e => e.source_text), ["looking_bak", "looking_back", "locking_back"]);
+  assert.deepEqual(all.map(e => Boolean(e.approximate)), [false, true, true]);
+  const first = searchPromptDictionaryPage(entries, "looking bak", { scope: "page", limit: 1 });
+  const rest = searchPromptDictionaryPage(entries, "looking bak", { scope: "page", limit: 50, offset: 1 });
+  assert.equal(first.has_more, true);
+  assert.equal(rest.has_more, false);
+  assert.deepEqual([...first.suggestions, ...rest.suggestions], all);
+  assert.deepEqual(searchPromptDictionary(entries, "lookng bkx", { scope: "page" }), [], "超过两处错误不召回");
+});

@@ -4,6 +4,7 @@ import { before, after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
 import { chromium } from "playwright";
+import { buildPromptDictionary, searchPromptDictionaryPage } from "../../server/prompt-dictionary.mjs";
 
 test('空标签与空描述转换往返保留类型，页面不写入临时 ID', async t => {
   const { page } = await editor(t);
@@ -130,6 +131,32 @@ test("标签底色和自动释义常驻，补全只替换句内标记并保留�
   await input.press("Tab");
   await page.locator(".prompt-inline-input [data-prompt-note]").waitFor({ state: "hidden" });
   assert.equal(await input.evaluate(e => getComputedStyle(e.parentElement).gridColumnStart), "1");
+});
+
+test("编辑已有词条时用完整文字容错搜索，近似候选只替换当前标签", async t => {
+  const { page, input, options } = await editor(t);
+  const entries = buildPromptDictionary("looking_back,0,100,", "looking_back,回头看");
+  const queries = [];
+  await page.route("**/api/prompt-dictionary?**", route => {
+    const query = new URL(route.request().url()).searchParams.get("q");
+    queries.push(query);
+    return route.fulfill({ json: { available: true, ...searchPromptDictionaryPage(entries, query, { scope: "page" }) } });
+  });
+  for (const [text, prefix, expected] of [
+    ["night, looking bak, rain", "night, ", "night, looking back, rain"],
+    ["night, (looking bak:1.2), rain", "night, (", "night, (looking back:1.2), rain"],
+    ["a person with ({looking bak}:0.8), rain", "a person with ({", "a person with ({looking back}:0.8), rain"],
+    ["a person with {looking bak", "a person with {", "a person with {looking back}"],
+  ]) {
+    await input.fill(text);
+    await input.press("Control+Home");
+    for (let i = 0; i < prefix.length + 3; i++) await input.press("ArrowRight");
+    await options.filter({ hasText: "近似匹配" }).first().waitFor();
+    assert.equal(queries.at(-1), "looking bak");
+    assert.equal(await input.evaluate(promptText), text, "搜索不自动修改草稿");
+    await options.first().click();
+    assert.equal(await input.evaluate(promptText), expected);
+  }
 });
 
 for (const mobile of [false, true]) for (const keyboard of [false, true]) {
