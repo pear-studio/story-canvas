@@ -41,7 +41,7 @@ export function PromptDictionaryDetailsDialog({ entry: initialEntry, scope, acti
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
   const [referenceEntries, setReferenceEntries] = useState<Record<string, PromptDictionaryMatch>>({});
-  const [menu, setMenu] = useState<{ x: number; y: number; target: string; entry?: PromptDictionaryMatch; error?: string } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; target: string; entry?: PromptDictionaryMatch; error?: string; current?: boolean } | null>(null);
   const serial = useRef(0);
   const requests = useRef(new Map<string, Promise<PromptDictionaryMatch>>());
   const controller = useRef<AbortController | null>(null);
@@ -110,9 +110,15 @@ export function PromptDictionaryDetailsDialog({ entry: initialEntry, scope, acti
   }
 
   function closeMenu() { serial.current++; setMenu(null); }
-  async function openMenu(point: { clientX: number; clientY: number }, target: string) {
+  function openCurrentMenu(point: { clientX: number; clientY: number }) {
+    if (entry.matched === undefined || entry.allowed === undefined) { void openMenu(point, sourceTag, true); return; }
+    serial.current++;
+    setLoading(false); setNotice("");
+    setMenu({ x: point.clientX, y: point.clientY, target: sourceTag, entry, current: true });
+  }
+  async function openMenu(point: { clientX: number; clientY: number }, target: string, current = false) {
     const id = ++serial.current;
-    const pending = { x: point.clientX, y: point.clientY, target };
+    const pending = { x: point.clientX, y: point.clientY, target, current };
     setLoading(false); setNotice(""); setMenu(pending);
     try {
       const [result] = await lookupMany([target]);
@@ -144,7 +150,7 @@ export function PromptDictionaryDetailsDialog({ entry: initialEntry, scope, acti
     onClose();
   }
   const menuItems: NavigationMenuItem[] = menu ? [
-    { id: "view", label: "查看词条说明", onSelect: () => { void navigate(menu.target); } },
+    ...(!menu.current ? [{ id: "view", label: "查看词条说明", onSelect: () => { void navigate(menu.target); } }] : []),
     ...(!menu.entry ? [{ id: "loading", label: menu.error || "正在读取词条…", disabled: true, onSelect: () => {} }] : []),
     ...(actions && menu.entry?.matched && menu.entry.allowed && menu.entry.source_text ? [
       { id: "replace", label: `替换「${actions.sourceLabel}」`, onSelect: () => useEntry("replace", menu.entry!) },
@@ -160,7 +166,13 @@ export function PromptDictionaryDetailsDialog({ entry: initialEntry, scope, acti
     onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
     <header className="prompt-dictionary-details-header">
       {pages.length > 1 && <button type="button" aria-label="返回上一词条" onClick={() => { serial.current++; setMenu(null); setLoading(false); setNotice(""); setPages(current => current.slice(0, -1)); }}>←</button>}
-      <div><h2>{entry.display_text || entry.prompt_text}</h2><code>{sourceTag}</code></div>
+      <div><div className="prompt-dictionary-details-title" data-long-press-context-menu={actions ? true : undefined}
+        onPointerDown={event => { if (actions) longPress.start(event, openCurrentMenu); }}
+        onContextMenu={event => { if (actions) { event.preventDefault(); event.stopPropagation(); openCurrentMenu(event); } }}>
+        <h2>{entry.display_text || entry.prompt_text}</h2>
+        {actions && <button type="button" className="prompt-dictionary-details-actions" aria-label="当前词条操作" aria-haspopup="menu" aria-expanded={Boolean(menu?.current)} title="当前词条操作（右键或长按标题也可打开）"
+          onClick={event => { const rect = event.currentTarget.getBoundingClientRect(); openCurrentMenu({ clientX: rect.left, clientY: rect.bottom }); }}>⋯</button>}
+      </div><code>{sourceTag}</code></div>
       <button type="button" onClick={onClose} aria-label="关闭词条说明">×</button>
     </header>
     <div className="prompt-dictionary-details-content" ref={contentRef}>

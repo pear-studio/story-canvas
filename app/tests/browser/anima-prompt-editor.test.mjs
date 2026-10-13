@@ -211,6 +211,64 @@ test('词条引用连续浏览和返回保持草稿，替换始终作用于最�
   assert.deepEqual(await read(), before);
 });
 
+for (const action of ['replace', 'insert', 'negative']) test(`详情标题操作 ${action} 使用当前浏览词条并保留最初编辑位置`, async t => {
+  const { page, read, open } = await referenceEditor(t, { mobile: action === 'negative' });
+  const before = await read();
+  await open();
+  await page.getByRole('link', { name: '短发 · short hair', exact: true }).click();
+  await page.getByRole('dialog', { name: '短发', exact: true }).waitFor();
+  const heading = page.getByRole('heading', { name: '短发', exact: true });
+  if (action === 'replace') await page.getByRole('button', { name: '当前词条操作', exact: true }).click();
+  else if (action === 'insert') await heading.click({ button: 'right' });
+  else {
+    const bounds = await heading.boundingBox();
+    const touch = await page.context().newCDPSession(page);
+    await touch.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 }] });
+    await page.getByRole('menu').waitFor();
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    const rect = await page.getByRole('menu').boundingBox();
+    assert.ok(rect.x >= 0 && rect.y >= 0 && rect.x + rect.width <= 390 && rect.y + rect.height <= 700);
+  }
+  assert.equal(await page.getByRole('menuitem', { name: '查看词条说明', exact: true }).count(), 0);
+  assert.deepEqual(await read(), before, '打开标题菜单不修改草稿');
+  const labels = { replace: '替换「long_hair」', insert: '紧随原词条后加入', negative: '加入负向词条' };
+  await page.getByRole('menuitem', { name: labels[action], exact: true }).click();
+  await page.getByRole('dialog').waitFor({ state: 'hidden' });
+  const after = await read();
+  if (action === 'replace') assert.deepEqual(after.person, [{ ...before.person[0], prompt_text: 'short hair' }, ...before.person.slice(1)]);
+  else if (action === 'insert') {
+    assert.deepEqual(after.person.map(entry => entry.prompt_text), ['long_hair', 'short hair', 'blue_eyes', 'smile']);
+    assert.equal(after.person[1].role, 'alice');
+  } else {
+    assert.deepEqual(after.person, before.person);
+    assert.equal(after.avoid[0].prompt_text, 'short hair');
+  }
+  await page.waitForFunction(() => document.activeElement?.getAttribute('role') === 'combobox');
+  await page.keyboard.press('Control+z');
+  assert.deepEqual(await read(), before);
+});
+
+test('候选详情标题补齐匹配信息后可直接替换，只读详情不显示操作按钮', async t => {
+  const { page, input, read } = await referenceEditor(t);
+  await page.route('**/api/prompt-dictionary?**', route => {
+    const { matched, allowed, ...suggestion } = referenceEntries.short_hair;
+    return route.fulfill({ json: { available: true, suggestions: [suggestion], has_more: false } });
+  });
+  const before = await read();
+  await input.fill('short');
+  await page.getByRole('button', { name: '查看 短发 的词条说明', exact: true }).click();
+  await page.getByRole('button', { name: '当前词条操作', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await page.getByRole('menuitem', { name: '替换「short」', exact: true }).click();
+  await page.getByRole('dialog').waitFor({ state: 'hidden' });
+  assert.deepEqual((await read()).person, [{ ...before.person[0], prompt_text: 'short hair' }, ...before.person.slice(1)]);
+  await page.goto(`${url}?references&readonly`);
+  await page.getByRole('button', { name: '查看 长发 的词条说明', exact: true }).click();
+  await page.getByRole('dialog', { name: '长发', exact: true }).waitFor();
+  assert.equal(await page.getByRole('button', { name: '当前词条操作', exact: true }).count(), 0);
+});
+
 for (const action of ['insert', 'negative']) test(`词条引用 ${action} 写入正确位置，保留来源且一次可撤销`, async t => {
   const { page, read, open } = await referenceEditor(t);
   const before = await read();
