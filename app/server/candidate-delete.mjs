@@ -1,3 +1,4 @@
+import { withPageLocks, withResourceLock } from './fact-storage.mjs';
 import { inspectionGenerationSignature } from "./generation-signature.mjs";
 import { iterationCandidateIds } from '../shared/candidate-iteration.mjs';
 import { createHash, randomUUID } from "node:crypto";
@@ -10,7 +11,7 @@ import { encodePageKey } from "./page-key.mjs";
 import { resolveProjectLocation } from "./project-operations.mjs";
 import { PageRenderError, compilePageRenderInspectionContext, resolveExactPageIdentity, resolvePageIdentity } from "./page-render-resolver.mjs";
 import { deleteRetainedCandidate } from "./render-task-storage.mjs";
-import { factStorage as storage } from "./story-facts.mjs";
+
 import {replaceFileWithRetry} from './file-replace.mjs';
 
 function fail(code, details = [], status = 422) {
@@ -44,7 +45,7 @@ export async function deletePageCandidate(projectRoot, projectId, pageId, absolu
       ? resolveExactPageIdentity(project.projectDirectory, exactPageKey)
       : resolvePageIdentity(project.projectDirectory, pageId);
     const initialIdentity = await readIdentity();
-    return storage.withPageLocks(projectRoot, projectId, [pageId], async () => {
+    return withPageLocks(projectRoot, projectId, [pageId], async () => {
       const identity = await readIdentity();
       if (encodePageKey(identity.page_key) !== encodePageKey(initialIdentity.page_key)) {
         fail("candidate_page_identity_conflict", [pageId], 409);
@@ -58,7 +59,7 @@ export async function deletePageCandidate(projectRoot, projectId, pageId, absolu
       const record = matches[0];
       if (record.status !== "available") fail("candidate_not_available", [record.candidate_id], 409);
       const mediaLock = `candidate-media-${createHash("sha256").update(requested).digest("hex")}`;
-      return storage.withResourceLock(projectRoot, projectId, mediaLock, record.candidate_id, async () => {
+      return withResourceLock(projectRoot, projectId, mediaLock, record.candidate_id, async () => {
         await assertCandidateFile(project.projectDirectory, requested);
         const currentRecords = await readGenerationCandidateRecords(project.projectDirectory, { pageKey: identity.page_key });
         const current = currentRecords.find((candidate) => candidate.task_id === record.task_id

@@ -1,3 +1,4 @@
+import { FactError } from './fact-storage.mjs';
 import { readFactDraft, saveFactDraft } from "./fact-drafts.mjs";
 import { creationEditReceipt } from './creation-edit-receipt.mjs';
 import { randomBytes } from "node:crypto";
@@ -14,7 +15,7 @@ import {
 } from "./character-facts.mjs";
 export const moveWorkbenchCharacter = moveCharacter;
 import { readProjectWorkbenchView } from "./project-workbench.mjs";
-import { FactError } from "./story-facts.mjs";
+
 import { createPage, duplicatePage, deletePage, movePage } from "./page-facts.mjs";
 import { readPageEntry } from "./pages-store.mjs";
 import { resolveProjectLocation } from "./project-operations.mjs";

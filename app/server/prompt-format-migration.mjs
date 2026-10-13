@@ -1,7 +1,8 @@
+import { commitFactChanges } from './fact-commit.mjs';
 import {createHash} from 'node:crypto';
 import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import path from 'node:path';
-import {commitFactChanges} from './story-facts.mjs';
+
 import {validateStoryPagePromptDocument} from './story-files.mjs';
 import {validateCharacterPromptDocument} from './character-files.mjs';
 import {validateScenePromptDocument} from './scene-files.mjs';

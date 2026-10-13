@@ -1,3 +1,4 @@
+import { writeJsonAtomic } from './fact-storage.mjs';
 // 一次性显式迁移入口；正常读写不接受旧 subject。
 import {readFile,readdir,mkdir,copyFile} from 'node:fs/promises';
 import path from 'node:path';
@@ -5,7 +6,7 @@ import {createHash,randomUUID} from 'node:crypto';
 import {isPopulationControl} from '../shared/prompt-population.mjs';
 import {inheritanceCategories} from '../shared/prompt-inheritance.mjs';
 import {validateModelPromptDocument} from './model-prompts.mjs';
-import {factStorage} from './story-facts.mjs';
+
 import {ApiError} from './http-support.mjs';
 const hash=value=>createHash('sha256').update(value).digest('hex');
 
@@ -55,10 +56,10 @@ export async function migrateProjectPopulation(projectDirectory, input) {
   // 完整备份先于任何事实写入；最终失败可按 manifest 恢复，不覆盖用户后续修改。
   const backup=path.join(projectDirectory,'.migration-backups','population',randomUUID());
   for(const w of writes){const file=path.join(backup,w.relative);await mkdir(path.dirname(file),{recursive:true});await copyFile(w.target,file);}
-  await factStorage.writeJsonAtomic(path.join(backup,'manifest.json'),{writes:writes.map(w=>({relative:w.relative,before_sha256:w.sha256,after:w.after}))});
+  await writeJsonAtomic(path.join(backup,'manifest.json'),{writes:writes.map(w=>({relative:w.relative,before_sha256:w.sha256,after:w.after}))});
   for(const w of writes)if(hash(await readFile(w.target,'utf8'))!==w.sha256)throw new ApiError(409,'population_migration_conflict',[w.relative]);
   const completed=[];
-  try {for(const w of writes){await factStorage.writeJsonAtomic(w.target,w.after);completed.push(w);}}
-  catch(error){for(const w of completed.reverse())await factStorage.writeJsonAtomic(w.target,w.before);throw error;}
+  try {for(const w of writes){await writeJsonAtomic(w.target,w.after);completed.push(w);}}
+  catch(error){for(const w of completed.reverse())await writeJsonAtomic(w.target,w.before);throw error;}
   return {migrated:writes.length,backup,fingerprint};
 }

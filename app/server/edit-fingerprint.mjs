@@ -1,3 +1,4 @@
+import { FactError, readJson as readFactJson, targetPath } from './fact-storage.mjs';
 import {factConflict} from "./fact-conflict.mjs";
 import {hashCanonicalJson} from './workflow-definition.mjs';
 import {ApiError} from './http-support.mjs';
@@ -12,4 +13,15 @@ export function assertEditFingerprint(expected,current,{invalidCode,conflictCode
   if(expected.split(':')[1]!==current.split(':')[1])
     throw new ApiError(409,'edit_receipt_target_mismatch',['读取凭据不属于本项目、目标或编辑范围；每项使用自己的 save.args，不能复用其他页面的凭据。本次未写入。']);
   if(expected!==current)throw factConflict(conflictCode,['本目标或必要上游已变化；重新读取并判断修改，本次未写入。']);
+}
+
+export async function assertTargetBaseline(projectDirectory, baselineContext) {
+  let current;
+  try { current = await readFactJson(targetPath(projectDirectory, baselineContext.target.relative_path), baselineContext.target.relative_path); }
+  catch (error) {
+    if (error instanceof FactError) throw factConflict('story_edit_target_conflict', [baselineContext.target.relative_path]);
+    throw error;
+  }
+  if (hashCanonicalJson(current) !== baselineContext.target.sha256) throw factConflict('story_edit_target_conflict', [baselineContext.target.relative_path]);
+  return current;
 }

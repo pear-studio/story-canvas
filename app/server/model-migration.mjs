@@ -1,10 +1,12 @@
+import { commitFactChanges } from './fact-commit.mjs';
+import { targetPath, assertProjectFactBoundary } from './fact-storage.mjs';
 import path from 'node:path';
 import {mkdir, readFile, copyFile, writeFile} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 import {ApiError} from './http-support.mjs';
 import {resolveProjectLocation} from './project-operations.mjs';
 import {requireIdleProject} from './project-management.mjs';
-import {factStorage, commitFactChanges} from './story-facts.mjs';
+
 import {compileEffectiveRenderProfile} from './render-profile-compiler.mjs';
 import {profileModelAdapter} from './model-adapters.mjs';
 import {makeModelPromptDocument, validateModelPromptDocument} from './model-prompts.mjs';
@@ -17,9 +19,9 @@ const clone=value=>structuredClone(value);
 const schema=name=>`https://storyvisualizer.local/schemas/${name}.schema.json`;
 const fail=(code,details=[])=>{throw new ApiError(422,code,details);};
 async function read(directory,relative,optional=false) {
-  const target=factStorage.targetPath(directory,relative);
+  const target=targetPath(directory,relative);
   try {
-    await factStorage.assertProjectFactBoundary(directory,directory,target,relative);
+    await assertProjectFactBoundary(directory,directory,target,relative);
     return JSON.parse(await readFile(target,'utf8'));
   } catch(error) {if(optional && error.code==='ENOENT')return null;throw error;}
 }

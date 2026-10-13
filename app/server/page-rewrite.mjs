@@ -1,9 +1,10 @@
+import { targetPath, assertProjectFactBoundary, writeJsonAtomic } from './fact-storage.mjs';
 import { lstat, readFile } from "node:fs/promises";
 
 import { ApiError } from "./http-support.mjs";
 import { decodePageKey, encodePageKey } from "./page-key.mjs";
 import { compilePageRenderInspectionContext, compilePageRenderTarget } from "./page-render-resolver.mjs";
-import { factStorage } from "./story-facts.mjs";
+
 import { hashCanonicalJson } from "./workflow-definition.mjs";
 import { profileModelAdapter } from './model-adapters.mjs';
 import { describePromptImages } from './current-page-prompt.mjs';
@@ -29,11 +30,11 @@ function checkedDocument(value) {
 
 async function readDocument(projectDirectory, pageId) {
   const relative = relativeFile(pageId);
-  const target = factStorage.targetPath(projectDirectory, relative);
+  const target = targetPath(projectDirectory, relative);
   const info = await lstat(target).catch(error => error?.code === "ENOENT" ? null : Promise.reject(error));
   if (!info) return null;
   if (!info.isFile() || info.isSymbolicLink()) throw new ApiError(422, "page_rewrite_path_invalid", [relative]);
-  await factStorage.assertProjectFactBoundary(projectDirectory, projectDirectory, target, relative);
+  await assertProjectFactBoundary(projectDirectory, projectDirectory, target, relative);
   let value;
   try { value = JSON.parse(await readFile(target, "utf8")); }
   catch (error) {
@@ -130,8 +131,8 @@ export async function savePageRewriteResult({ repositoryRoot, projectDirectory, 
     created_at: new Date().toISOString(),
   });
   const relative = relativeFile(current.page_id);
-  const target = factStorage.targetPath(projectDirectory, relative);
-  await factStorage.writeJsonAtomic(target, document);
+  const target = targetPath(projectDirectory, relative);
+  await writeJsonAtomic(target, document);
   return projection(document, current.compiled_page, source.input_sha256);
 }
 

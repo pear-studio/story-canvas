@@ -1,8 +1,10 @@
+import { FactError } from './fact-storage.mjs';
+import { commitFactChanges } from './fact-commit.mjs';
 import path from 'node:path';
 import { resolveProjectLocation } from './project-operations.mjs';
 import { readPageIndex, readPageContent, readPagePrompt, validatePagesIndexDocument } from './pages-store.mjs';
 import { createPage, duplicatePage, deletePage, assertPageOwner } from './page-facts.mjs';
-import { readStoryFactDraft, commitStoryFact, readStoryPromptUpstream, FactError, commitFactChanges } from './story-facts.mjs';
+import { readStoryFactDraft, commitStoryFact, readStoryPromptUpstream } from './story-facts.mjs';
 import { hashCanonicalJson } from './workflow-definition.mjs';
 import { CHARACTER_PAGES_INDEX_SCHEMA_ID, validateCharacterPagesIndexDocument } from './character-files.mjs';
 import { materializeVisualPageTemplate } from './visual-page-templates.mjs';

@@ -1,9 +1,10 @@
+import { readTranslationDocument, validateTranslationDocument } from '../server/page-translation-document.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import {readFile} from 'node:fs/promises';
 import {fixture,key,json,candidateId} from './helpers/finished-fixture.mjs';
-import {readPageTranslation,savePageTranslation,readTranslationDocument,validateTranslationDocument} from '../server/page-translations.mjs';
+import { readPageTranslation, savePageTranslation } from '../server/page-translations.mjs';
 import {readProjectWorkbenchView,savePageContent} from '../server/project-workbench.mjs';
 import {prepareFinishedPage,readFinishedPages,readFinishedRecord,deleteFinishedPage} from '../server/finished-pages.mjs';
 import {duplicatePage,deletePage} from '../server/page-facts.mjs';

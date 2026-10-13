@@ -1,3 +1,6 @@
+import { commitFactChanges } from './fact-commit.mjs';
+import { assertRealPathWithin, writeJsonAtomic, targetPath, assertProjectFactBoundary, removeSafeRuntimeDirectory, readOptionalFact } from './fact-storage.mjs';
+import { assertTargetBaseline } from './edit-fingerprint.mjs';
 import {factConflict} from './fact-conflict.mjs';
 import {prepareSettingFact} from './setting-persistence.mjs';
 import { cleanRemovedReferences } from './reference-materials.mjs';
@@ -8,25 +11,16 @@ import { randomBytes } from 'node:crypto';
 import { lstat, mkdir, readFile, rename, readdir, stat } from 'node:fs/promises';
 import { resolveProjectLocation } from './project-operations.mjs';
 import { hashCanonicalJson } from './workflow-definition.mjs';
-import { factStorage as storage, commitFactChanges } from './story-facts.mjs';
 import { ApiError } from './http-support.mjs';
 import { assertNoActivePageRender } from './render-task-storage.mjs';
 import { sceneSource } from './prompt-contract.mjs';
 import { settingPromptRemovalDiagnostics } from './prompt-source-context.mjs';
 import { SCENE_INDEX_SCHEMA_ID, SCENE_PROMPT_SCHEMA_ID, sceneIdPattern, validateSceneIndexDocument, validateSceneProfileDocument, validateSceneVisualDocument, validateScenePromptDocument, defaultSceneFacts } from './scene-files.mjs';
 
-export async function optionalFact(directory, relative, fallback = null) {
-  const target = storage.targetPath(directory, relative);
-  const info = await lstat(target).catch(e => e.code === 'ENOENT' ? null : Promise.reject(e));
-  if (!info) return structuredClone(fallback);
-  await storage.assertProjectFactBoundary(directory, directory, target, relative);
-  return JSON.parse(await readFile(target, 'utf8'));
-}
-
 export async function readScenes(directory) {
-  const index = await optionalFact(directory, 'scenes/index.json', { scenes: [] });
+  const index = await readOptionalFact(directory, 'scenes/index.json', { scenes: [] });
   const scenes = await Promise.all(index.scenes.map(async id => {
-    const [profile, visual, prompt] = await Promise.all(['profile', 'visual', 'prompt'].map(kind => optionalFact(directory, `scenes/${id}.${kind}.json`)));
+    const [profile, visual, prompt] = await Promise.all(['profile', 'visual', 'prompt'].map(kind => readOptionalFact(directory, `scenes/${id}.${kind}.json`)));
     if (!profile || !visual || !prompt) throw new ApiError(422, 'scene_fact_missing', [id]);
     return { id, name: profile.name, description: profile.description, profile_sha256: hashCanonicalJson(profile), visual,
       visual_sha256: hashCanonicalJson(visual), prompt, prompt_sha256: hashCanonicalJson(prompt), pages: [] };
@@ -42,7 +36,7 @@ function assertValid(errors) { if (errors.length) fail('invalid_scene_document',
 const visualIdentity = visual => hashCanonicalJson(visual.variants.map(v => v.id).sort());
 const validators = { profile: validateSceneProfileDocument, visual: validateSceneVisualDocument, prompt: validateScenePromptDocument };
 async function sceneIndex(directory) {
-  const index = await optionalFact(directory, 'scenes/index.json', { $schema: SCENE_INDEX_SCHEMA_ID, scenes: [] });
+  const index = await readOptionalFact(directory, 'scenes/index.json', { $schema: SCENE_INDEX_SCHEMA_ID, scenes: [] });
   assertValid(validateSceneIndexDocument(index));
   return index;
 }
@@ -53,7 +47,7 @@ async function requireScene(directory, id) {
   return index;
 }
 async function sceneFact(directory, id, kind) {
-  const value = await optionalFact(directory, relative(id, kind));
+  const value = await readOptionalFact(directory, relative(id, kind));
   if (!value) fail('scene_fact_missing', [id, kind]);
   assertValid(validators[kind](value));
   return value;
@@ -75,7 +69,7 @@ export async function commitSceneFact(root, context, readDocument, kind, { befor
   const project = await resolveProjectLocation(path.resolve(root), context.project_id);
   const id = context.scene_id;
   await requireScene(project.projectDirectory, id);
-  const baseline = await storage.assertTargetBaseline(project.projectDirectory, context);
+  const baseline = await assertTargetBaseline(project.projectDirectory, context);
   let next = structuredClone(await readDocument());
   if (!validators[kind]) fail('invalid_scene_edit_kind', [kind]);
   const writes = [];
@@ -104,12 +98,12 @@ export async function createScene(root, projectId, sceneId, { name, beforeCommit
   const project = await resolveProjectLocation(path.resolve(root), projectId);
   const before = await sceneIndex(project.projectDirectory);
   if (before.scenes.includes(sceneId)) fail('scene_already_exists', [sceneId]);
-  const projectDocument = await optionalFact(project.projectDirectory,'project.json');
+  const projectDocument = await readOptionalFact(project.projectDirectory,'project.json');
   const modelId = (await defaultProfileAdapter(root,projectDocument.default_render_profile)).id;
   const facts = defaultSceneFacts(sceneId, name, modelId);
   const writes = [];
   for (const kind of ['profile', 'visual', 'prompt']) {
-    if (await optionalFact(project.projectDirectory, relative(sceneId, kind))) fail('scene_fact_already_exists', [sceneId, kind]);
+    if (await readOptionalFact(project.projectDirectory, relative(sceneId, kind))) fail('scene_fact_already_exists', [sceneId, kind]);
     writes.push({ relative: relative(sceneId, kind), before: null, after: facts[kind] });
   }
   if (beforeCommit) await beforeCommit();
@@ -130,11 +124,11 @@ export async function moveScene(root, projectId, sceneId, { direction, beforeSce
   return { scene_id: sceneId };
 }
 export async function sceneReferences(directory, id) {
-  const index = await optionalFact(directory, 'pages/index.json', { pages: [] });
+  const index = await readOptionalFact(directory, 'pages/index.json', { pages: [] });
   const references = [];
   for (const page of index.pages) {
     if (page.owner_kind === 'scene' && page.scene_id === id) references.push({ ...page, reference_kind: 'owner' });
-    const prompt = await optionalFact(directory, `pages/${page.page_id}.prompt.json`);
+    const prompt = await readOptionalFact(directory, `pages/${page.page_id}.prompt.json`);
     for (const [modelId,input] of promptModelEntries(prompt)) if (input?.scene_id === id) references.push({ page_id: page.page_id, variant_id: input.scene_variant_id, model_id: modelId, reference_kind: 'scene' });
   }
   return references;
@@ -168,11 +162,11 @@ export async function prepareSceneVariantRename(root, projectId, sceneId, oldId,
   const nextPrompt = mapModelPrompts(prompt, input => ({ ...input, variants: Object.fromEntries(Object.entries(input.variants).map(([id,v]) => [id === oldId ? newId : id, v])) }));
   assertValid(validateSceneVisualDocument(nextVisual)); assertValid(validateScenePromptDocument(nextPrompt));
   const writes = [{ relative: relative(sceneId, 'visual'), before: visual, after: nextVisual }, { relative: relative(sceneId, 'prompt'), before: prompt, after: nextPrompt }];
-  const index = await optionalFact(project.projectDirectory, 'pages/index.json', { pages: [] }), nextIndex = structuredClone(index);
+  const index = await readOptionalFact(project.projectDirectory, 'pages/index.json', { pages: [] }), nextIndex = structuredClone(index);
   const ids = new Set();
   for (const page of nextIndex.pages) {
     if (page.owner_kind === 'scene' && page.scene_id === sceneId && page.variant_id === oldId) { page.variant_id = newId; ids.add(page.page_id); }
-    const file = `pages/${page.page_id}.prompt.json`, before = await optionalFact(project.projectDirectory, file);
+    const file = `pages/${page.page_id}.prompt.json`, before = await readOptionalFact(project.projectDirectory, file);
     if (!promptModelEntries(before).some(([,input]) => input?.scene_id === sceneId && input.scene_variant_id === oldId)) continue;
     const after = mapModelPrompts(renamePromptSource(before, sceneSource(sceneId, oldId), sceneSource(sceneId, newId)), input => {
       if (input.scene_id === sceneId && input.scene_variant_id === oldId) input.scene_variant_id = newId;
@@ -199,20 +193,20 @@ export async function deleteScene(root, projectId, sceneId, { beforeCommit } = {
   const deletionId = `deleted-${randomBytes(6).toString('hex')}`;
   const archive = path.resolve(root, 'Saved/state/deleted-scenes', project.projectId, deletionId);
   await mkdir(archive, { recursive: true });
-  await storage.assertRealPathWithin(path.resolve(root), archive, 'deleted scene archive');
+  await assertRealPathWithin(path.resolve(root), archive, 'deleted scene archive');
   const moved = [];
   try {
-    await storage.writeJsonAtomic(path.join(archive, 'deletion.json'), { version: 1, deletion_id: deletionId, project_id: project.projectId, scene_id: sceneId, deleted_at: new Date().toISOString(), ordinal: index.scenes.indexOf(sceneId) });
+    await writeJsonAtomic(path.join(archive, 'deletion.json'), { version: 1, deletion_id: deletionId, project_id: project.projectId, scene_id: sceneId, deleted_at: new Date().toISOString(), ordinal: index.scenes.indexOf(sceneId) });
     for (const [i,kind] of ['profile', 'visual', 'prompt'].entries()) {
-      const source = storage.targetPath(project.projectDirectory, relative(sceneId, kind)), destination = path.join(archive, `${sceneId}.${kind}.json`);
-      await storage.assertProjectFactBoundary(root, project.projectDirectory, source, relative(sceneId, kind));
+      const source = targetPath(project.projectDirectory, relative(sceneId, kind)), destination = path.join(archive, `${sceneId}.${kind}.json`);
+      await assertProjectFactBoundary(root, project.projectDirectory, source, relative(sceneId, kind));
       await rename(source, destination); moved.push({ source, destination, value: facts[i] });
     }
     if (beforeCommit) await beforeCommit();
-    await storage.writeJsonAtomic(path.join(project.projectDirectory, 'scenes/index.json'), { ...index, scenes: index.scenes.filter(id => id !== sceneId) });
+    await writeJsonAtomic(path.join(project.projectDirectory, 'scenes/index.json'), { ...index, scenes: index.scenes.filter(id => id !== sceneId) });
   } catch (error) {
     for (const item of moved.reverse()) await rename(item.destination, item.source);
-    await storage.removeSafeRuntimeDirectory(root, path.resolve(root, 'Saved/state/deleted-scenes'), archive, 'deleted scene archive');
+    await removeSafeRuntimeDirectory(root, path.resolve(root, 'Saved/state/deleted-scenes'), archive, 'deleted scene archive');
     throw error;
   }
   await cleanRemovedReferences(project.projectDirectory, facts[2]);
@@ -226,10 +220,10 @@ export async function cleanupDeletedScenes(root, { now = Date.now(), maxAgeMs = 
     for (const entry of await readdir(path.join(parent, project.name), { withFileTypes: true })) {
       if (!entry.isDirectory() || entry.isSymbolicLink() || !/^deleted-[a-f0-9]{12}$/.test(entry.name)) continue;
       const directory = path.join(parent, project.name, entry.name);
-      const manifest = await optionalFact(directory, 'deletion.json');
+      const manifest = await readOptionalFact(directory, 'deletion.json');
       const deletedAt = Date.parse(manifest?.deleted_at) || (await stat(directory)).mtimeMs;
       if (now - deletedAt < maxAgeMs) continue;
-      await storage.removeSafeRuntimeDirectory(root, parent, directory, 'deleted scene archive'); removed.push(directory);
+      await removeSafeRuntimeDirectory(root, parent, directory, 'deleted scene archive'); removed.push(directory);
     }
   }
   return removed;

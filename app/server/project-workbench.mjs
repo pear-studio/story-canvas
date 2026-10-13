@@ -1,3 +1,4 @@
+import { targetPath, assertProjectFactBoundary, writeJsonAtomic } from './fact-storage.mjs';
 import {factConflict} from './fact-conflict.mjs';
 import { readPageIndex, pageRelativePath } from './pages-store.mjs';
 import { readPageRenderSettings, pageProjectSettings } from './page-render-settings.mjs';
@@ -39,7 +40,7 @@ import {
   validateStoryPageNarrativeDocument,
   validateStoryPagePromptDocument,
 } from "./story-files.mjs";
-import { factStorage as storage } from "./story-facts.mjs";
+
 import { hashCanonicalJson } from "./workflow-definition.mjs";
 import { candidateDetailProjection } from "./generation-details.mjs";
 
@@ -54,14 +55,14 @@ function isRecord(value) {
 }
 
 async function readJson(projectDirectory, relativePath, { optional = false } = {}) {
-  const target = storage.targetPath(projectDirectory, relativePath);
+  const target = targetPath(projectDirectory, relativePath);
   const info = await lstat(target).catch((error) => error?.code === "ENOENT" ? null : Promise.reject(error));
   if (!info) {
     if (optional) return null;
     fail("project_fact_missing", [relativePath], 404);
   }
   if (!info.isFile() || info.isSymbolicLink()) fail("project_fact_path_invalid", [relativePath]);
-  await storage.assertProjectFactBoundary(projectDirectory, projectDirectory, target, relativePath);
+  await assertProjectFactBoundary(projectDirectory, projectDirectory, target, relativePath);
   try { return JSON.parse(await readFile(target, "utf8")); }
   catch (error) {
     if (error instanceof SyntaxError) fail("project_fact_json_invalid", [relativePath, error.message]);
@@ -370,7 +371,7 @@ export async function saveStorySummary(projectRoot, projectId, value) {
   if (hashCanonicalJson(target[field]) !== value.expected_sha256) throw factConflict('story_summary_target_conflict', []);
   target[field] = value.text;
   validated(outline, validateStoryOutlineDocument, relativePath);
-  await storage.writeJsonAtomic(storage.targetPath(project.projectDirectory, relativePath), outline);
+  await writeJsonAtomic(targetPath(project.projectDirectory, relativePath), outline);
   return { target: structuredClone(value.target), text: target[field], sha256: hashCanonicalJson(target[field]) };
 }
 
@@ -436,9 +437,9 @@ export async function savePageLettering(projectRoot, projectId, value) {
   const next = structuredClone(current);
   next.pages = next.pages.filter((page) => page.page !== identity.page_id);
   if (pageLayout.items.length) next.pages.push(pageLayout);
-  const target = storage.targetPath(project.projectDirectory, relativePath);
-  await storage.assertProjectFactBoundary(projectRoot, project.projectDirectory, target, relativePath);
-  await storage.writeJsonAtomic(target, next);
+  const target = targetPath(project.projectDirectory, relativePath);
+  await assertProjectFactBoundary(projectRoot, project.projectDirectory, target, relativePath);
+  await writeJsonAtomic(target, next);
   return {
     page_key: structuredClone(identity.page_key),
     lettering: structuredClone(pageLayout),
@@ -582,6 +583,6 @@ export async function saveLetteringSettings(projectRoot, projectId, value) {
   const current = validated(await readJson(project.projectDirectory, relativePath), validateLetteringSettingsDocument, relativePath);
   if (hashCanonicalJson(current) !== value.expected_sha256) throw factConflict('lettering_settings_conflict', []);
   const next = structuredClone(value.settings);
-  await storage.writeJsonAtomic(storage.targetPath(project.projectDirectory, relativePath), next);
+  await writeJsonAtomic(targetPath(project.projectDirectory, relativePath), next);
   return { settings: next, sha256: hashCanonicalJson(next) };
 }

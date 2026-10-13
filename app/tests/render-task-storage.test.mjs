@@ -46,6 +46,51 @@ async function fixture(context) {
   return projectDirectory;
 }
 
+test("创建任务目录短暂占用时重试发布，保留同一份完整 staging", async t => {
+  const directory = await fixture(t), waits = [], sources = [];
+  let attempts = 0;
+  const result = await createRenderTask(directory, queuedTask(), { project_title: 'Demo', pages: [] }, {
+    renameFile: async (source, target) => {
+      if (path.basename(source).startsWith('.create-')) {
+        sources.push(source);
+        assert.deepEqual((await readdir(source)).sort(), ['manifest.json', 'state.json']);
+        await assert.rejects(readdir(target), { code: 'ENOENT' });
+        if (++attempts < 3) throw Object.assign(new Error('目录短暂占用'), { code: 'EPERM' });
+      }
+      return rename(source, target);
+    },
+    wait: async ms => { waits.push(ms); },
+  });
+  assert.equal(attempts, 3);
+  assert.equal(new Set(sources).size, 1);
+  assert.deepEqual(waits, [10, 20]);
+  assert.deepEqual(await listActiveProjectTaskIds(directory), [taskId]);
+  assert.equal((await readRenderTask(directory, taskId)).state.revision, 1);
+  await assert.rejects(readdir(sources[0]), { code: 'ENOENT' });
+  assert.deepEqual((await readdir(result.task_directory)).sort(), ['manifest.json', 'state.json']);
+});
+
+test("任务目录持续占用或磁盘错误时有界失败，清理 staging 且不发布任务", async t => {
+  for (const [code, expectedAttempts] of [['EACCES', 3], ['ENOSPC', 1]]) {
+    const directory = await fixture(t), waits = [];
+    let attempts = 0;
+    const failure = Object.assign(new Error(code), { code });
+    await assert.rejects(createRenderTask(directory, queuedTask(), { project_title: 'Demo', pages: [] }, {
+      retryDelays: [5, 15],
+      renameFile: async (source, target) => {
+        if (path.basename(source).startsWith('.create-')) { attempts++; throw failure; }
+        return rename(source, target);
+      },
+      wait: async ms => { waits.push(ms); },
+    }), error => error === failure);
+    assert.equal(attempts, expectedAttempts);
+    assert.deepEqual(waits, code === 'EACCES' ? [5, 15] : []);
+    assert.equal((await readdir(path.join(directory, 'Saved/render'))).some(name => name.startsWith('.create-')), false);
+    assert.deepEqual(await listActiveProjectTaskIds(directory), []);
+    assert.equal(await readRenderTask(directory, taskId), null);
+  }
+});
+
 test("渲染状态更新只替换state并保留immutable manifest", async (context) => {
   const projectDirectory = await fixture(context);
   const created = await createRenderTask(projectDirectory, queuedTask(), {

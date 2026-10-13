@@ -1,3 +1,4 @@
+import { STORY_LOCK_MALFORMED_GRACE_MS, withResourceLock } from '../server/fact-storage.mjs';
 import {installQwenProfiles} from './helpers/qwen-fixture.mjs';
 import {writeQwenFixtureJson, qwenDocument} from './helpers/qwen-fixture.mjs';
 import { registerFixtureProjects } from "./project-registry-fixture.mjs";
@@ -16,22 +17,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import {
-  DELETED_STORY_PAGE_RETENTION_MS,
-  STORY_LOCK_MALFORMED_GRACE_MS,
-  cleanupDeletedStoryPages,
-
-
-
-
-
-  createStoryPage as createStoryPageDirect,
-
-
-
-  deleteStoryPage as deleteStoryPageDirect,
-  factStorage
-} from "../server/story-facts.mjs";
+import { DELETED_STORY_PAGE_RETENTION_MS, cleanupDeletedStoryPages, createStoryPage as createStoryPageDirect, deleteStoryPage as deleteStoryPageDirect } from '../server/story-facts.mjs';
 import {
   STORY_OUTLINE_SCHEMA_ID,
   STORY_PAGES_INDEX_SCHEMA_ID,
@@ -322,7 +308,7 @@ test("同页 narrative 与 Prompt 串行保存，Prompt 不会在 narrative 变�
     const target = path.join(lockRoot, `${name}.lock`);
     await writeFile(target, source, "utf8");
     await assert.rejects(
-      () => factStorage.withResourceLock(fixture.repositoryRoot, fixture.projectId, name, name, async () => undefined),
+      () => withResourceLock(fixture.repositoryRoot, fixture.projectId, name, name, async () => undefined),
       (error) => error?.code === "story_edit_target_busy",
     );
     assert.equal(await exists(target), true, "grace窗口内的空/畸形lock不能被竞争方删除");
@@ -333,14 +319,14 @@ test("同页 narrative 与 Prompt 串行保存，Prompt 不会在 narrative 变�
   await writeFile(oldMalformed, "{broken", "utf8");
   const oldTime = new Date(Date.now() - STORY_LOCK_MALFORMED_GRACE_MS - 1_000);
   await utimes(oldMalformed, oldTime, oldTime);
-  assert.equal(await factStorage.withResourceLock(
+  assert.equal(await withResourceLock(
     fixture.repositoryRoot, fixture.projectId, "old-malformed", "old malformed", async () => "recovered",
   ), "recovered");
   assert.equal(await exists(oldMalformed), false, "超过grace的畸形lock可被安全回收");
 
   const replacedLock = path.join(lockRoot, "owner-replaced.lock");
   const successor = { pid: process.pid, token: "b".repeat(32), created_at: new Date().toISOString() };
-  await factStorage.withResourceLock(
+  await withResourceLock(
     fixture.repositoryRoot,
     fixture.projectId,
     "owner-replaced",

@@ -3,6 +3,9 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import fs from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
+import { readProjectRegistry } from '../server/project-registry.mjs';
 
 import {
   createProject,
@@ -13,6 +16,32 @@ import { readProjectWorkbenchView } from "../server/project-workbench.mjs";
 async function readJson(target) {
   return JSON.parse(await readFile(target, "utf8"));
 }
+
+test('Windows 项目发布遇到短暂占用后完成，持续占用时撤回 staging 且不登记项目', { skip: process.platform !== 'win32' }, async t => {
+  for (const permanent of [false, true]) {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'story-canvas-create-busy-'));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const session = await readProjectCreationTemplate(root, 'busy-story');
+    const rename = fs.rename;
+    let attempts = 0;
+    const failure = Object.assign(new Error('目录占用'), { code: 'EPERM' });
+    const mocked = t.mock.method(fs, 'rename', async (source, target) => {
+      if (path.basename(source).startsWith('.create-') && target === path.join(root, 'workspace/busy-story')) {
+        attempts++;
+        if (permanent || attempts < 3) throw failure;
+      }
+      return rename(source, target);
+    });
+    syncBuiltinESMExports();
+    try {
+      if (permanent) await assert.rejects(createProject(root, session), { code: 'project_creation_publish_failed' });
+      else await createProject(root, session);
+    } finally { mocked.mock.restore(); syncBuiltinESMExports(); }
+    assert.equal(attempts, permanent ? 8 : 3);
+    assert.deepEqual(await fs.readdir(path.join(root, 'workspace')), permanent ? [] : ['busy-story']);
+    assert.equal(readProjectRegistry(root).some(project => project.id === 'busy-story'), !permanent);
+  }
+});
 
 test("模板直接创建完整项目，重复创建拒绝覆盖", async (context) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "story-canvas-create-"));

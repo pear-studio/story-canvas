@@ -1,9 +1,12 @@
+import { readTranslationDocument, translationPath } from './page-translation-document.mjs';
+import { FactError, writeJsonAtomic } from './fact-storage.mjs';
+import { commitFactChanges } from './fact-commit.mjs';
 import {savedFactReceipt} from './saved-fact-receipt.mjs';
 import {preparePageContent,preparePagePrompts,validatePagePromptSources} from './page-persistence.mjs';
 import {factConflict} from "./fact-conflict.mjs";
 import {cleanRemovedPageCharacters} from './page-character-cleanup.mjs';
 import {creationEditReceipt} from './creation-edit-receipt.mjs';
-import {readTranslationDocument,translationPath} from './page-translations.mjs';
+
 import { cleanRemovedReferences, removeUnusedFile, savePageReferenceInputs } from './reference-materials.mjs';
 import { pageSettingsFromDefaults, readPageRenderSettings } from './page-render-settings.mjs';
 import { modelPrompt, replaceModelPrompt, promptModelEntries, makeModelPromptDocument } from './model-prompts.mjs';
@@ -16,7 +19,7 @@ import { readFile, mkdir, rename, lstat } from 'node:fs/promises';
 import { resolveProjectLocation } from './project-operations.mjs';
 import { decodePageKey } from './page-key.mjs';
 import { readPageIndex, readPageEntry, readPageContent, readPagePrompt, pageRelativePath, validatePagesIndexDocument } from './pages-store.mjs';
-import { FactError, factStorage as storage, commitFactChanges, readStoryPromptUpstream, narrativeDownstreamDiagnostics } from './story-facts.mjs';
+import { readStoryPromptUpstream, narrativeDownstreamDiagnostics } from './story-facts.mjs';
 import { STORY_PAGE_NARRATIVE_SCHEMA_ID, STORY_PAGE_PROMPT_SCHEMA_ID, checkPagePromptOverrideReferences, validateStoryPageNarrativeDocument, validateStoryPagePromptDocument, validateStoryPageTextSourcesDocument, prepareStoryPageNarrativeForPersistence } from './story-files.mjs';
 import { hashCanonicalJson } from './workflow-definition.mjs';
 import { listFinishedJobs, finishedBusyStatuses } from './finished-jobs.mjs';
@@ -151,7 +154,7 @@ export async function deletePage(root,projectId,pageId,{beforeCommit}={}) {
   if(layouts)writes.push({relative:'lettering/dialogue-layouts.json',before:layouts,after:{...layouts,pages:layouts.pages.filter(page=>page.page!==pageId)}});
   try {
     for(const relative of descriptors){const source=path.join(directory,relative);if(!await lstat(source).catch(error=>error.code==='ENOENT'?null:Promise.reject(error)))continue;const target=path.join(archive,relative);await mkdir(path.dirname(target),{recursive:true});await rename(source,target);moved.push({source,target,relative});}
-    await storage.writeJsonAtomic(path.join(archive,'deletion.json'),{version:1,deletion_id:deletionId,project_id:project.projectId,...entry,...position,deleted_at:new Date().toISOString(),archived_paths:moved.map(item=>item.relative)});
+    await writeJsonAtomic(path.join(archive,'deletion.json'),{version:1,deletion_id:deletionId,project_id:project.projectId,...entry,...position,deleted_at:new Date().toISOString(),archived_paths:moved.map(item=>item.relative)});
     await commitFactChanges(directory,writes);
   } catch(error){for(const item of moved.reverse())await rename(item.target,item.source);throw error;}
   await cleanRemovedReferences(directory, removedReferences);

@@ -1,3 +1,6 @@
+import { commitFactChanges } from './fact-commit.mjs';
+import { FactError, projectRelativePath, targetPath, readJson as readFactJson, assertProjectFactBoundary, writeJsonAtomic, rollbackCreatedFactFiles, assertRealPathWithin, removeSafeRuntimeDirectory } from './fact-storage.mjs';
+import { assertTargetBaseline } from './edit-fingerprint.mjs';
 import {factConflict} from './fact-conflict.mjs';
 import {prepareSettingFact} from './setting-persistence.mjs';
 import { cleanRemovedReferences } from './reference-materials.mjs';
@@ -25,11 +28,6 @@ import {
 } from "./character-files.mjs";
 import { resolveProjectLocation } from "./project-operations.mjs";
 import { assertNoActivePageRender } from "./render-task-storage.mjs";
-import {
-  commitFactChanges,
-  FactError,
-  factStorage as storage,
-} from "./story-facts.mjs";
 import {
   storyPageIdPattern,
   storyNarrativeSpeakerIds,
@@ -67,11 +65,11 @@ function assertDocument(errors) {
 }
 
 function characterRelativePath(characterId, suffix) {
-  return storage.projectRelativePath("characters", `${characterId}.${suffix}.json`);
+  return projectRelativePath("characters", `${characterId}.${suffix}.json`);
 }
 
 function characterTarget(projectDirectory, characterId, suffix) {
-  return storage.targetPath(projectDirectory, characterRelativePath(characterId, suffix));
+  return targetPath(projectDirectory, characterRelativePath(characterId, suffix));
 }
 
 function visualIdentity(visual) {
@@ -111,25 +109,25 @@ function assertPromptMatchesVisual(promptDocument, visual) {
 }
 
 async function readCharacterIndex(projectDirectory) {
-  const value = await storage.readJson(path.join(projectDirectory, "characters", "index.json"), "characters/index.json");
+  const value = await readFactJson(path.join(projectDirectory, "characters", "index.json"), "characters/index.json");
   assertDocument(validateCharacterIndexDocument(value));
   return value;
 }
 
 async function readCharacterProfile(projectDirectory, characterId) {
-  const value = await storage.readJson(characterTarget(projectDirectory, characterId, "profile"), characterRelativePath(characterId, "profile"));
+  const value = await readFactJson(characterTarget(projectDirectory, characterId, "profile"), characterRelativePath(characterId, "profile"));
   assertDocument(validateCharacterProfileDocument(value));
   return value;
 }
 
 async function readCharacterVisual(projectDirectory, characterId) {
-  const value = await storage.readJson(characterTarget(projectDirectory, characterId, "visual"), characterRelativePath(characterId, "visual"));
+  const value = await readFactJson(characterTarget(projectDirectory, characterId, "visual"), characterRelativePath(characterId, "visual"));
   assertDocument(validateCharacterVisualDocument(value));
   return value;
 }
 
 async function readCharacterPrompt(projectDirectory, characterId) {
-  const value = await storage.readJson(characterTarget(projectDirectory, characterId, "prompt"), characterRelativePath(characterId, "prompt"));
+  const value = await readFactJson(characterTarget(projectDirectory, characterId, "prompt"), characterRelativePath(characterId, "prompt"));
   assertDocument(validateCharacterPromptDocument(value));
   return value;
 }
@@ -143,13 +141,13 @@ async function requireCharacter(projectDirectory, characterId) {
 
 async function listStoryNarratives(projectRoot, projectDirectory) {
   const pagesDirectory = path.join(projectDirectory, "pages");
-  await storage.assertProjectFactBoundary(projectRoot, projectDirectory, pagesDirectory, "pages");
+  await assertProjectFactBoundary(projectRoot, projectDirectory, pagesDirectory, "pages");
   const narratives = {};
   for (const entry of await readdir(pagesDirectory, { withFileTypes: true })) {
     const match = /^(page-(?:\d{3}|[a-f0-9]{12}))\.content\.json$/.exec(entry.name);
     if (!match) continue;
     if (!entry.isFile() || entry.isSymbolicLink()) fail("unsafe_character_edit_path", [entry.name]);
-    const narrative = await storage.readJson(path.join(pagesDirectory, entry.name), `pages/${entry.name}`);
+    const narrative = await readFactJson(path.join(pagesDirectory, entry.name), `pages/${entry.name}`);
     assertDocument(validateStoryPageNarrativeDocument(narrative));
     narratives[match[1]] = narrative;
   }
@@ -165,7 +163,7 @@ async function readCharacterStyles(projectDirectory) {
   const info = await lstat(target).catch((error) => error?.code === "ENOENT" ? null : Promise.reject(error));
   if (!info) return { characters: {} };
   if (!info.isFile() || info.isSymbolicLink()) fail("unsafe_character_edit_path", [target]);
-  const value = await storage.readJson(target, "lettering/settings.json");
+  const value = await readFactJson(target, "lettering/settings.json");
   const errors = validateLetteringSettingsDocument(value);
   if (errors.length) fail("invalid_lettering_settings", errors);
   return {
@@ -224,7 +222,7 @@ export async function readCharacterFactDraft(projectRoot, projectId, characterId
     editable = normalizePromptToVisual(persisted, visual);
   }
   const targetRelative = characterRelativePath(characterId, kind);
-  await storage.assertProjectFactBoundary(projectRoot, project.projectDirectory, storage.targetPath(project.projectDirectory, targetRelative), targetRelative);
+  await assertProjectFactBoundary(projectRoot, project.projectDirectory, targetPath(project.projectDirectory, targetRelative), targetRelative);
   return {
     project, definition: {
       targetRelative,
@@ -247,9 +245,9 @@ export async function commitCharacterFact(projectRoot, context, readDocument, ki
   const characterId = context.character_id;
   const auditPrepared = kind === "prompt" ? await preparePromptWriteAudit(projectRoot) : null;
   await requireCharacter(project.projectDirectory, characterId);
-  const target = storage.targetPath(project.projectDirectory, context.target.relative_path);
-  await storage.assertProjectFactBoundary(projectRoot, project.projectDirectory, target, context.target.relative_path);
-  const baseline = await storage.assertTargetBaseline(project.projectDirectory, context);
+  const target = targetPath(project.projectDirectory, context.target.relative_path);
+  await assertProjectFactBoundary(projectRoot, project.projectDirectory, target, context.target.relative_path);
+  const baseline = await assertTargetBaseline(project.projectDirectory, context);
   const edited = await readDocument();
   const visual = kind === "prompt" ? await readCharacterVisual(project.projectDirectory, characterId) : null;
   if (visual && visualIdentity(visual) !== context.upstream.visual.identity_sha256) throw factConflict('character_edit_upstream_conflict', [characterId]);
@@ -299,7 +297,7 @@ export async function createCharacter(projectRoot, projectId, characterId, { nam
 
   const index = await readCharacterIndex(project.projectDirectory);
   if (index.characters.includes(characterId)) fail("character_already_exists", [characterId]);
-  const projectDocument = await storage.readJson(path.join(project.projectDirectory,'project.json'),'project.json');
+  const projectDocument = await readFactJson(path.join(project.projectDirectory,'project.json'),'project.json');
   const modelId = (await defaultProfileAdapter(projectRoot,projectDocument.default_render_profile)).id;
   const facts = defaultCharacterFacts(characterId, name, modelId);
   assertDocument(validateCharacterProfileDocument(facts.profile));
@@ -315,16 +313,16 @@ export async function createCharacter(projectRoot, projectId, characterId, { nam
   const written = [];
   try {
     for (const item of targets) {
-      await storage.writeJsonAtomic(item.target, facts[item.suffix]);
+      await writeJsonAtomic(item.target, facts[item.suffix]);
       written.unshift(item.target);
     }
     if (beforeCommit !== undefined) {
       if (typeof beforeCommit !== "function") fail("invalid_character_edit_option", ["beforeCommit 必须是函数"]);
       await beforeCommit();
     }
-    await storage.writeJsonAtomic(path.join(project.projectDirectory, "characters", "index.json"), nextIndex);
+    await writeJsonAtomic(path.join(project.projectDirectory, "characters", "index.json"), nextIndex);
   } catch (error) {
-    await storage.rollbackCreatedFactFiles(written, error, "character_create_rollback_failed");
+    await rollbackCreatedFactFiles(written, error, "character_create_rollback_failed");
     throw error;
   }
   return {
@@ -343,16 +341,16 @@ function deletedCharactersRoot(projectRoot) {
 async function createDeletedCharacterDirectory(projectRoot, projectId) {
   const root = deletedCharactersRoot(projectRoot);
   await mkdir(root, { recursive: true });
-  await storage.assertRealPathWithin(path.resolve(projectRoot), root, "deleted-characters root");
+  await assertRealPathWithin(path.resolve(projectRoot), root, "deleted-characters root");
   const parent = path.join(root, projectId);
   await mkdir(parent, { recursive: true });
-  await storage.assertRealPathWithin(root, parent, "deleted-characters project directory");
+  await assertRealPathWithin(root, parent, "deleted-characters project directory");
   for (;;) {
     const deletionId = `deleted-${randomBytes(6).toString("hex")}`;
     const directory = path.join(parent, deletionId);
     try {
       await mkdir(directory);
-      await storage.assertRealPathWithin(parent, directory, "deleted character archive");
+      await assertRealPathWithin(parent, directory, "deleted character archive");
       return { deletionId, directory };
     } catch (error) {
       if (error?.code !== "EEXIST") throw error;
@@ -364,10 +362,10 @@ async function preflightCharacterFacts(projectRoot, projectDirectory, characterI
   const sources = [];
   for (const suffix of ["profile", "visual", "prompt"]) {
     const relativePath = characterRelativePath(characterId, suffix);
-    const source = storage.targetPath(projectDirectory, relativePath);
+    const source = targetPath(projectDirectory, relativePath);
     const info = await lstat(source);
     if (!info.isFile() || info.isSymbolicLink()) fail("unsafe_character_edit_path", [relativePath]);
-    await storage.assertRealPathWithin(projectDirectory, source, relativePath);
+    await assertRealPathWithin(projectDirectory, source, relativePath);
     sources.push({ relative_path: relativePath, source });
   }
   return sources;
@@ -375,9 +373,9 @@ async function preflightCharacterFacts(projectRoot, projectDirectory, characterI
 
 async function moveCharacterFacts(archiveDirectory, sources, moved) {
   for (const source of sources) {
-    const destination = storage.targetPath(archiveDirectory, source.relative_path);
+    const destination = targetPath(archiveDirectory, source.relative_path);
     await mkdir(path.dirname(destination), { recursive: true });
-    await storage.assertRealPathWithin(archiveDirectory, path.dirname(destination), "deleted character archive destination");
+    await assertRealPathWithin(archiveDirectory, path.dirname(destination), "deleted character archive destination");
     await rename(source.source, destination);
     moved.push({ ...source, destination });
   }
@@ -449,21 +447,21 @@ export async function deleteCharacterVariant(projectRoot, projectId, characterId
   const visualTarget = characterTarget(project.projectDirectory, characterId, "visual");
   const promptTarget = characterTarget(project.projectDirectory, characterId, "prompt");
   await Promise.all([
-    storage.assertProjectFactBoundary(projectRoot, project.projectDirectory, visualTarget, characterRelativePath(characterId, "visual")),
-    storage.assertProjectFactBoundary(projectRoot, project.projectDirectory, promptTarget, characterRelativePath(characterId, "prompt")),
+    assertProjectFactBoundary(projectRoot, project.projectDirectory, visualTarget, characterRelativePath(characterId, "visual")),
+    assertProjectFactBoundary(projectRoot, project.projectDirectory, promptTarget, characterRelativePath(characterId, "prompt")),
   ]);
   let promptWritten = false;
   try {
     if (promptCleaned) {
-      await storage.writeJsonAtomic(promptTarget, nextPrompt);
+      await writeJsonAtomic(promptTarget, nextPrompt);
       promptWritten = true;
     }
     if (beforeCommit) await beforeCommit();
-    await storage.writeJsonAtomic(visualTarget, nextVisual);
+    await writeJsonAtomic(visualTarget, nextVisual);
   } catch (error) {
     if (promptWritten) {
       try {
-        await storage.writeJsonAtomic(promptTarget, prompt);
+        await writeJsonAtomic(promptTarget, prompt);
       } catch (rollbackError) {
         const failure = new FactError("character_variant_delete_rollback_failed", [
           characterId,
@@ -536,8 +534,8 @@ export async function prepareCharacterVariantRename(projectRoot, projectId, char
     },
   ];
   if (updatedCharacterPageIds.length) {
-    const pagesIndexRelative = storage.projectRelativePath("pages", "index.json");
-    const pagesIndexValue = await storage.readJson(storage.targetPath(project.projectDirectory, pagesIndexRelative), pagesIndexRelative);
+    const pagesIndexRelative = projectRelativePath("pages", "index.json");
+    const pagesIndexValue = await readFactJson(targetPath(project.projectDirectory, pagesIndexRelative), pagesIndexRelative);
     const nextPagesIndex = structuredClone(pagesIndexValue);
     for (const page of nextPagesIndex.pages) {
       if (page?.owner_kind === "character" && page.character_id === characterId && page.variant_id === oldId) page.variant_id = newId;
@@ -553,21 +551,21 @@ export async function prepareCharacterVariantRename(projectRoot, projectId, char
     }
     assertDocument(validateStoryPageNarrativeDocument(nextNarrative));
     writes.push({
-      relativePath: storage.projectRelativePath("pages", `${pageId}.content.json`),
+      relativePath: projectRelativePath("pages", `${pageId}.content.json`),
       next: nextNarrative,
       previous: narrative,
     });
   }
   for (const pageId of affectedPageIds) {
-      const relativePath = storage.projectRelativePath('pages', pageId + '.prompt.json');
-      const previous = await storage.readJson(storage.targetPath(project.projectDirectory, relativePath), relativePath);
+      const relativePath = projectRelativePath('pages', pageId + '.prompt.json');
+      const previous = await readFactJson(targetPath(project.projectDirectory, relativePath), relativePath);
       const oldSource = 'character:' + characterId + ':' + oldId;
       const next = renamePromptSource(previous, oldSource, 'character:' + characterId + ':' + newId);
       if (hashCanonicalJson(previous) === hashCanonicalJson(next)) continue;
       writes.push({ relativePath, next, previous });
   }
   await Promise.all(writes.map((write) => (
-    storage.assertProjectFactBoundary(projectRoot, project.projectDirectory, storage.targetPath(project.projectDirectory, write.relativePath), write.relativePath)
+    assertProjectFactBoundary(projectRoot, project.projectDirectory, targetPath(project.projectDirectory, write.relativePath), write.relativePath)
   )));
   return { projectDirectory: project.projectDirectory, writes: writes.map(write => ({relative:write.relativePath,before:write.previous,after:write.next})), result: {
     character_id: characterId,
@@ -576,8 +574,8 @@ export async function prepareCharacterVariantRename(projectRoot, projectId, char
     updated_page_ids: affectedPageIds,
     visual: nextVisual,
     prompt: nextPrompt,
-    visual_file: path.resolve(storage.targetPath(project.projectDirectory, characterRelativePath(characterId, "visual"))),
-    prompt_file: path.resolve(storage.targetPath(project.projectDirectory, characterRelativePath(characterId, "prompt"))),
+    visual_file: path.resolve(targetPath(project.projectDirectory, characterRelativePath(characterId, "visual"))),
+    prompt_file: path.resolve(targetPath(project.projectDirectory, characterRelativePath(characterId, "prompt"))),
     downstream_diagnostics: [],
   } };
 }
@@ -636,17 +634,17 @@ export async function deleteCharacter(projectRoot, projectId, characterId, { bef
     fail("invalid_character_edit_option", ["beforeCommit 必须是函数"]);
   }
   try {
-    await storage.writeJsonAtomic(path.join(archive.directory, "deletion.json"), manifest);
+    await writeJsonAtomic(path.join(archive.directory, "deletion.json"), manifest);
     await moveCharacterFacts(archive.directory, sources, moved);
     if (beforeCommit) await beforeCommit({ moved: structuredClone(moved), archive_directory: archive.directory });
-    await storage.writeJsonAtomic(path.join(project.projectDirectory, "characters", "index.json"), nextIndex);
+    await writeJsonAtomic(path.join(project.projectDirectory, "characters", "index.json"), nextIndex);
   } catch (error) {
     const rollbackResults = await rollbackCharacterFacts(moved);
     if (rollbackResults.some((result) => !result.restored)) {
       throw rollbackFailure(error, archive.directory, rollbackResults);
     }
     try {
-      await storage.removeSafeRuntimeDirectory(projectRoot, deletedCharactersRoot(projectRoot), archive.directory, "deleted character archive");
+      await removeSafeRuntimeDirectory(projectRoot, deletedCharactersRoot(projectRoot), archive.directory, "deleted character archive");
     } catch (cleanupError) {
       throw rollbackFailure(error, archive.directory, rollbackResults, cleanupError);
     }
@@ -668,7 +666,7 @@ export async function cleanupDeletedCharacters(
   const root = deletedCharactersRoot(projectRoot);
   const removed = [];
   const projects = await readdir(root, { withFileTypes: true }).catch((error) => error?.code === "ENOENT" ? [] : Promise.reject(error));
-  if (projects.length) await storage.assertRealPathWithin(path.resolve(projectRoot), root, "deleted-characters root");
+  if (projects.length) await assertRealPathWithin(path.resolve(projectRoot), root, "deleted-characters root");
   for (const projectEntry of projects) {
     if (!projectEntry.isDirectory() || projectEntry.isSymbolicLink()) continue;
     const projectDirectory = path.join(root, projectEntry.name);
@@ -677,14 +675,14 @@ export async function cleanupDeletedCharacters(
       const archiveDirectory = path.join(projectDirectory, entry.name);
       let deletedAt = null;
       try {
-        const manifest = await storage.readJson(path.join(archiveDirectory, "deletion.json"), "deleted character manifest");
+        const manifest = await readFactJson(path.join(archiveDirectory, "deletion.json"), "deleted character manifest");
         deletedAt = Date.parse(manifest.deleted_at);
       } catch (error) {
         if (!(error instanceof FactError)) throw error;
       }
       if (!Number.isFinite(deletedAt)) deletedAt = (await stat(archiveDirectory)).mtimeMs;
       if (now - deletedAt < maxAgeMs) continue;
-      await storage.removeSafeRuntimeDirectory(projectRoot, root, archiveDirectory, "deleted character archive");
+      await removeSafeRuntimeDirectory(projectRoot, root, archiveDirectory, "deleted character archive");
       removed.push(path.resolve(archiveDirectory));
     }
   }

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { validatePagesIndexDocument } from '../server/pages-store.mjs';
-import {validateTranslationDocument} from '../server/page-translations.mjs';
+import { validateTranslationDocument } from '../server/page-translation-document.mjs';
 import { validatePageRewriteDocument } from '../server/page-rewrite.mjs';
 import { validateSceneIndexDocument, validateSceneProfileDocument, validateSceneVisualDocument, validateScenePromptDocument } from '../server/scene-files.mjs';
 import { readFile, readdir } from "node:fs/promises";

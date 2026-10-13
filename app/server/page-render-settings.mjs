@@ -1,10 +1,11 @@
+import { commitFactChanges } from './fact-commit.mjs';
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { ApiError } from './http-support.mjs';
 import { hashCanonicalJson } from './workflow-definition.mjs';
 import { resolveProjectLocation } from './project-operations.mjs';
 import { readPageEntry, pageRelativePath } from './pages-store.mjs';
-import { commitFactChanges } from './story-facts.mjs';
+
 import { compileEffectiveRenderProfile } from './render-profile-compiler.mjs';
 import { modelAdapter, profileModelAdapter } from './model-adapters.mjs';
 

@@ -114,7 +114,7 @@ test("旧 revision 的事实写入和事实派生都拒绝，项目事实不被�
   assert.equal(await operations.state(project.projectId), current);
 });
 
-test("一致性事实读取只重试一次，嵌套项目 mutation 和项目移动明确失败", async (t) => {
+test("一致性事实读取只重试一次，嵌套项目 mutation 明确失败", async (t) => {
   const project = await makeProject(t);
   const operations = createProjectOperations({ projectRoot: project.root });
   let attempts = 0;
@@ -143,7 +143,9 @@ test("一致性事实读取只重试一次，嵌套项目 mutation 和项目移�
     () => operations.mutateDerived(project.projectId, () => operations.mutateDerived(project.projectId, async () => undefined)),
     (error) => error.code === "nested_project_operation" && error.status === 500,
   );
+});
 
+test("项目移动等待当前 mutation 完成，拒绝其后排队的写入并返回新 revision", { timeout: 5000 }, async (t) => {
   const second = await makeProject(t, { name: "moved-project" });
   const secondOps = createProjectOperations({ projectRoot: second.root });
   const secondState = await secondOps.state(second.projectId);
@@ -153,12 +155,23 @@ test("一致性事实读取只重试一次，嵌套项目 mutation 和项目移�
   });
   let markEntered;
   const entered = new Promise((resolve) => { markEntered = resolve; });
+  let firstFinished = false;
   const first = secondOps.mutateDerived(second.projectId, async () => {
     markEntered();
     await firstEntered;
+    firstFinished = true;
   });
   await entered;
-  const renameOperation = secondOps.renameProject(second.projectId, browser(secondState), async (context) => {
+  function credentialGate() {
+    let resolved;
+    const ready = new Promise(resolve => { resolved = resolve; });
+    // 凭据检查发生在异步路径解析之后，与入队处于同一同步片段。
+    // getter 通知的等待者恢复时，该操作已入队，不依赖文件系统耗时。
+    return { ready, credential: { get expectedRevision() { resolved(); return secondState; } } };
+  }
+  const renameGate = credentialGate();
+  const renameOperation = secondOps.renameProject(second.projectId, renameGate.credential, async (context) => {
+    assert.equal(firstFinished, true);
     assert.equal(context.projectId, second.projectId);
     assert.equal(Object.hasOwn(context, "state"), false);
     const { projectDirectory } = context;
@@ -167,15 +180,19 @@ test("一致性事实读取只重试一次，嵌套项目 mutation 和项目移�
     registerFixtureProjects(second.root);
     return { id: "moved-project-renamed", directory: "workspace/moved-project-renamed" };
   });
-  await new Promise((resolve) => setImmediate(resolve));
-  const waiting = secondOps.mutateDerived(second.projectId, async () => undefined);
+  await renameGate.ready;
+  const waitingGate = credentialGate();
+  let ran = false;
+  const waiting = secondOps.mutateFacts(second.projectId, waitingGate.credential, async () => { ran = true; });
+  const rejected = assert.rejects(waiting, { code: 'project_moved', status: 409 });
+  await waitingGate.ready;
   releaseFirst();
   await first;
-  await renameOperation;
-  await assert.rejects(
-    () => waiting,
-    (error) => error.code === "project_moved" && error.status === 409,
-  );
+  const result = await renameOperation;
+  await rejected;
+  assert.equal(ran, false);
+  assert.equal(result.value.id, 'moved-project-renamed');
+  assert.equal(result.revision, await secondOps.state(result.value.id));
 });
 
 test("复制项目返回源项目 revision，副本在切换后独立载入自己的 revision", async (t) => {

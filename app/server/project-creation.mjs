@@ -1,9 +1,11 @@
+import { isWithin, targetPath, assertNoReparsePoints, assertRealPathWithin } from './fact-storage.mjs';
+import { replaceFileWithRetry } from './file-replace.mjs';
 import { registerProject, readProjectRegistry } from "./project-registry.mjs";
 import { PAGES_INDEX_SCHEMA_ID, validatePagesIndexDocument } from "./pages-store.mjs";
 import { SCENE_INDEX_SCHEMA_ID } from "./scene-files.mjs";
 import { projectGitignore, projectGitattributes } from "./project-storage-layout.mjs";
 import { randomUUID } from "node:crypto";
-import { lstat, mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -31,7 +33,7 @@ import {
   STORY_OUTLINE_SCHEMA_ID,
   validateStoryOutlineDocument,
 } from "./story-files.mjs";
-import { factStorage as storage } from "./story-facts.mjs";
+
 
 
 const projectSchemaId = "https://storyvisualizer.local/schemas/project.schema.json";
@@ -200,7 +202,7 @@ async function assertDestinationAvailable(projectRoot, projectId) {
   const workspaceRoot = path.join(path.resolve(projectRoot), "workspace");
   if (readProjectRegistry(projectRoot).some(entry => entry.id === projectId)) fail(409, "project_already_exists");
   const destination = path.join(workspaceRoot, projectId);
-  if (path.dirname(destination) !== workspaceRoot || !storage.isWithin(workspaceRoot, destination)) fail(400, "invalid_project_id");
+  if (path.dirname(destination) !== workspaceRoot || !isWithin(workspaceRoot, destination)) fail(400, "invalid_project_id");
   if (await pathExists(destination)) fail(409, "project_already_exists", [projectId]);
   return { workspaceRoot, destination };
 }
@@ -234,7 +236,7 @@ async function writeMaterializedProject(stagingDirectory, materialized) {
       [`characters/${character.id}.prompt.json`, character.prompt],
     ]),
   ];
-  for (const [relativePath, value] of jsonFiles) await writeJson(storage.targetPath(stagingDirectory, relativePath), value);
+  for (const [relativePath, value] of jsonFiles) await writeJson(targetPath(stagingDirectory, relativePath), value);
   await writeFile(path.join(stagingDirectory, ".gitignore"), projectGitignore, { encoding: "utf8", flag: "wx" });
   await writeFile(path.join(stagingDirectory, ".gitattributes"), projectGitattributes, { encoding: "utf8", flag: "wx" });
 }
@@ -242,13 +244,13 @@ async function writeMaterializedProject(stagingDirectory, materialized) {
 async function cleanupStaging(workspaceRoot, stagingDirectory) {
   const absoluteRoot = path.resolve(workspaceRoot);
   const absolute = path.resolve(stagingDirectory);
-  if (!storage.isWithin(absoluteRoot, absolute) || absolute === absoluteRoot || path.dirname(absolute) !== absoluteRoot || !path.basename(absolute).startsWith(".create-")) {
+  if (!isWithin(absoluteRoot, absolute) || absolute === absoluteRoot || path.dirname(absolute) !== absoluteRoot || !path.basename(absolute).startsWith(".create-")) {
     fail(500, "unsafe_project_creation_staging", [absolute]);
   }
   const info = await lstat(absolute).catch((error) => error?.code === "ENOENT" ? null : Promise.reject(error));
   if (!info) return;
   if (!info.isDirectory() || info.isSymbolicLink()) fail(500, "unsafe_project_creation_staging", [absolute]);
-  await storage.assertNoReparsePoints(absolute);
+  await assertNoReparsePoints(absolute);
   await rm(absolute, { recursive: true, force: false });
 }
 
@@ -260,16 +262,16 @@ export async function createProject(projectRoot, { project_id: projectId, docume
   const { workspaceRoot, destination } = await assertDestinationAvailable(projectRoot, projectId);
   await mkdir(workspaceRoot, { recursive: true });
   await requirePlainDirectory(workspaceRoot, "workspace_not_found");
-  await storage.assertRealPathWithin(path.resolve(projectRoot), workspaceRoot, "workspace root");
+  await assertRealPathWithin(path.resolve(projectRoot), workspaceRoot, "workspace root");
   const stagingDirectory = path.join(workspaceRoot, `.create-${randomUUID()}`);
   let stagingCreated = false;
   try {
     await mkdir(stagingDirectory, { recursive: false });
     stagingCreated = true;
-    await storage.assertRealPathWithin(workspaceRoot, stagingDirectory, "project creation staging");
+    await assertRealPathWithin(workspaceRoot, stagingDirectory, "project creation staging");
     await writeMaterializedProject(stagingDirectory, materialized);
     if (await pathExists(destination)) fail(409, "project_already_exists", [projectId]);
-    try { await rename(stagingDirectory, destination); }
+    try { await replaceFileWithRetry(stagingDirectory, destination); }
     catch (error) {
       if (new Set(["EEXIST", "ENOTEMPTY", "EPERM"]).has(error?.code) && await pathExists(destination)) {
         fail(409, "project_already_exists", [projectId]);

@@ -1,8 +1,9 @@
+import { writeJsonAtomic, withPageLocks } from './fact-storage.mjs';
 import { referenceImageFilename, uploadFrozenReferenceImage } from "./reference-image.mjs";
 import { resolveExactPageIdentity } from "./page-render-resolver.mjs";
 import { publishCandidateResult, readCandidateResult } from "./candidate-storage.mjs";
 import { withCandidateMutationLock } from "./candidate-mutation-lock.mjs";
-import { factStorage as storage } from "./story-facts.mjs";
+
 import { randomUUID } from "node:crypto";
 import { createTaskStageRecorder } from "./task-stage-recorder.mjs";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
@@ -403,7 +404,7 @@ async function runRender(options, assignedTaskId) {
         unit.submission = { availability: "recorded", api_url: apiUrl, submitted_at: new Date().toISOString(), request: { client_id: clientId, prompt: resolvedPrompt, extra_data: unit.plan.extra_data }, prompt_id: null };
         const submissionFile = path.join(options.projectRoot, "Saved", "render", "submissions", task.id, unit.plan.id + ".json");
         await mkdir(path.dirname(submissionFile), { recursive: true });
-        unit.recorder = createTaskStageRecorder(unit.submission, value => storage.writeJsonAtomic(submissionFile, value));
+        unit.recorder = createTaskStageRecorder(unit.submission, value => writeJsonAtomic(submissionFile, value));
         await unit.recorder.measure("submit", async () => {
           const submitted = await fetchJson(`${apiUrl}/prompt`, {
             method: "POST",
@@ -469,7 +470,7 @@ async function runRender(options, assignedTaskId) {
             const bytes = await unit.recorder.measure("download", () => downloadImage(apiUrl, image, Boolean(item.video_settings)), item.id);
             const repo = options.repositoryRoot ?? path.resolve(options.projectRoot, "../..");
             const projectId = path.basename(options.projectRoot);
-            await unit.recorder.measure("save", () => withCandidateMutationLock(repo, projectId, () => storage.withPageLocks(repo, projectId, [item.page_key.page_id], async () => {
+            await unit.recorder.measure("save", () => withCandidateMutationLock(repo, projectId, () => withPageLocks(repo, projectId, [item.page_key.page_id], async () => {
               await resolveExactPageIdentity(options.projectRoot, item.page_key);
               // 删除与发布共用短锁；运行中的内存快照不能复活已删除成果。
               const latest = await readRenderTaskState(options.projectRoot, task.id);

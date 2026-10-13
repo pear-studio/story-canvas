@@ -25,6 +25,8 @@
 
 `project-operations.mjs` 统一剧情项目 mutation lock、revision 和移动保护，不在领域内部另建事实锁。
 
+`fact-storage.mjs` 只依赖 Node 内置模块，提供文件读写、路径检查和候选媒体锁；目标读据检查归 `edit-fingerprint.mjs`。`fact-commit.mjs` 在调用者持有的项目写锁内统一译文裁剪、引用检查、写入回滚及保存后的素材清理。译文文档规则位于 `page-translation-document.mjs`，不依赖译文保存或剧情编辑入口；领域调用者直接导入所需能力。
+
 | 入口 | 条件 |
 |---|---|
 | `readFacts` | 一致性读取，期间变化有界重读 |

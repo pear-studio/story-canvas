@@ -1,9 +1,10 @@
+import { writeJsonAtomic } from './fact-storage.mjs';
 // 显式格式迁移；普通读取不隐式改写事实。
 import {readFile,readdir,mkdir,copyFile} from 'node:fs/promises';
 import path from 'node:path';
 import {createHash,randomUUID} from 'node:crypto';
 import {validateModelPromptDocument} from './model-prompts.mjs';
-import {factStorage} from './story-facts.mjs';
+
 import {ApiError} from './http-support.mjs';
 const hash=x=>createHash('sha256').update(x).digest('hex');
 const assignments={
@@ -52,7 +53,7 @@ export async function migrateProjectCamera(directory,input) {
  const backup=path.join(directory,'.migration-backups','camera',randomUUID());
  for(const w of writes){const target=path.join(backup,w.relative);await mkdir(path.dirname(target),{recursive:true});await copyFile(w.target,target);}
  const completed=[];
- try{for(const w of writes){if(hash(await readFile(w.target,'utf8'))!==hash(w.raw))throw new ApiError(409,'camera_migration_conflict',[w.relative]);await factStorage.writeJsonAtomic(w.target,w.after);completed.push(w);}}
- catch(error){for(const w of completed.reverse())await factStorage.writeJsonAtomic(w.target,w.before);throw error;}
+ try{for(const w of writes){if(hash(await readFile(w.target,'utf8'))!==hash(w.raw))throw new ApiError(409,'camera_migration_conflict',[w.relative]);await writeJsonAtomic(w.target,w.after);completed.push(w);}}
+ catch(error){for(const w of completed.reverse())await writeJsonAtomic(w.target,w.before);throw error;}
  return {migrated:writes.length,backup};
 }

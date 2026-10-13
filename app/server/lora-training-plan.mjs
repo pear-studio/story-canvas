@@ -3,7 +3,7 @@ import { expandSavedRunSettings } from "./lora-training-settings.mjs";
 import { readMusiqStatus } from "./lora-image-quality.mjs";
 import { trainingImageTarget } from "./lora-image-preparation-contract.mjs";
 import { randomBytes } from "node:crypto";
-import { cp, copyFile, mkdir, readFile, readdir, rename, rm, stat, statfs } from "node:fs/promises";
+import { cp, copyFile, mkdir, readFile, readdir, realpath, rename, rm, stat, statfs } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { createLoraTrainingRunManifest, validateLoraTrainingRunManifest, validateSemanticConfig as validateFrozenSemanticConfig } from "./lora-training-run-manifest.mjs";
@@ -44,7 +44,11 @@ function trainerSettings(projectRoot, config, family) {
 
 export async function gitCommit(directory) {
   try {
-    return (await execFileAsync("git", ["-C", directory, "rev-parse", "HEAD"], { windowsHide: true, timeout: 10_000 })).stdout.trim();
+    const { stdout } = await execFileAsync("git", ["-C", directory, "rev-parse", "--show-toplevel", "HEAD"], { windowsHide: true, timeout: 10_000 });
+    const [repositoryRoot, commit] = stdout.trim().split(/\r?\n/);
+    // 解压版训练器可能位于另一个仓库内，父仓库的提交不能代表训练器版本。
+    if (path.relative(await realpath(directory), await realpath(repositoryRoot)) !== "") return null;
+    return commit;
   } catch {
     return null;
   }

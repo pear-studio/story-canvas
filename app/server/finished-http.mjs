@@ -1,5 +1,6 @@
+import { requireLetteringLocale } from './page-translation-document.mjs';
 import path from 'node:path';
-import {requireLetteringLocale} from './page-translations.mjs';
+
 import yazl from "yazl";
 import { readFile, stat } from "node:fs/promises";
 import { ApiError, readJsonBody } from "./http-support.mjs";

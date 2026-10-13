@@ -51,7 +51,7 @@ import {
   STORY_PAGE_NARRATIVE_SCHEMA_ID,
   STORY_PAGE_PROMPT_SCHEMA_ID,
 } from "../server/story-files.mjs";
-import { factStorage as storage } from "../server/story-facts.mjs";
+
 
 const saveCharacterPrompt = (root,id,value)=>saveCharacterPromptDirect(root,id,{...value,prompt:qwenDocument(value.prompt)});
 const sourceRepositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");

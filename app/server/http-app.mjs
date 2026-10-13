@@ -1,3 +1,4 @@
+import { FactError } from './fact-storage.mjs';
 import { CandidateStorageError } from "./candidate-storage.mjs";
 import { randomUUID } from 'node:crypto';
 import { createPerformanceLog, browserPerformanceRecord } from './performance-log.mjs';
@@ -11,7 +12,7 @@ import {
 } from "./project-operations.mjs";
 import { RenderProfileCompilerError } from "./render-profile-compiler.mjs";
 import { RenderProfileOverrideError } from "./render-profile-override.mjs";
-import { FactError } from "./story-facts.mjs";
+
 import { loraTrainingModule } from "./lora-training-module.mjs";
 import { createLoraTrainingOperations } from "./lora-training-operations.mjs";
 import { handleLoraTrainingRequest } from "./lora-training-http.mjs";

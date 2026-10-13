@@ -1,6 +1,8 @@
+import { commitFactChanges } from './fact-commit.mjs';
+import { assertProjectFactBoundary, targetPath } from './fact-storage.mjs';
 import { readFactDraft } from './fact-drafts.mjs';
 import { resolveProjectLocation } from './project-operations.mjs';
-import { factStorage, commitFactChanges } from './story-facts.mjs';
+
 import { prepareCharacterVariantRename } from './character-facts.mjs';
 import { prepareSceneVariantRename } from './scene-facts.mjs';
 import { normalizePromptTarget, settingPromptScopeVersion, replaceSettingPromptScope } from './prompt-scope-version.mjs';
@@ -67,7 +69,7 @@ export async function saveSetting(root, projectId, value) {
     if (existing) existing.after = after;
     else if (JSON.stringify(before) !== JSON.stringify(after)) writes.push({relative,before,after});
   }
-  for (const write of writes) await factStorage.assertProjectFactBoundary(root,directory,factStorage.targetPath(directory,write.relative),write.relative);
+  for (const write of writes) await assertProjectFactBoundary(root,directory,targetPath(directory,write.relative),write.relative);
   // 在落盘前构造回执；保存后不再依赖另一次读取才能确认成功。
   const setting = workbenchSettingDetail(projectId,kind,id,{profile,visual,document});
   setting.model_id = modelId; setting.prompt = modelPrompt(document,modelId);

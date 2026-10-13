@@ -525,7 +525,7 @@ export async function createRenderTask(projectDirectory, task, display, options 
       await writeFile(path.join(staging, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
       await writeFile(path.join(staging, "state.json"), `${JSON.stringify(state, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
       await beginCatalogWrite(storeRoot);
-      await rename(staging, destination);
+      await replaceWithRetry(staging, destination, options);
     } catch (error) {
       await rm(staging, { recursive: true, force: true }).catch(() => undefined);
       if (error?.code === "EEXIST") throw Object.assign(new Error(`渲染任务已存在：${task.id}`), { code: "render_task_exists" });

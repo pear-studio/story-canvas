@@ -1,6 +1,7 @@
+import { requireLetteringLocale, readTranslationDocument, translationProjection, localizeLettering } from './page-translation-document.mjs';
 import { defaultTextPageLayout } from "../shared/text-page-layout.mjs";
 import {storyPageNumbers} from '../shared/story-page-numbers.mjs';
-import {requireLetteringLocale,readTranslationDocument,translationProjection,localizeLettering} from './page-translations.mjs';
+
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rmdir, stat, unlink, writeFile } from "node:fs/promises";
 import { replaceFileWithRetry } from "./file-replace.mjs";
