@@ -1,3 +1,4 @@
+import {savedFactReceipt} from './saved-fact-receipt.mjs';
 import {normalizeCameraSettings,cameraPromptPreview} from '../shared/camera-prompt.mjs';
 import {promptSourceView, promptPageDiagnostics} from '../shared/prompt-source-view.mjs';
 import {applyPersonGroups} from './prompt-person-edit.mjs';
@@ -96,12 +97,14 @@ export async function savePromptScope(options) {
     conflictCode:'prompt_scope_conflict',contextConflictCode:'prompt_scope_conflict',
     ...(state.target.kind === 'page' ? {sourceVersions:{[state.target.model_id]:options.sourceVersions ?? {}}} : {}),
   });
+  return savedFactReceipt(async () => {
   const inactive = state.target.kind === 'page' && (await readPageRenderSettings(state.project.projectDirectory,state.target.id)).model_id !== state.target.model_id;
   return {saved:true,...await readPromptScope({...options,target:state.target}),
     ...(inactive ? {audit:{status:'not_run',model_id:state.target.model_id,reason:'inactive_model'}} : saved.audit ? {audit:{model_id:state.target.model_id,...Object.fromEntries(Object.entries(saved.audit).filter(([key,value]) => ['status','valid','errors','warnings','diagnostics'].includes(key) && (!Array.isArray(value)||value.length)))}} : {}),
     ...(saved.warnings?.length ? {warnings:saved.warnings} : {}),
     ...(saved.downstream_diagnostics?.length ? {downstream_diagnostics:saved.downstream_diagnostics} : {}),
   };
+  }, {operation:'prompt.read',args:{project_id:options.projectId,target:state.target}});
 }
 
 // source 可选择将要新引用的角色／场景，先读取其内容和版本再提交引用变更。

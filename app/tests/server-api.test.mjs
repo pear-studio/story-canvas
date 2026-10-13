@@ -769,6 +769,7 @@ test("Agent read/save 共用领域规则，依赖冲突与 LoRA 分离在无文�
   assert.equal(characterSaved.document.text, "银发少女。");
   const staleCharacterPrompt = await promptCall('save',{...characterPrompt.save.args,changes:{text:'陈旧输入'}},409);
   assert.equal(staleCharacterPrompt.error, 'prompt_scope_conflict');
+  assert.equal(staleCharacterPrompt.refresh_required, true);
   const lora = await call("character", "lora", "read", { project_id: "current-story", target_id: "ellen" }, 400);
   assert.equal(lora.error, "fact_draft_not_supported");
   const draftsDirectory = path.join(projectRoot, "Saved/state/edit-sessions/current-story");

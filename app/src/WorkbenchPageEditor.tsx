@@ -708,16 +708,18 @@ export default function WorkbenchPageEditor({
 
   useEffect(() => {
     if (savingPage.current?.identity === pageIdentity) return;
+    let discarded = false;
     if (editBaseline.current.page_id === page.page_id && editBaseline.current.model_id === page.model_id && hasDraft.current) {
       const changed = editBaseline.current.content_sha256 !== page.content_sha256 || editBaseline.current.prompt_sha256 !== page.prompt_sha256 || editBaseline.current.prompt_context_sha256 !== page.prompt_context_sha256 || !sameJson(layoutBaseline, letteringItems);
-      setExternalConflict(changed);
       // 其他页保存布局只改变全文件指纹，当前页布局未变时可继续使用新指纹。
       if (sameJson(layoutBaseline, letteringItems)) editBaseline.current = { ...editBaseline.current, layout_sha256: page.layout_sha256 };
-      return;
+      if (!changed) return;
+      discarded = true;
+      setPromptDiscardCount(count => count + 1);
     }
     editBaseline.current = page;
     sourceVersions.current = incomingSourceVersions;
-    setExternalConflict(false);
+    setExternalConflict(discarded);
     setContentBaseline(clone(incomingContent)); setContentDraft(clone(incomingContent)); setDialogueDraft(editableDialogue(incomingContent.dialogue));
     setPromptBaseline(clone(incomingPrompt)); setPromptDraft(clone(incomingPrompt));
     setLayoutBaseline(clone(letteringItems)); setLayoutDraft(clone(letteringItems));
@@ -778,7 +780,15 @@ export default function WorkbenchPageEditor({
       }
       return true;
     } catch (error) {
-      if (isActive()) { setContentPhase('error'); setPromptPhase('error'); setContentError(`保存未完成，草稿已保留：${error instanceof Error ? error.message : String(error)}`); }
+      if (isActive()) {
+        if (error instanceof ProjectRefreshRequiredError) {
+          discardSource();
+          setExternalConflict(!error.saved);
+          savingPage.current = null;
+          try { await onReloadContent?.(); }
+          catch {setContentError(error.saved ? '修改已保存，但最新内容暂时读取失败，请刷新后继续。' : '本次未保存，最新内容暂时读取失败，请刷新后重新编辑。');}
+        } else {setContentPhase('error');setPromptPhase('error');setContentError(`保存未完成，草稿已保留：${error instanceof Error ? error.message : String(error)}`);}
+      }
       return false;
     } finally { if (savingPage.current === run) savingPage.current = null; }
   }
@@ -792,7 +802,11 @@ export default function WorkbenchPageEditor({
 
   function discardAll() {
     translations.discard();
-    // 明确放弃时重建编辑区，清除词条撤销历史及尚未提交的输入。
+    discardSource();
+  }
+
+  function discardSource() {
+    // 重建源编辑区，清除词条撤销历史及尚未提交的输入。
     setPromptDiscardCount(count => count + 1);
     references.reset();
     editBaseline.current = page; setExternalConflict(false);
@@ -849,7 +863,7 @@ export default function WorkbenchPageEditor({
         <div ref={setGenerationSettingsTarget} className="page-title-generation-settings"/>
         {!desktopActionsTarget&&pageActions}
       </div>} />
-    {externalConflict && <p role="alert">页面事实已变化，当前草稿已保留。<button type="button" className="button button--quiet" onClick={discardAll}>放弃草稿并载入最新</button></p>}
+    {externalConflict && <p role="status">内容已更新，过时的修改已丢弃，请在最新内容上重新编辑。</p>}
     {contentError && <p className="prompt-save-error" role="alert">{contentError}</p>}
 
     <div className="page-storyboard-fields">

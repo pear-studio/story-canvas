@@ -44,9 +44,14 @@ test("项目 revision 冲突只返回刷新提示，不触发读取", async () =
   );
 });
 
-test("由写入口标记的过期保存静默终止，不能被当成保存成功", async () => {
+test("由写入口标记的过期保存明确失败，不能被当成保存成功", async () => {
   for (const parse of [responseJson, workbenchResponseJson]) {
     await assert.rejects(() => parse(new Response("{}", { status: 409, headers: { "x-story-canvas-refresh-required": "true" } })),
-      (error) => error instanceof ProjectRefreshRequiredError && error.message === "");
+      (error) => error instanceof ProjectRefreshRequiredError && error.message.includes('本次修改未保存'));
   }
+});
+
+test('保存成功后的读取失败明确已保存，不提示再次提交',async()=>{
+  await assert.rejects(()=>workbenchResponseJson(new Response(JSON.stringify({saved:true,refresh_required:true}),{status:200})),
+    error=>error instanceof ProjectRefreshRequiredError && error.saved && error.message.includes('修改已保存'));
 });

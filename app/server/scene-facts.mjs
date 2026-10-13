@@ -1,6 +1,8 @@
+import {factConflict} from './fact-conflict.mjs';
+import {prepareSettingFact} from './setting-persistence.mjs';
 import { cleanRemovedReferences } from './reference-materials.mjs';
 import { mapModelPrompts, promptModelEntries, emptySettingVariant, renamePromptSource } from './model-prompts.mjs';
-import { modelAdapter, defaultProfileAdapter } from './model-adapters.mjs';
+import { defaultProfileAdapter } from './model-adapters.mjs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { lstat, mkdir, readFile, rename, readdir, stat } from 'node:fs/promises';
@@ -78,13 +80,9 @@ export async function commitSceneFact(root, context, readDocument, kind, { befor
   if (!validators[kind]) fail('invalid_scene_edit_kind', [kind]);
   const writes = [];
   if (kind === 'prompt') {
-    const baselineModels = new Map(promptModelEntries(baseline));
-    next = mapModelPrompts(next, (input, modelId) => modelAdapter(modelId).prepareSettingPrompt(input, {baselinePrompt:baselineModels.get(modelId),createFragmentId:()=>`token-${randomBytes(6).toString('hex')}`}));
     const visual = await sceneFact(project.projectDirectory, id, 'visual');
-    if (visualIdentity(visual) !== context.upstream.visual.identity_sha256) throw new ApiError(409, 'scene_edit_upstream_conflict');
-    assertValid(validateScenePromptDocument(next, { baselinePrompt: baseline }));
-    const expected = visual.variants.map(v => v.id).sort();
-    if (promptModelEntries(next).some(([,input]) => JSON.stringify(Object.keys(input.variants).sort()) !== JSON.stringify(expected))) fail('scene_prompt_visual_mismatch');
+    if (visualIdentity(visual) !== context.upstream.visual.identity_sha256) throw factConflict('scene_edit_upstream_conflict');
+    next = prepareSettingFact('scene','prompt',baseline,next,visual);
   } else if (kind === 'visual') {
     assertValid(validateSceneVisualDocument(next));
     // 子设定列表与 Prompt 同次提交，新增立即可用；删除须经过引用检查。
@@ -159,7 +157,7 @@ export async function deleteSceneVariant(root, projectId, sceneId, variantId, { 
   await cleanRemovedReferences(project.projectDirectory, prompt);
   return { scene_id: sceneId, variant_id: variantId, downstream_diagnostics: [] };
 }
-export async function renameSceneVariant(root, projectId, sceneId, oldId, newId, { beforeCommit } = {}) {
+export async function prepareSceneVariantRename(root, projectId, sceneId, oldId, newId) {
   validId(oldId); validId(newId);
   const project = await resolveProjectLocation(path.resolve(root), projectId);
   await requireScene(project.projectDirectory, sceneId);
@@ -183,10 +181,15 @@ export async function renameSceneVariant(root, projectId, sceneId, oldId, newId,
     writes.push({ relative: file, before, after }); ids.add(page.page_id);
   }
   if (hashCanonicalJson(index) !== hashCanonicalJson(nextIndex)) writes.push({ relative: 'pages/index.json', before: index, after: nextIndex });
-  if (beforeCommit) await beforeCommit();
-  await commitFactChanges(project.projectDirectory, writes);
-  return { scene_id: sceneId, old_id: oldId, new_id: newId, visual: nextVisual, prompt: nextPrompt, updated_page_ids: [...ids], downstream_diagnostics: [] };
+  return { projectDirectory: project.projectDirectory, writes, result: { scene_id: sceneId, old_id: oldId, new_id: newId, visual: nextVisual, prompt: nextPrompt, updated_page_ids: [...ids], downstream_diagnostics: [] } };
 }
+export async function renameSceneVariant(root, projectId, id, oldId, newId, {beforeCommit} = {}) {
+  const plan = await prepareSceneVariantRename(root, projectId, id, oldId, newId);
+  if (beforeCommit) await beforeCommit();
+  await commitFactChanges(plan.projectDirectory, plan.writes);
+  return plan.result;
+}
+
 export async function deleteScene(root, projectId, sceneId, { beforeCommit } = {}) {
   const project = await resolveProjectLocation(path.resolve(root), projectId);
   const index = await requireScene(project.projectDirectory, sceneId);

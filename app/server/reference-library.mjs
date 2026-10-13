@@ -1,3 +1,4 @@
+import {factConflict} from './fact-conflict.mjs';
 import { removeUnusedFile } from './reference-materials.mjs';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
@@ -34,7 +35,7 @@ export async function readReferenceLibrary(root, projectId, target) {
 export async function mutateReferenceLibrary(root, directory, projectId, value) {
   const args = targetArgs(projectId, value.target), draft = await readFactDraft(root, args);
   const target = await holder(root, projectId, draft, value.target), entries = target.reference_images ?? [];
-  if (hashCanonicalJson(entries) !== value.expected_sha256) throw new ApiError(409, 'reference_library_conflict', ['参考图列表已变化，请刷新后重试']);
+  if (hashCanonicalJson(entries) !== value.expected_sha256) throw factConflict('reference_library_conflict', ['参考图列表已变化，请刷新后重试']);
   const existing = value.id ? entries.find(e => e.id === value.id) : null;
   if (value.id && !existing) throw new ApiError(404, 'reference_image_not_found');
   let newFile = null;

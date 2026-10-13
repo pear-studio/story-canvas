@@ -2,14 +2,20 @@ type ApiErrorPayload = {
   error?: string;
   message?: string;
   details?: unknown;
+  saved?: boolean;
+  refresh_required?: boolean;
 };
 
 export const PROJECT_REVISION_CONFLICT_MESSAGE = "项目内容已更新，请刷新页面后继续";
 export const WORKBENCH_CONFLICT_MESSAGE = "当前操作无法完成";
 
-// 旧保存已被拒绝；根组件会载入最新事实。不是成功保存，也不要求用户选择冲突版本。
+// 区分过期提交被拒绝与已保存但回执读取失败，两者都需要载入最新事实。
 export class ProjectRefreshRequiredError extends Error {
-  constructor() { super(""); this.name = "ProjectRefreshRequiredError"; }
+  saved: boolean;
+  constructor(saved = false) {
+    super(saved ? '修改已保存，但最新内容读取失败，请重新载入，不要重复提交' : '内容已更新，本次修改未保存，请载入最新内容后重新编辑');
+    this.name = 'ProjectRefreshRequiredError'; this.saved = saved;
+  }
 }
 
 export async function workbenchResponseJson<T>(response: Response): Promise<T> {
@@ -34,6 +40,7 @@ export async function workbenchResponseJson<T>(response: Response): Promise<T> {
 export async function responseJson<T>(response: Response): Promise<T> {
   if (response.headers.get("x-story-canvas-refresh-required") === "true") throw new ProjectRefreshRequiredError();
   const result = await response.json() as T & ApiErrorPayload;
+  if (response.ok && result.saved && result.refresh_required) throw new ProjectRefreshRequiredError(true);
   if (!response.ok) {
     if (response.status === 409 && result.error === "project_revision_conflict") {
       throw new Error(PROJECT_REVISION_CONFLICT_MESSAGE);

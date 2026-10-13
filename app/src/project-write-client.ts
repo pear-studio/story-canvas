@@ -111,12 +111,8 @@ async function coordinatedProjectFetch(input: RequestInfo | URL, init: RequestIn
     const responseRevision = response.headers.get("x-story-canvas-revision");
     if (response.ok && responseRevision) revisions.set(project.projectId, responseRevision);
     if (response.status === 409) {
-      const payload = await response.clone().json().catch(() => null) as { error?: string } | null;
-      if (payload?.error && [
-        "project_revision_conflict", "prompt_target_conflict", "page_prompt_upstream_conflict", "story_edit_upstream_conflict", "story_edit_target_conflict", "character_page_upstream_conflict", "character_edit_upstream_conflict", "page_content_target_conflict",
-        "page_lettering_target_conflict", "character_profile_target_conflict", "character_visual_target_conflict",
-        "page_identity_conflict", "page_content_reference_conflict", "character_edit_dependency_conflict",
-      ].includes(payload.error)) {
+      const payload = await response.clone().json().catch(() => null) as { refresh_required?: boolean } | null;
+      if (payload?.refresh_required === true) {
         refreshRequired.add(project.projectId);
         invalidateProjectWriteQueue(project.projectId);
         return staleResponse();

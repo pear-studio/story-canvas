@@ -1,3 +1,4 @@
+import {factConflict} from './fact-conflict.mjs';
 import { readFactDraft, saveFactDraft } from './fact-drafts.mjs';
 import { decodePageKey } from './page-key.mjs';
 import { editFingerprint, assertEditFingerprint } from './edit-fingerprint.mjs';
@@ -38,7 +39,7 @@ export async function savePageEditChanges(options) {
   const draft = await readFactDraft(options.projectRoot,identity);
   assertEditFingerprint(options.expectedSha256,version(identity,draft),{invalidCode:'invalid_page_edit_fingerprint',conflictCode:'page_edit_conflict'});
   if (identity.kind==='content' && Object.hasOwn(options.changes,'characters') && JSON.stringify(options.changes.characters)!==JSON.stringify(draft.document.characters)
-    && options.expectedReferenceSha256!==draft.expected_reference_sha256) throw new ApiError(409,'page_edit_conflict',['角色变更会清理各模型绑定内容；Prompt 已变化或缺少 expected_reference_sha256，重读判断']);
+    && options.expectedReferenceSha256!==draft.expected_reference_sha256) throw factConflict('page_edit_conflict',['角色变更会清理各模型绑定内容；Prompt 已变化或缺少 expected_reference_sha256，重读判断']);
   const receipt = await saveFactDraft(options.projectRoot,{
     ...identity,document:applyDocumentChanges(draft.document,options.changes),
     expectedSha256:draft.expected_sha256,expectedContextSha256:draft.expected_context_sha256,

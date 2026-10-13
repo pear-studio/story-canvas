@@ -195,6 +195,7 @@ export function createHttpRequestHandler({
           error: error.code,
           message: error.message,
           details: error.details,
+          ...(error.refresh_required ? {refresh_required: true} : {}),
         });
         return;
       }

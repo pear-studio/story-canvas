@@ -1,3 +1,4 @@
+import {useSaveShortcut} from './use-save-shortcut';
 import { storyPageNumbers } from '../shared/story-page-numbers.mjs';
 import {VideoPageWorkspace} from './VideoPageWorkspace';
 import {usePageRewrite} from './models/qwen/usePageRewrite';
@@ -812,21 +813,18 @@ export function PageWorkspace({ letteringLocale="zh",onLetteringLocaleChange,edi
 
   const saveAndGenerateRef = useRef(saveAndGenerate);
   saveAndGenerateRef.current = saveAndGenerate;
-  const pageDirtyRef = useRef(pageDirty);
-  pageDirtyRef.current = pageDirty;
+  useSaveShortcut(() => { void editorSaveAll.current?.(); }, `${projectId}:${page.page_id}:${page.model_id}`);
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.isComposing || event.defaultPrevented) return;
       const isGenerate = event.key === "g" || event.key === "G";
-      const isSave = event.key === "s" || event.key === "S";
-      if (!isGenerate && !isSave) return;
+      if (!isGenerate) return;
       // 先拦下浏览器默认行为（保存网页/查找），再按弹窗状态决定是否执行工作台动作。
       event.preventDefault();
       if (isWorkbenchModalOpen()) return;
       // 延迟到本次按键分发完成后执行：编辑控件（如 Prompt 词条）在冒泡阶段把未提交草稿提交进状态。
       window.setTimeout(() => {
         if (isGenerate) void saveAndGenerateRef.current({ count: generationCount });
-        else if (pageDirtyRef.current) void editorSaveAll.current?.();
       }, 0);
     };
     // 捕获阶段监听：编辑控件内部 stopPropagation 也不会漏掉快捷键。
@@ -1837,7 +1835,7 @@ export default function StoryWorkbench({ initialImagesHidden, imagePrivacyStorag
             });
           }} />
           : activeTab === 'orphan-pages' && !activeLocation ? <section className="resource-editor"><WorkspaceHeader title="待整理页面" /><p>所属目录已不存在；页面内容和图片仍保留，可以移动到新的目录。</p>{(view.orphan_pages ?? []).map(page=><div key={page.page_id}><button className="button" onClick={()=>chooseNavigationPage(page)} onContextMenu={event=>showNavigationMenu(event,page.title,pageMenuItems(page))}>{page.title}</button><button className="button button--quiet" onClick={()=>setMovingPage(page)}>移动页面</button></div>)}</section>
-          : activeTab === "scenes" && !activeLocation && activeScene && isEditableSetting(activeScene) ? <SettingView key={`scene:${activeScene.id}`} kind="scene" projectId={projectId} character={activeScene} initialSettingId={sceneSettingId} busy={loading} onSaved={() => { void reload(true); }} onSettingChange={id => navigate(openNavigationScene(navigationRef.current, activeScene.id, id))} />
+          : activeTab === "scenes" && !activeLocation && activeScene && isEditableSetting(activeScene) ? <SettingView key={`scene:${activeScene.id}`} kind="scene" projectId={projectId} character={activeScene} initialSettingId={sceneSettingId} busy={loading} onSaved={result => { if (!projectRequestGuard.current.isProjectCurrent(renderedProjectScope)) return; setView(current => current?.scenes ? {...current,scenes:{...current.scenes,scenes:current.scenes.scenes.map(entry=>entry.id===activeScene.id?{...entry,...result}:entry)}} : current); void reload(true); }} onSettingChange={id => navigate(openNavigationScene(navigationRef.current, activeScene.id, id))} />
           : activeTab === "scenes" && !activeLocation ? <section className="empty-state"><h3>还没有场景</h3><button className="button" onClick={createScene}>新建场景</button></section>
           : activeTab === "prompt-overview" ? <PromptOverview key={projectId} projectId={projectId} view={view} focus={promptOverviewFocus} busy={loading} onOpenPage={(page) => void choosePage(page)} onSaved={(page) => { if (projectRequestGuard.current.isProjectCurrent(renderedProjectScope)) setView(current => current ? replaceWorkbenchPage(current, page, page) : current); }} onTrackedTasks={updateTrackedRuntimeTasks} />
           : activeTab === "finished" ? <FinishedPagesView key={`${projectId}/${letteringLocale}`} locale={letteringLocale} onLocaleChange={setLetteringLocale} projectId={projectId} onOpenPage={(key) => { const target = locations.find(item => samePageKey(item.page.page_key, key)); if (target) void choosePage(target.page,"lettering"); }} />

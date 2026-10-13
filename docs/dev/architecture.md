@@ -35,6 +35,10 @@
 
 revision 是实时磁盘事实签名，不写项目 JSON；媒体和缓存不推进它，通知缓存不替代提交检查。浏览器只接纳当前项目及写入代次的快照，媒体独立刷新。
 
+角色／场景的主保存与 Ctrl/Cmd+S 共用 `use-setting-editor`，仅提交当前基础页或子设定的当前模型；参考图先进入草稿。`setting-save.mjs` 在一次项目写锁内校验并提交档案、子设定 ID 连带引用与 Prompt，其他范围草稿保留。独立名称／描述字段可保守合并；同范围 Prompt 或必要基础依赖变化时丢弃过时草稿并提示，不拼接 Prompt、不自动重试写入。
+
+真正的过时读据通过 `fact-conflict.mjs` 标记 `refresh_required`；浏览器据此作废排队的旧写入，普通业务 409 不触发刷新。`page-persistence.mjs` 和 `setting-persistence.mjs` 分别统一网页与 Agent 的归一化／校验；整页提交可以同步清理布局，局部内容提交仍拒绝破坏未授权范围的引用。落盘后的旧素材清理失败不改变保存成功状态；`saved-fact-receipt.mjs` 区分保存后的读取失败，返回 `saved:true` 和重读入口，不要求重复提交。
+
 训练通过 TrainingOperations 和 ETag 协调，模块组合 facts、plan、runtime、media，不使用剧情锁／revision。对比工具独立冻结输入和成果，共用生成队列，不写来源页面；成品入口消费明确候选，不增加最终图扩散操作。
 
 ## 生成资产与冻结

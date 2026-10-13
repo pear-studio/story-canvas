@@ -1,3 +1,4 @@
+import {factConflict} from './fact-conflict.mjs';
 import path from "node:path";
 import {readVideoSource} from './video-source.mjs';
 import { randomUUID } from "node:crypto";
@@ -6,6 +7,7 @@ import { mkdir } from "node:fs/promises";
 import { readReferenceLibrary, mutateReferenceLibrary } from "./reference-library.mjs";
 import { parseWorkbenchScope } from '../shared/workbench-scope.mjs';
 import { savePage } from "./page-facts.mjs";
+import { saveSetting } from './setting-save.mjs';
 import {reimportAnimaPrompt} from './page-render-settings.mjs';
 import { SCENE_PROFILE_SCHEMA_ID, SCENE_VISUAL_SCHEMA_ID, SCENE_PROMPT_SCHEMA_ID } from "./scene-files.mjs";
 import { hashCanonicalJson } from "./workflow-definition.mjs";
@@ -161,7 +163,7 @@ export async function handleWorkbenchRequest({
     const result = await mutateTargetFacts(projectId, async () => {
       if (kind === "prompt") {
         const visual = await readFactDraft(projectRoot, { domain: "scene", kind: "visual", projectId, targetId: value.scene_id });
-        if (!value.expected_visual_sha256 || visual.expected_sha256 !== value.expected_visual_sha256) throw new ApiError(409, "scene_prompt_visual_conflict");
+        if (!value.expected_visual_sha256 || visual.expected_sha256 !== value.expected_visual_sha256) throw factConflict('scene_prompt_visual_conflict');
       }
       const saved = await saveFactDraft(projectRoot, { domain: "scene", kind, projectId, targetId: value.scene_id,
         document: { ...value[kind], $schema: schemas[kind] }, expectedSha256: value.expected_sha256,
@@ -170,6 +172,12 @@ export async function handleWorkbenchRequest({
       return { scene_id: value.scene_id, [kind]: document, [`${kind}_sha256`]: hashCanonicalJson(saved.value), downstream_diagnostics: saved.downstream_diagnostics };
     });
     sendOperation(200, result);
+    return true;
+  }
+  const settingSaveMatch = /^\/api\/projects\/([^/]+)\/workbench\/setting-save\/?$/.exec(decodedPath);
+  if (settingSaveMatch && request.method === 'PUT') {
+    const value = await readJsonBody(request, 440 * 1024 * 1024);
+    sendOperation(200, await mutateTargetFacts(settingSaveMatch[1], ({projectId}) => saveSetting(projectRoot,projectId,value)));
     return true;
   }
   const pageSaveMatch = /^\/api\/projects\/([^/]+)\/workbench\/page-save\/?$/.exec(decodedPath);

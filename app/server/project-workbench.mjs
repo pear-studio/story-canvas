@@ -1,3 +1,4 @@
+import {factConflict} from './fact-conflict.mjs';
 import { readPageIndex, pageRelativePath } from './pages-store.mjs';
 import { readPageRenderSettings, pageProjectSettings } from './page-render-settings.mjs';
 import { modelPrompt, promptModelEntries, replaceModelPrompt } from './model-prompts.mjs';
@@ -179,6 +180,10 @@ export async function readWorkbenchSettingDetail(directory, projectId, kind, id)
   const [profile, visual, document] = await Promise.all(['profile', 'visual', 'prompt'].map(type => readJson(directory, `${folder}/${id}.${type}.json`)));
   const validators = kind === 'character' ? [validateCharacterProfileDocument, validateCharacterVisualDocument, validateCharacterPromptDocument] : [validateSceneProfileDocument, validateSceneVisualDocument, validateScenePromptDocument];
   [profile, visual, document].forEach((value, index) => validated(value, validators[index], `${folder}/${id}.${['profile','visual','prompt'][index]}.json`));
+  return workbenchSettingDetail(projectId, kind, id, {profile, visual, document});
+}
+
+export function workbenchSettingDetail(projectId, kind, id, {profile, visual, document}) {
   const modelId = promptModelEntries(document)[0][0];
   const options = { projectId, kind, id, document, visual };
   return { id, name: profile.name, description: profile.description, visual: publicCharacterVisual(visual),
@@ -362,7 +367,7 @@ export async function saveStorySummary(projectRoot, projectId, value) {
     : outline.chapters.flatMap((chapter) => chapter.sequences).find((sequence) => sequence.id === id);
   if (!target) fail("story_summary_target_not_found", [id], 404);
   const field = kind === "synopsis" ? "synopsis" : "summary";
-  if (hashCanonicalJson(target[field]) !== value.expected_sha256) fail("story_summary_target_conflict", [], 409);
+  if (hashCanonicalJson(target[field]) !== value.expected_sha256) throw factConflict('story_summary_target_conflict', []);
   target[field] = value.text;
   validated(outline, validateStoryOutlineDocument, relativePath);
   await storage.writeJsonAtomic(storage.targetPath(project.projectDirectory, relativePath), outline);
@@ -422,7 +427,7 @@ export async function savePageLettering(projectRoot, projectId, value) {
   const narrative = validated(await readJson(project.projectDirectory, narrativePath), validateStoryPageNarrativeDocument, narrativePath);
   const relativePath = "lettering/dialogue-layouts.json";
   const current = validated(await readJson(project.projectDirectory, relativePath, { optional: true }) ?? emptyLetteringDocument(), validateLetteringDocument, relativePath);
-  if (hashCanonicalJson(current) !== value.expected_sha256) fail("page_lettering_target_conflict", [identity.page_id], 409);
+  if (hashCanonicalJson(current) !== value.expected_sha256) throw factConflict('page_lettering_target_conflict', [identity.page_id]);
   const pageLayout = { page: identity.page_id, items: structuredClone(value.lettering.items) };
   const errors = validatePageLettering(pageLayout, { pageId: identity.page_id, dialogueIds: narrative.dialogue.map((dialogue) => dialogue.id) });
   const narrationIds = new Set(narrative.dialogue.filter((dialogue) => dialogue.mode === "narration").map((dialogue) => dialogue.id));
@@ -520,7 +525,7 @@ export async function saveCharacterVisual(projectRoot, projectId, value) {
   requireExactObject(value.visual, ["description", "variants", "base_description"].filter(key => key === "variants" || Object.hasOwn(value.visual, key)), "invalid_character_visual_update");
   const project = await resolveProjectLocation(path.resolve(projectRoot), projectId);
   const current = await readJson(project.projectDirectory, `characters/${value.character_id}.visual.json`);
-  if (hashCanonicalJson(current) !== value.expected_sha256) fail("character_visual_target_conflict", [], 409);
+  if (hashCanonicalJson(current) !== value.expected_sha256) throw factConflict('character_visual_target_conflict', []);
   if (!Array.isArray(value.visual.variants) || !sameOrderedStrings(current.variants.map(v => v.id), value.visual.variants.map(v => v.id))) fail("character_visual_structure_change_forbidden", [], 409);
   const saved = await saveFactDraft(projectRoot, {
     domain: "character", kind: "visual", projectId, targetId: value.character_id,
@@ -536,7 +541,7 @@ export async function saveCharacterPrompt(projectRoot, projectId, value) {
   const project = await resolveProjectLocation(path.resolve(projectRoot), projectId);
   const checkVisual = async () => {
     const visual = await readJson(project.projectDirectory, `characters/${value.character_id}.visual.json`);
-    if (hashCanonicalJson(visual) !== value.expected_visual_sha256) fail("character_prompt_visual_conflict", [], 409);
+    if (hashCanonicalJson(visual) !== value.expected_visual_sha256) throw factConflict('character_prompt_visual_conflict');
     const unknown = promptModelEntries(value.prompt).flatMap(([,input])=>Object.keys(input.variants ?? {})).filter(id => !visual.variants.some(v => v.id === id));
     if (unknown.length) fail("character_prompt_visual_conflict", unknown, 409);
   };
@@ -575,7 +580,7 @@ export async function saveLetteringSettings(projectRoot, projectId, value) {
 
   const relativePath = "lettering/settings.json";
   const current = validated(await readJson(project.projectDirectory, relativePath), validateLetteringSettingsDocument, relativePath);
-  if (hashCanonicalJson(current) !== value.expected_sha256) fail("lettering_settings_conflict", [], 409);
+  if (hashCanonicalJson(current) !== value.expected_sha256) throw factConflict('lettering_settings_conflict', []);
   const next = structuredClone(value.settings);
   await storage.writeJsonAtomic(storage.targetPath(project.projectDirectory, relativePath), next);
   return { settings: next, sha256: hashCanonicalJson(next) };

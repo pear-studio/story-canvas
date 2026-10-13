@@ -1,3 +1,4 @@
+import {factConflict} from './fact-conflict.mjs';
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { modelPrompt, promptModelEntries } from './model-prompts.mjs';
@@ -76,7 +77,7 @@ export async function assertPagePromptSourceVersions(projectDirectory, { project
     else if (!Object.hasOwn(previous, key)) missing.push(key);
   }
   if (missing.length) throw new ApiError(409, 'prompt_source_read_required', missing);
-  if (changed.length) throw new ApiError(409, 'prompt_source_conflict', changed);
+  if (changed.length) throw factConflict('prompt_source_conflict', changed);
   return sources;
 }
 

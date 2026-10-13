@@ -1,3 +1,4 @@
+import {factConflict} from "./fact-conflict.mjs";
 import * as scene from "./scene-facts.mjs";
 import * as story from "./story-facts.mjs";
 import * as character from "./character-facts.mjs";
@@ -69,8 +70,8 @@ export async function saveFactDraft(root, {
 }) {
   const submitted = structuredClone(document);
   const { operation, context } = await currentDraft(root, domain, kind, projectId, targetId);
-  if (context.target.sha256 !== expectedSha256) throw new ApiError(409, conflictCode, [targetId]);
-  if (expectedContextSha256 !== undefined && hashCanonicalJson(context.upstream) !== expectedContextSha256) throw new ApiError(409, contextConflictCode, [targetId]);
+  if (context.target.sha256 !== expectedSha256) throw factConflict(conflictCode, [targetId]);
+  if (expectedContextSha256 !== undefined && hashCanonicalJson(context.upstream) !== expectedContextSha256) throw factConflict(contextConflictCode, [targetId]);
   return operation.commit(root, context, () => structuredClone(submitted), operation.kind, { beforeCommit, sourceVersions });
 }
 

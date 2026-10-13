@@ -1,6 +1,25 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+test('冲突按服务端语义标记作废队列，不依赖错误码且不误伤业务409',async()=>{
+  const oldFetch=globalThis.fetch,oldWindow=globalThis.window;
+  globalThis.window={location:{origin:'http://story-canvas.local'}};
+  try {
+    for(const [code,stale] of [['prompt_scope_conflict',true],['page_prompt_target_conflict',true],['scene_target_conflict',true],['future_conflict',true],['reference_image_in_use',false]]) {
+      const client=await import(`../src/project-write-client.ts?${code}`);
+      let release,calls=0;
+      globalThis.fetch=async()=>{calls++;if(calls===1)return new Promise(resolve=>{release=resolve;});return new Response('{}');};
+      const first=client.mutateTargetFacts('/api/projects/demo/workbench/setting-save',{method:'PUT'});
+      await new Promise(resolve=>setImmediate(resolve));
+      const queued=client.mutateTargetFacts('/api/projects/demo/workbench/setting-save',{method:'PUT'});
+      release(new Response(JSON.stringify({error:code,...(stale?{refresh_required:true}:{})}),{status:409}));
+      await first;const following=await queued;
+      assert.equal(client.isProjectRefreshRequired('demo'),stale,code);
+      assert.equal(calls,stale?1:2,code);assert.equal(following.status,stale?409:200,code);
+    }
+  } finally {globalThis.fetch=oldFetch;if(oldWindow===undefined)delete globalThis.window;else globalThis.window=oldWindow;}
+});
+
 test('Agent Prompt 路由显式带项目身份后参与网页写入协调', async () => {
   const oldFetch = globalThis.fetch, oldWindow = globalThis.window;
   globalThis.window = {location: {origin: 'http://story-canvas.local'}};
@@ -98,7 +117,7 @@ test("浏览器收到 revision 冲突不自动读取或替换当前 revision", a
   let requests = 0;
   globalThis.fetch = async () => {
     requests += 1;
-    return new Response(JSON.stringify({ error: "project_revision_conflict" }), {
+    return new Response(JSON.stringify({ error: "project_revision_conflict", refresh_required:true }), {
       status: 409,
       headers: { "content-type": "application/json", "x-story-canvas-revision": "instance:newer:disk" },
     });

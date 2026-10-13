@@ -615,26 +615,19 @@ export async function loadCandidateCounts(projectId: string, signal?: AbortSigna
   return result.unchanged ? null : result;
 }
 
-export const saveSettingProfile = (kind: SettingKind, projectId: string, setting: WorkbenchCharacter<unknown>, draft: CharacterProfileDraft) => saveCharacterProfile(projectId, setting, draft, kind);
-export const saveSettingVisual = (kind: SettingKind, projectId: string, setting: WorkbenchCharacter<unknown>, draft: CharacterVisualDraft) => saveCharacterVisual(projectId, setting, draft, kind);
 export const saveSettingPrompt = <T extends object>(kind: SettingKind, projectId: string, setting: WorkbenchCharacter<T>, draft: T) => saveCharacterPrompt(projectId, setting, draft, kind);
-function promptScopeChanges(previous: unknown, next: unknown): unknown {
-  if (!next || typeof next !== 'object' || Array.isArray(next)) return next;
-  const before = previous && typeof previous === 'object' && !Array.isArray(previous) ? previous as Record<string, unknown> : {};
-  const after = next as Record<string, unknown>;
-  return Object.fromEntries([...new Set([...Object.keys(before), ...Object.keys(after)])].map(key => [key,
-    Object.hasOwn(after, key) ? promptScopeChanges(before[key], after[key]) : null]));
+export async function saveSettingScope<T extends object>(projectId: string, target: {kind: SettingKind; id: string; model_id: PromptModelId; scope: 'base' | 'variant'; variant_id?: string}, changes: {
+  profile?: {baseline:CharacterProfileDraft; value:CharacterProfileDraft};
+  variant?: {baseline:{id:string;name:string}; value:{id:string;name:string}};
+  prompt?: object; expected_prompt_sha256?: string;
+}) {
+  const prompt = changes.prompt as {reference_images?: ReferenceEntry[]} | undefined;
+  const reference_inputs = (prompt?.reference_images ?? []).filter(entry => entry.draft).map(entry => {const {preview_url,...input}=entry.draft!; return {id:entry.id,...input};});
+  const persisted = prompt?.reference_images ? {...prompt,reference_images:prompt.reference_images.map(({draft,...entry})=>entry)} : prompt;
+  return workbenchResponseJson<{setting:EditableWorkbenchCharacter<T>; setting_id:string}>(await mutateTargetFacts(`${base(projectId)}/setting-save`, {
+    method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({target,...changes,prompt:persisted,reference_inputs}),
+  }));
 }
-export async function saveSettingPromptScope<T extends object>(kind: SettingKind, projectId: string, setting: WorkbenchCharacter<unknown>, scope: {model_id: PromptModelId; scope: 'base' | 'variant'; variant_id?: string}, document: T, expected_sha256: string) {
-  const model = (setting.model_prompts?.models?.[scope.model_id] ?? {}) as Record<string, unknown>;
-  const prior = scope.scope === 'variant' ? (model.variants as Record<string, unknown> | undefined)?.[scope.variant_id!] :
-    scope.model_id === 'anima' ? {identity: model.identity} : {prompt_name: model.prompt_name};
-  return workbenchResponseJson<{document: T; save: {args: {expected_sha256: string}}}>(await mutateTargetFacts('/api/agent/prompt/save', {
-    method: 'POST', headers: {'content-type': 'application/json'},
-    body: JSON.stringify({project_id: projectId, target: {kind, id: setting.id, ...scope}, changes: promptScopeChanges(prior, document), expected_sha256}),
-  }, projectId));
-}
-export const renameSettingVariant = <T extends object>(kind: SettingKind, projectId: string, setting: WorkbenchCharacter<T>, oldId: string, newId: string) => renameCharacterVariant(projectId, setting, oldId, newId, kind);
 
 export async function saveWholePage(projectId: string, page: WorkbenchPage, content: StoryPageContentDraft, prompt: PagePrompt, items: LetteringItem[], source_versions?: PromptSourceVersions) {
   const reference_inputs = (prompt.reference_images ?? []).filter(entry => entry.draft).map(entry => {const {preview_url,...source}=entry.draft!;return {id:entry.id,...source};});

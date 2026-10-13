@@ -1,3 +1,6 @@
+import {savedFactReceipt} from './saved-fact-receipt.mjs';
+import {preparePageContent,preparePagePrompts,validatePagePromptSources} from './page-persistence.mjs';
+import {factConflict} from "./fact-conflict.mjs";
 import {cleanRemovedPageCharacters} from './page-character-cleanup.mjs';
 import {creationEditReceipt} from './creation-edit-receipt.mjs';
 import {readTranslationDocument,translationPath} from './page-translations.mjs';
@@ -25,7 +28,6 @@ import { storyContentWarnings } from '../shared/story-content-guidance.mjs';
 import { preparePromptWriteAudit, capturePromptAuditInput, auditSavedPagePrompt } from './prompt-write-audit.mjs';
 import { capturePagePromptSnapshot } from './page-render-resolver.mjs';
 import { verifyWritingCorpusSentence } from './writing-corpus.mjs';
-import { assertPagePromptSourceVersions, validatePagePromptInheritance } from './prompt-source-context.mjs';
 const fail=(code,details=[])=>{throw new FactError(code,details);};
 const assertValid=errors=>{if(errors.length)fail('invalid_page_document',errors);};
 const clone=value=>structuredClone(value);
@@ -155,7 +157,7 @@ export async function deletePage(root,projectId,pageId,{beforeCommit}={}) {
   await cleanRemovedReferences(directory, removedReferences);
   return {page_id:pageId,deletion_id:deletionId,archive_directory:archive,archived_paths:moved.map(item=>item.relative)};
 }
-function checkHash(document,expected,code) {if(!/^[a-f0-9]{64}$/.test(expected??'')||hashCanonicalJson(document)!==expected)fail(code);}
+function checkHash(document,expected,code) {if(!/^[a-f0-9]{64}$/.test(expected??'')||hashCanonicalJson(document)!==expected)throw factConflict(code);}
 // 所有验证和引用切换确认先完成，再通过同一事实提交一次落盘；失败回滚由 commitFactChanges 负责。
 export async function savePage(root,projectId,value) {
   const allowed=new Set(['page_key','content','prompt','reference_inputs','source_versions','expected_content_sha256','expected_prompt_sha256','expected_context_sha256','lettering','expected_layout_sha256','text_sources','expected_text_sources_sha256']);
@@ -170,11 +172,11 @@ export async function savePage(root,projectId,value) {
   const temporaryIds=draftIds.filter(id=>typeof id==='string'&&id.startsWith('draft-dialogue-'));
   if(new Set(temporaryIds).size!==temporaryIds.length)fail('invalid_page_document',['临时对白 ID 重复']);
   for(const item of contentInput.dialogue??[])if(typeof item.id==='string'&&item.id.startsWith('draft-dialogue-'))delete item.id;
-  const content=prepareStoryPageNarrativeForPersistence({$schema:STORY_PAGE_NARRATIVE_SCHEMA_ID,...contentInput},{baselineNarrative:beforeContent,createDialogueId:()=>`dialogue-${randomBytes(6).toString('hex')}`});
-  if(content.page_kind!==beforeContent.page_kind)fail('page_kind_immutable');
+  const content=preparePageContent({$schema:STORY_PAGE_NARRATIVE_SCHEMA_ID,...contentInput},beforeContent,'invalid_page_document');
   const render=await readPageRenderSettings(directory,pageId), modelId=render.model_id;
-  const prompt=modelAdapter(modelId).preparePagePrompt({$schema:STORY_PAGE_PROMPT_SCHEMA_ID,...clone(value.prompt)}, {baselinePrompt:modelPrompt(beforePrompt,modelId),createFragmentId:()=>`token-${randomBytes(6).toString('hex')}`});
-  const persistedPrompt=replaceModelPrompt(beforePrompt,modelId,prompt);
+  const edited=replaceModelPrompt(beforePrompt,modelId,{$schema:STORY_PAGE_PROMPT_SCHEMA_ID,...clone(value.prompt)});
+  const persistedPrompt=preparePagePrompts(edited,beforePrompt);
+  const prompt=modelPrompt(persistedPrompt,modelId);
   const cleanupWarnings=await cleanRemovedPageCharacters(persistedPrompt,beforeContent.characters,content.characters,{root,directory,projectId,pageId});
   for(const [,input] of promptModelEntries(persistedPrompt)) {
     const keep=new Set(content.characters.map(ref=>`character:${ref.character_id}:${ref.variant_id}`));
@@ -184,10 +186,8 @@ export async function savePage(root,projectId,value) {
   assertValid(validateStoryPageNarrativeDocument(content));assertValid(validateStoryPagePromptDocument(persistedPrompt));
   assertValid(checkPagePromptOverrideReferences(persistedPrompt,content.characters));
   const finalPrompt = modelPrompt(persistedPrompt, modelId);
-  const sources = await assertPagePromptSourceVersions(directory, { projectId, modelId, narrative: content, prompt: finalPrompt,
-    baselineNarrative: beforeContent, baselinePrompt: modelPrompt(beforePrompt, modelId), sourceVersions: value.source_versions });
-  assertValid(await validatePagePromptInheritance(directory, { projectId, modelId, narrative: content, prompt: finalPrompt,
-    baselinePrompt: modelPrompt(beforePrompt, modelId), sources }));
+  await validatePagePromptSources(directory, { projectId, modelId, narrative: content, prompt: finalPrompt,
+    baselineNarrative: beforeContent, baselinePrompt: modelPrompt(beforePrompt,modelId), sourceVersions:value.source_versions }, 'invalid_page_document');
   const writes=[{relative:pageRelativePath(pageId,'content'),before:beforeContent,after:content},{relative:pageRelativePath(pageId,'prompt'),before:beforePrompt,after:persistedPrompt}];
   const dialogueIds=new Set(content.dialogue.map(item=>item.id));
   const dialogueIdMap=new Map(draftIds.map((id,index)=>[id,content.dialogue[index]?.id]));
@@ -226,5 +226,7 @@ export async function savePage(root,projectId,value) {
   }
   const captured=await capturePromptAuditInput(()=>capturePagePromptSnapshot(directory,pageId,pageKey));
   const audit=await auditSavedPagePrompt(root,directory,auditPrepared,captured);
+  return savedFactReceipt(async () => {
   return {page_key:pageKey,content:publicDocument(content),prompt:publicDocument(modelPrompt(persistedPrompt,modelId)),content_sha256:hashCanonicalJson(content),prompt_sha256:hashCanonicalJson(persistedPrompt),prompt_context_sha256:hashCanonicalJson(await readStoryPromptUpstream(directory,pageId)),...(lettering?{lettering,layout_sha256:layoutSha}:{}),warnings:[...storyContentWarnings(content),...cleanupWarnings],downstream_diagnostics:await narrativeDownstreamDiagnostics(directory,pageId,content),audit};
+  }, {operation:'page.editor.read',args:{project_id:projectId,page_key:pageKey,section:'content'}});
 }

@@ -17,7 +17,7 @@ export {
 };
 
 function projectError(status, code, details) {
-  return new ProjectWriteCoordinatorError(status, code, details);
+  return Object.assign(new ProjectWriteCoordinatorError(status, code, details), code === "project_revision_conflict" ? {refresh_required: true} : {});
 }
 
 export async function resolveProjectLocation(projectRoot, projectId) {

@@ -1,6 +1,8 @@
+import {factConflict} from './fact-conflict.mjs';
+import {prepareSettingFact} from './setting-persistence.mjs';
 import { cleanRemovedReferences } from './reference-materials.mjs';
 import { mapModelPrompts, promptModelEntries, emptySettingVariant, renamePromptSource, emptySettingPrompt, makeModelPromptDocument } from './model-prompts.mjs';
-import { modelAdapter, defaultProfileAdapter } from './model-adapters.mjs';
+import { defaultProfileAdapter } from './model-adapters.mjs';
 import { readPageIndex, validatePagesIndexDocument } from "./pages-store.mjs";
 import { randomBytes } from "node:crypto";
 import { lstat, mkdir, readdir, rename, stat } from "node:fs/promises";
@@ -237,26 +239,7 @@ export async function readCharacterFactDraft(projectRoot, projectId, characterId
 }
 
 async function prepareCharacterPersistence(kind, baseline, edited, currentVisual) {
-  if (kind === "profile") {
-    assertDocument(validateCharacterProfileDocument(edited));
-    return { persisted: edited };
-  }
-  if (kind === "visual") {
-    delete edited.description; delete edited.base_description;
-    for (const variant of edited.variants ?? []) delete variant.description;
-    assertDocument(validateCharacterVisualDocument(edited));
-    return {
-      persisted: edited,
-    };
-  }
-  const baselineModels = new Map(promptModelEntries(baseline));
-  const persisted = mapModelPrompts(edited, (input, modelId) => modelAdapter(modelId).prepareSettingPrompt(input, {baselinePrompt:baselineModels.get(modelId),createFragmentId:()=>`token-${randomBytes(6).toString('hex')}`}));
-  const unknownVariants = promptVariantIds(persisted).filter(id => !variantIds(currentVisual).includes(id));
-  if (unknownVariants.length) fail("character_prompt_visual_mismatch", unknownVariants);
-  assertDocument(validateCharacterPromptDocument(persisted, { baselinePrompt: baseline }));
-  return {
-    persisted,
-  };
+  return {persisted:prepareSettingFact('character',kind,baseline,edited,currentVisual)};
 }
 
 export async function commitCharacterFact(projectRoot, context, readDocument, kind, { beforeCommit } = {}) {
@@ -269,7 +252,7 @@ export async function commitCharacterFact(projectRoot, context, readDocument, ki
   const baseline = await storage.assertTargetBaseline(project.projectDirectory, context);
   const edited = await readDocument();
   const visual = kind === "prompt" ? await readCharacterVisual(project.projectDirectory, characterId) : null;
-  if (visual && visualIdentity(visual) !== context.upstream.visual.identity_sha256) fail("character_edit_upstream_conflict", [characterId]);
+  if (visual && visualIdentity(visual) !== context.upstream.visual.identity_sha256) throw factConflict('character_edit_upstream_conflict', [characterId]);
   const prepared = await prepareCharacterPersistence(kind, baseline, edited, visual);
   const downstreamDiagnostics = kind === "visual" || kind === "prompt"
     ? (await currentCharacterDiagnostics(projectRoot, project.projectDirectory, characterId, {
@@ -504,14 +487,11 @@ export async function deleteCharacterVariant(projectRoot, projectId, characterId
   };
 }
 
-export async function renameCharacterVariant(projectRoot, projectId, characterId, oldId, newId, { beforeCommit } = {}) {
+export async function prepareCharacterVariantRename(projectRoot, projectId, characterId, oldId, newId) {
   if (!characterIdPattern.test(characterId ?? "") || characterId === "npc") fail("invalid_character_id", [String(characterId)]);
   if (!characterVariantIdPattern.test(oldId ?? "") || oldId === "main") fail("invalid_character_variant_id", [String(oldId)]);
   if (!characterVariantIdPattern.test(newId ?? "") || newId === "main") fail("invalid_character_variant_id", [String(newId)]);
   if (oldId === newId) fail("invalid_character_variant_id", [`新旧 variant ID 相同：${newId}`]);
-  if (beforeCommit !== undefined && typeof beforeCommit !== "function") {
-    fail("invalid_character_edit_option", ["beforeCommit 必须是函数"]);
-  }
   const project = await resolveProjectLocation(path.resolve(projectRoot), projectId);
 
   await requireCharacter(project.projectDirectory, characterId);
@@ -589,27 +569,7 @@ export async function renameCharacterVariant(projectRoot, projectId, characterId
   await Promise.all(writes.map((write) => (
     storage.assertProjectFactBoundary(projectRoot, project.projectDirectory, storage.targetPath(project.projectDirectory, write.relativePath), write.relativePath)
   )));
-  if (beforeCommit) await beforeCommit();
-  const written = [];
-  try {
-    for (const write of writes) {
-      await storage.writeJsonAtomic(storage.targetPath(project.projectDirectory, write.relativePath), write.next);
-      written.push(write);
-    }
-  } catch (error) {
-    const rollbackErrors = [];
-    for (const write of written.reverse()) {
-      try { await storage.writeJsonAtomic(storage.targetPath(project.projectDirectory, write.relativePath), write.previous); }
-      catch (rollbackError) { rollbackErrors.push(`${write.relativePath}: ${rollbackError?.message ?? String(rollbackError)}`); }
-    }
-    if (rollbackErrors.length) {
-      const failure = new FactError("character_variant_rename_rollback_failed", [characterId, oldId, newId, ...rollbackErrors]);
-      failure.cause = error;
-      throw failure;
-    }
-    throw error;
-  }
-  return {
+  return { projectDirectory: project.projectDirectory, writes: writes.map(write => ({relative:write.relativePath,before:write.previous,after:write.next})), result: {
     character_id: characterId,
     old_id: oldId,
     new_id: newId,
@@ -619,7 +579,15 @@ export async function renameCharacterVariant(projectRoot, projectId, characterId
     visual_file: path.resolve(storage.targetPath(project.projectDirectory, characterRelativePath(characterId, "visual"))),
     prompt_file: path.resolve(storage.targetPath(project.projectDirectory, characterRelativePath(characterId, "prompt"))),
     downstream_diagnostics: [],
-  };
+  } };
+}
+
+export async function renameCharacterVariant(root, projectId, id, oldId, newId, {beforeCommit} = {}) {
+  if (beforeCommit !== undefined && typeof beforeCommit !== 'function') fail('invalid_character_edit_option', ['beforeCommit 必须是函数']);
+  const plan = await prepareCharacterVariantRename(root, projectId, id, oldId, newId);
+  if (beforeCommit) await beforeCommit();
+  await commitFactChanges(plan.projectDirectory, plan.writes);
+  return plan.result;
 }
 
 export async function deleteCharacter(projectRoot, projectId, characterId, { beforeCommit } = {}) {

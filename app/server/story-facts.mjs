@@ -1,3 +1,5 @@
+import {preparePageContent,preparePagePrompts,validatePagePromptSources} from './page-persistence.mjs';
+import {factConflict} from './fact-conflict.mjs';
 import {cleanRemovedPageCharacters} from './page-character-cleanup.mjs';
 import { readPageEntry, readStoryPagesIndex, writeStoryPagesIndex, pageRelativePath } from "./pages-store.mjs";
 import { checkRemovedSettingReferences, cleanRemovedReferences } from './reference-materials.mjs';
@@ -5,7 +7,6 @@ import { createHash, randomBytes } from "node:crypto";
 import { lstat, mkdir, open, readFile, readdir, realpath, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { modelPrompt, promptModelEntries, mapModelPrompts } from './model-prompts.mjs';
-import { modelAdapter } from './model-adapters.mjs';
 import { readPageRenderSettings } from './page-render-settings.mjs';
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -14,7 +15,6 @@ import { characterSource } from "./prompt-contract.mjs";
 import { optionalFact } from "./scene-facts.mjs";
 import {
   diagnoseStoryPageFiles,
-  prepareStoryPageNarrativeForPersistence,
   checkPagePromptOverrideReferences,
   promptOverrideCharacterIds,
   storyNarrativeSpeakerIds,
@@ -31,7 +31,6 @@ import { hashCanonicalJson } from "./workflow-definition.mjs";
 import { storyContentWarnings } from "../shared/story-content-guidance.mjs";
 import { capturePagePromptSnapshot } from "./page-render-resolver.mjs";
 import { auditSavedPagePrompt, capturePromptAuditInput, preparePromptWriteAudit } from "./prompt-write-audit.mjs";
-import { assertPagePromptSourceVersions, validatePagePromptInheritance } from './prompt-source-context.mjs';
 
 export const DELETED_STORY_PAGE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -317,9 +316,9 @@ export async function commitTextSources(projectRoot, context, readDocument, kind
   const persistedTarget = targetPath(project.projectDirectory, relativeTarget);
   const baseline = await readOptionalTextSources(project.projectDirectory, context.page_id);
   if (baseline.exists) await assertProjectTargetBoundary(projectRoot, project.projectDirectory, persistedTarget);
-  if (hashCanonicalJson(baseline.value) !== context.target.sha256) fail("story_edit_target_conflict", [relativeTarget]);
+  if (hashCanonicalJson(baseline.value) !== context.target.sha256) throw factConflict('story_edit_target_conflict', [relativeTarget]);
   const upstream = await readTextSourcesUpstream(project.projectDirectory, context.page_id);
-  if (upstream.narrative.sha256 !== context.upstream.narrative.sha256) fail("story_edit_upstream_conflict", [relativeTarget]);
+  if (upstream.narrative.sha256 !== context.upstream.narrative.sha256) throw factConflict('story_edit_upstream_conflict', [relativeTarget]);
   const narrative = upstream.value;
   const edited = await readDocument();
   assertDocument(validateStoryPageTextSourcesDocument(edited));
@@ -452,10 +451,10 @@ async function assertTargetBaseline(projectDirectory, baselineContext) {
   let current;
   try { current = await readPlainJson(targetPath(projectDirectory, baselineContext.target.relative_path), baselineContext.target.relative_path); }
   catch (error) {
-    if (error instanceof FactError) fail("story_edit_target_conflict", [baselineContext.target.relative_path]);
+    if (error instanceof FactError) throw factConflict('story_edit_target_conflict', [baselineContext.target.relative_path]);
     throw error;
   }
-  if (hashCanonicalJson(current) !== baselineContext.target.sha256) fail("story_edit_target_conflict", [baselineContext.target.relative_path]);
+  if (hashCanonicalJson(current) !== baselineContext.target.sha256) throw factConflict('story_edit_target_conflict', [baselineContext.target.relative_path]);
   return current;
 }
 
@@ -468,10 +467,10 @@ async function assertNarrativeUpstream(projectDirectory, baselineContext) {
       || membership.sha256 !== baselineContext.upstream.membership.sha256
       || characters.sha256 !== baselineContext.upstream.characters.sha256
       || speakers.sha256 !== baselineContext.upstream.speakers.sha256) {
-      fail("story_edit_upstream_conflict", [baselineContext.target.relative_path]);
+      throw factConflict('story_edit_upstream_conflict', [baselineContext.target.relative_path]);
     }
   } catch (error) {
-    if (error instanceof FactError && error.code !== "story_edit_upstream_conflict") fail("story_edit_upstream_conflict", [baselineContext.target.relative_path]);
+    if (error instanceof FactError && error.code !== "story_edit_upstream_conflict") throw factConflict('story_edit_upstream_conflict', [baselineContext.target.relative_path]);
     throw error;
   }
 }
@@ -481,20 +480,12 @@ async function assertPromptUpstream(projectDirectory, baselineContext) {
     const narrative = await readPlainJson(targetPath(projectDirectory, baselineContext.upstream.narrative.relative_path), baselineContext.upstream.narrative.relative_path);
     const upstream = await readStoryPromptUpstream(projectDirectory,baselineContext.page_id);
     if (hashCanonicalJson(upstream) !== hashCanonicalJson(baselineContext.upstream)) {
-      fail("story_edit_upstream_conflict", [baselineContext.target.relative_path]);
+      throw factConflict('story_edit_upstream_conflict', [baselineContext.target.relative_path]);
     }
     return narrative;
   } catch (error) {
-    if (error instanceof FactError && error.code !== "story_edit_upstream_conflict") fail("story_edit_upstream_conflict", [baselineContext.target.relative_path]);
+    if (error instanceof FactError && error.code !== "story_edit_upstream_conflict") throw factConflict('story_edit_upstream_conflict', [baselineContext.target.relative_path]);
     throw error;
-  }
-}
-
-function createDialogueId(occupiedIds) {
-  const occupied = new Set(occupiedIds);
-  for (;;) {
-    const id = `dialogue-${randomBytes(6).toString('hex')}`;
-    if (!occupied.has(id)) return id;
   }
 }
 
@@ -521,7 +512,7 @@ export async function commitStoryFact(projectRoot, context, readDocument, kind, 
   try {
     await assertProjectTargetBoundary(projectRoot, project.projectDirectory, persistedTarget);
   } catch (error) {
-    if (error?.code === "ENOENT") fail("story_edit_target_conflict", [context.target.relative_path]);
+    if (error?.code === "ENOENT") throw factConflict('story_edit_target_conflict', [context.target.relative_path]);
     throw error;
   }
   const baseline = await assertTargetBaseline(project.projectDirectory, context);
@@ -532,18 +523,11 @@ export async function commitStoryFact(projectRoot, context, readDocument, kind, 
   const edited = await readDocument();
   let persisted;
   if (kind === "narrative") {
-    try {
-      persisted = prepareStoryPageNarrativeForPersistence(edited, { baselineNarrative: baseline, createDialogueId });
-      if (persisted.page_kind !== baseline.page_kind) fail('page_kind_immutable');
-    } catch (error) {
-      if (error instanceof TypeError) fail("invalid_story_edit_document", [error.message]);
-      throw error;
-    }
-    assertDocument(validateStoryPageNarrativeDocument(persisted));
+    persisted = preparePageContent(edited,baseline,'invalid_story_edit_document');
     await assertPageLetteringAnchors(project.projectDirectory, context.page_id, baseline, persisted);
   } else {
     const baselineModels = new Map(promptModelEntries(baseline));
-    persisted = mapModelPrompts(edited, (input, modelId) => modelAdapter(modelId).preparePagePrompt(input, {baselinePrompt:baselineModels.get(modelId),createFragmentId:()=>`token-${randomBytes(6).toString('hex')}`}));
+    persisted = preparePagePrompts(edited,baseline);
     assertDocument(validateStoryPagePromptDocument(persisted));
     // 切换或移除场景引用时删除旧场景覆盖，不保留隐藏草稿；角色覆盖必须匹配当前引用，否则拒绝保存。
     for (const [,input] of promptModelEntries(persisted)) {
@@ -558,13 +542,10 @@ export async function commitStoryFact(projectRoot, context, readDocument, kind, 
     for (const [modelId, input] of promptModelEntries(persisted)) {
       const baselinePrompt = baselineModels.get(modelId);
       if (hashCanonicalJson(input) === hashCanonicalJson(baselinePrompt ?? null)) continue;
-      const sources = await assertPagePromptSourceVersions(project.projectDirectory, {
-        projectId: context.project_id, modelId, narrative: currentNarrative, prompt: input, baselinePrompt,
-        sourceVersions: sourceVersions[modelId], protectBaseline: modelId === activeModel,
-      });
-      assertDocument(await validatePagePromptInheritance(project.projectDirectory, {
-        projectId: context.project_id, modelId, narrative: currentNarrative, prompt: input, baselinePrompt, sources,
-      }));
+      await validatePagePromptSources(project.projectDirectory, {
+        projectId:context.project_id, modelId, narrative:currentNarrative, prompt:input, baselinePrompt,
+        sourceVersions:sourceVersions[modelId], protectBaseline:modelId === activeModel,
+      }, 'invalid_story_edit_document');
     }
   }
   if (beforeCommit !== undefined) {
@@ -572,9 +553,9 @@ export async function commitStoryFact(projectRoot, context, readDocument, kind, 
     await beforeCommit();
   }
   const cleanupPlan = kind === 'narrative' ? await planRemovedReferenceCleanup(project.projectDirectory, context.page_id, persisted, baseline, projectRoot, context.project_id) : { writes: [] };
-  await commitFactChanges(project.projectDirectory, [...cleanupPlan.writes, { relative: context.target.relative_path, before: baseline, after: persisted }]);
   const downstreamDiagnostics = kind === "narrative"
     ? await narrativeDownstreamDiagnostics(project.projectDirectory, context.page_id, persisted) : [];
+  await commitFactChanges(project.projectDirectory, [...cleanupPlan.writes, { relative: context.target.relative_path, before: baseline, after: persisted }]);
   if (kind === "prompt" && auditPrepared.value) {
     auditCaptured = await capturePromptAuditInput(() => capturePagePromptSnapshot(project.projectDirectory, context.page_id, createStoryPageKey(context.page_id)));
   }
@@ -713,7 +694,7 @@ export async function commitStoryStructure(projectRoot, context, readDocument, k
   const baseline = kind === "outline"
     ? await assertTargetBaseline(project.projectDirectory, context)
     : await readValidatedPagesIndex(project.projectDirectory);
-  if (kind === "index" && hashCanonicalJson(baseline) !== context.target.sha256) fail("story_edit_target_conflict", [context.target.relative_path]);
+  if (kind === "index" && hashCanonicalJson(baseline) !== context.target.sha256) throw factConflict('story_edit_target_conflict', [context.target.relative_path]);
   const edited = await readDocument();
   if (kind === "outline") assertDocument(validateStoryOutlineDocument(edited));
   else assertDocument(validateStoryPagesIndexDocument(edited));
@@ -723,7 +704,7 @@ export async function commitStoryStructure(projectRoot, context, readDocument, k
   let downstreamDiagnostics = [];
   if (kind === "index") {
     const outline = await readValidatedOutline(project.projectDirectory);
-    if (outlineSequenceIdentity(outline) !== context.upstream.outline.sequence_identity_sha256) fail("story_edit_upstream_conflict", [context.target.relative_path]);
+    if (outlineSequenceIdentity(outline) !== context.upstream.outline.sequence_identity_sha256) throw factConflict('story_edit_upstream_conflict', [context.target.relative_path]);
     const state = await storyPageDiagnostics(projectRoot, project.projectDirectory, outline, edited);
     failForDiagnostics(state.diagnostics);
   } else {
@@ -762,7 +743,7 @@ export async function commitStoryOutlineTarget(projectRoot, context, readDocumen
   const outline = await readValidatedOutline(project.projectDirectory);
   const current = outlineTarget(outline, kind, context.target_id);
   if (hashCanonicalJson(current.document) !== context.target.sha256) fail("fact_target_conflict");
-  if (hashCanonicalJson(current.upstream) !== hashCanonicalJson(context.upstream)) fail("fact_upstream_conflict");
+  if (hashCanonicalJson(current.upstream) !== hashCanonicalJson(context.upstream)) throw factConflict('fact_upstream_conflict');
   const document = await readDocument();
   const fields = kind === "synopsis" ? ["synopsis"] : ["title", "summary"];
   if (!isRecord(document) || Object.keys(document).length !== fields.length || fields.some(field => typeof document[field] !== "string")) {
@@ -853,7 +834,13 @@ export async function commitFactChanges(directory, writes, { cleanupReferences =
     }
     throw error;
   }
-  if (cleanupReferences) for (const write of writes) if (write.relative.endsWith('.prompt.json')) await cleanRemovedReferences(directory, write.before);
+  // 事实已提交，清理旧素材失败不能伪装成保存失败、诱发重复提交。
+  const warnings = [];
+  if (cleanupReferences) for (const write of writes) if (write.relative.endsWith('.prompt.json')) {
+    try {await cleanRemovedReferences(directory, write.before);}
+    catch (error) {warnings.push({code:'reference_cleanup_failed',file:write.relative});console.warn('[story-canvas] 保存完成，旧素材清理失败',error);}
+  }
+  return {warnings};
 }
 
 async function rollbackCreatedFactFiles(targets, originalError, failureCode) {  const rollbackFailures = [];

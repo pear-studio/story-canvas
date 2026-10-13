@@ -21,6 +21,41 @@ async function open(t,query,setup,options={}){
  if(!query.includes('collapsed')) { await page.getByTitle('展开角色引用').click(); await page.getByTitle('展开场景引用').click(); }
  return page;
 }
+
+for(const failure of ['conflict','receipt'])test(`源页面${failure==='conflict'?'冲突':'已保存但回执读取失败'}保留两种译文草稿，重读后可单独保存`,async t=>{
+ const saved=[];
+ const translation=locale=>({locale,lines:[{id:'dialogue-123456789abc',text:'早上好',translation:'',status:'missing',source_sha256:'line-source'}],expected_source_sha256:'source',expected_translation_sha256:'translation',summary:{total:1,missing:1,stale:0}});
+ const page=await open(t,`collapsed&refresh-failure=${failure}`,async page=>{
+   await page.route('**/workbench/translation/read',route=>route.fulfill({json:translation(route.request().postDataJSON().locale)}));
+   await page.route('**/workbench/translation/save',route=>{
+     const request=route.request().postDataJSON();saved.push(request);
+     const value=translation(request.locale);value.lines[0].translation=request.entries[value.lines[0].id];value.lines[0].status='ready';value.summary.missing=0;
+     return route.fulfill({json:value});
+   });
+ });
+ await page.getByLabel('画面内容').fill('本地 Prompt 草稿');
+ await page.getByRole('tab',{name:'嵌字',exact:true}).click();
+ await page.getByLabel('嵌字语言',{exact:true}).selectOption('en');
+ await page.getByLabel('English译文 dialogue-123456789abc').fill('Good morning draft.');
+ await page.getByLabel('嵌字语言',{exact:true}).selectOption('ja');
+ await page.getByLabel('日本語译文 dialogue-123456789abc').fill('おはよう、草稿。');
+ await page.getByRole('button',{name:'保存',exact:true}).click();
+ await page.waitForFunction(()=>localStorage.getItem('source-reloaded')==='true');
+ assert.deepEqual(saved,[],'源保存需刷新时尚未提交译文');
+ assert.equal(await page.getByLabel('日本語译文 dialogue-123456789abc').inputValue(),'おはよう、草稿。');
+ await page.getByLabel('嵌字语言',{exact:true}).selectOption('en');
+ assert.equal(await page.getByLabel('English译文 dialogue-123456789abc').inputValue(),'Good morning draft.');
+ const savedJapanese=page.waitForResponse(response=>response.url().endsWith('/translation/save')&&response.request().postDataJSON().locale==='ja');
+ await page.getByRole('button',{name:'保存',exact:true}).click();
+ await savedJapanese;
+ await page.getByRole('button',{name:'保存',exact:true}).waitFor();
+ assert.equal(await page.getByRole('button',{name:'保存',exact:true}).isDisabled(),true);
+ assert.deepEqual(saved.map(value=>[value.locale,value.entries['dialogue-123456789abc']]),[['en','Good morning draft.'],['ja','おはよう、草稿。']]);
+ assert.equal(await page.evaluate(()=>localStorage.getItem('source-save-count')),'1','重读后不重复提交源页面');
+ await page.getByLabel('English译文 dialogue-123456789abc').fill('Discard this draft.');
+ await page.getByRole('button',{name:'放弃修改',exact:true}).click();
+ assert.equal(await page.getByLabel('English译文 dialogue-123456789abc').inputValue(),'Good morning draft.','明确放弃仍清空译文修改');
+});
 test('Anima 放弃修改清空撤销和重做历史，之后的新编辑仍可撤销', async t => {
  const page=await open(t,'anima&collapsed',async page=>{
    await page.route('**/api/prompt-dictionary**',route=>route.fulfill({json:{available:true,suggestions:[],matches:[]}}));
@@ -146,23 +181,15 @@ test('场景子设定切换后失败保留全部草稿，重试提交新引用�
  assert.equal(saved.content.scene_description,'夜间窗边休息');assert.deepEqual(saved.prompt.text_overrides,{});assert.deepEqual(saved.prompt.reference_overrides,{});
 });
 
-test('同页外部刷新保留人物、场景和内容草稿，保存提交编辑时指纹并报告冲突',async t=>{
+test('同页外部刷新丢弃过时草稿，重新编辑使用最新指纹',async t=>{
  const page=await open(t,'kind=scene');
  await page.getByLabel('画面内容').fill('本地未保存内容');
  await page.getByLabel('艾莲角色设定').selectOption('night');
  await page.getByRole('button',{name:'移除场景引用',exact:true}).click();
  await page.getByRole('button',{name:'模拟外部刷新',exact:true}).click();
  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
- assert.equal(await page.getByLabel('画面内容').inputValue(),'本地未保存内容');
- assert.equal(await page.getByLabel('艾莲角色设定').inputValue(),'night');
- assert.equal(await page.getByLabel('页面场景设定').count(),0);
- await page.getByRole('button',{name:'保存',exact:true}).click();
- await page.getByRole('alert').filter({hasText:'page_content_target_conflict'}).waitFor();
- const baseline=await page.evaluate(()=>JSON.parse(localStorage.getItem('submitted-baseline')));
- assert.deepEqual([baseline.content_sha256,baseline.prompt_sha256,baseline.prompt_context_sha256,baseline.layout_sha256],['content','prompt','context','external-layout'], '当前布局未变时只接纳共享布局文件的新指纹');
+ await page.getByText('内容已更新，过时的修改已丢弃，请在最新内容上重新编辑。',{exact:true}).waitFor();
  assert.equal(await page.evaluate(()=>localStorage.getItem('saved-page')),null);
- assert.equal(await page.getByLabel('画面内容').inputValue(),'本地未保存内容');
- await page.getByRole('button',{name:'放弃修改',exact:true}).click();
  assert.equal(await page.getByLabel('画面内容').inputValue(),'外部改写的内容');
  assert.equal(await page.getByLabel('页面场景设定').inputValue(),'room:night');
  await page.getByLabel('画面内容').fill('基于外部版本的修改');

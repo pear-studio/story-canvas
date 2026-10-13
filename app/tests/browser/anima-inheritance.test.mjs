@@ -1,3 +1,4 @@
+import {mockSettingSave} from './setting-save-mock.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -159,43 +160,34 @@ test('基础和子设定同 ID 的词保持独立开关，本页草稿行身份�
  assert.deepEqual(errors,[]);
 });
 
-test('Anima 设定按当前范围保存，其他范围刷新与保存不丢基础草稿及其原始版本', async t => {
+test('Anima 保存独立范围保留基础草稿，上游基础变化后丢弃旧草稿', async t => {
  const {page,errors}=await openHarness(t,'?scopes');
  await page.route('**/api/lora-resources',route=>route.fulfill({json:{resources:[],raw:[],errors:[]}}));
  await page.route('**/api/projects/demo/render-profile',route=>route.fulfill({json:{current_profile_id:'anima-base-v1',render_profiles:[]}}));
  const saves=[];
- await page.route('**/api/agent/prompt/save',async route=>{
-  const body=route.request().postDataJSON();saves.push(body);
-  await route.fulfill({json:{document:body.changes,save:{operation:'prompt.save',args:{expected_sha256:body.expected_sha256+'-saved'}}}});
- });
+ await mockSettingSave(page,saves);
  let input=page.getByRole('combobox',{name:'人物第 1 项 Prompt',exact:true});
  await input.fill('draft base');await input.blur();
  await page.getByRole('button',{name:'更新未编辑子设定',exact:true}).click();
  assert.equal(await input.innerText(),'draft base');
  await page.getByRole('button',{name:'打开日常',exact:true}).click();
- await page.getByRole('button',{name:'保存 Prompt',exact:true}).waitFor();
+ await page.getByRole('button',{name:'重命名子设定',exact:true}).waitFor();
  input=page.getByRole('combobox',{name:'人物第 1 项 Prompt',exact:true});
  assert.equal(await input.innerText(),'updated variant');
- await input.fill('saved variant');await input.blur();
- await page.getByRole('button',{name:'保存 Prompt',exact:true}).click();
+ await input.fill('saved variant');
+ await input.press('Control+s');
  await page.waitForFunction(()=>document.querySelector('.feedback-toast')?.textContent.includes('已保存'));
  assert.equal(saves.length,1);
  assert.deepEqual(saves[0].target,{kind:'character',id:'alice',model_id:'anima',scope:'variant',variant_id:'day'});
- assert.equal(saves[0].expected_sha256,'day-v2');
- assert.equal(saves[0].changes.prompt.person[0].description,'saved variant');
- assert.equal(saves[0].changes.identity,undefined);
+ assert.equal(saves[0].expected_prompt_sha256,'day-v2');
+ assert.equal(saves[0].prompt.prompt.person[0].description,'saved variant');
+ assert.equal(saves[0].prompt.identity,undefined);
  await page.getByRole('button',{name:'更新基础版本',exact:true}).click();
  assert.equal(await input.innerText(),'saved variant');
  await page.getByRole('button',{name:'打开基础',exact:true}).click();
- await page.getByRole('button',{name:'保存基础设定',exact:true}).waitFor();
+ await page.getByRole('heading',{name:'基础设定',exact:true}).waitFor();
  input=page.getByRole('combobox',{name:'人物第 1 项 Prompt',exact:true});
- assert.equal(await input.innerText(),'draft base');
- await page.getByRole('button',{name:'保存基础设定',exact:true}).click();
- await page.waitForTimeout(150);
- assert.equal(saves.length,2);
- assert.equal(saves[1].target.scope,'base');
- assert.equal(saves[1].expected_sha256,'base-v1');
- assert.equal(saves[1].changes.identity.prompt.person[0].description,'draft base');
- assert.equal(saves[1].changes.identity.prompt.person[0].id,'token-111111111111');
+ assert.equal(await input.innerText(),'updated base','同范围外部修改丢弃旧草稿');
+ assert.equal(saves.length,1);
  assert.deepEqual(errors,[]);
 });
