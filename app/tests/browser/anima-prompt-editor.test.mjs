@@ -206,6 +206,7 @@ test('词条引用连续浏览和返回保持草稿，替换始终作用于最�
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
   assert.deepEqual((await read()).person[0], { ...before.person[0], prompt_text: 'smile' });
   assert.deepEqual((await read()).person.slice(1), before.person.slice(1));
+  await page.waitForFunction(element=>document.activeElement===element,await input.elementHandle());
   assert.equal(await input.evaluate(e => document.activeElement === e), true);
   await page.keyboard.press('Control+z');
   assert.deepEqual(await read(), before);
@@ -533,6 +534,28 @@ test("行内中文不进入剪贴板、退格与粘贴；词库异步更新保�
   await input.press("Tab");
   await page.getByRole("alert").getByText("圈选标签不在词库中：unknown_tag_987").waitFor();
   assert.equal(JSON.parse(await page.locator("output").textContent()).setting[0].prompt_text, "a person with {unknown_tag_987}");
+});
+
+for(const width of [390,1200])for(const prefix of ['', 'prefix,\n'])test(`候选补全后原生删除不留下多余换行 ${width} ${prefix?'保留原有换行':'清空文字'}`,async t=>{
+  const {page,input,options}=await editor(t);
+  await page.setViewportSize({width,height:700});
+  await page.route('**/api/prompt-dictionary/matches',route=>route.fulfill({json:{available:true,matches:route.request().postDataJSON().prompts.map(prompt=>({prompt_text:prompt,matched:prompt==='quiet',allowed:true,source_text:prompt==='quiet'?'quiet':undefined,display_text:'安静'}))}}));
+  if(prefix){await input.fill('prefix,');await input.press('Shift+Enter');await input.pressSequentially('qui');}
+  else await input.fill('qui');
+  await options.first().click();
+  await input.getByRole('button',{name:'查看 安静 的词条说明'}).waitFor();
+  assert.equal(await input.evaluate(promptText),`${prefix}quiet`);
+  // 软键盘的原生编辑不会经过组件拦截的 Backspace keydown。
+  await input.press('Control+End');
+  await input.dispatchEvent('compositionstart');
+  for(let index=0;index<6;index++)await input.press('Backspace');
+  await input.dispatchEvent('compositionend');
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(resolve)));
+  assert.equal(await input.evaluate(promptText),prefix);
+  await input.evaluate(()=>document.execCommand('insertText',false,'soft light'));
+  assert.equal(await input.evaluate(promptText),`${prefix}soft light`);
+  await input.press('Tab');
+  assert.equal(JSON.parse(await page.locator('output').textContent()).setting[0].prompt_text,`${prefix}soft light`);
 });
 
 test("悬停候选后直接 Enter 保留原文；点击候选仍然补全", async t => {

@@ -12,6 +12,20 @@ function rawText(node: Node): string {
   return [...node.childNodes].map(rawText).join("");
 }
 
+function inputText(root: HTMLElement) {
+  // 原生删除（尤其输入法/软键盘）会留下无标记的末尾 br 用来放光标。
+  // 它和渲染时的 tail 一样不属于原文；只标记最后一个，保留真实换行。
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, { acceptNode: node => {
+    if (node instanceof Element && node.hasAttribute("data-prompt-note")) return NodeFilter.FILTER_REJECT;
+    if (node instanceof HTMLBRElement || (node.nodeType === Node.TEXT_NODE && node.textContent)) return NodeFilter.FILTER_ACCEPT;
+    return NodeFilter.FILTER_SKIP;
+  } });
+  let last: Node | null = null;
+  while (walker.nextNode()) last = walker.currentNode;
+  if (last instanceof HTMLBRElement) last.dataset.promptTail = "";
+  return rawText(root);
+}
+
 function selectionOffsets(root: HTMLElement) {
   const selection = window.getSelection();
   if (!selection?.anchorNode || !root.contains(selection.anchorNode) || !selection.focusNode || !root.contains(selection.focusNode)) return null;
@@ -108,7 +122,7 @@ export function InlinePromptInput({ value, matches, readOnly, inputRef, onValueC
     onCompositionStart={event => { composing.current = true; props.onCompositionStart?.(event); }}
     onCompositionEnd={event => {
       composing.current = false;
-      const text = rawText(event.currentTarget);
+      const text = inputText(event.currentTarget);
       const selected = selectionOffsets(event.currentTarget);
       // 父组件先退出合成状态，随后才能将最终文本标记为待编辑草稿。
       props.onCompositionEnd?.(event);
@@ -116,7 +130,7 @@ export function InlinePromptInput({ value, matches, readOnly, inputRef, onValueC
       onValueChange?.(text, selected?.[1] ?? text.length);
       render();
     }}
-    onInput={event => { const text = rawText(event.currentTarget); const selected = selectionOffsets(event.currentTarget); latest.current.value = text; onValueChange?.(text, selected?.[1] ?? text.length); if (!composing.current) render(); }}
+    onInput={event => { const text = inputText(event.currentTarget); const selected = selectionOffsets(event.currentTarget); latest.current.value = text; onValueChange?.(text, selected?.[1] ?? text.length); if (!composing.current) render(); }}
     onKeyDown={event => {
       props.onKeyDown?.(event);
       if (event.defaultPrevented || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229 || composing.current || readOnly) return;
