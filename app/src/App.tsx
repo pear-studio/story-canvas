@@ -1850,7 +1850,7 @@ export default function StoryWorkbench({ initialImagesHidden, imagePrivacyStorag
     </div>
     {!globalArea && navigationDrawer && pageNavigationVisible && <nav className="page-turn-navigation" aria-label="页面翻页">
       <button type="button" className="button button--quiet" disabled={loading || !previousPage} title={previousPage?.title} aria-label={previousPage ? `上一页：${previousPage.title}` : "已是首页"} onClick={() => void turnPage(-1)}><span aria-hidden="true">←</span><span className="page-turn-navigation__title">{previousPage?.title ?? "已是首页"}</span></button>
-      <span aria-live="polite" aria-atomic="true">{activePageIndex + 1} / {activeOwnerLocations.length}</span>
+      <span className="page-turn-navigation__current" aria-live="polite" aria-atomic="true"><strong className="page-turn-navigation__title" title={activeLocation?.page.title}>{activeLocation?.page.title}</strong><small>{activePageIndex + 1} / {activeOwnerLocations.length}</small></span>
       <button type="button" className="button button--primary" disabled={loading || !nextPage} title={nextPage?.title} aria-label={nextPage ? `下一页：${nextPage.title}` : "已是末页"} onClick={() => void turnPage(1)}><span className="page-turn-navigation__title">{nextPage?.title ?? "已是末页"}</span><span aria-hidden="true">→</span></button>
     </nav>}
     <NavigationContextMenu request={navigationMenu} onClose={() => setNavigationMenu(null)} />
