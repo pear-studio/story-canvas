@@ -128,6 +128,16 @@ async function setup(t, { character = false, mobile = false, visualPages = false
       revision++;
       return reply({});
     }
+    if (pathname.endsWith('/navigation/move-page')) {
+      const {page_id,owner,before_page_id}=route.request().postDataJSON();
+      const sequences=views[id].outline.chapters.flatMap(chapter=>chapter.sequences);
+      const source=sequences.find(sequence=>sequence.pages.some(page=>page.page_id===page_id));
+      const [moved]=source.pages.splice(source.pages.findIndex(page=>page.page_id===page_id),1);
+      const target=sequences.find(sequence=>sequence.id===owner.sequence_id);
+      target.pages.splice(before_page_id==null?target.pages.length:target.pages.findIndex(page=>page.page_id===before_page_id),0,moved);
+      revision++;
+      return reply({page_id});
+    }
     return route.fulfill({ status: 404, json: { error: "test_endpoint_unavailable" } });
   });
   await page.goto(`${origin}/?project=alpha&${longStory ? "tab=project-story" : character ? "tab=characters&character=alice&setting=daily" : "tab=story&page=b"}`);
@@ -521,6 +531,32 @@ test("添加入口与当前项目管理分开，取消移除不发送修改请�
   await menu.getByRole('button', { name: '从列表移除', exact: true }).click();
   await page.getByRole('dialog', { name: '从列表移除', exact: true }).getByRole('button', { name: '取消', exact: true }).click();
   assert.deepEqual(mutations, []);
+});
+
+for(const mobile of [false,true])for(const dirty of [false,true])test(`页面拖动排序保持当前页 ${mobile?'手机':'桌面'} ${dirty?'有草稿':'无草稿'}`,async t=>{
+  const {page}=await setup(t,{mobile});
+  if(dirty)await page.getByLabel('画面内容',{exact:true}).fill('未保存画面');
+  if(mobile)await page.getByRole('button',{name:'目录',exact:true}).click();
+  const from=await page.getByRole('button',{name:'拖动排序：页面a',exact:true}).boundingBox();
+  const target=await page.locator('[data-nav-kind="story-page"][data-nav-id="c"]').boundingBox();
+  await page.mouse.move(from.x+from.width/2,from.y+from.height/2);
+  await page.mouse.down();
+  await page.mouse.move(target.x+target.width/2,target.y+target.height-3,{steps:8});
+  await page.mouse.up();
+  await page.waitForFunction(()=>document.querySelector('[role="dialog"][aria-label="放弃未保存修改"]')||document.querySelector('[data-nav-kind="story-page"]')?.getAttribute('data-nav-id')==='b');
+  assert.equal(await page.getByRole('dialog',{name:'放弃未保存修改',exact:true}).count(),0,'排序不需要离开页面或放弃草稿');
+  await page.getByText('页面已移动',{exact:true}).waitFor();
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(resolve)));
+  assert.deepEqual(await page.locator('[data-nav-kind="story-page"]').evaluateAll(rows=>rows.map(row=>row.dataset.navId)),['b','c','a']);
+  assert.equal(new URL(page.url()).searchParams.get('page'),'b');
+  assert.equal(await page.locator('.tree-page.is-active').getAttribute('aria-selected'),'true');
+  if(dirty)assert.equal(await page.getByLabel('画面内容',{exact:true}).inputValue(),'未保存画面');
+  await page.locator('.tree-page').filter({hasText:'页面c'}).click();
+  if(dirty){
+    const confirmation=page.getByRole('dialog',{name:'放弃未保存修改',exact:true});
+    await confirmation.waitFor();
+    assert.equal(new URL(page.url()).searchParams.get('page'),'b');
+  }else await page.waitForFunction(()=>new URLSearchParams(location.search).get('page')==='c');
 });
 
 test("Ctrl 和 Shift 点击只打开一个页面，生成只提交当前页", async t => {

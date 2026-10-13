@@ -1220,24 +1220,24 @@ export default function StoryWorkbench({ initialImagesHidden, imagePrivacyStorag
     if (items.length) setNavigationMenu({ x: event.clientX, y: event.clientY, label, items: items.map((item) => ({ ...item, onSelect: () => { setNavigationOpen(false); item.onSelect(); } })) });
   }
 
-  async function performNavigationAction(action: string, value: Record<string, unknown>, success: string) {
+  async function performNavigationAction(action: string, value: Record<string, unknown>, success: string, { keepCurrentPage = false }: { keepCurrentPage?: boolean } = {}) {
     const projectScope = projectRequestGuard.current.scope(projectId);
     if (!projectRequestGuard.current.isProjectCurrent(projectScope)) return null;
-    if (!await leaveCurrentAllowed()) return null;
+    if (!keepCurrentPage && !await leaveCurrentAllowed()) return null;
     if (!projectRequestGuard.current.isProjectCurrent(projectScope)) return null;
     setUtilityBusy(true);
     try {
       const result = await runNavigationAction(projectId, action, value);
       if (!projectRequestGuard.current.isProjectCurrent(projectScope)) return null;
       const applied = await snapshotSync.load(projectId, { onApplied: (next) => {
-        const createdPageId = typeof result.page_id === "string" ? result.page_id : null;
+        const createdPageId = !keepCurrentPage && typeof result.page_id === "string" ? result.page_id : null;
         if (createdPageId) {
           const location = allPages(next).find((item) => item.page.page_id === createdPageId);
           if (location) {
             navigate(openNavigationPage(navigationRef.current, location.page.page_key, next));
           }
         }
-        if (!createdPageId && action.startsWith('create-')) {
+        if (!keepCurrentPage && !createdPageId && action.startsWith('create-')) {
           const id = typeof result.scene_id === 'string' ? result.scene_id : typeof result.character_id === 'string' ? result.character_id : typeof result.id === 'string' ? result.id : typeof value.id === 'string' ? value.id : '';
           const variantId = action.endsWith('-variant') ? String(result.variant_id ?? value.id ?? 'profile') : 'profile';
           if (action.startsWith('create-scene') && id) navigate(openNavigationScene(navigationRef.current, String(result.scene_id ?? value.scene_id ?? id), variantId));
@@ -1264,7 +1264,7 @@ export default function StoryWorkbench({ initialImagesHidden, imagePrivacyStorag
       if (!sequence) return;
       const beforeId = navigationDropBeforeId(sequence.pages.map((page) => page.page_id), drop.id, drop.sourceGroup === drop.targetGroup, drop.targetId, drop.placement);
       if (beforeId === undefined) return;
-      void performNavigationAction("move-page", { page_id: drop.id, owner: { owner_kind: "story", sequence_id: drop.targetGroup }, before_page_id: beforeId }, "页面已移动");
+      void performNavigationAction("move-page", { page_id: drop.id, owner: { owner_kind: "story", sequence_id: drop.targetGroup }, before_page_id: beforeId }, "页面已移动", { keepCurrentPage: true });
       return;
     }
     if (drop.kind === 'character-page' || drop.kind === 'scene-page') {
@@ -1274,7 +1274,7 @@ export default function StoryWorkbench({ initialImagesHidden, imagePrivacyStorag
       if (!setting || !setting.visual.variants.some(v => v.id === drop.targetGroup)) return;
       const ids = setting.pages.filter(page => page.variant_id === drop.targetGroup).map(page => page.page_id);
       const before = navigationDropBeforeId(ids, drop.id, drop.sourceGroup === drop.targetGroup, drop.targetId, drop.placement);
-      if (before !== undefined) void performNavigationAction('move-page', {page_id:drop.id,owner:{owner_kind:kind,[`${kind}_id`]:setting.id,variant_id:drop.targetGroup},before_page_id:before},'页面已移动');
+      if (before !== undefined) void performNavigationAction('move-page', {page_id:drop.id,owner:{owner_kind:kind,[`${kind}_id`]:setting.id,variant_id:drop.targetGroup},before_page_id:before},'页面已移动', { keepCurrentPage: true });
       return;
     }
     if (drop.kind === "chapter") {
