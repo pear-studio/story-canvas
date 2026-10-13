@@ -20,6 +20,13 @@ async function open(t,width,query=''){
  await page.goto(`${origin}/tests/browser/mobile-candidates.html?${query}`);
  return page;
 }
+async function expectLoadedLightbox(page) {
+ await page.waitForFunction(() => {
+   const image = document.querySelector('.image-lightbox img');
+   return image?.complete && image.naturalWidth > 0 && getComputedStyle(image).opacity === '1';
+ }, null, { timeout: 3000 });
+ assert.equal(await page.locator('.image-lightbox img').getAttribute('class'), null, '返回已加载的图片不应停留在半透明加载状态');
+}
 for(const width of [360,390,980])test(`候选从底栏打开，正文和成品按钮隐藏 ${width}`,async t=>{
  const page=await open(t,width,'issue');
  const trigger=page.getByRole('button',{name:'查看候选图，共 1 张'});
@@ -77,7 +84,7 @@ test('空候选和读取失败可在面板中查看并刷新，桌面保留原�
 });
 
 for (const width of [390, 1280]) test(`候选迭代：入口、空白指令、失败保留、返回大图和重复提交保护 ${width}`, async t => {
- const page = await open(t, width, width > 700 ? 'thumbnails' : '');
+ const page = await open(t, width, width > 700 ? 'thumbnails' : 'cached');
  await page.route('**/candidate-*.svg*', r => r.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="192" height="288"><rect width="192" height="288" fill="teal"/></svg>' }));
  if (width < 700) {
    await page.getByRole('button', { name: '查看候选图，共 1 张' }).click();
@@ -99,6 +106,7 @@ for (const width of [390, 1280]) test(`候选迭代：入口、空白指令、�
  await dialog.getByLabel('修改要求').blur();
  await dialog.getByRole('button', { name: '放大迭代来源图' }).click();
  await page.getByRole('dialog', { name: '迭代来源图', exact: true }).waitFor();
+ await expectLoadedLightbox(page);
  await page.getByRole('button', { name: '关闭全屏图片' }).click();
  assert.equal(await dialog.getByLabel('修改要求').inputValue(), '修复右手，保持构图。');
  const box = await dialog.boundingBox();
@@ -119,6 +127,13 @@ for (const width of [390, 1280]) test(`候选迭代：入口、空白指令、�
  assert.equal(await page.getByRole('button', { name: '正在提交…' }).isEnabled(), false);
  release();
  await dialog.waitFor({ state: 'detached' });
+ if (width < 700) {
+   await expectLoadedLightbox(page);
+   await page.getByRole('button', { name: '原始大小（1:1）', exact: true }).click();
+   const image = await page.locator('.image-lightbox img').boundingBox();
+   assert.equal(image.width, 200);
+   assert.equal(image.height, 300);
+ }
  assert.equal(calls.length, 2);
  assert.equal(calls[1].use_project_loras, false);
  if (width < 700) await page.getByRole('button', { name: '迭代', exact: true }).click();
@@ -129,8 +144,14 @@ for (const width of [390, 1280]) test(`候选迭代：入口、空白指令、�
  if (width < 700) {
    await page.setViewportSize({ width, height: 410 });
    await dialog.getByLabel('修改要求').focus();
+   await page.waitForFunction(() => {
+     const button = document.querySelector('.candidate-iteration-dialog button[type="submit"]');
+     const bounds = button?.getBoundingClientRect();
+     return bounds && bounds.y >= 0 && bounds.bottom <= 411;
+   }, null, { timeout: 3000 });
    const submit = await dialog.getByRole('button', { name: '生成 1 张候选' }).boundingBox();
    assert.ok(submit.y >= 0 && submit.y + submit.height <= 411);
  }
  await dialog.getByRole('button', { name: '取消', exact: true }).click();
+ if (width < 700) await expectLoadedLightbox(page);
 });

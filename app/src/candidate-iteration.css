@@ -17,8 +17,12 @@
 .candidate-iteration-note { color: var(--muted); font-size: var(--text-label); margin: 0; }
 .candidate-iteration-error { color: #a32e2e; overflow-wrap: anywhere; margin: 0; }
 .candidate-iteration-badge { display: block; font-size: 11px; text-align: center; }
-.candidate-source-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.candidate-source-actions { display: flex; gap: 10px; align-items: center; justify-content: center; flex-wrap: wrap; }
+.candidate-source-actions > button { min-height: 36px; padding: 8px 14px; border: 1px solid rgba(255,255,255,.28); border-radius: 7px; background: rgba(0,0,0,.34); color: #fff; font-size: var(--text-label); line-height: 1.2; cursor: pointer; }
+.candidate-source-actions > button:hover:not(:disabled) { background: rgba(255,255,255,.14); }
+.candidate-source-actions > button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 @media (max-width: 700px) {
+  .candidate-source-actions > button { min-height: 44px; padding-inline: 18px; }
   .modal-backdrop:has(> .candidate-iteration-dialog) { padding: 0; }
   .modal.candidate-iteration-dialog { width: 100%; height: 100%; max-width: none; border-radius: 0; }
   .candidate-iteration-dialog .modal__header { padding-top: max(12px, env(safe-area-inset-top)); }

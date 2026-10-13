@@ -1,4 +1,4 @@
-import { type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent, useEffect, useRef, useState } from "react";
+import { type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { isEditingShortcutTarget } from "./workbench-shortcuts";
 import { mediaVariantUrl } from "./media-variant";
@@ -46,7 +46,8 @@ export default function ZoomableImageLightbox({ src, alt, footer, originalVideo 
     return () => observer.disconnect();
   }, []);
 
-  useEffect(() => { setZoom(1); setPan({ x: 0, y: 0 }); pointers.current.clear(); pinch.current = null; dragRef.current = null; setDragging(false); setShowOriginal(fullResolutionOnly); setOriginalLoaded(false); setNatural({ width: 0, height: 0 }); }, [src, fullResolutionOnly]);
+  // 在缓存图片的 load 事件前重置，避免随后清空已读取的尺寸而停留在半透明加载态。
+  useLayoutEffect(() => { setZoom(1); setPan({ x: 0, y: 0 }); pointers.current.clear(); pinch.current = null; dragRef.current = null; setDragging(false); setShowOriginal(fullResolutionOnly); setOriginalLoaded(false); setNatural({ width: 0, height: 0 }); }, [src, fullResolutionOnly]);
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const lightboxes = document.querySelectorAll<HTMLElement>(".image-lightbox");
