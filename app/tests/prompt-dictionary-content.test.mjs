@@ -27,8 +27,21 @@ test("正式词库中文搜索保留图像标签含义，不再召回已修正�
     ["回头", ["turning_page"]],
     ["额外耳朵", ["extra_tongue"]],
     ["衍生角色", ["extra_legs", "extra_tails", "extra_teeth"]],
+    ["微笑", ["smile_(e.g.o)"]],
+    ["松握拳爪势", ["claw_pose"]],
+    ["双手插同一口袋", ["hands_in_pockets"]],
+    ["腿部锁技", ["standing_leg_lock"]],
   ]) {
     const matches = suggestions(query).map((entry) => entry.source_text);
     for (const wrong of wrongTags) assert.ok(!matches.includes(wrong), `“${query}”不应再被错误译文或关键词关联到 ${wrong}`);
+  }
+  for (const [query, source, prompt] of [
+    ["微笑", "smile", "smile"],
+    ["松握拳爪势", "paw_pose", "paw pose"],
+    ["双手插同一口袋", "hands_in_pocket", "hands in pocket"],
+  ]) {
+    const match = suggestions(query).find((entry) => entry.source_text === source);
+    assert.ok(match, `搜索“${query}”的首屏应包含 ${source}`);
+    assert.equal(match.prompt_text, prompt, "中文词库修订不能改变选入 Prompt 的英文标签");
   }
 });
