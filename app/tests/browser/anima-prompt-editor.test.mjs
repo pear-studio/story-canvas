@@ -190,6 +190,14 @@ async function referenceEditor(t, { readonly = false, mobile = false } = {}) {
   return { page, input, read, open };
 }
 
+async function closeDetailsAfterAction(page) {
+  await page.getByRole('menu').waitFor({ state: 'hidden' });
+  assert.equal(await page.getByRole('dialog').evaluate(element => element.matches(':modal')), true, '操作后详情保持打开');
+  assert.equal(await page.getByRole('dialog').evaluate(element => element.contains(document.activeElement)), true, '操作后焦点留在详情中');
+  await page.getByRole('button', { name: '关闭词条说明' }).click();
+  await page.getByRole('dialog').waitFor({ state: 'hidden' });
+}
+
 test('词条引用连续浏览和返回保持草稿，替换始终作用于最初词条并保留权重与角色', async t => {
   const { page, input, read, open } = await referenceEditor(t);
   const before = await read();
@@ -203,7 +211,7 @@ test('词条引用连续浏览和返回保持草稿，替换始终作用于最�
   assert.deepEqual(await read(), before);
   await page.getByRole('link', { name: '微笑 · smile', exact: true }).click({ button: 'right' });
   await page.getByRole('menuitem', { name: '替换「long_hair」', exact: true }).click();
-  await page.getByRole('dialog').waitFor({ state: 'hidden' });
+  await closeDetailsAfterAction(page);
   assert.deepEqual((await read()).person[0], { ...before.person[0], prompt_text: 'smile' });
   assert.deepEqual((await read()).person.slice(1), before.person.slice(1));
   await page.waitForFunction(element=>document.activeElement===element,await input.elementHandle());
@@ -235,7 +243,7 @@ for (const action of ['replace', 'insert', 'negative']) test(`详情标题操作
   assert.deepEqual(await read(), before, '打开标题菜单不修改草稿');
   const labels = { replace: '替换「long_hair」', insert: '紧随原词条后加入', negative: '加入负向词条' };
   await page.getByRole('menuitem', { name: labels[action], exact: true }).click();
-  await page.getByRole('dialog').waitFor({ state: 'hidden' });
+  await closeDetailsAfterAction(page);
   const after = await read();
   if (action === 'replace') assert.deepEqual(after.person, [{ ...before.person[0], prompt_text: 'short hair' }, ...before.person.slice(1)]);
   else if (action === 'insert') {
@@ -262,7 +270,7 @@ test('候选详情标题补齐匹配信息后可直接替换，只读详情不�
   await page.getByRole('button', { name: '当前词条操作', exact: true }).focus();
   await page.keyboard.press('Enter');
   await page.getByRole('menuitem', { name: '替换「short」', exact: true }).click();
-  await page.getByRole('dialog').waitFor({ state: 'hidden' });
+  await closeDetailsAfterAction(page);
   assert.deepEqual((await read()).person, [{ ...before.person[0], prompt_text: 'short hair' }, ...before.person.slice(1)]);
   await page.goto(`${url}?references&readonly`);
   await page.getByRole('button', { name: '查看 长发 的词条说明', exact: true }).click();
@@ -276,7 +284,7 @@ for (const action of ['insert', 'negative']) test(`词条引用 ${action} 写入
   await open();
   await page.getByRole('link', { name: '短发 · short hair', exact: true }).click({ button: 'right' });
   await page.getByRole('menuitem', { name: action === 'insert' ? '紧随原词条后加入' : '加入负向词条', exact: true }).click();
-  await page.getByRole('dialog').waitFor({ state: 'hidden' });
+  await closeDetailsAfterAction(page);
   const after = await read();
   if (action === 'insert') {
     assert.deepEqual(after.person.map(e => e.prompt_text), ['long_hair', 'short hair', 'blue_eyes', 'smile']);
@@ -288,9 +296,48 @@ for (const action of ['insert', 'negative']) test(`词条引用 ${action} 写入
     assert.equal(after.avoid[0].prompt_text, 'short hair');
     assert.equal(after.avoid[0].role, undefined);
   }
-  await page.waitForFunction(action => document.activeElement?.getAttribute('aria-label') === (action === 'insert' ? '人物·甲第 2 项 Prompt' : '避免第 1 项 Prompt'), action);
+  await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '人物·甲第 1 项 Prompt');
   await page.keyboard.press('Control+z');
   assert.deepEqual(await read(), before);
+});
+
+for (const mobile of [false, true]) test(`详情中连续加入、替换和加入负向词条无需重新打开 ${mobile ? '手机' : '桌面'}`, async t => {
+  const { page, read, open } = await referenceEditor(t, { mobile });
+  const before = await read();
+  await open();
+  const snapshots = [before];
+  const useReference = async (name, action) => {
+    const dialog = page.getByRole('dialog');
+    await page.getByRole('link', { name, exact: true }).click({ button: 'right' });
+    const scroll = await dialog.locator('.prompt-dictionary-details-content').evaluate(element => element.scrollTop);
+    await page.getByRole('menuitem', { name: action, exact: true }).click();
+    await page.getByRole('menu').waitFor({ state: 'hidden' });
+    assert.equal(await dialog.evaluate(element => element.matches(':modal')), true);
+    assert.equal(await dialog.locator('.prompt-dictionary-details-content').evaluate(element => element.scrollTop), scroll);
+    assert.equal(await page.getByRole('alert').count(), 0);
+    snapshots.push(await read());
+  };
+  await useReference('短发 · short hair', '紧随原词条后加入');
+  await useReference('微笑 · smile', '紧随原词条后加入');
+  assert.deepEqual((await read()).person.map(entry => entry.prompt_text), ['long_hair', 'smile', 'short hair', 'blue_eyes', 'smile']);
+  await useReference('短发 · short hair', '替换「long_hair」');
+  await useReference('微笑 · smile', '替换「short hair」');
+  await useReference('短发 · short hair', '加入负向词条');
+  await useReference('微笑 · smile', '加入负向词条');
+  assert.deepEqual((await read()).person[0], { ...before.person[0], prompt_text: 'smile' });
+  assert.deepEqual((await read()).avoid.map(entry => entry.prompt_text), ['short hair', 'smile']);
+  assert.equal(await page.getByRole('dialog', { name: '长发', exact: true }).count(), 1, '编辑不改变当前浏览词条');
+  await page.getByRole('link', { name: '短发 · short hair', exact: true }).click();
+  await page.getByRole('dialog', { name: '短发', exact: true }).waitFor();
+  await page.getByRole('button', { name: '当前词条操作' }).click();
+  await page.getByRole('menuitem', { name: '替换「smile」', exact: true }).click();
+  snapshots.push(await read());
+  await closeDetailsAfterAction(page);
+  await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '人物·甲第 1 项 Prompt');
+  for (let index = snapshots.length - 2; index >= 0; index--) {
+    await page.keyboard.press('Control+z');
+    assert.deepEqual(await read(), snapshots[index], '每次操作可以独立撤销');
+  }
 });
 
 test('点击重复标签的说明按该标签位置替换，保留括号权重和未提交草稿，撤销恢复草稿', async t => {
@@ -304,11 +351,36 @@ test('点击重复标签的说明按该标签位置替换，保留括号权重�
   assert.deepEqual(await read(), before, '打开详情不提交草稿');
   await page.getByRole('link', { name: '短发 · short hair', exact: true }).click({ button: 'right' });
   await page.getByRole('menuitem', { name: '替换「long_hair」', exact: true }).click();
-  await page.getByRole('dialog').waitFor({ state: 'hidden' });
+  await closeDetailsAfterAction(page);
   assert.equal(await input.evaluate(promptText), 'beside {long_hair}, ({short hair}:1.3), outside');
   await page.keyboard.press('Control+z');
   assert.equal(await input.evaluate(promptText), draft);
   assert.equal((await read()).setting[0].prompt_text, draft);
+});
+
+test('描述内连续替换按更新后的标签长度定位，补齐花括号不会重复添加', async t => {
+  const { page, read } = await referenceEditor(t);
+  const input = page.getByRole('combobox', { name: '场景第 1 项 Prompt' });
+  await input.fill('beside {long_hair}, ({long_hair}:1.3), outside');
+  await input.getByRole('button', { name: '查看 长发 的词条说明' }).nth(1).click();
+  for (const [name, source, expected] of [
+    ['短发 · short hair', 'long_hair', 'beside {long_hair}, ({short hair}:1.3), outside'],
+    ['微笑 · smile', 'short hair', 'beside {long_hair}, ({smile}:1.3), outside'],
+    ['短发 · short hair', 'smile', 'beside {long_hair}, ({short hair}:1.3), outside'],
+  ]) {
+    await page.getByRole('link', { name, exact: true }).click({ button: 'right' });
+    await page.getByRole('menuitem', { name: `替换「${source}」`, exact: true }).click();
+    assert.equal((await read()).setting[0].prompt_text, expected);
+    assert.equal(await page.getByRole('alert').count(), 0);
+  }
+  await closeDetailsAfterAction(page);
+  await input.fill('beside {long');
+  await page.locator('.prompt-fragment-suggestions').getByRole('button', { name: '查看 长发 的词条说明', exact: true }).click();
+  await page.getByRole('link', { name: '短发 · short hair', exact: true }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: '替换「long」', exact: true }).click();
+  await page.getByRole('link', { name: '微笑 · smile', exact: true }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: '替换「short hair」', exact: true }).click();
+  assert.equal((await read()).setting[0].prompt_text, 'beside {smile}');
 });
 
 test('手机引用长按弹菜单不触发跳转，滚动手势不触发菜单，Escape 只关闭菜单', async t => {

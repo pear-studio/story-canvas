@@ -147,7 +147,8 @@ export function PromptDictionaryDetailsDialog({ entry: initialEntry, scope, acti
 
   function useEntry(action: DictionaryEditAction, target: PromptDictionaryMatch) {
     if (!actions?.onUse(action, target)) { setNotice("原词条已变化，请关闭说明后重新打开。"); return; }
-    onClose();
+    setNotice(""); setMenu(null);
+    dialogRef.current?.querySelector<HTMLButtonElement>(".prompt-dictionary-details-actions")?.focus({ preventScroll: true });
   }
   const menuItems: NavigationMenuItem[] = menu ? [
     ...(!menu.current ? [{ id: "view", label: "查看词条说明", onSelect: () => { void navigate(menu.target); } }] : []),

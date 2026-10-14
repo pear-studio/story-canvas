@@ -270,6 +270,7 @@ function PromptFragmentRow({
   const [detailEntry, setDetailEntry] = useState<PromptDictionaryMatch | null>(null);
   const dictionaryDetailsOpen = useRef(false);
   const dictionarySource = useRef<DictionarySource | null>(null);
+  const dictionaryReturnCaret = useRef<number | null>(null);
   const [deferEmptyError, setDeferEmptyError] = useState(() => !fragment.prompt_text.trim());
   const [weightMenuOpen, setWeightMenuOpen] = useState(false);
   const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
@@ -708,6 +709,7 @@ function PromptFragmentRow({
       span = { start, end, query: text.slice(start, end), closeBrace: false };
     }
     dictionarySource.current = { text, originalText: fragmentRef.current.prompt_text, span };
+    dictionaryReturnCaret.current = null;
     dictionaryDetailsOpen.current = true;
     setDetailEntry(entry);
   }
@@ -716,13 +718,15 @@ function PromptFragmentRow({
     if (!source || toggleOnly || !onDictionaryEdit) return false;
     const result = onDictionaryEdit({ categoryId, fragmentId: fragment.id, source, action, entry });
     if (!result) return false;
+    const tag = (entry.source_text || entry.prompt_text).replaceAll("_", " ");
+    dictionarySource.current = {
+      text: result.text, originalText: result.text,
+      span: action === "replace" ? { ...source.span, end: source.span.start + tag.length, query: tag, closeBrace: false } : source.span,
+    };
+    dictionaryReturnCaret.current = dictionarySource.current.span.end;
     setQueryDraft(result.text);
     fragmentRef.current = { ...fragmentRef.current, prompt_text: result.text };
     closeQuerySearch();
-    if (action === "replace") {
-      const caret = source.span.start + (entry.source_text || entry.prompt_text).replaceAll("_", " ").length + (source.span.closeBrace ? 1 : 0);
-      requestAnimationFrame(() => promptInputRef.current?.setSelectionRange(caret, caret));
-    }
     return true;
   }
   const suggestionPanel = suggestionPlacement && queryResultsVisible
@@ -802,7 +806,11 @@ function PromptFragmentRow({
     {markerErrors.length > 0 && <div className="prompt-fragment-issues" role="alert">{markerErrors.map(message => <p className="is-error" key={message}>{message}</p>)}</div>}
     {visibleFragmentIssues.length > 0 && <div className="prompt-fragment-issues">{visibleFragmentIssues.map((issue, issueIndex) => <p className={issue.severity === "error" ? "is-error" : "is-warning"} key={`${issue.code ?? "issue"}-${issueIndex}`}><b>{issue.severity === "error" ? "错误" : "警告"}</b>{issueText(issue)}</p>)}</div>}
     {suggestionPanel}
-    {detailEntry && <PromptDictionaryDetailsDialog entry={detailEntry} scope={scope} actions={!toggleOnly && onDictionaryEdit ? { sourceLabel: dictionarySource.current?.span.query || "当前词条", canAddNegative, onUse: useDictionaryEntry } : undefined} onClose={() => { setDetailEntry(null); dictionaryDetailsOpen.current = false; }} />}
+    {detailEntry && <PromptDictionaryDetailsDialog entry={detailEntry} scope={scope} actions={!toggleOnly && onDictionaryEdit ? { sourceLabel: dictionarySource.current?.span.query || "当前词条", canAddNegative, onUse: useDictionaryEntry } : undefined} onClose={() => {
+      setDetailEntry(null); dictionaryDetailsOpen.current = false;
+      const caret = dictionaryReturnCaret.current;
+      if (caret !== null) requestAnimationFrame(() => promptInputRef.current?.setSelectionRange(caret, caret));
+    }} />}
   </article>;
 }
 
@@ -975,7 +983,6 @@ function CategoryPromptEditor({ categories, scope, fragments, roles, issues = []
     const draft = { ...fragments, [categoryId]: entries.map((fragment, i) => i === index ? draftSource : fragment) };
     let text = source.text;
     let next = draft;
-    let insertedId: string | null = null;
     if (action === "replace") {
       const span = source.span;
       text = source.text.slice(0, span.start) + tag + (span.closeBrace ? "}" : "") + source.text.slice(span.end);
@@ -988,19 +995,10 @@ function CategoryPromptEditor({ categories, scope, fragments, roles, issues = []
       const targetEntries = [...(draft[target] ?? [])];
       targetEntries.splice(action === "insert" ? index + 1 : targetEntries.length, 0, added);
       next = { ...draft, [target]: targetEntries };
-      insertedId = added.id;
     }
     // 查看详情不提交草稿；执行动作时先保存输入状态，让一次撤销只撤销该动作。
     if (original.prompt_text !== source.text) history.apply(draft);
     history.apply(next);
-    if (insertedId) requestAnimationFrame(() => {
-      const input = editorRef.current?.querySelector<HTMLElement>(`[data-fragment-id="${CSS.escape(insertedId!)}"] [role="combobox"]`);
-      if (!input) return;
-      input.scrollIntoView({ block: "nearest" });
-      input.focus({ preventScroll: true });
-      const range = document.createRange(); range.selectNodeContents(input); range.collapse(false);
-      const selection = window.getSelection(); selection?.removeAllRanges(); selection?.addRange(range);
-    });
     return { text };
   }
 
