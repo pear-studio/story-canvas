@@ -564,7 +564,7 @@ export async function loadCandidateDetail(projectId: string, pageKey: WorkbenchP
   }));
 }
 
-export type CandidateIterationRequest = { instruction: string; count: number; seed?: number; use_project_loras?: boolean };
+export type CandidateIterationRequest = { instruction: string; count: number; seed?: number; use_project_loras?: boolean; reiterate?: boolean };
 export type IterationLora = { filename: string; weight: number };
 export async function loadProjectQwenLoras(projectId: string): Promise<IterationLora[]> {
   const result = await workbenchResponseJson<{ render_profiles: Array<{ id: string; configuration_error?: string; inspection?: { project_override: { blocked: boolean }; style_loras: Record<string, IterationLora> } }> }>(await readFacts(`/api/projects/${encodeURIComponent(projectId)}/render-profile?profile_id=qwen-image-2-1`));

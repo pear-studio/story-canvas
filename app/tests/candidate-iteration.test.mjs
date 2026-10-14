@@ -16,6 +16,7 @@ import { candidateDetailProjection } from '../server/generation-details.mjs';
 import { planCandidateCleanup } from '../server/candidate-batches.mjs';
 import { iterationCandidateIds } from '../shared/candidate-iteration.mjs';
 import { Readable } from 'node:stream';
+import { createHash } from 'node:crypto';
 import { handleWorkbenchRequest } from '../server/workbench-http.mjs';
 
 async function fixture(t) {
@@ -89,6 +90,8 @@ test('空指令、越界种子、错页、视频与变更来源均拒绝提交',
   const submit = patch => compileAndPersistCandidateIterationTask(f.root, f.projectId, { ...f.request, ...patch });
   await assert.rejects(submit({ instruction: '  ' }), { code: 'invalid_candidate_iteration' });
   await assert.rejects(submit({ use_project_loras: 'false' }), { code: 'invalid_candidate_iteration' });
+  await assert.rejects(submit({ reiterate: 'true' }), { code: 'invalid_candidate_iteration' });
+  await assert.rejects(submit({ reiterate: true }), { code: 'candidate_not_iterated' });
   await assert.rejects(submit({ count: 3, seed: 2147483647 }), { code: 'candidate_seed_out_of_range' });
   await assert.rejects(submit({ page_key: { page_id: 'page-missing' } }));
   const resultFile = f.source.file.replace('image.png', 'result.json');
@@ -98,6 +101,54 @@ test('空指令、越界种子、错页、视频与变更来源均拒绝提交',
   await f.json(resultFile, record);
   await writeFile(path.join(f.projectDirectory, f.source.file), Buffer.from('changed'));
   await assert.rejects(submit({}), { code: 'candidate_source_changed' });
+});
+
+test('重新迭代用上次直接来源生成新候选，多轮时不回到最初原图', async t => {
+  const f = await fixture(t);
+  const before = await readFile(path.join(f.projectDirectory, 'pages/page-001.prompt.json'));
+  const first = await compileAndPersistCandidateIterationTask(f.root, f.projectId, { ...f.request, seed: 123 });
+  const edited = await sharp({ create: { width: 192, height: 288, channels: 3, background: '#cc5522' } }).png().toBuffer();
+  const b = first.task.items[0];
+  await publishCandidateResult(f.projectDirectory, first.task, b, edited, { warm: false });
+  const previous = candidateDetailProjection(await readCandidateGeneration(f.projectDirectory, f.page_key, b.candidate_id));
+  const retry = await compileAndPersistCandidateIterationTask(f.root, f.projectId, { ...f.request, candidate_id: b.candidate_id, reiterate: true, seed: previous.seed, instruction: '只修复右手，不改变袖口。' });
+  const c = retry.task.items[0];
+  assert.equal(c.iteration.source_candidate_id, f.source.candidate_id);
+  assert.equal(c.reference_images[0].candidate_file, f.source.file);
+  assert.equal(c.seed, 123);
+  assert.equal(c.positive_prompt, '只修复右手，不改变袖口。');
+  assert.notEqual(c.candidate_id, b.candidate_id);
+  assert.deepEqual(await readFile(path.join(retry.task_directory, 'inputs', c.reference_images[0].sha256 + '.png')), f.image);
+  validateFrozenRenderTask(retry.task);
+  await publishCandidateResult(f.projectDirectory, retry.task, c, f.image, { warm: false });
+  assert.equal((await readCandidateGeneration(f.projectDirectory, f.page_key, b.candidate_id)).prompt.positive, f.request.instruction);
+  const next = await compileAndPersistCandidateIterationTask(f.root, f.projectId, { ...f.request, candidate_id: b.candidate_id });
+  const d = next.task.items[0];
+  await publishCandidateResult(f.projectDirectory, next.task, d, f.image, { warm: false });
+  const repeated = await compileAndPersistCandidateIterationTask(f.root, f.projectId, { ...f.request, candidate_id: d.candidate_id, reiterate: true });
+  const e = repeated.task.items[0];
+  assert.equal(e.iteration.source_candidate_id, b.candidate_id);
+  assert.equal(e.reference_images[0].candidate_file, b.file);
+  assert.deepEqual(await readFile(path.join(repeated.task_directory, 'inputs', e.reference_images[0].sha256 + '.png')), edited);
+  assert.deepEqual(await readFile(path.join(f.projectDirectory, 'pages/page-001.prompt.json')), before);
+  const media = await readPageMedia(f.root, f.projectId, { page_key: f.page_key });
+  assert.equal(media.media.candidates.length, 4);
+});
+
+test('重新迭代拒绝已删除或与上次身份不同的来源图', async t => {
+  const f = await fixture(t);
+  const first = await compileAndPersistCandidateIterationTask(f.root, f.projectId, f.request);
+  const b = first.task.items[0];
+  await publishCandidateResult(f.projectDirectory, first.task, b, f.image, { warm: false });
+  const request = { ...f.request, candidate_id: b.candidate_id, reiterate: true };
+  const sourceRecordFile = f.source.file.replace('image.png', 'result.json');
+  const sourceRecord = JSON.parse(await readFile(path.join(f.projectDirectory, sourceRecordFile), 'utf8'));
+  await unlink(path.join(f.projectDirectory, sourceRecordFile));
+  await assert.rejects(compileAndPersistCandidateIterationTask(f.root, f.projectId, request), { code: 'candidate_source_missing' });
+  const changed = await sharp({ create: { width: 192, height: 288, channels: 3, background: '#111111' } }).png().toBuffer();
+  await f.json(sourceRecordFile, { ...sourceRecord, image_sha256: createHash('sha256').update(changed).digest('hex') });
+  await writeFile(path.join(f.projectDirectory, f.source.file), changed);
+  await assert.rejects(compileAndPersistCandidateIterationTask(f.root, f.projectId, request), { code: 'candidate_source_changed' });
 });
 
 test('迭代默认冻结项目 Qwen LoRA 与触发词，单次关闭不改设置或带入其他 Prompt', async t => {
@@ -131,6 +182,9 @@ test('迭代默认冻结项目 Qwen LoRA 与触发词，单次关闭不改设置
   const detail = candidateDetailProjection(await readCandidateGeneration(f.projectDirectory, f.page_key, item.candidate_id));
   assert.equal(detail.generation.loras[0].trigger, 'veloria');
   assert.equal(detail.generation.prompt.sections.find(section => section.kind === 'page').text, f.request.instruction);
+  const retried = await compileAndPersistCandidateIterationTask(f.root, f.projectId, { ...f.request, candidate_id: item.candidate_id, reiterate: true, instruction: '仅修复右手。' });
+  assert.deepEqual(retried.task.items[0].loras, [], '重新迭代使用当前配置，不恢复旧 LoRA 或重复触发词');
+  assert.equal(retried.task.items[0].positive_prompt, '仅修复右手。');
 });
 
 test('整批清理保留多轮迭代和来源链，删除无关旧候选', () => {

@@ -15,8 +15,12 @@ test('候选迭代独立提交且受 generation 能力限制', async t => {
  assert.deepEqual(f.requests[0].body, { page_key: args.page_key, candidate_id: args.candidate_id, instruction: args.instruction, count: 1 });
  await f.tool.execute({ operation: 'candidate.iterate', args: { ...args, use_project_loras: false } });
  assert.equal(f.requests[1].body.use_project_loras, false);
+ await f.tool.execute({ operation: 'candidate.iterate', args: { ...args, reiterate: true, seed: 123 } });
+ assert.equal(f.requests[2].body.reiterate, true);
+ assert.equal(f.requests[2].body.seed, 123);
  const help = await f.tool.execute({ operation: 'help', target: 'candidate.iterate' });
  assert.ok(help.details.includes('不改页面事实'));
+ assert.ok(help.details.includes('重新迭代'));
 });
 async function fixture(t, responder = () => assert.fail('不应发送请求')) {
   const testsRoot = path.join(repositoryRoot, 'Saved', 'Tests');

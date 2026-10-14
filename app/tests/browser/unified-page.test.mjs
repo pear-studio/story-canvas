@@ -22,6 +22,37 @@ async function open(t,query,setup,options={}){
  return page;
 }
 
+test('同页事实快照刷新保留重新迭代已编辑的指令和 Seed', async t => {
+ let detailReads = 0;
+ const candidate = { candidate_id: 'candidate-result', file: 'result.png', url: '/iteration-result.svg', seed: 321, iteration: { source_candidate_id: 'candidate-source', source_image_sha256: 'source-hash' } };
+ const source = { candidate_id: 'candidate-source', file: 'source.png', url: '/iteration-source.svg', seed: 1 };
+ const page = await open(t, 'workspace&reiteration-refresh&empty&collapsed', async page => {
+   await page.route('**/api/**', route => route.fulfill({ json: {} }));
+   await page.route('**/iteration-*.svg*', route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="192" height="288"><rect width="192" height="288" fill="teal"/></svg>' }));
+   await page.route('**/workbench/page-media', route => route.fulfill({ json: { media: { candidates: [candidate, source] }, revision: 'media' } }));
+   await page.route('**/workbench/page-render-inspection', route => route.fulfill({ json: { inspection: { ready: true, blockers: [], audit: { status: 'complete', errors: [], warnings: [] }, generation_signature: 'signature' } } }));
+   await page.route('**/render-profile?profile_id=qwen-image-2-1', route => route.fulfill({ json: { render_profiles: [{ id: 'qwen-image-2-1', inspection: { project_override: { blocked: false }, style_loras: {} } }] } }));
+   await page.route('**/candidate-detail', route => {
+     detailReads += 1;
+     return route.fulfill({ json: { detail: { candidate_id: candidate.candidate_id, iteration: candidate.iteration, seed: 321, generation: { prompt: { sections: [{ kind: 'page', text: '上次的修改要求' }] } } } } });
+   });
+ });
+ await page.getByAltText('统一视觉页 候选图预览', { exact: true }).click();
+ await page.getByRole('button', { name: '重新迭代', exact: true }).click();
+ const dialog = page.getByRole('dialog', { name: '重新迭代', exact: true });
+ await page.waitForFunction(() => document.querySelector('#candidate-iteration-form textarea')?.value === '上次的修改要求');
+ await dialog.getByLabel('修改要求').fill('用户正在编辑的新指令');
+ await dialog.getByLabel('Seed').fill('987');
+ await page.evaluate(() => window.dispatchEvent(new Event('test-workspace-refresh')));
+ await page.getByAltText('刷新后的视觉页 候选图预览', { exact: true }).waitFor();
+ // 等待本轮父级刷新及其异步 effect，不能在旧状态仍可见时断言。
+ await page.waitForTimeout(100);
+ assert.equal(detailReads, 1, '同页刷新不能重新读取并回填上次指令');
+ assert.equal(await dialog.getByLabel('修改要求').inputValue(), '用户正在编辑的新指令');
+ assert.equal(await dialog.getByLabel('Seed').inputValue(), '987');
+ await dialog.getByRole('button', { name: '取消', exact: true }).click();
+});
+
 for(const failure of ['conflict','receipt'])test(`源页面${failure==='conflict'?'冲突':'已保存但回执读取失败'}保留两种译文草稿，重读后可单独保存`,async t=>{
  const saved=[];
  const translation=locale=>({locale,lines:[{id:'dialogue-123456789abc',text:'早上好',translation:'',status:'missing',source_sha256:'line-source'}],expected_source_sha256:'source',expected_translation_sha256:'translation',summary:{total:1,missing:1,stale:0}});

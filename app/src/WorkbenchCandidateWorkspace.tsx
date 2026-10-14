@@ -28,7 +28,7 @@ import type { PromptIssue } from "./prompt-audit-display";
 import type { Candidate, PageMedia } from "./project-workbench-client";
 import { useLongPressContextMenu } from "./use-long-press-context-menu";
 import { CandidateIterationDialog } from './CandidateIterationDialog';
-import type { CandidateIterationRequest, IterationLora } from './project-workbench-client';
+import type { CandidateDetail, CandidateIterationRequest, IterationLora } from './project-workbench-client';
 import { iterationCandidateIds } from '../shared/candidate-iteration.mjs';
 
 export type WorkbenchCandidate = Candidate & {
@@ -82,6 +82,7 @@ export type WorkbenchCandidateWorkspaceProps = {
   onLoadCandidateDetail?: (candidate: WorkbenchCandidate) => CandidateWorkspaceDetail | Promise<CandidateWorkspaceDetail>;
   onIterateCandidate?: (candidate: WorkbenchCandidate, request: CandidateIterationRequest) => Promise<void>;
   onLoadIterationLoras?: () => Promise<IterationLora[]>;
+  onLoadIterationDetail?: (candidate: WorkbenchCandidate) => Promise<CandidateDetail>;
 };
 
 type CandidateMenuState = { candidate: WorkbenchCandidate; x: number; y: number };
@@ -95,8 +96,10 @@ function copyText(label: string, value: string) {
   void navigator.clipboard.writeText(value).catch(() => { window.prompt(label, value); });
 }
 
-function CandidateContextMenu({ state, canDelete, canDeleteOthers, hasDetails, onClose, onDetails, onDelete, onDeleteOthers, onIterate }: {
+function CandidateContextMenu({ state, canDelete, canDeleteOthers, hasDetails, onClose, onDetails, onDelete, onDeleteOthers, onIterate, onReiterate, sourceAvailable }: {
   onIterate?: () => void;
+  onReiterate?: () => void;
+  sourceAvailable: boolean;
   state: CandidateMenuState | null;
   canDelete: boolean;
   canDeleteOthers: boolean;
@@ -116,6 +119,7 @@ function CandidateContextMenu({ state, canDelete, canDeleteOthers, hasDetails, o
   const action = (callback: () => void) => { callback(); onClose(); };
   return createPortal(<div ref={menu} className="navigation-context-menu navigation-context-menu--elevated" role="menu" aria-label={`候选 ${candidate.seed ?? ""}`}>
     {onIterate && candidate.media_kind !== 'video' && <button type="button" role="menuitem" onClick={() => action(onIterate)}>迭代…</button>}
+    {onReiterate && candidate.iteration && candidate.media_kind !== 'video' && <button type="button" role="menuitem" disabled={!sourceAvailable} title={sourceAvailable ? '修改上次指令，在上次来源图上重新生成' : '来源图已删除，无法重新迭代'} onClick={() => action(onReiterate)}>重新迭代…</button>}
     <button type="button" role="menuitem" disabled={!hasDetails} onClick={() => action(onDetails)}>生成详情</button>
     <button type="button" role="menuitem" disabled={!candidate.candidate_id} onClick={() => action(() => copyText("复制候选图 ID", candidate.candidate_id))}>复制候选图 ID</button>
     <button type="button" role="menuitem" disabled={!Number.isInteger(candidate.seed)} onClick={() => action(() => copyText("复制 Seed", String(candidate.seed ?? "")))}>复制 Seed</button>
@@ -356,13 +360,14 @@ function CandidatePaneResizeHandle({ value, onChange }: { value: number; onChang
 }
 
 export function WorkbenchCandidateWorkspace({
-  finishedOutput, onDesktopActionsTarget, onIterateCandidate, onLoadIterationLoras,
+  finishedOutput, onDesktopActionsTarget, onIterateCandidate, onLoadIterationLoras, onLoadIterationDetail,
   pageIdentity, pageTitle, canvas, onPreviewCanvasChange, ownerLabel, media, mediaStatus = "ready", mediaError, onReloadMedia, candidateWidth, factReady, currentGenerationSignature = null, mediaReady = true, generationReady, busy = false, busyReason, generationDisabledReason, generationProblems = [], onLetteringTarget, onFullscreenLetteringTarget, onCandidateWidthChange, onGenerate, onSaveAndGenerate, generationCount = 3, onGenerationCountChange, pageDirty = false, onSaveAll, onDiscardAll, onDeleteCandidates, onLoadCandidateDetail }: WorkbenchCandidateWorkspaceProps) {
   const { confirm } = useFeedback();
   const candidates = media.candidates as WorkbenchCandidate[];
   const [previewCandidate, setPreviewCandidate] = useState<WorkbenchCandidate | null>(null);
   const [fullscreen, setFullscreen] = useState<WorkbenchCandidate | null>(null);
   const [iteration, setIteration] = useState<WorkbenchCandidate | null>(null);
+  const [reiterate, setReiterate] = useState(false);
   const [sourcePreview, setSourcePreview] = useState<WorkbenchCandidate | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
@@ -376,6 +381,7 @@ export function WorkbenchCandidateWorkspace({
   const candidateOperationBusy = operationBusy || !mediaReady;
   const visibleCandidate = candidates.find((candidate) => candidate.candidate_id === previewCandidate?.candidate_id) ?? candidates[0] ?? null;
   const ids = candidates.map((candidate) => candidate.candidate_id).filter(Boolean);
+  const iterationSource = reiterate ? candidates.find(candidate => candidate.candidate_id === iteration?.iteration?.source_candidate_id) : iteration ?? undefined;
   const commonDisabledReason = busyReason || (!factReady && !onSaveAndGenerate ? "有未保存修改，请先保存后生成" : "");
   const retainedIterations = iterationCandidateIds(candidates);
   const mismatchedCount = currentGenerationSignature ? candidates.filter((candidate) => !retainedIterations.has(candidate.candidate_id) && candidate.generation_signature !== currentGenerationSignature).length : 0;
@@ -388,6 +394,7 @@ export function WorkbenchCandidateWorkspace({
     setPreviewCandidate(null);
     setFullscreen(null);
     setIteration(null);
+    setReiterate(false);
     setSourcePreview(null);
     setHistoryOpen(false);
     setSelectedIds(new Set());
@@ -426,6 +433,11 @@ export function WorkbenchCandidateWorkspace({
 
   function submitGeneration() {
     void guarded(() => (!factReady && onSaveAndGenerate ? onSaveAndGenerate({ count: generationCount }) : onGenerate({ count: generationCount })));
+  }
+
+  function openIteration(candidate: WorkbenchCandidate, repeat = false) {
+    setReiterate(repeat);
+    setIteration(candidate);
   }
 
   function openMenu(event: ContextMenuTrigger, candidate: WorkbenchCandidate) {
@@ -555,9 +567,14 @@ export function WorkbenchCandidateWorkspace({
       <CandidateGrid candidates={candidates} aspectRatio={aspectRatio} selectedIds={selectedIds} previewFile={visibleCandidate?.file} disabled={mutationBusy} layout="history" selectionAnchor={selectionAnchor} onSelectionChange={setSelectedIds} onPreview={setPreviewCandidate} onChoose={(candidate) => setFullscreen(candidate)} onContextMenu={openMenu} />
     </Modal>}
 
-    {fullscreen && !iteration && !sourcePreview && <ZoomableImageLightbox onOverlayTarget={onFullscreenLetteringTarget} src={fullscreen.url} alt={`${pageTitle} 候选图`} footer={<div className="candidate-source-actions">{onIterateCandidate && fullscreen.media_kind !== "video" && <button type="button" onClick={() => setIteration(fullscreen)}>迭代</button>}{fullscreen.iteration && <button type="button" disabled={!candidates.some(item => item.candidate_id === fullscreen.iteration?.source_candidate_id)} onClick={() => setSourcePreview(candidates.find(item => item.candidate_id === fullscreen.iteration?.source_candidate_id) ?? null)}>查看来源</button>}<span>{ownerLabel ? `${ownerLabel} · ` : ""}{pageTitle}{fullscreen.seed === null ? "" : ` · Seed ${fullscreen.seed}`}</span></div>} onPrevious={() => turnCandidate(-1)} onNext={() => turnCandidate(1)} onClose={() => setFullscreen(null)} />}
-    <CandidateContextMenu onIterate={onIterateCandidate && !candidateOperationBusy ? () => { if (menu) setIteration(menu.candidate); } : undefined} state={menu} canDelete={menuCanDelete} canDeleteOthers={menuCanDeleteOthers} hasDetails={Boolean(onLoadCandidateDetail)} onClose={() => setMenu(null)} onDetails={() => { if (menu) void openDetails(menu.candidate); }} onDelete={() => { if (menu) void deleteIds(contextIds(menu.candidate)); }} onDeleteOthers={() => { if (menu) void keepOnly(menu.candidate); }} />
-    {iteration && onIterateCandidate && <CandidateIterationDialog key={pageIdentity + iteration.candidate_id} candidate={iteration} onLoadProjectLoras={onLoadIterationLoras} onClose={() => setIteration(null)} onSubmit={request => onIterateCandidate(iteration, request)} />}
+    {fullscreen && !iteration && !sourcePreview && <ZoomableImageLightbox onOverlayTarget={onFullscreenLetteringTarget} src={fullscreen.url} alt={`${pageTitle} 候选图`} footer={<div className="candidate-source-actions">
+      {onIterateCandidate && fullscreen.media_kind !== 'video' && <button type="button" onClick={() => openIteration(fullscreen)}>迭代</button>}
+      {onIterateCandidate && onLoadIterationDetail && fullscreen.iteration && fullscreen.media_kind !== 'video' && <button type="button" disabled={!candidates.some(item => item.candidate_id === fullscreen.iteration?.source_candidate_id)} title={candidates.some(item => item.candidate_id === fullscreen.iteration?.source_candidate_id) ? '修改上次指令，在上次来源图上重新生成' : '来源图已删除，无法重新迭代'} onClick={() => openIteration(fullscreen, true)}>重新迭代</button>}
+      {fullscreen.iteration && <button type="button" disabled={!candidates.some(item => item.candidate_id === fullscreen.iteration?.source_candidate_id)} onClick={() => setSourcePreview(candidates.find(item => item.candidate_id === fullscreen.iteration?.source_candidate_id) ?? null)}>查看来源</button>}
+      <span>{ownerLabel ? `${ownerLabel} · ` : ''}{pageTitle}{fullscreen.seed === null ? '' : ` · Seed ${fullscreen.seed}`}</span>
+    </div>} onPrevious={() => turnCandidate(-1)} onNext={() => turnCandidate(1)} onClose={() => setFullscreen(null)} />}
+    <CandidateContextMenu onIterate={onIterateCandidate && !candidateOperationBusy ? () => { if (menu) openIteration(menu.candidate); } : undefined} onReiterate={onIterateCandidate && onLoadIterationDetail && !candidateOperationBusy ? () => { if (menu) openIteration(menu.candidate, true); } : undefined} sourceAvailable={candidates.some(item => item.candidate_id === menu?.candidate.iteration?.source_candidate_id)} state={menu} canDelete={menuCanDelete} canDeleteOthers={menuCanDeleteOthers} hasDetails={Boolean(onLoadCandidateDetail)} onClose={() => setMenu(null)} onDetails={() => { if (menu) void openDetails(menu.candidate); }} onDelete={() => { if (menu) void deleteIds(contextIds(menu.candidate)); }} onDeleteOthers={() => { if (menu) void keepOnly(menu.candidate); }} />
+    {iteration && onIterateCandidate && <CandidateIterationDialog key={pageIdentity + iteration.candidate_id + reiterate} candidate={iteration} sourceCandidate={iterationSource} reiterate={reiterate} onLoadPreviousDetail={onLoadIterationDetail} onLoadProjectLoras={onLoadIterationLoras} onClose={() => setIteration(null)} onSubmit={request => onIterateCandidate(iteration, request)} />}
     {sourcePreview && <ZoomableImageLightbox src={sourcePreview.url} alt="迭代来源候选" footer="关闭后返回迭代结果" onClose={() => setSourcePreview(null)} />}
     {detail && <Modal title={detail.value?.title ?? "候选生成详情"} subtitle={detail.candidate.candidate_id || detail.candidate.file} onClose={() => { detailRequest.current += 1; setDetail(null); }} className="candidate-detail-dialog" ariaLabel="候选生成详情">
       <div className="candidate-detail-body">
