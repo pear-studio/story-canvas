@@ -161,6 +161,27 @@ test("编辑已有词条时用完整文字容错搜索，近似候选只替换�
   }
 });
 
+test("说明与部分命中显示依据，选入仍使用标准英文标签", async t => {
+  const { page, input, options } = await editor(t);
+  const entries = buildPromptDictionary("safety_glasses,0,100,", "safety_glasses,护目镜", "", JSON.stringify({
+    safety_glasses: { body: "Glasses that protect eyes.", other_names: [] },
+  }));
+  await page.route("**/api/prompt-dictionary?**", route => {
+    const query = new URL(route.request().url()).searchParams.get("q");
+    return route.fulfill({ json: { available: true, ...searchPromptDictionaryPage(entries, query, { scope: "page" }) } });
+  });
+  for (const query of ["protect eye", "protect eye extra"]) {
+    await input.fill(query);
+    const option = options.filter({ hasText: "说明命中" }).first();
+    await option.waitFor();
+    assert.equal(await option.locator('.prompt-dictionary-match-snippet').textContent(), "Glasses that protect eyes.");
+    if (query.endsWith("extra")) await option.getByText("部分匹配", { exact: true }).waitFor();
+    assert.equal(await input.evaluate(promptText), query);
+    await option.click();
+    assert.equal(await input.evaluate(promptText), "safety glasses");
+  }
+});
+
 const referenceEntries = Object.fromEntries([
   ['long_hair', '长发', 'Long hair. See [[short_hair|短发]] and [[smile|微笑]].\n[[not_in_dictionary|未收录]] [[series_name|作品]]'],
   ['short_hair', '短发', 'Short hair. See [[smile]].'],

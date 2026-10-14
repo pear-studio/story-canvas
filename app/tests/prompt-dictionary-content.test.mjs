@@ -32,7 +32,7 @@ test("正式词库中文搜索保留图像标签含义，不再召回已修正�
     ["双手插同一口袋", ["hands_in_pockets"]],
     ["腿部锁技", ["standing_leg_lock"]],
   ]) {
-    const matches = suggestions(query).map((entry) => entry.source_text);
+    const matches = suggestions(query).filter(entry => entry.match_source !== "description" && !entry.partial).map((entry) => entry.source_text);
     for (const wrong of wrongTags) assert.ok(!matches.includes(wrong), `“${query}”不应再被错误译文或关键词关联到 ${wrong}`);
   }
   for (const [query, source, prompt] of [

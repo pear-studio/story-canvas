@@ -1,4 +1,8 @@
 import { fuzzy } from "fast-fuzzy";
+import {
+  normalizeDictionarySearchText, dictionaryQueryGroups, dictionaryBlockScore,
+  dictionaryContainedNameScore, dictionaryDescriptionParagraphs, dictionaryMatchSnippet,
+} from "./prompt-dictionary-search.mjs";
 
 // 独立查询词库自有的分类常量；渲染路径已不再消费词库。
 export const PAGE_PROMPT_CATEGORIES = Object.freeze(["population", "entity", "person", "setting", "camera", "avoid"]);
@@ -47,7 +51,7 @@ function requirePromptDictionaryScope(scope) {
 }
 
 function normalizeSearchTerm(value) {
-  return String(value ?? "").trim().toLowerCase().replaceAll("_", " ").replace(/\s+/g, " ");
+  return normalizeDictionarySearchText(value);
 }
 
 function containsWholeTerm(term, query) {
@@ -109,6 +113,7 @@ function setSearchMetadata(entry, { primary, aliases = [], keywords = [] }) {
       all,
       text: all.join("\n"),
       fuzzyTerms: all.map((text) => ({ text, order: wordOrderKey(text) })),
+      paragraphs: [],
     },
   });
   Object.defineProperty(entry, PROVIDER_CATEGORY, {
@@ -292,6 +297,9 @@ export function buildPromptDictionary(tagsSource, translationsSource = "", overl
     }
   }
 
+  for (const entry of entries) {
+    entry[SEARCH_EVIDENCE].paragraphs = dictionaryDescriptionParagraphs(entry);
+  }
   entries.sort((left, right) => right.post_count - left.post_count || left.prompt_text.localeCompare(right.prompt_text, "en"));
   return entries;
 }
@@ -301,14 +309,17 @@ function sortedPromptDictionaryMatches(entries, query, { scope, category = null 
   const normalized = normalizeSearchTerm(query);
   if (!normalized) return [];
   const queryTokens = [...new Set(normalized.split(" "))];
+  const queryGroups = dictionaryQueryGroups(normalized);
   const queryLength = [...normalized].length;
   // 一两个字仍只做原有匹配；较长查询最多容忍两处编辑，避免随长度无限放宽。
   const letterCount = normalized.match(/[\p{L}\p{N}]/gu)?.length ?? 0;
   const allowApproximate = letterCount >= 3;
   const threshold = 1 - (letterCount >= 8 ? 2 : 1) / queryLength;
   const queryOrder = allowApproximate ? wordOrderKey(normalized) : null;
+  const searchDescriptions = queryGroups.flat().some(block => block.weight >= (block.latin ? 3 : 2));
   const requestedCategory = OVERLAY_CATEGORIES.includes(category) ? category : null;
   const matches = [];
+  const unmatched = [];
   for (const entry of entries) {
     if (!allowedProviderCategories.has(entry[PROVIDER_CATEGORY] ?? promptDictionaryCategory(entry))) continue;
     const evidence = entry[SEARCH_EVIDENCE];
@@ -318,9 +329,18 @@ function sortedPromptDictionaryMatches(entries, query, { scope, category = null 
     if (!continuousMatch && queryTokens.length > 1 && queryTokens.every((token) => evidence.text.includes(token))) {
       allTokensMatch = evidence.all.some((term) => containsAllWholeTokens(term, queryTokens));
     }
-    const approximate = !continuousMatch && !allTokensMatch;
+    const blockMatch = dictionaryBlockScore(evidence.all, queryGroups) === 1;
+    const nameMatch = continuousMatch || allTokensMatch || blockMatch;
+    const paragraph = !nameMatch && searchDescriptions
+      ? evidence.paragraphs.find(part => dictionaryBlockScore(evidence.all, queryGroups, { paragraph: part.normalized }) === 1)
+      : null;
+    const approximate = !nameMatch && !paragraph;
     const score = approximate && allowApproximate ? approximateScore(evidence, normalized, queryOrder, threshold) : 0;
-    if (approximate && !score) continue;
+    const categoryRank = requestedCategory && entry.categories?.includes(requestedCategory) ? 0 : 1;
+    if (approximate && !score) {
+      unmatched.push({ entry, evidence, categoryRank });
+      continue;
+    }
     const matchRank = evidence.primary.includes(normalized)
       ? 0
       : evidence.aliases.includes(normalized)
@@ -337,10 +357,37 @@ function sortedPromptDictionaryMatches(entries, query, { scope, category = null 
                   ? 6
                   : allTokensMatch
                     ? 7
-                    : approximate ? 9 : 8;
+                    : blockMatch ? 8 : continuousMatch ? 9 : paragraph ? 10 : 11;
     // 分类只在相同匹配档内提供语义加权，不能压过更精确的跨分类候选。
-    const categoryRank = requestedCategory && entry.categories?.includes(requestedCategory) ? 0 : 1;
-    matches.push({ entry, matchRank, categoryRank, approximate, score });
+    matches.push({
+      entry, matchRank, categoryRank,
+      approximate: approximate || (blockMatch && !continuousMatch && !allTokensMatch && queryGroups.every(group => group.every(block => !block.latin))),
+      score: paragraph ? 1 / (1 + paragraph.normalized.length) : score,
+      ...(paragraph ? { match_source: "description", match_snippet: dictionaryMatchSnippet(paragraph, queryGroups) } : {}),
+    });
+  }
+  // 完整结果为空时才放宽覆盖率；兜底不随分页大小变化，不挤掉可靠命中。
+  if (!matches.length && letterCount >= 3) {
+    const partialGroups = dictionaryQueryGroups(normalized, { partial: true });
+    for (const { entry, evidence, categoryRank } of unmatched) {
+      const nameScore = dictionaryBlockScore(evidence.all, partialGroups, { approximate: true });
+      const contained = dictionaryContainedNameScore(evidence.all, normalized);
+      if (nameScore >= 0.5 || contained > 0) {
+        matches.push({ entry, categoryRank, matchRank: 12, score: Math.max(nameScore, contained), partial: true });
+        continue;
+      }
+      if (!searchDescriptions) continue;
+      let best = null;
+      let bestScore = 0;
+      for (const part of evidence.paragraphs) {
+        const score = dictionaryBlockScore(evidence.all, partialGroups, { paragraph: part.normalized });
+        if (score > bestScore) { best = part; bestScore = score; }
+      }
+      if (best && bestScore >= 0.5) matches.push({
+        entry, categoryRank, matchRank: 13, score: bestScore, partial: true,
+        match_source: "description", match_snippet: dictionaryMatchSnippet(best, partialGroups),
+      });
+    }
   }
   matches.sort((left, right) => left.matchRank - right.matchRank
     || right.score - left.score
@@ -355,7 +402,12 @@ export function searchPromptDictionaryPage(entries, query, { scope, limit = 12, 
   const normalizedOffset = Math.max(0, Math.trunc(Number(offset) || 0));
   const matches = sortedPromptDictionaryMatches(entries, query, { scope, category });
   return {
-    suggestions: matches.slice(normalizedOffset, normalizedOffset + normalizedLimit).map(({ entry, approximate }) => approximate ? { ...entry, approximate: true } : entry),
+    suggestions: matches.slice(normalizedOffset, normalizedOffset + normalizedLimit).map(({ entry, approximate, partial, match_source, match_snippet }) => ({
+      ...entry,
+      ...(approximate ? { approximate: true } : {}),
+      ...(partial ? { partial: true } : {}),
+      ...(match_source ? { match_source, match_snippet } : {}),
+    })),
     has_more: matches.length > normalizedOffset + normalizedLimit,
   };
 }

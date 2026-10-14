@@ -37,7 +37,7 @@ test("修订译文替换 CSV 旧译文，同时保留原标签别名和明确关
   }));
   for (const query of ["打印背包", "打印机背包"]) {
     assert.equal(searchPromptDictionary(base, query, { scope: "page" })[0].source_text, "print_bag");
-    assert.deepEqual(searchPromptDictionary(revised, query, { scope: "page" }), [], `${query} 不应通过已替换的旧译文命中`);
+    assert.ok(searchPromptDictionary(revised, query, { scope: "page" }).every(entry => entry.partial), `${query} 只能按剩余词块部分召回，不能通过已替换的旧译文准确命中`);
   }
   for (const query of ["印花包", "花纹背包", "print_bag", "print_backpack"]) {
     assert.equal(searchPromptDictionary(revised, query, { scope: "page" })[0].source_text, "print_bag");
@@ -251,5 +251,41 @@ test("原有结果始终领先，近似结果先比较相似度再比较频次�
   assert.equal(first.has_more, true);
   assert.equal(rest.has_more, false);
   assert.deepEqual([...first.suggestions, ...rest.suggestions], all);
-  assert.deepEqual(searchPromptDictionary(entries, "lookng bkx", { scope: "page" }), [], "超过两处错误不召回");
+  assert.equal(searchPromptDictionary(entries, "lookng bkx", { scope: "page" })[0]?.partial, true, "超出整词容错预算时仍可按已识别部分兜底");
+});
+
+test("中英混输与倒序英文词首缩写优先于偶然的连续子串", () => {
+  const entries = buildPromptDictionary([
+    "medium_breasts,0,100,",
+    "framed_breasts,0,99999,",
+    "large_breasts,0,500,",
+    "paramedic_badge,0,90000,",
+    "medium_artist,1,999999,",
+  ].join("\n"), [
+    "medium_breasts,中等胸部", "framed_breasts,框饰乳房", "large_breasts,大胸部",
+    "paramedic_badge,胸部徽章", "medium_artist,中等胸部",
+  ].join("\n"));
+  for (const query of ["med胸部", "胸部med", "med 胸部", "med bre", "bre med", "ＭＥＤ胸部"]) {
+    const results = searchPromptDictionary(entries, query, { scope: "page" });
+    assert.equal(results[0]?.source_text, "medium_breasts", query);
+    assert.equal(results[0].partial, undefined);
+    assert.ok(!results.some(entry => entry.source_text === "medium_artist"));
+    assert.ok(!results.some(entry => entry.source_text === "paramedic_badge"), "英文缩写必须从词首开始");
+    assert.equal(matchPromptDictionary(entries, [query], { scope: "page" })[0].matched, false);
+  }
+});
+
+test("额外查询块和连写附加文字可部分召回，覆盖更多的名称优先且分页一致", () => {
+  const entries = buildPromptDictionary("medium_breasts,0,1,\nlarge_breasts,0,99999,", "medium_breasts,中等胸部\nlarge_breasts,大胸部");
+  for (const query of ["med胸部啊", "mde胸部", "med 胸部 大一点", "中等胸部稍微大一点", "我想要中等胸部"]) {
+    const all = searchPromptDictionary(entries, query, { scope: "page", limit: 50 });
+    assert.equal(all[0]?.source_text, "medium_breasts", query);
+    assert.equal(all[0].partial, true, query);
+    const first = searchPromptDictionaryPage(entries, query, { scope: "page", limit: 1 });
+    const rest = searchPromptDictionaryPage(entries, query, { scope: "page", limit: 50, offset: 1 });
+    assert.deepEqual([...first.suggestions, ...rest.suggestions], all);
+  }
+  assert.equal(searchPromptDictionary(entries, "med胸部", { scope: "page" })[0].partial, undefined);
+  assert.ok(entries.every(entry => !entry.partial && !entry.match_source), "搜索状态不能写回词条");
+  assert.deepEqual(searchPromptDictionary(entries, "qzxjv", { scope: "page" }), []);
 });

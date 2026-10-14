@@ -49,6 +49,9 @@ export type PromptAuditIssue = {
 
 export type PromptDictionarySuggestion = {
   approximate?: boolean;
+  partial?: boolean;
+  match_source?: "description";
+  match_snippet?: string;
   display_text: string;
   prompt_text: string;
   source_text?: string;
@@ -735,7 +738,7 @@ function PromptFragmentRow({
       const categoryBadges = (suggestion.categories ?? []).filter((id) => id !== categoryId).map((id) => categoryShortLabels[id] ?? id);
       return <div role="presentation" className={`prompt-dictionary-suggestion-row${suggestionIndex === activeSuggestionIndex ? " is-active" : ""}`} key={`${suggestion.source_text ?? ""}-${suggestion.prompt_text}-${suggestionIndex}`}>
         <button type="button" className="prompt-dictionary-suggestion-select" id={`${listboxId}-option-${suggestionIndex}`} role="option" aria-selected={suggestionIndex === activeSuggestionIndex} tabIndex={-1} onPointerDown={(event) => event.preventDefault()} onClick={() => applySuggestion(suggestion)}>
-          <span><b>{suggestion.display_text || suggestion.source_text}</b><code>{suggestion.prompt_text}</code>{(suggestion.approximate || categoryBadges.length > 0) && <em className="prompt-suggestion-categories">{suggestion.approximate && <i>近似匹配</i>}{categoryBadges.slice(0, 2).map((label) => <i key={label}>{label}</i>)}</em>}</span>
+          <span><b>{suggestion.display_text || suggestion.source_text}</b><code>{suggestion.prompt_text}</code>{(suggestion.partial || suggestion.approximate || suggestion.match_source || categoryBadges.length > 0) && <em className="prompt-suggestion-categories">{suggestion.partial ? <i>部分匹配</i> : suggestion.approximate && <i>近似匹配</i>}{suggestion.match_source && <i title={suggestion.match_snippet}>说明命中</i>}{categoryBadges.slice(0, 2).map((label) => <i key={label}>{label}</i>)}</em>}{suggestion.match_snippet && <small className="prompt-dictionary-match-snippet">{suggestion.match_snippet}</small>}</span>
         </button>
         <button type="button" className={`prompt-dictionary-frequency-button${frequency ? ` frequency-${frequency.tone}` : ""}`} tabIndex={-1} title="查看词条详情（F1）" aria-label={`查看 ${suggestion.display_text || suggestion.prompt_text} 的词条说明`} aria-haspopup="dialog" onPointerDown={(event) => event.preventDefault()} onClick={() => openDictionaryDetails(suggestion)}>
           {frequency ? `${frequency.label} · ${suggestion.post_count!.toLocaleString("zh-CN")}` : "详情"}<span aria-hidden="true">ⓘ</span>

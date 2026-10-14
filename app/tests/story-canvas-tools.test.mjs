@@ -181,12 +181,15 @@ test('批量页面编辑预检重复目标，遇到未知保存结果停止，�
 test('词库默认输出有界，分页可继续，完整解释由详情文件保留',async t=>{
   const entry={prompt_text:'quiet',display_text:'安静',matched:true,allowed:true,description:'解释'.repeat(20000),original_description:'完整原文',aliases:['alias'],other_names:['name'],post_count:10};
   const f=await fixture(t,(request,response)=>response.end(JSON.stringify({available:true,tags_file:'large-source',
-    ...(request.method==='GET'?{suggestions:[{...entry,approximate:true}],has_more:true}:{matches:request.body.prompts.map(prompt_text=>({...entry,prompt_text}))})})));
+    ...(request.method==='GET'?{suggestions:[{...entry,approximate:true,partial:true,match_source:'description',match_snippet:'说明中的命中依据'}],has_more:true}:{matches:request.body.prompts.map(prompt_text=>({...entry,prompt_text}))})})));
   const run=(operation,args)=>f.tool.execute({operation,args});
   const search=await run('dictionary.search',{scope:'page',q:'quiet',offset:12});
   assert.equal(search.next_offset,13);assert.equal(search.items[0].description.length,80);assert.equal(search.items[0].description_truncated,true);
   assert.equal(search.tags_file,undefined);assert.equal(search.items[0].aliases,undefined);
   assert.equal(search.items[0].approximate,true,'Agent 保留共享搜索返回的近似标记');
+  assert.equal(search.items[0].partial,true);
+  assert.equal(search.items[0].match_source,'description');
+  assert.equal(search.items[0].match_snippet,'说明中的命中依据');
   assert.ok(f.requests[0].url.includes('limit=12'));
   const matches=await run('dictionary.matches',{scope:'page',prompts:Array(50).fill('quiet')});
   assert.equal(matches.items.length,50);assert.ok(JSON.stringify(matches).length<16000);
