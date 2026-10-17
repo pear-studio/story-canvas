@@ -1,5 +1,6 @@
 import { targetPath, assertProjectFactBoundary, writeJsonAtomic } from './fact-storage.mjs';
 import {factConflict} from './fact-conflict.mjs';
+import {readComicDocument} from './comic-pages.mjs';
 import { readPageIndex, pageRelativePath } from './pages-store.mjs';
 import { readPageRenderSettings, pageProjectSettings } from './page-render-settings.mjs';
 import { modelPrompt, promptModelEntries, replaceModelPrompt } from './model-prompts.mjs';
@@ -247,8 +248,8 @@ export async function readProjectWorkbenchView(projectRoot, projectId, requested
   if (scope.kind === 'setting') requiredSettings[scope.setting_kind].add(scope.setting_id);
   for (const membership of pagesIndex.pages) {
     const pageId = membership.page_id;
-    const output = scope.kind === 'finished' && (!scope.page_id || scope.page_id === pageId);
-    const edit = full || scope.kind === 'page' && scope.page_id === pageId || scope.kind === 'prompts' && membership.owner_kind === 'story';
+    const output = scope.kind === 'finished' && (!scope.page_id || scope.page_id === pageId || scope.page_id === membership.parent_page_id);
+    const edit = full || scope.kind === 'page' && (scope.page_id === pageId || scope.page_id === membership.parent_page_id) || scope.kind === 'prompts' && membership.owner_kind === 'story';
     const story = scope.kind === 'story' && membership.owner_kind === 'story' && (!scope.sequence_id || membership.sequence_id === scope.sequence_id) && (!scope.chapter_id || chapterSequences.has(membership.sequence_id));
     const [narrative, prompt] = await Promise.all([
       readJson(project.projectDirectory, pageRelativePath(pageId, 'content')),
@@ -319,6 +320,11 @@ export async function readProjectWorkbenchView(projectRoot, projectId, requested
     ? { display_color: letteringSettings.character_colors[character.id] }
     : null;
   const renderCapabilities = full ? (await readPageRenderConfiguration(path.resolve(projectRoot), project.projectDirectory, projectDocument)).render_capabilities : undefined;
+  for(const page of pages.filter(page=>!page.parent_page_id)) {
+    const document=await readComicDocument(project.projectDirectory,page.page_id);
+    if(document&&(document.order.some(id=>!pages.some(panel=>panel.page_id===id&&(id===page.page_id||panel.parent_page_id===page.page_id)))||pages.some(panel=>panel.parent_page_id===page.page_id&&!document.order.includes(panel.page_id))))fail('invalid_comic_membership',[page.page_id]);
+    if(document)page.comic={document,sha256:hashCanonicalJson(document),panels:full||scope.kind==='page'||scope.kind==='finished'?document.order.map(id=>structuredClone(pages.find(panel=>panel.page_id===id))):[]};
+  }
   return {
     version: 6,
     ...(full || scope.kind === 'finished' ? { pages } : { scope }), orphan_pages: orphanPages,
@@ -341,7 +347,7 @@ export async function readProjectWorkbenchView(projectRoot, projectId, requested
         sequences: chapter.sequences.map((sequence) => ({
           id: sequence.id, title: sequence.title, summary: sequence.summary,
           summary_sha256: hashCanonicalJson(sequence.summary),
-          pages: pages.filter(page => page.kind === "story" && page.sequence_id === sequence.id),
+          pages: pages.filter(page => page.kind === "story" && !page.parent_page_id && page.sequence_id === sequence.id),
         })),
       })),
     },

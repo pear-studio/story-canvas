@@ -24,16 +24,17 @@ export type LetteringItem = {
   heart?: { font_size: number; rotation: number; seed: number };
 };
 export type LetteringIssue = "overflow" | "outside" | "edge" | "overlap";
+export function scaleLetteringHearts(items:LetteringItem[],scale:number):LetteringItem[]{return items.map(item=>item.heart?{...item,heart:{...item.heart,font_size:item.heart.font_size*scale}}:item);}
 
 export const neutralLetteringColor = "#303532";
 
 export const letteringLogicalCanvasWidth = 1024;
 
-export function letteringTypographyVariables(style: Pick<LetteringStyle, "font_family" | "font_size">, scale: number | "canvas") {
+export function letteringTypographyVariables(style: Pick<LetteringStyle, "font_family" | "font_size">, scale: number | "canvas", canvasUnitScale = 1) {
   return {
     "--lettering-font-family": `"${style.font_family.replaceAll('"', "")}", "Microsoft YaHei", sans-serif`,
     "--lettering-font-size": scale === "canvas" ? `${style.font_size / 10.24}cqw` : `${style.font_size * scale}px`,
-    "--lettering-canvas-unit": scale === "canvas" ? "1cqw" : `${Number((10.24 * scale).toFixed(6))}px`,
+    "--lettering-canvas-unit": scale === "canvas" ? `${canvasUnitScale}cqw` : `${Number((10.24 * scale * canvasUnitScale).toFixed(6))}px`,
   };
 }
 

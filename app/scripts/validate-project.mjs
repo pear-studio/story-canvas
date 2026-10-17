@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { validatePagesIndexDocument } from '../server/pages-store.mjs';
+import {validateComicDocument,comicLeaves} from '../shared/comic-layout.mjs';
 import { validateTranslationDocument } from '../server/page-translation-document.mjs';
 import { validatePageRewriteDocument } from '../server/page-rewrite.mjs';
 import { validateSceneIndexDocument, validateSceneProfileDocument, validateSceneVisualDocument, validateScenePromptDocument } from '../server/scene-files.mjs';
@@ -96,6 +97,18 @@ export async function validateProject(projectRoot) {
   const storyPromptPageIds = await matchingFileIds(pageDirectory, ".prompt.json");
   const rewritePageIds = await matchingFileIds(pageDirectory, ".rewrite.json");
   const translationPageIds=await matchingFileIds(pageDirectory,'.translations.json');
+  const comicPageIds=await matchingFileIds(pageDirectory,'.comic.json');
+  for(const id of comicPageIds){
+    try{
+      const document=await readJson(projectRoot,`pages/${id}.comic.json`),problems=validateComicDocument(document,id);
+      if(!problems.length){
+        const entry=pagesIndex.pages.find(page=>page.page_id===id),ids=comicLeaves(document.layout),owned=pagesIndex.pages.filter(page=>page.page_id===id||page.parent_page_id===id).map(page=>page.page_id);
+        if(!entry||entry.parent_page_id||entry.owner_kind!=='story'||ids.some(panel=>!owned.includes(panel))||owned.some(panel=>!ids.includes(panel)))problems.push('分镜布局与页面归属不一致');
+      }
+      errors.push(...problems.map(error=>`pages/${id}.comic.json：${error}`));
+    }catch(error){errors.push(error.message);}
+  }
+  for(const entry of pagesIndex.pages)if(entry.parent_page_id&&!comicPageIds.includes(entry.parent_page_id))errors.push(`分镜缺少父页布局：${entry.page_id}`);
   const storyNarratives = await readAndValidateFiles(projectRoot, narrativePageIds, { directory: "pages", extension: ".content.json" }, validateStoryPageNarrativeDocument, errors);
   await readAndValidateFiles(projectRoot, storyPromptPageIds, { directory: "pages", extension: ".prompt.json" }, validateStoryPagePromptDocument, errors);
   await readAndValidateFiles(projectRoot, rewritePageIds, { directory: "pages", extension: ".rewrite.json" }, validatePageRewriteDocument, errors);

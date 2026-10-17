@@ -15,7 +15,8 @@ export async function commitFactChanges(directory, writes, { cleanupReferences =
   const done = [];
   try {
     for (const write of writes) {
-      await writeJsonAtomic(targetPath(directory, write.relative), write.after);
+      if(write.remove) await unlink(targetPath(directory,write.relative));
+      else await writeJsonAtomic(targetPath(directory, write.relative), write.after);
       done.push(write);
     }
   } catch (error) {

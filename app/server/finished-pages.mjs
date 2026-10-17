@@ -1,6 +1,7 @@
 import { requireLetteringLocale, readTranslationDocument, translationProjection, localizeLettering } from './page-translation-document.mjs';
 import { defaultTextPageLayout } from "../shared/text-page-layout.mjs";
 import {storyPageNumbers} from '../shared/story-page-numbers.mjs';
+import {comicGeometry} from '../shared/comic-layout.mjs';
 
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rmdir, stat, unlink, writeFile } from "node:fs/promises";
@@ -49,19 +50,34 @@ function letteringSnapshot(view, page, canvas = page.render?.canvas ?? view.proj
   return { dialogue: page.dialogue ?? [], items: page.lettering?.items ?? [], settings, canvas };
 }
 async function localizedSnapshot(view,page,directory,locale,canvas,strict=false) {
+  if(page.comic){
+    const document=page.comic.document,geometry=comicGeometry(document);
+    return {page_kind:'comic',canvas:document.canvas,panels:await Promise.all(document.order.map(async id=>{
+      const panel=page.comic.panels.find(entry=>entry.page_id===id);
+      if(!panel)fail('分镜事实缺失');
+      const frame=geometry.frames[id],lettering=await localizeLettering(letteringSnapshot(view,panel,`${frame.w*geometry.width}:${frame.h*geometry.height}`),panel,await readTranslationDocument(directory,id),locale,{strict});
+      return {page_id:id,frame,lettering};
+    }))};
+  }
   return localizeLettering(letteringSnapshot(view,page,canvas),page,await readTranslationDocument(directory,page.page_id),locale,{strict});
+}
+async function pageTranslationSummary(page,directory,locale){
+  const panels=page.comic?page.comic.panels:[page],summary={total:0,missing:0,stale:0};
+  for(const panel of panels){const value=translationProjection(panel,await readTranslationDocument(directory,panel.page_id),locale).summary;for(const key of Object.keys(summary))summary[key]+=value[key];}
+  return summary;
 }
 export async function prepareTranslationInspection(repositoryRoot,projectId,directory,value) {
   const id=pageId(value.page_key),locale=requireLetteringLocale(value.locale),view=await readProjectWorkbenchView(repositoryRoot,projectId,{kind:'finished',page_id:id}),page=view.pages.find(page=>page.page_id===id);
   if(!page)fail('页面已不存在',404);if(page.page_kind==='video')fail('动态页没有嵌字译文');
   let clean,canvas;
-  if(page.page_kind==='text') {const dimensions=(page.render_capabilities??view.render_capabilities).text_page?.dimensions;if(!dimensions)fail('文字页尺寸不可用');clean=await sharp({create:{...dimensions,channels:3,background:'#000'}}).png().toBuffer();}
+  if(page.comic){clean=await composeComicImage(page.comic.document,await readComicSources(directory,page.comic.document));canvas=page.comic.document.canvas;}
+  else if(page.page_kind==='text') {const dimensions=(page.render_capabilities??view.render_capabilities).text_page?.dimensions;if(!dimensions)fail('文字页尺寸不可用');clean=await sharp({create:{...dimensions,channels:3,background:'#000'}}).png().toBuffer();}
   else if(value.candidate_id){requireCandidateId(value.candidate_id);const media=await resolveExistingProjectMedia(directory,candidateFileRelativePath(page.page_key,value.candidate_id));if(!media)fail('指定候选底图不可用');clean=await readFile(media.target);}
   else if(value.clean_locale){const record=await readFinishedRecord(directory,id,requireLetteringLocale(value.clean_locale));const media=record&&await resolveExistingProjectMedia(directory,record.outputs.clean);if(!media)fail('指定语言的成品底图不可用');clean=await readFile(media.target);canvas=record.lettering.canvas;}
   else fail('请显式指定 candidate_id 或 clean_locale 选择预览底图',400);
   if(!canvas){const {width,height}=await sharp(clean).metadata();canvas=`${width}:${height}`;}
   const document=await readTranslationDocument(directory,id);
-  return {clean,lettering:await localizedSnapshot(view,page,directory,locale,canvas),translation_summary:translationProjection(page,document,locale).summary};
+  return {clean,lettering:await localizedSnapshot(view,page,directory,locale,canvas),translation_summary:page.comic?await pageTranslationSummary(page,directory,locale):translationProjection(page,document,locale).summary};
 }
 export async function readFinishedPages(repositoryRoot, projectId, directory, { page_id = null,locale='zh' } = {}) {
   requireLetteringLocale(locale);
@@ -74,18 +90,19 @@ export async function readFinishedPages(repositoryRoot, projectId, directory, { 
     if (page_id && page.page_id !== page_id) continue;
     const mediaLocale=page.page_kind==='video'?'zh':locale;
     const record = await readFinishedRecord(directory, page.page_id,mediaLocale);
-    const translation_summary=locale==='zh'||page.page_kind==='video'?null:translationProjection(page,await readTranslationDocument(directory,page.page_id),locale).summary;
-    const candidates = page.page_kind === "text" ? null : await readGenerationCandidateRecords(directory, { pageKey: page.page_key });
+    const translation_summary=locale==='zh'||page.page_kind==='video'?null:await pageTranslationSummary(page,directory,locale);
+    const candidates = page.page_kind === "text" || page.comic ? null : await readGenerationCandidateRecords(directory, { pageKey: page.page_key });
     const candidate = candidates?.length === 1 ? candidates[0].candidate_id : null;
     const files = record ? await Promise.all(["lettered", "clean"].map(kind => resolveExistingProjectMedia(directory, record.outputs[kind]))) : [];
     const available = files.length === 2 && files.every(Boolean);
     const dimensions = page.page_kind === 'text' ? (page.render_capabilities ?? view.render_capabilities).text_page?.dimensions : null;
     const dimensionsChanged = dimensions && record && (record.width !== dimensions.width || record.height !== dimensions.height);
-    const stale = record ? Boolean(dimensionsChanged) || (candidate !== null && candidate !== record.candidate_id) || Boolean(translation_summary?.missing||translation_summary?.stale) || hashCanonicalJson(await localizedSnapshot(view, page,directory,mediaLocale,page.page_kind === "text" ? undefined : record.lettering.canvas)) !== hashCanonicalJson(record.lettering) : false;
+    const stale = record ? Boolean(dimensionsChanged) || (candidate !== null && candidate !== record.candidate_id) || Boolean(translation_summary?.missing||translation_summary?.stale) || page.comic && hashCanonicalJson(page.comic.document)!==record.comic_sha256 || !page.comic&&record.page_kind==='comic' || hashCanonicalJson(await localizedSnapshot(view, page,directory,mediaLocale,page.page_kind === "text" ? undefined : record.lettering.canvas)) !== hashCanonicalJson(record.lettering) : false;
     const url = kind => `/api/projects/${encodeURIComponent(projectId)}/media/${record.outputs[kind]}`;
     pages.push({ ...chapter,page_number:numbers.get(page.page_id)??null,locale:mediaLocale,translation_summary, page_id: page.page_id, page_key: page.page_key, title: page.title,
+      ...(page.comic?{comic_sha256:page.comic.sha256}:{}),
       candidate_id: candidate, candidate_count: candidates?.length ?? null,
-      batch_skip_reason: translation_summary?.missing||translation_summary?.stale ? `译文未就绪：缺译 ${translation_summary.missing} 条、原文变化 ${translation_summary.stale} 条` : candidates?.length === 0 ? "没有候选图" : candidates && candidates.length > 1 ? `有 ${candidates.length} 张候选，请只保留一张` : null,
+      batch_skip_reason: page.comic && page.comic.document.order.some(id=>!page.comic.document.panels[id].candidate_id) ? '部分分镜尚未选图' : translation_summary?.missing||translation_summary?.stale ? `译文未就绪：缺译 ${translation_summary.missing} 条、原文变化 ${translation_summary.stale} 条` : candidates?.length === 0 ? "没有候选图" : candidates && candidates.length > 1 ? `有 ${candidates.length} 张候选，请只保留一张` : null,
       status: !record ? "missing" : !available ? "files_missing" : stale ? "stale" : "ready",
       job: jobs.find(job => job.page_id === page.page_id&&(job.locale??'zh')===mediaLocale) ?? null,
       record: record ? { media_kind:record.page_kind==='video'?'video':'image', poster_url:record.poster ? `/api/projects/${encodeURIComponent(projectId)}/media/${record.poster}` : null, sha256: hashCanonicalJson(record), candidate_id: record.candidate_id ?? null, width: record.width, height: record.height, created_at: record.created_at,
@@ -151,6 +168,13 @@ export async function prepareFinishedPage(repositoryRoot, projectId, directory, 
   const job = queuedJob ?? { id: `finished-${randomUUID()}`, locale,page_id: id, project_id: projectId, status: "queued", pid: process.pid, created_at: new Date().toISOString(), error: null };
   const storyIndex = orderedFinishedPages(view).findIndex(entry => entry.page.page_id === id);
   job.page_label = storyIndex >= 0 ? String(storyIndex + 1).padStart(3, "0") : page.title || id;
+  if(page.comic){
+    if(value.expected_comic_sha256&&value.expected_comic_sha256!==page.comic.sha256)fail('分镜布局或选图已变化，请重新排队输出');
+    const document=page.comic.document,sources=await readComicSources(directory,document);
+    const snapshot={page_key:page.page_key,page_kind:'comic',comic:document,comic_sha256:hashCanonicalJson(document),comic_sources:sources.map(({buffer,...source})=>source),lettering:await localizedSnapshot(view,page,directory,locale,undefined,true)};
+    await writeJson(jobPath(directory,id,locale),job);
+    return {job,snapshot,comicSources:sources,expected:hashCanonicalJson(old),old};
+  }
   if (page.page_kind === "text") {
     // 文字页没有候选底图：黑底按当前渲染配置候选出图尺寸的 2 倍直接渲染，与超分后的普通成品同尺寸。
     const textPage = (page.render_capabilities ?? view.render_capabilities).text_page;
@@ -207,6 +231,29 @@ export async function publishFinishedPage(repositoryRoot, projectId, directory, 
   await writeJson(recordPath(directory, id,prepared.job.locale), record);
 }
 
+async function readComicSources(directory,document){
+  const geometry=comicGeometry(document),sources=[];
+  for(const pageId of document.order){
+    const choice=document.panels[pageId];
+    if(!choice.candidate_id)fail('请为每个分镜选定候选图');
+    const source=await resolveExistingProjectMedia(directory,candidateFileRelativePath({page_id:pageId},choice.candidate_id));
+    if(!source)fail('分镜候选图已不存在');
+    const buffer=await readFile(source.target);
+    sources.push({page_id:pageId,candidate_id:choice.candidate_id,source_sha256:sha(buffer),frame:geometry.frames[pageId],crop:choice.crop,buffer});
+  }
+  return sources;
+}
+export async function composeComicImage(document,sources) {
+  const geometry=comicGeometry(document),width=2048,height=Math.round(geometry.height*2),layers=[];
+  for(const source of sources){
+    const box=source.frame,left=Math.round(box.x*width),top=Math.round(box.y*height),w=Math.max(1,Math.round((box.x+box.w)*width)-left),h=Math.max(1,Math.round((box.y+box.h)*height)-top);
+    const metadata=await sharp(source.buffer).metadata(),scale=Math.max(w/metadata.width,h/metadata.height)*source.crop.zoom;
+    const rw=Math.max(w,Math.round(metadata.width*scale)),rh=Math.max(h,Math.round(metadata.height*scale));
+    const input=await sharp(source.buffer).resize(rw,rh).extract({left:Math.round((rw-w)*source.crop.x),top:Math.round((rh-h)*source.crop.y),width:w,height:h}).png().toBuffer();
+    layers.push({input,left,top});
+  }
+  return sharp({create:{width,height,channels:3,background:'#ffffff'}}).composite(layers).png().toBuffer();
+}
 export async function runFinishedPage({ repositoryRoot, projectId, directory, prepared, config, origin, mutateTargetFacts,
   upscale = upscaleFinishedImage, render = (...args) => import("./finished-render.mjs").then(module => module.renderFinishedImage(...args)) }) {
   const { job, snapshot } = prepared;
@@ -224,14 +271,15 @@ export async function runFinishedPage({ repositoryRoot, projectId, directory, pr
       await mutateTargetFacts(projectId,()=>publishFinishedPage(repositoryRoot,projectId,directory,prepared,record));published=true;await update('completed');
       warmMediaVariants(directory, outputs.clean);
     } else {
-    await update(prepared.reuse || prepared.textPage ? "lettering" : "upscaling");
-    const cleanBuffer = prepared.textPage
+    await update(prepared.reuse || prepared.textPage || prepared.comicSources ? "lettering" : "upscaling");
+    const cleanBuffer = prepared.comicSources ? await composeComicImage(prepared.snapshot.comic,prepared.comicSources)
+      : prepared.textPage
       ? await sharp({ create: { width: prepared.textPage.width, height: prepared.textPage.height, channels: 3, background: { r: 0, g: 0, b: 0 } } }).png().toBuffer()
       : prepared.reuse ? await readFile(prepared.reuse) : await upscale(prepared.sourceBuffer, { ...config, ...(config.models_root ? { models_root: path.resolve(repositoryRoot, config.models_root) } : {}) }, job.id);
     // 分享图片不附带 ComfyUI 写入的工作流等 PNG 文本块。
     const clean = await sharp(cleanBuffer).png().toBuffer();
     const { width, height } = await sharp(clean).metadata();
-    if (!prepared.reuse && !prepared.textPage) {
+    if (!prepared.reuse && !prepared.textPage && !prepared.comicSources) {
       const original = await sharp(prepared.sourceBuffer).metadata();
       if (width !== original.width * 2 || height !== original.height * 2) fail("超分输出尺寸不是原图的 2 倍");
     }
@@ -276,7 +324,7 @@ export async function planFinishedBatch(repositoryRoot, projectId, directory, { 
     if (page.job && busyStatuses.has(page.job.status)) continue;
     const page_label = String(index + 1).padStart(3, "0");
     if (page.batch_skip_reason) { skipped.push({ page_id: page.page_id, title: page.title, reason: page.batch_skip_reason }); continue; }
-    targets.push({locale:page.locale, page_key: page.page_key, ...(page.candidate_id ? { candidate_id: page.candidate_id } : {}), page_label });
+    targets.push({locale:page.locale, page_key: page.page_key, ...(page.comic_sha256?{expected_comic_sha256:page.comic_sha256}:{}), ...(page.candidate_id ? { candidate_id: page.candidate_id } : {}), page_label });
   }
   return { targets, skipped };
 }

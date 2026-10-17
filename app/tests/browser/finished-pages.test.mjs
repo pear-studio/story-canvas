@@ -15,6 +15,38 @@ import { serveProductionAsset } from "../../server/http-support.mjs";
 import { renderFinishedImage } from "../../server/finished-render.mjs";
 import { createStoryCanvasServer } from "../../server/index.mjs";
 import { hashCanonicalJson } from "../../server/workflow-definition.mjs";
+
+test('正式渲染的横竖屏、译文和分镜均沿用竖屏短边字号',async t=>{
+  const distRoot=fileURLToPath(new URL('../../dist/',import.meta.url));
+  const server=createServer((request,response)=>void serveProductionAsset(response,new URL(request.url,'http://local'),distRoot));
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>new Promise(resolve=>server.close(resolve)));
+  const browser=await chromium.launch({headless:true,channel:process.env.BROWSER_CHANNEL||(process.platform==='win32'?'msedge':undefined)});t.after(()=>browser.close());
+  const page=await browser.newPage();await page.goto(`http://127.0.0.1:${server.address().port}/finished-render.html`);
+  await page.waitForFunction(()=>Boolean(window.renderFinishedLettering));
+  const settings={...defaultLetteringSettings(),font_size:28};
+  const source=[{id:'dialogue-123456789abc',mode:'speech',speaker:'npc',text:'你好'},{id:'dialogue-223456789abc',mode:'heart',text:'喜爱'},{id:'dialogue-323456789abc',mode:'narration',text:'旁白'}];
+  const items=[{dialogue_id:source[0].id,box:{x:.1,y:.1,w:.7,h:.2}},{dialogue_id:source[1].id,box:{x:.1,y:.4,w:.5,h:.2},heart:{font_size:48,rotation:0,seed:123}}];
+  for(const locale of ['zh','en']){
+    let baseline;
+    for(const comic of [false,true])for(const [canvas,width,height] of [['3:4',768,1024],['4:3',1024,768],['1:1',768,768]]){
+      await page.setViewportSize({width,height});
+      const frame={x:.05,y:.05,w:.6,h:.8};
+      const lettering={settings,items,locale,source_dialogue:source,dialogue:locale==='zh'?source:source.map((line,index)=>({...line,text:['Hi','Love','Caption'][index]})),canvas:comic?`${width*frame.w}:${height*frame.h}`:canvas};
+      const value=comic?{page_kind:'comic',canvas,panels:[{page_id:'page-001',frame,lettering}]}:lettering;
+      const result=await page.evaluate(async value=>{
+        const diagnostics=await window.renderFinishedLettering(value,true);
+        const heart=document.querySelector('[data-lettering-kind="heart"]').getBoundingClientRect();
+        const balloon=document.querySelector('[data-dialogue-id="dialogue-123456789abc"]').getBoundingClientRect();
+        return {blockers:diagnostics.blockers,font:parseFloat(getComputedStyle(document.querySelector('.lettering-text')).fontSize),narration:parseFloat(getComputedStyle(document.querySelector('.narration-bar__text')).fontSize),heartWidth:heart.width,heartHeight:heart.height,balloonWidth:balloon.width,balloonHeight:balloon.height};
+      },value);
+      assert.deepEqual(result.blockers,[],`${locale} ${canvas} comic=${comic}`);
+      baseline??=result;
+      assert.ok(Math.abs(result.font-28*768/1024)<.05);
+      for(const key of ['font','narration','heartWidth','heartHeight','balloonWidth','balloonHeight'])assert.ok(Math.abs(result[key]-baseline[key])<.2,`${locale} ${canvas} comic=${comic} ${key} 保持一致`);
+    }
+  }
+});
+
 test("正式嵌字使用浏览器共享排版，输出保持尺寸且无字时保留底图像素", async t => {
   const distRoot = fileURLToPath(new URL("../../dist/", import.meta.url));
   const server = createServer((request, response) => void serveProductionAsset(response, new URL(request.url, "http://local"), distRoot));

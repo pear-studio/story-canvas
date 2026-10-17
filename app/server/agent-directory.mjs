@@ -29,7 +29,7 @@ export async function readAgentDirectory(projectRoot, projectDirectory, input) {
       : outline.chapters.filter(c => !input.chapter_id || c.id === input.chapter_id)
         .flatMap(c => c.sequences.map(({ id, title }) => ({ id, title, chapter_id: c.id })));
   } else if (kind === 'page') {
-    const pages = (await readPageIndex(projectDirectory)).pages;
+    const pages = (await readPageIndex(projectDirectory)).pages.filter(page=>!page.parent_page_id);
     const outline = await json(projectDirectory, 'story/outline.json');
     const numbers = storyPageNumbers(outline.chapters.map(c=>({...c,sequences:c.sequences.map(s=>({...s,pages:pages.filter(p=>p.owner_kind==='story'&&p.sequence_id===s.id)}))})));
     const selected = pages.map(p=>({...p,page_number:numbers.get(p.page_id)??null})).filter(item=>filters.page.every(key=>input[key]===undefined||item[key]===input[key]));

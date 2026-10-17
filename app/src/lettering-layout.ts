@@ -9,6 +9,12 @@ export type ResolvedLetteringLayout = {
 };
 
 export const canvasDimensions = resolveCanvasDimensions as (canvas?: string) => { width: number; height: number };
+
+/** 字号以整页短边的 1024 单位为基准，竖屏沿用原有大小。 */
+export function letteringCanvasFontScale(canvas?: string) {
+  const { width, height } = canvasDimensions(canvas);
+  return Math.min(1, height / width);
+}
 export const resolveLetteringLayout = resolveLayout as (input: {
   text: string;
   direction: "horizontal" | "vertical";
@@ -17,6 +23,7 @@ export const resolveLetteringLayout = resolveLayout as (input: {
   canvasWidth: number;
   canvasHeight: number;
   box: { x: number; y: number; w: number; h: number };
+  allowOutside?: boolean;
 }) => ResolvedLetteringLayout;
 
 export const resizeLetteringBox = resizeBox as (

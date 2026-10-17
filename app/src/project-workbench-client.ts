@@ -77,6 +77,8 @@ export type TextSourceContext = {
   lines: Array<{ number: number; text: string; hit: boolean }>;
 };
 export type WorkbenchPage = {
+  parent_page_id?: string;
+  comic?: {document:import('../shared/comic-layout.mjs').ComicDocument;sha256:string;panels:WorkbenchPage[]};
   project_loras?: PagePrompt['loras'];
   model_id: 'anima' | 'qwen' | 'h3';
   render?: {version:1;model_id:'anima'|'qwen'|'h3';profile_id:string;canvas:string};
@@ -635,6 +637,6 @@ export async function saveWholePage(projectId: string, page: WorkbenchPage, cont
   return workbenchResponseJson<{ content: StoryPageContentDraft & { dialogue: NonNullable<WorkbenchPage["dialogue"]> }; content_sha256: string; prompt: PagePrompt; prompt_sha256: string; prompt_context_sha256: string; lettering: { page: string; items: LetteringItem[] }; layout_sha256: string }>(await mutateTargetFacts(`${base(projectId)}/page-save`, {
     method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ page_key: page.page_key, content, prompt, reference_inputs,
       expected_content_sha256: page.content_sha256, expected_prompt_sha256: page.prompt_sha256,
-      expected_context_sha256: page.prompt_context_sha256, source_versions, lettering: { items }, expected_layout_sha256: page.layout_sha256 }),
+      expected_context_sha256: page.prompt_context_sha256, source_versions, lettering: { items }, expected_layout_sha256: page.layout_sha256, expected_layout_items:page.lettering?.items??[] }),
   }));
 }

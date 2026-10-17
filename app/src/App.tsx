@@ -1,4 +1,8 @@
+import {currentPageSave,usePageChanges} from './use-page-changes';
+import {ComicMergeDialog} from './ComicMergeDialog';
 import {useSaveShortcut} from './use-save-shortcut';
+import {ComicPageWorkspace,type ComicPanelControls} from './ComicPageWorkspace';
+import {comicAction} from './comic-client';
 import { storyPageNumbers } from '../shared/story-page-numbers.mjs';
 import {VideoPageWorkspace} from './VideoPageWorkspace';
 import {usePageRewrite} from './models/qwen/usePageRewrite';
@@ -546,7 +550,13 @@ function LetteringCanvasProbe({ canvas, onWidthChange }: { canvas: string; onWid
   </div>;
 }
 
-export function PageWorkspace({ letteringLocale="zh",onLetteringLocaleChange,editorTab, onEditorTabChange, onOpenLetteringSettings, pageOrder, onOpenPromptOverview, projectId, location, ownerPages, characters, scenes, renderCapabilities, defaultRenderProfile, canvas, letteringStyle, taskCollection, busy, editorWidth, candidateWidth, onEditorWidthChange, onCandidateWidthChange, onPageChanged, onReload, onTrackedTasksChange }: {
+export function PageWorkspace(props:React.ComponentProps<typeof SinglePageWorkspace>) {
+  if(!props.location.page.comic)return <SinglePageWorkspace {...props}/>;
+  return <ComicPageWorkspace key={`${props.projectId}:${props.location.page.page_id}`} projectId={props.projectId} page={props.location.page} pageOrder={props.pageOrder} busy={props.busy} letteringLocale={props.letteringLocale??'zh'} editorResizer={<PaneResizeHandle className="pane-resizer--editor" label="调整页面事实栏宽度" value={props.editorWidth} defaultValue={44} min={32} max={64} unit="%" onChange={props.onEditorWidthChange}/>} onReload={props.onReload} onPageChanged={props.onPageChanged} onTrackedTasksChange={props.onTrackedTasksChange} renderPanel={(panel,controls)=><SinglePageWorkspace {...props} panelContext={controls} busy={props.busy||controls.busy} location={{...props.location,key:panel.page_id,breadcrumb:[...props.location.breadcrumb,`分镜 · ${panel.title}`],page:{...panel,comic:undefined}}} ownerPages={[]} canvas={panel.render?.canvas??props.canvas} defaultRenderProfile={panel.render?.profile_id??props.defaultRenderProfile} renderCapabilities={panel.render_capabilities??props.renderCapabilities} onPageChanged={controls.onPageChanged} onTrackedTasksChange={controls.onTrackedTasksChange}/>}/>;
+
+}
+function SinglePageWorkspace({ panelContext,letteringLocale="zh",onLetteringLocaleChange,editorTab, onEditorTabChange, onOpenLetteringSettings, pageOrder, onOpenPromptOverview, projectId, location, ownerPages, characters, scenes, renderCapabilities, defaultRenderProfile, canvas, letteringStyle, taskCollection, busy, editorWidth, candidateWidth, onEditorWidthChange, onCandidateWidthChange, onPageChanged, onReload, onTrackedTasksChange }: {
+  panelContext?:ComicPanelControls;
   projectId: string;
   location: PageLocation & { page: EditableWorkbenchPage };
   onOpenPromptOverview: () => void;
@@ -573,6 +583,7 @@ export function PageWorkspace({ letteringLocale="zh",onLetteringLocaleChange,edi
   onReload: () => Promise<void>;
   onTrackedTasksChange: (projectId: string, taskIds: string[]) => void;
 }) {
+  const active=panelContext?.active??true;
   const { notify, confirm } = useFeedback();
   const { page } = location;
   const latestPage = useRef(page);
@@ -589,13 +600,27 @@ export function PageWorkspace({ letteringLocale="zh",onLetteringLocaleChange,edi
   const textDimensions = renderCapabilities.text_page?.dimensions;
   const artworkCanvas = page.page_kind === "text" && textDimensions ? `${textDimensions.width}:${textDimensions.height}` : previewCanvas;
   const [fullscreenLetteringTarget, setFullscreenLetteringTarget] = useState<ImageOverlayTarget | null>(null);
+  const [mergeOpen,setMergeOpen]=useState(false);
+  const mergeChoices=ownerPages.map(location=>location.page).filter(other=>other.page_id!==page.page_id&&other.kind==="story"&&other.sequence_id===page.sequence_id&&!other.page_kind&&!other.parent_page_id&&(!other.comic||other.comic.document.order.length===1));
   const [desktopActionsTarget,setDesktopActionsTarget]=useState<HTMLDivElement|null>(null);
   const [letteringTarget, setLetteringTarget] = useState<HTMLSpanElement | null>(null);
   const [trackedTaskIds, setTrackedTaskIds] = useState<string[]>([]);
   const [generationCount, setGenerationCount] = useState<1 | 3>(() => window.localStorage.getItem(generationCountStorageKey) === "1" ? 1 : 3);
   const editorSaveLettering=useRef<(()=>Promise<boolean>)|null>(null);
   const editorSaveAll = useRef<(() => Promise<boolean>) | null>(null);
+  useEffect(()=>{if(!panelContext)return;panelContext.saveRef.current=async()=>await editorSaveAll.current?.()??false;return()=>{panelContext.saveRef.current=null;};},[panelContext?.saveRef]);
+  useEffect(()=>{panelContext?.onDirtyChange(pageDirty);},[pageDirty,panelContext?.onDirtyChange]);
+  async function saveCurrent(){if(!await editorSaveAll.current?.())return false;return panelContext?panelContext.saveLayout():true;}
+  usePageChanges(`${projectId}:${page.page_id}`,{dirty:pageDirty,save:saveCurrent},!panelContext);
+
+  const [converting,setConverting]=useState(false);
+  async function convertToComic(){
+    if(converting)return;setConverting(true);
+    try{if(!await editorSaveAll.current?.())return;await comicAction(projectId,page.page_id,'convert');if(isCurrentWorkspace())await onReload();}
+    catch(error){notify({kind:'error',message:error instanceof Error?error.message:String(error)});}finally{setConverting(false);}
+  }
   const editorDiscardAll = useRef<(() => void) | null>(null);
+  useEffect(()=>{if(!panelContext)return;panelContext.discardRef.current=()=>editorDiscardAll.current?.();return()=>{panelContext.discardRef.current=null;};},[panelContext?.discardRef]);
   const mediaRevision = useRef("");
   const workspaceIdentity = `${projectId}:${location.key}:${page.render_sha256??""}`;
   const pageWorkspaceRef = useRef<HTMLDivElement>(null);
@@ -653,7 +678,7 @@ export function PageWorkspace({ letteringLocale="zh",onLetteringLocaleChange,edi
     },
   });
   const {promptSource} = qwenRewrite;
-  const inspectionDepsKey = JSON.stringify([location.key, page.content_sha256, page.render_sha256, characterFactsSignature, sceneFactsSignature, page.project_loras, defaultRenderProfile, promptDraft, promptSource]);
+  const inspectionDepsKey = JSON.stringify([location.key, page.content_sha256, page.render_sha256, panelContext?.layoutVersion, characterFactsSignature, sceneFactsSignature, page.project_loras, defaultRenderProfile, promptDraft, promptSource]);
   // 待保存附图不参与编译检查；其余草稿字段都影响编译结果，任意变化都应让旧预览失效。
   const { reference_images: _draftAttachments, ...promptCompileBase } = promptDraft;
   const currentBaseKey = JSON.stringify([location.key, page.content_sha256, characterFactsSignature, sceneFactsSignature, page.project_loras, defaultRenderProfile, promptCompileBase, promptSource]);
@@ -718,7 +743,7 @@ export function PageWorkspace({ letteringLocale="zh",onLetteringLocaleChange,edi
 
   useEffect(() => {
     let disposed = false;
-    if (page.page_kind === 'text') return;
+    if (!active || page.page_kind === 'text') return;
     const timer = window.setTimeout(() => {
       void inspectPageRender(projectId, page.page_key, promptDraft, promptSource).then(({ inspection }) => {
         if (!disposed) { setRenderInspection(inspection); setInspectionBaseKey(currentBaseKey); setRenderInspectionKey(inspectionDepsKey); setRenderInspectionError(""); }
@@ -727,7 +752,7 @@ export function PageWorkspace({ letteringLocale="zh",onLetteringLocaleChange,edi
       });
     }, 260);
     return () => { disposed = true; window.clearTimeout(timer); };
-  }, [characterFactsSignature, defaultRenderProfile, location.key, page.content_sha256, projectId, JSON.stringify(promptDraft), inspectionDepsKey, inspectionNonce]);
+  }, [characterFactsSignature, defaultRenderProfile, location.key, page.content_sha256, projectId, JSON.stringify(promptDraft), inspectionDepsKey, inspectionNonce,active]);
 
 
   useEffect(() => {
@@ -737,12 +762,13 @@ export function PageWorkspace({ letteringLocale="zh",onLetteringLocaleChange,edi
   }, [refreshPageMedia, taskCollection, trackedTaskIds]);
 
   useEffect(() => {
+    if(!active)return;
     const poller = createSerialPoller({ intervalMs: 2500, poll: async () => {
       if (!document.hidden) await refreshPageMedia(true);
     } });
     poller.start();
     return () => { poller.stop(); mediaRequestGuard.current.cancel(); };
-  }, [refreshPageMedia]);
+  }, [refreshPageMedia,active]);
 
   async function saveWhole(draft: WorkbenchPageContentDraft, prompt: PagePrompt, items: LetteringItem[], baseline: WorkbenchPage, sourceVersions: PromptSourceVersions) {
     const content = { title: draft.title, scene_description: draft.scene_description, characters: draft.characters ?? [], dialogue: draft.dialogue ?? [],
@@ -787,8 +813,8 @@ export function PageWorkspace({ letteringLocale="zh",onLetteringLocaleChange,edi
     saveAndGenerateInFlight.current = true;
     setSubmittingGeneration(true);
     try {
-      if (pageDirty) {
-        const saved = await editorSaveAll.current?.();
+      if (pageDirty||panelContext?.layoutDirty) {
+        const saved = await saveCurrent();
         if (!saved) {
           if (isCurrentWorkspace()) notify({ kind: "error", message: "保存未完成，已取消生成" });
           return;
@@ -814,8 +840,9 @@ export function PageWorkspace({ letteringLocale="zh",onLetteringLocaleChange,edi
 
   const saveAndGenerateRef = useRef(saveAndGenerate);
   saveAndGenerateRef.current = saveAndGenerate;
-  useSaveShortcut(() => { void editorSaveAll.current?.(); }, `${projectId}:${page.page_id}:${page.model_id}`);
+  useSaveShortcut(() => { void saveCurrent(); }, `${projectId}:${page.page_id}:${page.model_id}`,active);
   useEffect(() => {
+    if(!active)return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.isComposing || event.defaultPrevented) return;
       const isGenerate = event.key === "g" || event.key === "G";
@@ -831,7 +858,7 @@ export function PageWorkspace({ letteringLocale="zh",onLetteringLocaleChange,edi
     // 捕获阶段监听：编辑控件内部 stopPropagation 也不会漏掉快捷键。
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [generationCount]);
+  }, [generationCount,active]);
 
   const capabilityBlocker = renderCapabilities.candidates.blocker
     ? `当前生成配置不可用：${renderCapabilities.candidates.blocker}`
@@ -848,11 +875,12 @@ export function PageWorkspace({ letteringLocale="zh",onLetteringLocaleChange,edi
     || (!renderInspection?.ready ? "当前页面尚未满足生成条件" : "");
   const isTextPage = page.kind === "story" && page.page_kind === "text";
   return <div ref={pageWorkspaceRef} className="story-layout current-workbench-page">
-    {<WorkbenchPageEditor letteringLocale={letteringLocale} onLetteringLocaleChange={onLetteringLocaleChange} saveLetteringRef={editorSaveLettering} desktopActionsTarget={desktopActionsTarget} editorTab={editorTab} onEditorTabChange={onEditorTabChange} onOpenLetteringSettings={onOpenLetteringSettings} onOpenPromptOverview={onOpenPromptOverview} projectId={projectId} page={page} characters={characters} scenes={scenes} breadcrumb={location.breadcrumb} pageOrder={pageOrder} busy={busy} canvas={artworkCanvas} letteringStyle={letteringStyle} letteringItems={page.lettering?.items ?? []} letteringTarget={letteringTarget} fullscreenLetteringTarget={fullscreenLetteringTarget} flowPreview={isTextPage ? null : inspectionBaseKey === currentBaseKey ? renderInspection : null} flowPreviewError={renderInspectionError} qwenRewrite={qwenRewrite} onSavePage={saveWhole} onReloadContent={onReload} onReloadPrompt={onReload} onPageSaved={() => { if (isCurrentWorkspace()) notify({ kind: "success", message: page.kind === "story" ? "文案与布局已保存" : "页面内容已保存" }); }} onPromptDraftChange={setPromptDraft} onDirtyChange={setPageDirty} saveAllRef={editorSaveAll} discardAllRef={editorDiscardAll} onGenerate={isTextPage ? undefined : saveAndGenerate} generationCount={generationCount} onGenerationCountChange={changeGenerationCount} generationDisabled={generationDisabled} generationDisabledReason={generateReason} generationProblems={isTextPage ? [] : generationProblems} />}
+    {mergeOpen&&<ComicMergeDialog projectId={projectId} pageId={page.page_id} title={page.title} choices={mergeChoices} beforeSave={async()=>await editorSaveAll.current?.()??false} onMerged={onReload} onClose={()=>setMergeOpen(false)}/>}
+    {<WorkbenchPageEditor externalDirty={panelContext?.layoutDirty} comicPreview={panelContext?.comicPreview} overlayInteractive={active} onSaveAllRequested={saveCurrent} onMergeToComic={!panelContext&&page.kind==="story"&&!page.page_kind&&mergeChoices.length?()=>setMergeOpen(true):undefined} onConvertToComic={!panelContext&&page.kind==="story"&&!page.page_kind&&!page.parent_page_id&&!converting?convertToComic:undefined} letteringLocale={letteringLocale} onLetteringLocaleChange={onLetteringLocaleChange} saveLetteringRef={editorSaveLettering} desktopActionsTarget={desktopActionsTarget} editorTab={editorTab} onEditorTabChange={onEditorTabChange} onOpenLetteringSettings={onOpenLetteringSettings} onOpenPromptOverview={onOpenPromptOverview} projectId={projectId} page={page} characters={characters} scenes={scenes} breadcrumb={location.breadcrumb} pageOrder={pageOrder} busy={busy} canvas={artworkCanvas} letteringStyle={letteringStyle} letteringItems={page.lettering?.items ?? []} letteringTarget={letteringTarget} fullscreenLetteringTarget={fullscreenLetteringTarget} flowPreview={isTextPage ? null : inspectionBaseKey === currentBaseKey ? renderInspection : null} flowPreviewError={renderInspectionError} qwenRewrite={qwenRewrite} onSavePage={saveWhole} onReloadContent={onReload} onReloadPrompt={onReload} onPageSaved={() => { if (isCurrentWorkspace()) notify({ kind: "success", message: page.kind === "story" ? "文案与布局已保存" : "页面内容已保存" }); }} onPromptDraftChange={setPromptDraft} onDirtyChange={setPageDirty} saveAllRef={editorSaveAll} discardAllRef={editorDiscardAll} onGenerate={isTextPage ? undefined : saveAndGenerate} generationCount={generationCount} onGenerationCountChange={changeGenerationCount} generationDisabled={generationDisabled} generationDisabledReason={generateReason} generationProblems={isTextPage ? [] : generationProblems} />}
     <PaneResizeHandle className="pane-resizer--editor" label="调整页面事实栏宽度" value={editorWidth} defaultValue={44} min={32} max={64} unit="%" onChange={onEditorWidthChange} />
     {isTextPage
       ? <TextPageWorkspace locale={letteringLocale} onDesktopActionsTarget={setDesktopActionsTarget} projectId={projectId} pageId={page.page_id} canvas={artworkCanvas} dimensionError={renderCapabilities.text_page?.error ?? (!textDimensions ? "无法确定成品尺寸，请检查生成设置。" : null)} dirty={pageDirty} disabled={busy || submittingGeneration} onLetteringTarget={setLetteringTarget} onOutput={async () => { if (!await editorSaveLettering.current?.()) return null; if (!isCurrentWorkspace()) return null; return (await startFinishedPage(projectId, page.page_key,undefined,letteringLocale)).job; }} />
-      : <WorkbenchCandidateWorkspace onLoadIterationDetail={loadIterationDetail} onLoadIterationLoras={loadIterationLoras} onIterateCandidate={startCandidateIteration} onDesktopActionsTarget={setDesktopActionsTarget} finishedOutput={{locale:letteringLocale, projectId, pageId: page.page_id, onOutput: async (candidateId) => { if (!await editorSaveLettering.current?.()) return null; if (!isCurrentWorkspace()) return null; return (await startFinishedPage(projectId, page.page_key, candidateId,letteringLocale)).job; } }} pageIdentity={workspaceIdentity} pageTitle={page.title} canvas={previewCanvas} onPreviewCanvasChange={setPreviewCanvas} ownerLabel={location.breadcrumb.at(-2)} media={media} mediaStatus={mediaStatus} mediaError={mediaError} onReloadMedia={() => refreshPageMedia(false, true)} candidateWidth={candidateWidth} factReady={factReady} currentGenerationSignature={!pageDirty && renderInspection && renderInspectionKey === inspectionDepsKey ? renderInspection.generation_signature : null} mediaReady={mediaStatus === "ready"} generationReady={Boolean(renderInspection?.ready) && renderInspectionKey === inspectionDepsKey} busy={busy || submittingGeneration} busyReason={submittingGeneration ? "正在提交任务" : undefined} generationDisabledReason={renderInspectionKey === inspectionDepsKey && renderInspection ? renderInspection.blockers.map(promptIssueSummary).join("；") || capabilityBlocker : renderInspectionError || "正在编译当前 Prompt"} generationProblems={generationProblems} onLetteringTarget={setLetteringTarget} onFullscreenLetteringTarget={setFullscreenLetteringTarget} onCandidateWidthChange={onCandidateWidthChange} onGenerate={(request) => startCurrentPage(request)} generationCount={generationCount} onGenerationCountChange={changeGenerationCount} onSaveAndGenerate={saveAndGenerate} pageDirty={pageDirty} onSaveAll={async () => { await editorSaveAll.current?.(); }} onDiscardAll={() => editorDiscardAll.current?.()} onDeleteCandidates={async (request) => { mediaMutationPending.current += 1; mediaRequestGuard.current.cancel(); try { const receipt = await deleteCandidates(projectId, page.page_key, request); if (!isCurrentWorkspace()) return false; await refreshPageMedia(false, true); if (receipt.failed_candidates?.length) { notify({ kind: "error", message: `已删除 ${receipt.deleted_candidate_ids.length} 张，${receipt.failed_candidates.length} 张删除失败；无需等待生成结束，可继续工作。` }); return false; } return true; } catch (error) { if (isCurrentWorkspace()) { setInspectionNonce((value) => value + 1); notify({ kind: "error", message: error instanceof Error ? error.message : String(error) }); } return false; } finally { mediaMutationPending.current -= 1; } }} onLoadCandidateDetail={async (candidate) => candidateDetailWorkspace((await loadCandidateDetail(projectId, page.page_key, candidate.candidate_id)).detail)} />}
+      : <WorkbenchCandidateWorkspace active={active} compositeSelection={panelContext?{candidateId:panelContext.selectedCandidateId,onSelect:panelContext.onSelectCandidate}:undefined} onLoadIterationDetail={loadIterationDetail} onLoadIterationLoras={loadIterationLoras} onIterateCandidate={startCandidateIteration} onDesktopActionsTarget={setDesktopActionsTarget} finishedOutput={panelContext?undefined:{locale:letteringLocale, projectId, pageId: page.page_id, onOutput: async (candidateId) => { if (!await editorSaveLettering.current?.()) return null; if (!isCurrentWorkspace()) return null; return (await startFinishedPage(projectId, page.page_key, candidateId,letteringLocale)).job; } }} pageIdentity={workspaceIdentity} pageTitle={page.title} canvas={previewCanvas} onPreviewCanvasChange={setPreviewCanvas} ownerLabel={location.breadcrumb.at(-2)} media={media} mediaStatus={mediaStatus} mediaError={mediaError} onReloadMedia={() => refreshPageMedia(false, true)} candidateWidth={candidateWidth} factReady={factReady} currentGenerationSignature={!pageDirty && renderInspection && renderInspectionKey === inspectionDepsKey ? renderInspection.generation_signature : null} mediaReady={mediaStatus === "ready"} generationReady={Boolean(renderInspection?.ready) && renderInspectionKey === inspectionDepsKey} busy={busy || submittingGeneration} busyReason={submittingGeneration ? "正在提交任务" : undefined} generationDisabledReason={renderInspectionKey === inspectionDepsKey && renderInspection ? renderInspection.blockers.map(promptIssueSummary).join("；") || capabilityBlocker : renderInspectionError || "正在编译当前 Prompt"} generationProblems={generationProblems} onLetteringTarget={setLetteringTarget} onFullscreenLetteringTarget={setFullscreenLetteringTarget} onCandidateWidthChange={onCandidateWidthChange} onGenerate={(request) => startCurrentPage(request)} generationCount={generationCount} onGenerationCountChange={changeGenerationCount} onSaveAndGenerate={saveAndGenerate} pageDirty={pageDirty||panelContext?.layoutDirty} onSaveAll={async () => { await saveCurrent(); }} onDiscardAll={() => editorDiscardAll.current?.()} onDeleteCandidates={async (request) => { mediaMutationPending.current += 1; mediaRequestGuard.current.cancel(); try { const receipt = await deleteCandidates(projectId, page.page_key, request); if (!isCurrentWorkspace()) return false; await refreshPageMedia(false, true); if (receipt.failed_candidates?.length) { notify({ kind: "error", message: `已删除 ${receipt.deleted_candidate_ids.length} 张，${receipt.failed_candidates.length} 张删除失败；无需等待生成结束，可继续工作。` }); return false; } return true; } catch (error) { if (isCurrentWorkspace()) { setInspectionNonce((value) => value + 1); notify({ kind: "error", message: error instanceof Error ? error.message : String(error) }); } return false; } finally { mediaMutationPending.current -= 1; } }} onLoadCandidateDetail={async (candidate) => candidateDetailWorkspace((await loadCandidateDetail(projectId, page.page_key, candidate.candidate_id)).detail)} />}
   </div>;
 }
 
@@ -1532,13 +1560,16 @@ export default function StoryWorkbench({ initialImagesHidden, imagePrivacyStorag
   }
 
   async function leaveCurrentAllowed({ loraDatasetChange = false }: { loraDatasetChange?: boolean } = {}) {
+    // 原生目录抽屉位于 top layer，确认前先收起，避免遮挡保存选择。
+    if(loraDirty||document.querySelector(unsavedFactsSelector))setNavigationOpen(false);
     if ((activeTab.startsWith("lora-") || loraDatasetChange) && loraDirty) {
       const accepted = await confirm({ kind: "warning", title: "放弃未保存 LoRA 修改", message: "当前 LoRA 页面有未保存修改，离开会放弃这些修改，是否继续？", danger: true });
       if (accepted) setLoraDirty(false);
       return accepted;
     }
     if (!document.querySelector(unsavedFactsSelector)) return true;
-    return confirm({ kind: "warning", title: "放弃未保存修改", message: "当前页面有未保存修改，离开会放弃这些修改，是否继续？", danger: true });
+    if(!currentPageSave())return confirm({kind:"warning",title:"放弃未保存修改",message:"当前页面有未保存修改，离开会放弃这些修改，是否继续？",danger:true});
+    return confirm({ kind: "warning", title: "未保存的修改", message: "当前页面有未保存修改，请保存后切换，或明确放弃修改。", confirmLabel:"放弃修改",onSave:currentPageSave(),danger: true });
   }
 
   async function switchProject(nextId: string) {

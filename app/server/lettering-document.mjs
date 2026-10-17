@@ -18,7 +18,8 @@ function validateBox(box, valuePath, errors) {
     return;
   }
   for (const key of Object.keys(box)) if (!new Set(["x", "y", "w", "h"]).has(key)) errors.push(`${valuePath} 包含未知字段：${key}`);
-  for (const key of ["x", "y", "w", "h"]) validateNormalizedNumber(box[key], `${valuePath}.${key}`, errors);
+  for (const key of ["w", "h"]) validateNormalizedNumber(box[key], `${valuePath}.${key}`, errors);
+  for (const key of ['x','y']) if(!Number.isFinite(box[key])||box[key]<-12||box[key]>12)errors.push(`${valuePath}.${key} 必须为 -12 到 12 的相对坐标`);
   if (typeof box.w === "number" && box.w < 0.08) errors.push(`${valuePath}.w 不能小于 0.08`);
   if (typeof box.h === "number" && box.h < 0.05) errors.push(`${valuePath}.h 不能小于 0.05`);
 }

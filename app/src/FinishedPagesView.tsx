@@ -128,7 +128,7 @@ export function FinishedPagesView({locale="zh",onLocaleChange, projectId, onOpen
     </Modal>}
     {panel === "batch" && <Modal title="批量制作" subtitle={chapter ? chapters.find(([id]) => id === chapter)?.[1] : "全项目"} busy={batching} onClose={() => setPanel(null)} footer={<button className="button button--primary" disabled={batching || anyBusy || !targets.length} onClick={() => void batchOutput()}>{batching ? "正在提交…" : `开始制作 · ${targets.length} 页`}</button>}>
       <div className="finished-options"><fieldset className="finished-batch-options"><legend>制作方式</legend><label><input type="radio" name="finished-batch" checked={!force} onChange={() => setForce(false)} />仅制作尚未制作、内容过时或文件缺失的页面</label><label><input type="radio" name="finished-batch" checked={force} onChange={() => setForce(true)} />重新制作全部</label></fieldset>
-        <p>采用每页当前唯一候选；零张或多张候选的插画／动态页跳过，文字页直接制作。动态页原尺寸输出，无音频、无超分；插画候选未变时复用超分底图。</p>
+        <p>分镜页按各格选图合成；普通插画／动态页采用当前唯一候选，零张或多张跳过；文字页直接制作。动态页原尺寸输出，无音频、无超分；插画候选未变时复用超分底图。</p>
         <ul className="finished-batch-list">{targets.map(page => <li key={page.page_id}><span>{number(page)} · {page.title}</span><small>{page.status === "missing" ? "尚未制作" : page.status === "stale" ? "内容过时" : page.status === "files_missing" ? "成品文件缺失" : "重新制作"}</small></li>)}</ul>
         {!pendingPages.length && <p>当前范围无需更新。可以选择重新制作全部。</p>}
         {skipped.length > 0 && <><b>以下 {skipped.length} 页将跳过</b><ul className="finished-batch-list">{skipped.map(page => <li key={page.page_id}><button className="finished-page-link" onClick={() => { setPanel(null); onOpenPage(page.page_key); }}>{number(page)} · {page.title}</button><small>{page.batch_skip_reason}</small></li>)}</ul></>}

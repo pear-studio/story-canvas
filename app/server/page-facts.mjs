@@ -39,7 +39,9 @@ function publicDocument(document) {const {$schema,...value}=document;return clon
 async function projectAt(root,id) {return resolveProjectLocation(path.resolve(root),id);}
 async function requirePage(directory,id) {const entry=await readPageEntry(directory,id);if(!entry)fail('page_not_found',[id]);return entry;}
 export async function assertPageOwner(directory,owner) {
-  assertValid(validatePagesIndexDocument({$schema:'https://storyvisualizer.local/schemas/pages-index.schema.json',pages:[{page_id:'page-001',...owner}]}));
+  const {parent_page_id:parentId,...rootOwner}=owner;
+  assertValid(validatePagesIndexDocument({$schema:'https://storyvisualizer.local/schemas/pages-index.schema.json',pages:[{page_id:'page-001',...rootOwner}]}));
+  if(parentId){const parent=await readPageEntry(directory,parentId);if(!parent||parent.parent_page_id||parent.owner_kind!=='story'||parent.sequence_id!==owner.sequence_id)fail('invalid_panel_owner');}
   if(owner.owner_kind==='story') {
     const outline=await optionalJson(directory,'story/outline.json');
     if(!outline?.chapters.some(chapter=>chapter.sequences.some(sequence=>sequence.id===owner.sequence_id)))fail('story_sequence_not_found',[owner.sequence_id]);
@@ -52,7 +54,7 @@ export async function assertPageOwner(directory,owner) {
     if(!visual?.variants.some(variant=>variant.id===owner.variant_id))fail('page_owner_variant_not_found',[id,owner.variant_id]);
   }
 }
-function sameOwner(a,b) {return ['owner_kind','sequence_id','character_id','scene_id','variant_id'].every(key=>a[key]===b[key]);}
+function sameOwner(a,b) {return ['owner_kind','sequence_id','character_id','scene_id','variant_id','parent_page_id'].every(key=>a[key]===b[key]);}
 function insertEntry(index,entry,{afterPageId=null,beforePageId=null}={}) {
   if(beforePageId!==null && afterPageId!==null)fail('invalid_page_position',['before_page_id 与 after_page_id 只能提供一个']);
   const anchor=beforePageId??afterPageId;
@@ -65,12 +67,12 @@ async function newPageId(directory,index) {
   for(;;){const id=`page-${randomBytes(6).toString('hex')}`;if(index.pages.some(page=>page.page_id===id))continue;
     if(await lstat(path.join(directory,pageRelativePath(id,'content'))).then(()=>true,error=>error.code==='ENOENT'?false:Promise.reject(error)))continue;return id;}
 }
-export async function createPage(root,projectId,owner,{templateId=null,afterPageId=null,beforePageId=null,pageKind=null,characterId,variantId,content:initialContent,beforeCommit}={}) {
+export async function createPage(root,projectId,owner,{templateId=null,afterPageId=null,beforePageId=null,pageKind=null,characterId,variantId,content:initialContent,beforeCommit,extraWrites,renderSettings}={}) {
   const project=await projectAt(root,projectId), directory=project.projectDirectory;
   const projectDocument=await optionalJson(directory,'project.json');
   const bundle=await compileEffectiveRenderProfile({repositoryRoot:root,projectRoot:directory,profileId:projectDocument.default_render_profile});
   if(bundle.blocked)fail('render_profile_override_conflict');
-  const render=pageSettingsFromDefaults(projectDocument,profileModelAdapter(bundle.effective_profile).id);
+  const render=renderSettings?clone(renderSettings):pageSettingsFromDefaults(projectDocument,profileModelAdapter(bundle.effective_profile).id);
   await assertPageOwner(directory,owner);
   if(pageKind!==null&&!['text','video'].includes(pageKind))fail('invalid_page_kind');
   if(['text','video'].includes(pageKind)&&templateId!==null)fail('invalid_page_kind',['文字页不支持模板']);
@@ -105,7 +107,7 @@ export async function createPage(root,projectId,owner,{templateId=null,afterPage
   assertValid(validateStoryPageNarrativeDocument(content));assertValid(validateStoryPagePromptDocument(prompt));
   insertEntry(next,{page_id:id,...owner},{afterPageId,beforePageId});
   if(beforeCommit)await beforeCommit({page_id:id,content_file:path.join(directory,pageRelativePath(id,'content')),prompt_file:path.join(directory,pageRelativePath(id,'prompt')),index_file:path.join(directory,'pages/index.json')});
-  await commitFactChanges(directory,[{relative:pageRelativePath(id,'content'),before:null,after:content},{relative:pageRelativePath(id,'prompt'),before:null,after:prompt},{relative:pageRelativePath(id,'render'),before:null,after:render},{relative:'pages/index.json',before:index,after:next}]);
+  await commitFactChanges(directory,[{relative:pageRelativePath(id,'content'),before:null,after:content},{relative:pageRelativePath(id,'prompt'),before:null,after:prompt},{relative:pageRelativePath(id,'render'),before:null,after:render},{relative:'pages/index.json',before:index,after:next},...(extraWrites?await extraWrites(id):[])]);
   const receipt=await creationEditReceipt(async()=>{
     const {readPageEditContext}=await import('./page-edit-context.mjs');
     return readPageEditContext({projectRoot:root,projectId,pageKey:{page_id:id},section:'content'});
@@ -115,11 +117,15 @@ export async function createPage(root,projectId,owner,{templateId=null,afterPage
 export async function movePage(root,projectId,pageId,owner,{beforePageId=null,afterPageId=null}={}) {
   const {projectDirectory:directory}=await projectAt(root,projectId);await assertPageOwner(directory,owner);
   const index=await readPageIndex(directory),source=index.pages.find(page=>page.page_id===pageId);if(!source)fail('page_not_found',[pageId]);
+  if(source.parent_page_id)fail('panel_owned_by_page');
+  const comic=await optionalJson(directory,pageRelativePath(pageId,'comic'));
+  if(comic&&owner.owner_kind!=='story')fail('comic_story_page_required');
   const content=await readPageContent(directory,pageId);
   if(['text','video'].includes(content.page_kind)&&owner.owner_kind!=='story')fail('text_page_story_only');
   if(beforePageId!==null && afterPageId!==null)fail('invalid_page_position',['before_page_id 与 after_page_id 只能提供一个']);
   if(beforePageId===pageId || afterPageId===pageId){if(!sameOwner(source,owner))fail('page_anchor_not_found',[beforePageId]);return {page_id:pageId,...owner};}
   const next=clone(index);next.pages=next.pages.filter(page=>page.page_id!==pageId);insertEntry(next,{page_id:pageId,...owner},{beforePageId,afterPageId});
+  for(const panel of next.pages)if(panel.parent_page_id===pageId)panel.sequence_id=owner.sequence_id;
   await commitFactChanges(directory,[{relative:'pages/index.json',before:index,after:next}]);return {page_id:pageId,page_key:{page_id:pageId},...owner};
 }
 // 副本对白拥有新身份；同一映射同步转换所有页内引用，随页面一起原子提交。
@@ -143,6 +149,7 @@ async function copyDialogueDocuments(directory,sourceId,targetId,content,writes,
 }
 export async function duplicatePage(root,projectId,pageId) {
   const {projectDirectory:directory}=await projectAt(root,projectId),index=await readPageIndex(directory),source=await requirePage(directory,pageId);
+  if(source.parent_page_id)fail('panel_owned_by_page');
   const id=await newPageId(directory,index),next=clone(index);insertEntry(next,{...source,page_id:id},{afterPageId:pageId});
   const content=await readPageContent(directory,pageId),prompt=await readPagePrompt(directory,pageId);
   const suffix=content.title.match(/\d+$/);
@@ -152,6 +159,18 @@ export async function duplicatePage(root,projectId,pageId) {
   const layouts=await optionalJson(directory,'lettering/dialogue-layouts.json');
   const updatedLayouts=layouts?clone(layouts):null;
   await copyDialogueDocuments(directory,pageId,id,content,writes,layouts,updatedLayouts);
+  const comic=await optionalJson(directory,pageRelativePath(pageId,'comic'));
+  if(comic){
+    const ids=new Map([[pageId,id]]);
+    for(const child of index.pages.filter(entry=>entry.parent_page_id===pageId)){
+      const childId=await newPageId(directory,next);ids.set(child.page_id,childId);next.pages.push({...child,page_id:childId,parent_page_id:id});
+      for(const kind of ['prompt','render','rewrite']){const document=await optionalJson(directory,pageRelativePath(child.page_id,kind));if(document)writes.push({relative:pageRelativePath(childId,kind),before:null,after:document});}
+      await copyDialogueDocuments(directory,child.page_id,childId,await readPageContent(directory,child.page_id),writes,layouts,updatedLayouts);
+    }
+    const remap=node=>node.page_id?{page_id:ids.get(node.page_id)}:{...node,first:remap(node.first),second:remap(node.second)};
+    const document={...comic,layout:remap(comic.layout),order:comic.order.map(old=>ids.get(old)),panels:Object.fromEntries(Object.entries(comic.panels).map(([old,settings])=>[ids.get(old),{...settings,candidate_id:null}]))};
+    writes.push({relative:pageRelativePath(id,'comic'),before:null,after:document});
+  }
   if(updatedLayouts&&hashCanonicalJson(updatedLayouts)!==hashCanonicalJson(layouts))writes.push({relative:'lettering/dialogue-layouts.json',before:layouts,after:updatedLayouts});
   writes.push({relative:'pages/index.json',before:index,after:next});await commitFactChanges(directory,writes);
   return {page_id:id,page_key:{page_id:id},source_page_id:pageId};
@@ -159,30 +178,32 @@ export async function duplicatePage(root,projectId,pageId) {
 export async function deletePage(root,projectId,pageId,{beforeCommit}={}) {
   const project=await projectAt(root,projectId),directory=project.projectDirectory;
   const index=await readPageIndex(directory),entry=await requirePage(directory,pageId);
-  await assertNoActivePageRender(directory,{page_id:pageId});
-  if((await listFinishedJobs(directory)).some(job=>job.page_id===pageId&&finishedBusyStatuses.has(job.status)))fail('page_finished_output_busy',[pageId]);
-  const removedReferences = await optionalJson(directory, pageRelativePath(pageId, 'prompt'));
+  if(entry.parent_page_id)fail('panel_owned_by_page');
+  const ids=[pageId,...index.pages.filter(page=>page.parent_page_id===pageId).map(page=>page.page_id)];
+  for(const id of ids)await assertNoActivePageRender(directory,{page_id:id});
+  if((await listFinishedJobs(directory)).some(job=>ids.includes(job.page_id)&&finishedBusyStatuses.has(job.status)))fail('page_finished_output_busy',[pageId]);
+  const removedReferences = await Promise.all(ids.map(id=>optionalJson(directory,pageRelativePath(id,'prompt'))));
   const deletionId=`deleted-${randomBytes(6).toString('hex')}`,archive=path.join(path.resolve(root),'Saved/state/deleted-pages',project.projectId,deletionId);
-  const descriptors=[...['content','prompt','render','rewrite','text-sources'].map(kind=>pageRelativePath(pageId,kind)),translationPath(pageId),`Outputs/pages/${pageId}`];
+  const descriptors=ids.flatMap(id=>[...['content','prompt','render','rewrite','text-sources','comic'].map(kind=>pageRelativePath(id,kind)),translationPath(id),`Outputs/pages/${id}`]);
   const siblings=index.pages.filter(page=>sameOwner(page,entry)),ordinal=siblings.findIndex(page=>page.page_id===pageId);
   const position={ordinal,previous_page_id:siblings[ordinal-1]?.page_id??null,next_page_id:siblings[ordinal+1]?.page_id??null};
   if(beforeCommit)await beforeCommit();
   const moved=[];await mkdir(archive,{recursive:true});
-  const next=clone(index);next.pages=next.pages.filter(page=>page.page_id!==pageId);
+  const next=clone(index);next.pages=next.pages.filter(page=>!ids.includes(page.page_id));
   const layouts=await optionalJson(directory,'lettering/dialogue-layouts.json');const writes=[{relative:'pages/index.json',before:index,after:next}];
-  if(layouts)writes.push({relative:'lettering/dialogue-layouts.json',before:layouts,after:{...layouts,pages:layouts.pages.filter(page=>page.page!==pageId)}});
+  if(layouts)writes.push({relative:'lettering/dialogue-layouts.json',before:layouts,after:{...layouts,pages:layouts.pages.filter(page=>!ids.includes(page.page))}});
   try {
     for(const relative of descriptors){const source=path.join(directory,relative);if(!await lstat(source).catch(error=>error.code==='ENOENT'?null:Promise.reject(error)))continue;const target=path.join(archive,relative);await mkdir(path.dirname(target),{recursive:true});await rename(source,target);moved.push({source,target,relative});}
-    await writeJsonAtomic(path.join(archive,'deletion.json'),{version:1,deletion_id:deletionId,project_id:project.projectId,...entry,...position,deleted_at:new Date().toISOString(),archived_paths:moved.map(item=>item.relative)});
+    await writeJsonAtomic(path.join(archive,'deletion.json'),{version:1,deletion_id:deletionId,project_id:project.projectId,...entry,...position,...(ids.length>1?{panel_entries:index.pages.filter(page=>page.parent_page_id===pageId)}:{}),deleted_at:new Date().toISOString(),archived_paths:moved.map(item=>item.relative)});
     await commitFactChanges(directory,writes);
   } catch(error){for(const item of moved.reverse())await rename(item.target,item.source);throw error;}
-  await cleanRemovedReferences(directory, removedReferences);
+  for(const reference of removedReferences)await cleanRemovedReferences(directory,reference);
   return {page_id:pageId,deletion_id:deletionId,archive_directory:archive,archived_paths:moved.map(item=>item.relative)};
 }
 function checkHash(document,expected,code) {if(!/^[a-f0-9]{64}$/.test(expected??'')||hashCanonicalJson(document)!==expected)throw factConflict(code);}
 // 所有验证和引用切换确认先完成，再通过同一事实提交一次落盘；失败回滚由 commitFactChanges 负责。
 export async function savePage(root,projectId,value) {
-  const allowed=new Set(['page_key','content','prompt','reference_inputs','source_versions','expected_content_sha256','expected_prompt_sha256','expected_context_sha256','lettering','expected_layout_sha256','text_sources','expected_text_sources_sha256']);
+  const allowed=new Set(['page_key','content','prompt','reference_inputs','source_versions','expected_content_sha256','expected_prompt_sha256','expected_context_sha256','lettering','expected_layout_sha256','expected_layout_items','text_sources','expected_text_sources_sha256']);
   if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(key=>!allowed.has(key))||!value.content||typeof value.content!=='object'||Array.isArray(value.content)||!value.prompt||typeof value.prompt!=='object'||Array.isArray(value.prompt))fail('invalid_page_document',['整页保存需要 content 和 prompt 对象']);
   const pageKey=decodePageKey(value.page_key),pageId=pageKey.page_id;
   const {projectDirectory:directory}=await projectAt(root,projectId);await requirePage(directory,pageId);
@@ -217,7 +238,7 @@ export async function savePage(root,projectId,value) {
   const existingLayouts=await optionalJson(directory,'lettering/dialogue-layouts.json');
   if(value.lettering!==undefined||existingLayouts){
     const baseline=existingLayouts??emptyLetteringDocument();assertValid(validateLetteringDocument(baseline));
-    if(value.lettering!==undefined)checkHash(baseline,value.expected_layout_sha256,'page_lettering_target_conflict');
+    if(value.lettering!==undefined && !(Array.isArray(value.expected_layout_items) && hashCanonicalJson(value.expected_layout_items)===hashCanonicalJson(baseline.pages.find(item=>item.page===pageId)?.items??[])))checkHash(baseline,value.expected_layout_sha256,'page_lettering_target_conflict');
     const previous=baseline.pages.find(item=>item.page===pageId)??{page:pageId,items:[]};
     lettering={page:pageId,items:clone(value.lettering?.items??previous.items).map(item=>({...item,dialogue_id:dialogueIdMap.get(item.dialogue_id)??item.dialogue_id})).filter(item=>dialogueIds.has(item.dialogue_id))};
     assertValid(validatePageLettering(lettering,{pageId,dialogueIds:[...dialogueIds]}));

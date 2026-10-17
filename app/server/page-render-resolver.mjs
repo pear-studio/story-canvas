@@ -2,6 +2,7 @@ import {settingLoras} from '../shared/lora-inheritance.mjs';
 import { readReferenceImage } from "./reference-image.mjs";
 import { readPageIndex } from './pages-store.mjs';
 import { readPageRenderSettings, pageProjectSettings } from './page-render-settings.mjs';
+import {comicGenerationDimensions} from './comic-pages.mjs';
 import { modelPrompt } from './model-prompts.mjs';
 import { profileModelAdapter } from './model-adapters.mjs';
 import { resolveSceneConfiguration } from './scene-files.mjs';
@@ -284,7 +285,7 @@ async function capturePageSnapshot(projectDirectory, pageId, pageKey, renderOver
   const renderSource = { relative_path: `pages/${pageId}.render.json`, sha256: hashCanonicalJson(render), value: render };
   snapshot.sources.push(renderSource);
   snapshot.source_fingerprint = hashCanonicalJson(Object.fromEntries(snapshot.sources.map((source) => [source.relative_path, source.sha256])));
-  return { ...snapshot, render, project_defaults: projectSource.value, project: pageProjectSettings(projectSource.value, render), project_source: projectSource };
+  return { ...snapshot, render, panel_dimensions:await comicGenerationDimensions(projectDirectory,pageId), project_defaults: projectSource.value, project: pageProjectSettings(projectSource.value, render), project_source: projectSource };
 }
 
 function assertStoryProjectFormat(project) {
@@ -361,6 +362,11 @@ export function compilePagePromptSnapshot(snapshot, profile) {
   return compiled;
 }
 
+function panelRecipe(recipe,snapshot) {
+  const value=structuredClone(recipe);
+  if(snapshot.panel_dimensions)value.resolutions[snapshot.project.canvas]=snapshot.panel_dimensions;
+  return value;
+}
 export function pagePromptDiagnostics(compiled) {
   return [
     ...compiled.missing.map((message) => inspectionBlocker("page_prompt_missing", message)),
@@ -439,7 +445,7 @@ export async function compilePageRenderTarget({
     page_loras: pageLoras,
     render_identity: renderIdentity,
     candidate_route: routed.render_route,
-    candidate_recipe: structuredClone(profileRoute.recipe),
+    candidate_recipe: panelRecipe(profileRoute.recipe,snapshot),
     candidate_workflow: {
       id: workflowDefinition.id,
       template_sha256: workflowDefinition.template_sha256,
@@ -590,7 +596,7 @@ export async function compilePageRenderInspectionContext({
       if (!profileRoute?.recipe || !workflowDefinition) {
         blockers.push(inspectionBlocker("render_profile_route_unavailable", `候选 route 不可用：${candidateRoute.workflow_id}`));
       } else {
-        candidateRecipe = structuredClone(profileRoute.recipe);
+        candidateRecipe = panelRecipe(profileRoute.recipe,snapshot);
         candidateWorkflow = {
           id: workflowDefinition.id,
           template_sha256: workflowDefinition.template_sha256,

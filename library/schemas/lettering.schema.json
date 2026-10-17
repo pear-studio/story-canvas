@@ -34,8 +34,8 @@
                   "type": "object",
                   "required": ["x", "y", "w", "h"],
                   "properties": {
-                    "x": { "type": "number", "minimum": 0, "maximum": 1 },
-                    "y": { "type": "number", "minimum": 0, "maximum": 1 },
+                    "x": { "type": "number", "minimum": -12, "maximum": 12 },
+                    "y": { "type": "number", "minimum": -12, "maximum": 12 },
                     "w": { "type": "number", "minimum": 0.08, "maximum": 1 },
                     "h": { "type": "number", "minimum": 0.05, "maximum": 1 }
                   },

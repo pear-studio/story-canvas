@@ -1,4 +1,6 @@
+import {useDraftHistory} from './use-draft-history';
 import {cleanPageCharacterInput} from '../shared/page-character-cleanup.mjs';
+import {scaleLetteringHearts} from './lettering';
 import type {PageRewriteController} from './models/qwen/usePageRewrite';
 import { useReferencedSettings } from './use-referenced-settings';
 import {ModelPromptEditor} from './models/registry';
@@ -59,7 +61,7 @@ import {
   type LetteringStyle,
   type NarrationPosition,
 } from "./lettering";
-import { canvasDimensions, resizeLetteringBox, resolveLetteringLayout } from "./lettering-layout";
+import { canvasDimensions, letteringCanvasFontScale, resizeLetteringBox, resolveLetteringLayout } from "./lettering-layout";
 import { TextPageEditor } from "./TextPageEditor";
 import { TextPageArtwork } from "./TextPageArtwork";
 import {LetteringLocaleSelect,TranslationEditor,usePageTranslations,type LetteringLocale} from './page-translations';
@@ -112,6 +114,16 @@ type EditorTab = "visual" | "lettering" | "flow";
 type SavePhase = "saved" | "saving" | "error";
 
 export type WorkbenchPageEditorProps = {
+  externalDirty?:boolean;
+  comicPreview?:{editorTarget?:HTMLDivElement|null;target:HTMLSpanElement|null;canvas:string;pageCanvas:string;frame:{x:number;y:number;w:number;h:number};visible:boolean;interactive:boolean;onSelect:()=>void};
+  comicFrame?: {x:number;y:number;w:number;h:number;pageCanvas:string};
+  overlayInteractive?: boolean;
+  onOverlaySelect?:()=>void;
+  onSaveAllRequested?:()=>Promise<boolean>;
+  onConvertToComic?:()=>Promise<void>;
+  hidePageActions?:boolean;
+  onMergeToComic?:()=>void;
+  generationTargetLabel?:string;
   letteringLocale?:LetteringLocale;
   onLetteringLocaleChange?:(locale:LetteringLocale)=>void;
   saveLetteringRef?: {current:(()=>Promise<boolean>)|null};
@@ -209,13 +221,16 @@ function lineSpeakerName(line: WorkbenchDialogueDraft, characters: WorkbenchChar
   return characters.find((character) => character.id === line.speaker)?.name ?? line.speaker ?? "角色";
 }
 
-function resolveLetteringObject(line: WorkbenchDialogueDraft, item: LetteringItem, style: LetteringStyle, dimensions: { width: number; height: number }) {
+function resolveLetteringObject(line: WorkbenchDialogueDraft, item: LetteringItem, style: LetteringStyle, dimensions: { width: number; height: number },allowOutside=false) {
   if (line.mode === "heart") return resolveHeart(line.text, item, dimensions, style.font_size);
   const preset = letteringPreset(line as Parameters<typeof letteringPreset>[0], style);
-  return resolveLetteringLayout({ text: line.text, direction: preset.direction, kind: preset.kind, fontSize: style.font_size, canvasWidth: dimensions.width, canvasHeight: dimensions.height, box: item.box });
+  return resolveLetteringLayout({ text: line.text, direction: preset.direction, kind: preset.kind, fontSize: style.font_size, canvasWidth: dimensions.width, canvasHeight: dimensions.height, box: item.box,allowOutside });
 }
 
-export function WorkbenchLetteringOverlay({ dialogue,sourceDialogue=dialogue,locale='zh',selectable=false, items, characters, style, canvas = "3:4", interactive = false, selectedId = "", onSelect, onChange, onDiagnosticsChange,onBudgetWarningsChange }: {
+type WorkbenchLetteringOverlayProps = {
+  fontCanvas?:string;
+  fontScale?:number;
+  comicFrame?: {x:number;y:number;w:number;h:number};
   locale?:LetteringLocale;
   sourceDialogue?:WorkbenchDialogueDraft[];
   selectable?:boolean;
@@ -230,7 +245,18 @@ export function WorkbenchLetteringOverlay({ dialogue,sourceDialogue=dialogue,loc
   onChange?: (item: LetteringItem) => void;
   onDiagnosticsChange?: (value: Record<string, LetteringIssue[]>) => void;
   onBudgetWarningsChange?:(ids:string[])=>void;
-}) {
+};
+
+export function WorkbenchLetteringOverlay({fontCanvas, ...props}: WorkbenchLetteringOverlayProps) {
+  const scale = letteringCanvasFontScale(fontCanvas ?? props.canvas);
+  const style = useMemo(() => scale === 1 ? props.style : {...props.style, font_size:props.style.font_size * scale}, [props.style, scale]);
+  const items = useMemo(() => scale === 1 ? props.items : scaleLetteringHearts(props.items, scale), [props.items, scale]);
+  return <LetteringOverlayContent {...props} style={style} items={items} canvasUnitScale={scale}
+    fontScale={(props.fontScale ?? 1 / (props.comicFrame?.w ?? 1)) * scale}
+    onChange={props.onChange ? item => props.onChange!(scale === 1 ? item : scaleLetteringHearts([item], 1 / scale)[0]) : undefined} />;
+}
+
+function LetteringOverlayContent({ dialogue,sourceDialogue=dialogue,locale='zh',selectable=false, items, characters, style, canvas = "3:4", interactive = false, selectedId = "", onSelect, onChange, onDiagnosticsChange,onBudgetWarningsChange,comicFrame,fontScale=1/(comicFrame?.w??1),canvasUnitScale }: WorkbenchLetteringOverlayProps & {canvasUnitScale:number}) {
   const heartFontReady = useHeartFont();
   const [translationFontReady,setTranslationFontReady]=useState(false);
   useEffect(()=>{let active=true;if(locale!=='zh')void document.fonts.load('100px SVTranslation').then(()=>{if(active)setTranslationFontReady(true);});return ()=>{active=false;};},[locale]);
@@ -240,8 +266,8 @@ export function WorkbenchLetteringOverlay({ dialogue,sourceDialogue=dialogue,loc
   const lines = useMemo(() => new Map(dialogue.flatMap((line) => line.id ? [[line.id, line] as const] : [])), [dialogue]);
   const sourceLines = new Map(sourceDialogue.map(line=>[line.id,line]));
   const resolveObject=(line:WorkbenchDialogueDraft,item:LetteringItem,currentStyle:LetteringStyle,dimensions:{width:number;height:number})=>locale==='zh'
-    ? {...resolveLetteringObject(line,item,currentStyle,dimensions),fontSize:currentStyle.font_size,budgetExceeded:false}
-    : resolveTranslatedLettering(line,sourceLines.get(line.id)??line,item,currentStyle,dimensions,locale);
+    ? {...resolveLetteringObject(line,item,currentStyle,dimensions,Boolean(comicFrame)),fontSize:currentStyle.font_size,budgetExceeded:false}
+    : resolveTranslatedLettering(line,sourceLines.get(line.id)??line,item,currentStyle,dimensions,locale,Boolean(comicFrame));
   const clampValue = (value: number, minimum = 0, maximum = 1) => Math.max(minimum, Math.min(maximum, value));
 
   function beginGesture(event: ReactPointerEvent<HTMLElement>, item: LetteringItem, mode: "move" | "resize" | "rotate") {
@@ -269,9 +295,9 @@ export function WorkbenchLetteringOverlay({ dialogue,sourceDialogue=dialogue,loc
       const line = lines.get(item.dialogue_id);
       const preset = line ? letteringPreset(line as Parameters<typeof letteringPreset>[0], style) : null;
       const dimensions = canvasDimensions(canvas);
-      const resolved = line && preset ? resolveLetteringObject(line, item, style, dimensions) : { box: item.box };
-      item.box.x = clampValue(current.item.box.x + dx, 0, 1 - resolved.box.w);
-      item.box.y = clampValue(current.item.box.y + dy, 0, 1 - resolved.box.h);
+      const resolved = line && preset ? resolveLetteringObject(line, item, style, dimensions,Boolean(comicFrame)) : { box: item.box };
+      item.box.x = clampValue(current.item.box.x + dx, comicFrame?-comicFrame.x/comicFrame.w:0, (comicFrame?(1-comicFrame.x)/comicFrame.w:1) - resolved.box.w);
+      item.box.y = clampValue(current.item.box.y + dy, comicFrame?-comicFrame.y/comicFrame.h:0, (comicFrame?(1-comicFrame.y)/comicFrame.h:1) - resolved.box.h);
     } else if (current.mode === "rotate") {
       const line = lines.get(item.dialogue_id);
       if (line?.mode !== "heart") return;
@@ -294,7 +320,7 @@ export function WorkbenchLetteringOverlay({ dialogue,sourceDialogue=dialogue,loc
           const heart = heartSettings(current.item, style.font_size);
           const width = rendered.box.w * current.rect.width, height = rendered.box.h * current.rect.height;
           const scale = ((width + event.clientX - current.startX) * width + (height + event.clientY - current.startY) * height) / (width * width + height * height);
-          item.heart = { ...heart, font_size: Math.round(clampValue(heart.font_size * scale, 12, 192)) };
+          item.heart = { ...heart, font_size: Math.round(clampValue(heart.font_size * scale, 12*fontScale, 192*fontScale)) };
         } else item.box = resizeLetteringBox(current.item.box, rendered.box, preset.direction, dx, dy);
       }
     }
@@ -321,7 +347,7 @@ export function WorkbenchLetteringOverlay({ dialogue,sourceDialogue=dialogue,loc
         resolvedById.set(item.dialogue_id, resolved);
         return [{ ...item, box: resolved.box }];
       });
-      const issueSets = geometryIssues(resolvedItems);
+      const issueSets = geometryIssues(comicFrame?resolvedItems.map(item=>({...item,box:{x:comicFrame.x+item.box.x*comicFrame.w,y:comicFrame.y+item.box.y*comicFrame.h,w:item.box.w*comicFrame.w,h:item.box.h*comicFrame.h}})):resolvedItems);
       for (const [id, resolved] of resolvedById) if (resolved.overflow) issueSets.get(id)?.add("overflow");
       const next = Object.fromEntries([...issueSets].map(([id, issues]) => [id, [...issues]]));
       const signature = JSON.stringify([next,budgetWarnings]);
@@ -332,7 +358,7 @@ export function WorkbenchLetteringOverlay({ dialogue,sourceDialogue=dialogue,loc
       onBudgetWarningsChange?.(budgetWarnings);
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [canvas, items, lines, onDiagnosticsChange,onBudgetWarningsChange, style, heartFontReady,translationFontReady,locale,sourceDialogue]);
+  }, [canvas, items, lines, onDiagnosticsChange,onBudgetWarningsChange, style, heartFontReady,translationFontReady,locale,sourceDialogue,comicFrame]);
 
   const narration = dialogue.find((line) => line.mode === "narration" && line.text.trim());
   return <div lang={locale} className={`lettering-overlay ${interactive||selectable ? "is-interactive" : ""}`.trim()} onPointerDown={(event) => { if ((interactive||selectable) && event.target === event.currentTarget) onSelect?.(""); }}>
@@ -352,16 +378,17 @@ export function WorkbenchLetteringOverlay({ dialogue,sourceDialogue=dialogue,loc
       const height = resolved.box.h * 100;
       const kindLabel = preset.kind === "plain" ? "无框" : preset.kind === "balloon" ? "对话框" : preset.kind === "float" ? "浮字" : "叙述框";
       const directionLabel = preset.direction === "vertical" ? "竖排" : "横排";
-      return <div key={item.dialogue_id} role="group" aria-label={`${lineSpeakerName(line, characters)}：${line.text}；${directionLabel}${kindLabel}`} data-dialogue-id={item.dialogue_id} data-lettering-kind={line.mode === "heart" ? "heart" : preset.kind} data-lettering-direction={preset.direction} data-lettering-box={`${item.box.x},${item.box.y},${item.box.w},${item.box.h}`} data-lettering-issues={(diagnostics[item.dialogue_id] ?? []).join(",")} data-translation-budget={resolved.budgetExceeded ? "exceeded" : undefined} tabIndex={interactive||selectable ? 0 : undefined} className={`lettering-object lettering-object--${line.mode === "heart" ? "heart" : preset.kind} lettering-object--${preset.direction} ${selected ? "is-selected" : ""}`.trim()} style={{ left: `${left}%`, top: `${top}%`, width: `${width}%`, height: `${height}%`, "--lettering-color": color, ...letteringTypographyVariables({...style,font_size:resolved.fontSize}, "canvas") } as CSSProperties} onPointerDown={(event) => beginGesture(event, item, "move")} onPointerMove={move} onPointerUp={end} onPointerCancel={end} onKeyDown={(event) => {
+      return <div key={item.dialogue_id} role="group" aria-label={`${lineSpeakerName(line, characters)}：${line.text}；${directionLabel}${kindLabel}`} data-dialogue-id={item.dialogue_id} data-lettering-kind={line.mode === "heart" ? "heart" : preset.kind} data-lettering-direction={preset.direction} data-lettering-box={`${item.box.x},${item.box.y},${item.box.w},${item.box.h}`} data-lettering-issues={(diagnostics[item.dialogue_id] ?? []).join(",")} data-translation-budget={resolved.budgetExceeded ? "exceeded" : undefined} tabIndex={interactive||selectable ? 0 : undefined} className={`lettering-object lettering-object--${line.mode === "heart" ? "heart" : preset.kind} lettering-object--${preset.direction} ${selected ? "is-selected" : ""}`.trim()} style={{ left: `${left}%`, top: `${top}%`, width: `${width}%`, height: `${height}%`, "--lettering-color": color, ...letteringTypographyVariables({...style,font_size:resolved.fontSize}, "canvas", canvasUnitScale) } as CSSProperties} onPointerDown={(event) => beginGesture(event, item, "move")} onPointerMove={move} onPointerUp={end} onPointerCancel={end} onKeyDown={(event) => {
         if (!interactive || !onChange || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
         event.preventDefault();
         event.stopPropagation();
         const step = event.shiftKey ? 0.02 : 0.005;
         const next = clone(item);
-        if (event.key === "ArrowLeft") next.box.x = clampValue(next.box.x - step, 0, 1 - resolved.box.w);
-        if (event.key === "ArrowRight") next.box.x = clampValue(next.box.x + step, 0, 1 - resolved.box.w);
-        if (event.key === "ArrowUp") next.box.y = clampValue(next.box.y - step, 0, 1 - resolved.box.h);
-        if (event.key === "ArrowDown") next.box.y = clampValue(next.box.y + step, 0, 1 - resolved.box.h);
+        const minX=comicFrame?-comicFrame.x/comicFrame.w:0,minY=comicFrame?-comicFrame.y/comicFrame.h:0,maxX=(comicFrame?(1-comicFrame.x)/comicFrame.w:1)-resolved.box.w,maxY=(comicFrame?(1-comicFrame.y)/comicFrame.h:1)-resolved.box.h;
+        if (event.key === "ArrowLeft") next.box.x = clampValue(next.box.x - step, minX, maxX);
+        if (event.key === "ArrowRight") next.box.x = clampValue(next.box.x + step, minX, maxX);
+        if (event.key === "ArrowUp") next.box.y = clampValue(next.box.y - step, minY, maxY);
+        if (event.key === "ArrowDown") next.box.y = clampValue(next.box.y + step, minY, maxY);
         onChange(next);
       }} onClick={(event) => { event.preventDefault(); event.stopPropagation(); onSelect?.(item.dialogue_id); }}>
         {line.mode === "heart" ? (heartFontReady && <HeartLettering text={line.text} layout={locale==='zh'?resolveHeart(line.text, item, dimensions, style.font_size):resolveObject(line,item,style,dimensions) as ReturnType<typeof resolveHeart>} />) : <span className="lettering-text">{preset.direction === "horizontal" ? resolved.lines.join("\n") : line.text}</span>}
@@ -657,6 +684,7 @@ export default function WorkbenchPageEditor({
   generationDisabled = false,
   generationDisabledReason = "",
   generationProblems = [],
+  comicFrame,overlayInteractive=true,onOverlaySelect,onSaveAllRequested,onConvertToComic,generationTargetLabel,hidePageActions=false,onMergeToComic,comicPreview,externalDirty=false,
 }: WorkbenchPageEditorProps) {
   const pageIdentity = `${page.page_id}:${page.model_id}:${page.render_sha256??''}`;
   const isTextPage = page.page_kind === "text";
@@ -822,8 +850,10 @@ export default function WorkbenchPageEditor({
     return () => { discardAllRef.current = null; };
   });
 
+  const draftHistory=useDraftHistory({content:contentDraft,dialogue:dialogueDraft,prompt:promptDraft,layout:layoutDraft},value=>{setContentDraft(value.content);setDialogueDraft(value.dialogue);setPromptDraft(value.prompt);setLayoutDraft(value.layout);},`${projectId}:${page.page_id}:${page.model_id}:${promptDiscardCount}`,overlayInteractive||Boolean(comicPreview?.editorTarget));
+  const historyActions=<button type="button" className="button button--quiet" disabled={busy||!draftHistory.canUndo} title="撤销上一步修改（Ctrl+Z）" onClick={draftHistory.undo}>撤销</button>;
   const anyDirty = contentDirty || promptDirty || layoutDirty || translations.dirty;
-  const saveNeeded = anyDirty || contentPhase === "error" || promptPhase === "error";
+  const saveNeeded = anyDirty || externalDirty || contentPhase === "error" || promptPhase === "error";
   const saving = contentPhase === "saving" || promptPhase === "saving" || translations.busy;
 
   function changeCharacters(value: Array<{ character_id: string; variant_id: string }>) {
@@ -842,26 +872,32 @@ export default function WorkbenchPageEditor({
     setContentDraft(current => ({ ...current, characters: value }));
   }
 
+  const letteringWidth = comicFrame?.w??comicPreview?.frame.w??1;
+  const letteringCanvas = comicFrame?.pageCanvas ?? comicPreview?.pageCanvas;
+  const displayLetteringStyle = targetStyle?{...targetStyle,font_size:targetStyle.font_size/letteringWidth}:null;
+  const displayLetteringItems = letteringStyle?scaleLetteringHearts(letteringLocale==='zh'?previewItems:previewLetteringItems(page.dialogue??[],letteringItems,letteringStyle),1/letteringWidth):[];
   const [generationSettingsTarget,setGenerationSettingsTarget]=useState<HTMLDivElement|null>(null);
   const [desktopSettings,setDesktopSettings]=useState(()=>window.matchMedia('(min-width: 1161px)').matches);
   useEffect(()=>{const query=window.matchMedia('(min-width: 1161px)');const update=()=>setDesktopSettings(query.matches);query.addEventListener('change',update);return ()=>query.removeEventListener('change',update);},[]);
   const generationSettings=<PageGenerationSettings compact={desktopSettings} projectId={projectId} page={page} disabled={busy||saving} beforeChange={saveAll} onSaved={()=>onReloadPrompt?.()}/>;
-  const pageActions=<span className="workbench-page-editor__dock-actions">
-          <button type="button" className="button button--quiet" disabled={busy || saving || !saveNeeded} title="放弃本页全部未保存修改" onClick={discardAll}>放弃修改</button>
-          <button type="button" className="button button--primary" disabled={busy || saving || !saveNeeded} title="保存本页全部修改（Ctrl+S）" onClick={() => void saveAll()}>{saving ? "保存中…" : "保存"}</button>
+  const pageActions=<span className="workbench-page-editor__dock-actions">{historyActions}
+          <button type="button" className="button button--quiet" disabled={busy || saving || !(anyDirty || contentPhase === "error" || promptPhase === "error")} title="放弃本页全部未保存修改" onClick={discardAll}>放弃修改</button>
+          <button type="button" className="button button--primary" disabled={busy || saving || !saveNeeded} title="保存本页全部修改（Ctrl+S）" onClick={() => void (onSaveAllRequested??saveAll)()}>{saving ? "保存中…" : "保存"}</button>
           {generationProblems.length > 0 && <button type="button" className="issue-indicator issue-indicator--error" aria-label={`查看 ${generationProblems.length} 个生成问题`} title="查看生成问题" onClick={() => setGenerationProblemsOpen(true)}>!</button>}
-          {onGenerate && <GenerateSplitButton dirty={anyDirty} count={generationCount} disabled={generationDisabled || saving} reason={generationDisabledReason} menuDirection="down" onSubmit={() => void onGenerate({ count: generationCount })} onCountChange={onGenerationCountChange} />}
+          {onGenerate && <GenerateSplitButton targetLabel={generationTargetLabel} dirty={anyDirty||externalDirty} count={generationCount} disabled={generationDisabled || saving} reason={generationDisabledReason} menuDirection="down" onSubmit={() => void onGenerate({ count: generationCount })} onCountChange={onGenerationCountChange} />}
         </span>;
-  return <section className="document-editor workbench-page-editor" data-page-content-dirty={contentDirty ? "true" : undefined} data-page-prompt-dirty={promptDirty ? "true" : undefined} data-lettering-dirty={layoutDirty ? "true" : undefined}>
-    {desktopActionsTarget&&createPortal(pageActions,desktopActionsTarget)}
+  return <section data-project-fact-dirty={saveNeeded?'true':undefined} className="document-editor workbench-page-editor" data-page-content-dirty={contentDirty ? "true" : undefined} data-page-prompt-dirty={promptDirty ? "true" : undefined} data-lettering-dirty={layoutDirty ? "true" : undefined}>
+    {!hidePageActions&&desktopActionsTarget&&createPortal(pageActions,desktopActionsTarget)}
     <fieldset className="page-save-fields" inert={contentPhase === "saving"} disabled={contentPhase === "saving"}>
     <WorkspaceHeader breadcrumb={breadcrumb} className="story-toolbar" title={<span className="page-title-editor">
         {pageOrder !== undefined && <span className="page-order" aria-label={`第 ${pageOrder} 页`}>{String(pageOrder).padStart(2, "0")}</span>}
         <><InlineTitleEditor label="重命名页面" value={contentDraft.title} disabled={busy} onChange={(title) => setContentDraft(current => ({ ...current, title }))} /></>
       </span>} actions={<div className="workbench-page-editor__actions">
+        {onConvertToComic&&<button type="button" className="button button--quiet" disabled={busy||saving} onClick={()=>void onConvertToComic()}>转换为分镜页</button>}
+        {onMergeToComic&&<button type="button" className="button button--quiet" disabled={busy||saving} onClick={onMergeToComic}>与现有页合并</button>}
         {contentPhase === "error" && <button type="button" className="button button--quiet" onClick={() => void reloadAll()}>放弃本页草稿并重新载入</button>}
         <div ref={setGenerationSettingsTarget} className="page-title-generation-settings"/>
-        {!desktopActionsTarget&&pageActions}
+        {!hidePageActions&&!desktopActionsTarget&&pageActions}
       </div>} />
     {externalConflict && <p role="status">内容已更新，过时的修改已丢弃，请在最新内容上重新编辑。</p>}
     {contentError && <p className="prompt-save-error" role="alert">{contentError}</p>}
@@ -875,6 +911,7 @@ export default function WorkbenchPageEditor({
     </div>
 
     {desktopSettings&&generationSettingsTarget?createPortal(generationSettings,generationSettingsTarget):generationSettings}
+    <div className="page-mobile-history">{historyActions}</div>
     {!isTextPage && <div className="editor-mode-tabs" role="tablist" aria-label="页面编辑内容">
       <button role="tab" aria-selected={visibleTab === "visual"} className={visibleTab === "visual" ? "is-active" : ""} onClick={() => setActiveTab("visual")}>视觉描述 / Prompt{promptDirty && <i />}</button>
       {<button role="tab" aria-selected={visibleTab === "lettering"} className={visibleTab === "lettering" ? "is-active" : ""} onClick={() => setActiveTab("lettering")}>嵌字{layoutDirty && <i />}</button>}
@@ -903,16 +940,28 @@ export default function WorkbenchPageEditor({
       <TextPageArtwork title={letteringLocale==='zh'?contentDraft.display_title??'':targetValues.display_title??''} body={letteringLocale==='zh'?contentDraft.body??'':targetValues.body??''} layout={letteringLocale==='zh'?contentDraft.text_layout:page.text_layout} style={targetStyle!} onOverflow={setTextOverflow} locale={letteringLocale} />,
       letteringTarget)}
     {!isTextPage && letteringTarget && letteringStyle && createPortal(<>
-      <WorkbenchLetteringOverlay locale={letteringLocale} sourceDialogue={page.dialogue} dialogue={overlayDialogue??previewDialogue} items={letteringLocale==='zh'?previewItems:previewLetteringItems(page.dialogue??[],letteringItems,letteringStyle)} characters={characters} style={targetStyle!} canvas={canvas}
-        selectable={true} interactive={letteringLocale==='zh' && !busy && contentPhase !== "saving"} selectedId={letteringLocale==='zh'?selectedDialogueId:selectedDraftKey}
-        onSelect={(id) => setSelectedDraftKey(letteringLocale==='zh'?previewDialogue.find((line) => line.id === id)?.draftKey ?? "":id)}
-        onChange={(item) => setLayoutDraft(previewItems.map((candidate) => candidate.dialogue_id === item.dialogue_id ? item : candidate))}
+      <WorkbenchLetteringOverlay locale={letteringLocale} sourceDialogue={page.dialogue} dialogue={overlayDialogue??previewDialogue} items={displayLetteringItems} characters={characters} style={displayLetteringStyle!} canvas={canvas} fontCanvas={letteringCanvas} fontScale={1/letteringWidth} comicFrame={comicFrame}
+        selectable={true} interactive={overlayInteractive && letteringLocale==='zh' && !busy && contentPhase !== "saving"} selectedId={letteringLocale==='zh'?selectedDialogueId:selectedDraftKey}
+        onSelect={(id) => {onOverlaySelect?.();setSelectedDraftKey(letteringLocale==='zh'?previewDialogue.find((line) => line.id === id)?.draftKey ?? "":id);}}
+        onChange={(item) => {const original=scaleLetteringHearts([item],letteringWidth)[0];if(original.heart)original.heart.font_size=Math.round(original.heart.font_size);setLayoutDraft(previewItems.map((candidate) => candidate.dialogue_id === original.dialogue_id ? original : candidate));}}
         onDiagnosticsChange={setLetteringDiagnostics} onBudgetWarningsChange={setTranslationBudgetWarnings} />
       {layoutDirty && <span className="lettering-unsaved-hint">布局未保存 · 点击「保存」</span>}
     </>, letteringTarget)}
     {!isTextPage && fullscreenLetteringTarget && letteringStyle && createPortal(
-      <WorkbenchLetteringOverlay locale={letteringLocale} sourceDialogue={page.dialogue} dialogue={overlayDialogue??previewDialogue} items={letteringLocale==='zh'?previewItems:previewLetteringItems(page.dialogue??[],letteringItems,letteringStyle)} characters={characters} style={targetStyle!} canvas={fullscreenLetteringTarget.canvas} />,
+      <WorkbenchLetteringOverlay locale={letteringLocale} sourceDialogue={page.dialogue} dialogue={overlayDialogue??previewDialogue} items={displayLetteringItems} characters={characters} style={displayLetteringStyle!} canvas={fullscreenLetteringTarget.canvas} fontCanvas={letteringCanvas} />,
       fullscreenLetteringTarget.element)}
+    {!isTextPage&&comicPreview?.editorTarget&&letteringStyle&&createPortal(<>
+      <div className="comic-panel-actions">{historyActions}</div>
+      {onLetteringLocaleChange&&<LetteringLocaleSelect value={letteringLocale} onChange={onLetteringLocaleChange}/>}
+      {onOpenLetteringSettings&&<button type="button" className="button button--quiet lettering-settings-link" onClick={onOpenLetteringSettings}>项目嵌字样式 ↗</button>}
+      {letteringLocale==='zh'?<LetteringEditor dialogue={dialogueDraft} items={previewItems} characters={characters} style={letteringStyle} diagnostics={letteringDiagnostics} hasImage projectId={projectId} pageId={page.page_id} selectedDraftKey={selectedDraftKey} onSelectedDraftKeyChange={setSelectedDraftKey} onDialogueChange={setDialogueDraft} onItemsChange={setLayoutDraft}/>:<TranslationEditor characterNames={Object.fromEntries(characters.map(character=>[character.id,character.name]))} locale={letteringLocale} branch={activeTranslation} busy={busy||saving} error={translations.error} onEdit={(id,text,confirm)=>translations.edit(letteringLocale,id,text,confirm)} selectedId={selectedDraftKey} onSelect={setSelectedDraftKey}/>}
+    </>,comicPreview.editorTarget)}
+    {!isTextPage && comicPreview?.visible && comicPreview.target && letteringStyle && createPortal(
+      <WorkbenchLetteringOverlay locale={letteringLocale} sourceDialogue={page.dialogue} dialogue={overlayDialogue??previewDialogue} items={scaleLetteringHearts(letteringLocale==='zh'?previewItems:previewLetteringItems(page.dialogue??[],letteringItems,letteringStyle),1/comicPreview.frame.w)} characters={characters} style={{...targetStyle!,font_size:targetStyle!.font_size/comicPreview.frame.w}} canvas={comicPreview.canvas} fontCanvas={comicPreview.pageCanvas} comicFrame={comicPreview.frame}
+        selectable={comicPreview.interactive} interactive={comicPreview.interactive&&letteringLocale==='zh'&&!busy} selectedId={comicPreview.interactive?selectedDialogueId:''}
+        onSelect={id=>{comicPreview.onSelect();setSelectedDraftKey(previewDialogue.find(line=>line.id===id)?.draftKey??'');}}
+        onChange={item=>{const original=scaleLetteringHearts([item],comicPreview.frame.w)[0];if(original.heart)original.heart.font_size=Math.round(original.heart.font_size);setLayoutDraft(previewItems.map(candidate=>candidate.dialogue_id===original.dialogue_id?original:candidate));}} />,
+      comicPreview.target)}
     {!isTextPage && visibleTab === "flow" && <FlowPreviewPanel projectId={projectId} preview={flowPreview} error={flowPreviewError} />}
     {promptWarningsOpen && <Modal title="Prompt 警告" subtitle={`${promptAuditWarnings.length} 条`} onClose={() => setPromptWarningsOpen(false)} ariaLabel="Prompt 警告"><div className="issue-dialog-body"><PromptIssueList issues={promptAuditWarnings} tone="warning" /></div></Modal>}
     {generationProblemsOpen && <Modal title="无法生成" subtitle={`${generationProblems.length} 个问题`} onClose={() => setGenerationProblemsOpen(false)} ariaLabel="生成问题"><div className="issue-dialog-body"><PromptIssueList issues={generationProblems} /></div></Modal>}

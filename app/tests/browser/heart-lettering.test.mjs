@@ -13,6 +13,38 @@ async function editor(t, query='') {
  return {page,errors};
 }
 
+test('横竖屏按同一短边计算气泡、旁白与爱心，拖动后保存不改字号',async t=>{
+ const {page,errors}=await editor(t,'?canvas=3:4');
+ const measurements=[];
+ for(const canvas of ['3:4','4:3','1:1','9:16','16:9']){
+  await page.goto(new URL(`heart-lettering.html?canvas=${canvas}`,page.url()).href);
+  await page.getByRole('tab',{name:'嵌字'}).click();
+  await page.locator('.heart-lettering').first().waitFor();
+  await page.getByLabel('旁白',{exact:true}).fill('测试旁白');
+  measurements.push(await page.evaluate(()=>{
+   const overlay=document.querySelector('.lettering-overlay').getBoundingClientRect();
+   const heart=document.querySelector('[data-dialogue-id="dialogue-111111111111"]').getBoundingClientRect();
+   const balloon=document.querySelector('[data-dialogue-id="dialogue-333333333333"]').getBoundingClientRect();
+   return {short:Math.min(overlay.width,overlay.height),font:parseFloat(getComputedStyle(document.querySelector('.lettering-text')).fontSize),narration:parseFloat(getComputedStyle(document.querySelector('.narration-bar__text')).fontSize),heartWidth:heart.width,heartHeight:heart.height,balloonWidth:balloon.width,balloonHeight:balloon.height};
+  }));
+ }
+ for(const measurement of measurements){
+  assert.equal(measurement.short,480);
+  assert.ok(Math.abs(measurement.font-28*480/1024)<.02,'保留竖屏的现有字号');
+  for(const key of ['font','narration','heartWidth','heartHeight','balloonWidth','balloonHeight'])assert.ok(Math.abs(measurement[key]-measurements[0][key])<.2,`${key} 不随横竖比例改变`);
+ }
+ const heart=page.locator('[data-dialogue-id="dialogue-111111111111"]');await heart.click();await page.keyboard.press('ArrowRight');
+ await page.getByRole('button',{name:'保存',exact:true}).click();
+ const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('heart-items')));
+ assert.equal(saved[0].heart.font_size,48,'显示换算不回写成较小的字号');
+ await heart.click();const initial=await heart.boundingBox(),handle=await heart.locator('.lettering-resize-handle').boundingBox();
+ await page.mouse.move(handle.x+handle.width/2,handle.y+handle.height/2);await page.mouse.down();await page.mouse.move(handle.x+handle.width/2+30,handle.y+handle.height/2+15);await page.mouse.up();
+ await page.getByRole('button',{name:'保存',exact:true}).click();
+ const resized=await heart.boundingBox();assert.ok(resized.width>initial.width);
+ await page.reload();await page.locator('.heart-lettering').first().waitFor();assert.ok(Math.abs((await heart.boundingBox()).width-resized.width)<.2,'横屏缩放保存后刷新一致');
+ assert.deepEqual(errors,[]);
+});
+
 test('真实编辑器：独立缩放、旋转、骰子、类型切换与刷新保持排布', async t=>{
  const {page,errors}=await editor(t);
  await page.getByRole('tab',{name:'嵌字'}).click();await page.locator('.heart-lettering').first().waitFor();

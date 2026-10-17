@@ -39,13 +39,14 @@ function lineWidth(line) {
   return [...line].reduce((total, character) => total + characterWidth(character), 0);
 }
 
-export function resolveLetteringLayout({ text, direction, kind, fontSize, canvasWidth, canvasHeight, box }) {
+export function resolveLetteringLayout({ text, direction, kind, fontSize, canvasWidth, canvasHeight, box, allowOutside = false }) {
+  const boundary=allowOutside?16:1;
   const pixelFontSize = canvasWidth * fontSize / 1024;
   const insets = letteringInsets(kind, pixelFontSize);
   const lineHeight = pixelFontSize * 1.3;
   if (direction === "vertical") {
-    const availableHeight = Math.max(0, 1 - box.y) * canvasHeight;
-    const requestedHeight = clamp(box.h, 0.05, Math.max(0.05, 1 - box.y)) * canvasHeight;
+    const availableHeight = Math.max(0, boundary - box.y) * canvasHeight;
+    const requestedHeight = clamp(box.h, 0.05, Math.max(0.05, boundary - box.y)) * canvasHeight;
     const minimumHeight = pixelFontSize * 3 + insets.y * 2;
     const maximumHeight = Math.min(availableHeight, Math.max(requestedHeight, minimumHeight));
     const rows = Math.max(1, Math.floor(Math.max(pixelFontSize, maximumHeight - insets.y * 2) / pixelFontSize));
@@ -58,14 +59,14 @@ export function resolveLetteringLayout({ text, direction, kind, fontSize, canvas
     const width = pixelWidth / canvasWidth;
     const height = Math.min(maximumHeight, contentHeight + insets.y * 2) / canvasHeight;
     return {
-      box: { x: box.x, y: box.y, w: Math.min(width, Math.max(0, 1 - box.x)), h: height },
+      box: { x: box.x, y: box.y, w: Math.min(width, Math.max(0, boundary - box.x)), h: height },
       lines: [], columns,
-      overflow: pixelWidth > (1 - box.x) * canvasWidth + 1 || contentHeight + insets.y * 2 > maximumHeight + 1,
+      overflow: pixelWidth > (boundary - box.x) * canvasWidth + 1 || contentHeight + insets.y * 2 > maximumHeight + 1,
     };
   }
 
-  const availableWidth = Math.max(0, 1 - box.x) * canvasWidth;
-  const requestedWidth = clamp(box.w, 0.08, Math.max(0.08, 1 - box.x)) * canvasWidth;
+  const availableWidth = Math.max(0, boundary - box.x) * canvasWidth;
+  const requestedWidth = clamp(box.w, 0.08, Math.max(0.08, boundary - box.x)) * canvasWidth;
   const minimumWidth = pixelFontSize * 3.2 + insets.x * 2;
   const unwrappedWidths = String(text).split("\n").map(lineWidth);
   const preferredContentWidth = Math.max(...unwrappedWidths) * pixelFontSize + insets.x * 2;
@@ -79,9 +80,9 @@ export function resolveLetteringLayout({ text, direction, kind, fontSize, canvas
   const pixelHeight = lines.length * lineHeight + insets.y * 2;
   const height = pixelHeight / canvasHeight;
   return {
-    box: { x: box.x, y: box.y, w: width, h: Math.min(height, Math.max(0, 1 - box.y)) },
+    box: { x: box.x, y: box.y, w: width, h: Math.min(height, Math.max(0, boundary - box.y)) },
     lines, columns: [],
-    overflow: contentWidth + insets.x * 2 > maximumWidth + 1 || pixelHeight > (1 - box.y) * canvasHeight + 1,
+    overflow: contentWidth + insets.x * 2 > maximumWidth + 1 || pixelHeight > (boundary - box.y) * canvasHeight + 1,
   };
 }
 

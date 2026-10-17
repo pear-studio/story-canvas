@@ -73,6 +73,7 @@ import {
 import {readPageTranslation,savePageTranslation} from './page-translations.mjs';
 import {prepareTranslationInspection} from './finished-pages.mjs';
 import {inspectFinishedLettering} from './finished-render.mjs';
+import {convertComicPage,saveComicPage,splitComicPanel,readComicDocument,restoreComicPage,planComicMerge,mergeComicPages} from './comic-pages.mjs';
 export async function handleWorkbenchRequest({
   request,
   response,
@@ -90,6 +91,15 @@ export async function handleWorkbenchRequest({
   workbenchRenderLauncher,
   generationScheduler = null,
 }) {
+  const comicRoute=/^\/api\/projects\/([^/]+)\/workbench\/comic\/(read|convert|save|split|restore|merge-plan|merge)$/.exec(decodedPath);
+  if(request.method==='POST'&&comicRoute){
+    const value=await readJsonBody(request),id=comicRoute[1];
+    if(comicRoute[2]==='read'){sendOperation(200,await readFacts(id,async({projectDirectory})=>{const document=await readComicDocument(projectDirectory,value.page_key?.page_id);return {document,sha256:hashCanonicalJson(document)};}));return true;}
+    if(comicRoute[2]==='merge-plan'){sendOperation(200,await readFacts(id,()=>planComicMerge(projectRoot,id,value.page_key?.page_id,value)));return true;}
+    const operation={convert:convertComicPage,save:saveComicPage,split:splitComicPanel,restore:restoreComicPage,merge:mergeComicPages}[comicRoute[2]];
+    const result=await mutateTargetFacts(id,()=>operation(projectRoot,id,value.page_key?.page_id,value));
+    sendOperation(200,result);return true;
+  }
   const translationRoute=/^\/api\/projects\/([^/]+)\/workbench\/translation\/(read|save|inspect)$/.exec(decodedPath);
   if(request.method==='POST'&&translationRoute) {
     const body=await readJsonBody(request),id=translationRoute[1];

@@ -29,7 +29,8 @@
     "page_kind": {
       "enum": [
         "text",
-        "video"
+        "video",
+        "comic"
       ]
     },
     "candidate_id": {
@@ -49,8 +50,15 @@
         "canvas"
       ],
       "properties": {
-        "locale": {"enum":["en","ja"]},
-        "source_dialogue": {"type":"array"},
+        "locale": {
+          "enum": [
+            "en",
+            "ja"
+          ]
+        },
+        "source_dialogue": {
+          "type": "array"
+        },
         "dialogue": {
           "type": "array"
         },
@@ -66,7 +74,8 @@
         "page_kind": {
           "enum": [
             "text",
-            "video"
+            "video",
+            "comic"
           ]
         },
         "display_title": {
@@ -77,6 +86,29 @@
         },
         "text_layout": {
           "$ref": "https://storyvisualizer.local/schemas/story-page-narrative.schema.json#/$defs/text_layout"
+        },
+        "panels": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "page_id",
+              "frame",
+              "lettering"
+            ],
+            "properties": {
+              "page_id": {
+                "type": "string"
+              },
+              "frame": {
+                "type": "object"
+              },
+              "lettering": {
+                "type": "object"
+              }
+            },
+            "additionalProperties": false
+          }
         }
       },
       "additionalProperties": false
@@ -140,13 +172,81 @@
     },
     "video": {
       "type": "object"
+    },
+    "comic": {
+      "$ref": "https://storyvisualizer.local/schemas/comic-page.schema.json"
+    },
+    "comic_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "comic_sources": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 12,
+      "items": {
+        "type": "object"
+      }
     }
   },
   "allOf": [
     {
-      "if": { "properties": { "page_kind": { "const": "video" } }, "required": ["page_kind"] },
-      "then": { "properties": { "upscale": false, "lettering": { "required": ["page_kind"], "properties": { "page_kind": { "const": "video" } } } } },
-      "else": { "properties": { "lettering": { "required": ["settings"] } } }
+      "if": {
+        "properties": {
+          "page_kind": {
+            "const": "video"
+          }
+        },
+        "required": [
+          "page_kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "upscale": false,
+          "lettering": {
+            "required": [
+              "page_kind"
+            ],
+            "properties": {
+              "page_kind": {
+                "const": "video"
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "if": {
+          "properties": {
+            "page_kind": {
+              "const": "comic"
+            }
+          },
+          "required": [
+            "page_kind"
+          ]
+        },
+        "then": {
+          "properties": {
+            "lettering": {
+              "required": [
+                "page_kind",
+                "panels"
+              ]
+            }
+          }
+        },
+        "else": {
+          "properties": {
+            "lettering": {
+              "required": [
+                "settings"
+              ]
+            }
+          }
+        }
+      }
     },
     {
       "if": {
@@ -187,12 +287,37 @@
           ]
         },
         "else": {
-          "required": [
-            "candidate_id",
-            "source_sha256",
-            "generation",
-            "upscale"
-          ]
+          "if": {
+            "properties": {
+              "page_kind": {
+                "const": "comic"
+              }
+            },
+            "required": [
+              "page_kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "comic",
+              "comic_sha256",
+              "comic_sources"
+            ],
+            "properties": {
+              "candidate_id": false,
+              "source_sha256": false,
+              "generation": false,
+              "upscale": false
+            }
+          },
+          "else": {
+            "required": [
+              "candidate_id",
+              "source_sha256",
+              "generation",
+              "upscale"
+            ]
+          }
         }
       }
     }

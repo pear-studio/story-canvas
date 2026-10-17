@@ -4,10 +4,11 @@ import { isEditingShortcutTarget } from "./workbench-shortcuts";
 import { mediaVariantUrl } from "./media-variant";
 
 export type ImageOverlayTarget = { element: HTMLDivElement; canvas: string };
-export default function ZoomableImageLightbox({ src, alt, footer, originalVideo = false, fullResolutionOnly = false, hint = "滚轮缩放 · 拖动查看细节", onPrevious, onNext, onClose, onOverlayTarget }: { src: string; alt: string; footer: ReactNode; originalVideo?: boolean; fullResolutionOnly?: boolean; hint?: string; onPrevious?: () => void; onNext?: () => void; onClose: () => void; onOverlayTarget?: (target: ImageOverlayTarget | null) => void }) {
+export default function ZoomableImageLightbox({ src = '', content, alt, footer, originalVideo = false, fullResolutionOnly = false, hint = "滚轮缩放 · 拖动查看细节", onPrevious, onNext, onClose, onOverlayTarget }: { src?: string; content?:{width:number;height:number;children:ReactNode}; alt: string; footer: ReactNode; originalVideo?: boolean; fullResolutionOnly?: boolean; hint?: string; onPrevious?: () => void; onNext?: () => void; onClose: () => void; onOverlayTarget?: (target: ImageOverlayTarget | null) => void }) {
   const lightboxRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ pointerId: number; x: number; y: number; panX: number; panY: number } | null>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const pinch = useRef<{ distance: number; zoom: number } | null>(null);
@@ -47,7 +48,7 @@ export default function ZoomableImageLightbox({ src, alt, footer, originalVideo 
   }, []);
 
   // 在缓存图片的 load 事件前重置，避免随后清空已读取的尺寸而停留在半透明加载态。
-  useLayoutEffect(() => { setZoom(1); setPan({ x: 0, y: 0 }); pointers.current.clear(); pinch.current = null; dragRef.current = null; setDragging(false); setShowOriginal(fullResolutionOnly); setOriginalLoaded(false); setNatural({ width: 0, height: 0 }); }, [src, fullResolutionOnly]);
+  useLayoutEffect(() => { setZoom(1); setPan({ x: 0, y: 0 }); pointers.current.clear(); pinch.current = null; dragRef.current = null; setDragging(false); setShowOriginal(fullResolutionOnly); setOriginalLoaded(false); setNatural(content?{width:content.width,height:content.height}:{ width: 0, height: 0 }); }, [src, fullResolutionOnly,content?.width,content?.height]);
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const lightboxes = document.querySelectorAll<HTMLElement>(".image-lightbox");
@@ -71,7 +72,7 @@ export default function ZoomableImageLightbox({ src, alt, footer, originalVideo 
 
   function constrainPan(x: number, y: number, scale: number) {
     const stage = stageRef.current;
-    const image = imageRef.current;
+    const image = imageRef.current??contentRef.current;
     if (!stage || !image) return { x, y };
     const maxX = Math.max(0, (baseWidth * scale - stage.clientWidth) / 2);
     const maxY = Math.max(0, (baseHeight * scale - stage.clientHeight) / 2);
@@ -148,11 +149,11 @@ export default function ZoomableImageLightbox({ src, alt, footer, originalVideo 
       <button type="button" className="image-lightbox__arrow image-lightbox__arrow--next" aria-label="下一张" disabled={!onNext} onClick={onNext}>›</button>
     </>}
     <div ref={stageRef} className={`image-lightbox__media zoomable-image-stage ${playingOriginal ? 'image-lightbox__media--video' : ''} ${dragging ? "is-dragging" : ""}`.trim()} onClick={event => {
-      const start = clickStart.current; const bounds = imageRef.current?.getBoundingClientRect();
+      const start = clickStart.current; const bounds = (imageRef.current??contentRef.current)?.getBoundingClientRect();
       if (!start || !bounds || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 5) return;
       if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) onClose();
     }} onWheel={playingOriginal ? undefined : handleWheel} onPointerDown={playingOriginal ? undefined : beginDrag} onPointerMove={playingOriginal ? undefined : updateDrag} onPointerUp={playingOriginal ? undefined : endDrag} onPointerCancel={playingOriginal ? undefined : endDrag}>
-      {playingOriginal ? <video key={src} className="image-lightbox__original-video" src={src} aria-label="原图视频" controls autoPlay muted loop playsInline preload="metadata" onLoadedMetadata={() => setOriginalLoaded(true)} /> : <img ref={imageRef} src={displaySrc} alt={alt} draggable={false} data-full-resolution={showOriginal ? "true" : undefined} className={natural.width ? undefined : "is-loading"} onLoad={event => { setNatural({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight }); if (showOriginal && event.currentTarget.getAttribute("src") === src) setOriginalLoaded(true); }} style={natural.width ? { width: baseWidth * zoom, height: baseHeight * zoom, left: Math.round((stageSize.width - baseWidth * zoom) / 2 + pan.x), top: Math.round((stageSize.height - baseHeight * zoom) / 2 + pan.y) } : undefined} />}
+      {content?<div ref={contentRef} className="image-lightbox__content" style={{width:baseWidth*zoom,height:baseHeight*zoom,left:Math.round((stageSize.width-baseWidth*zoom)/2+pan.x),top:Math.round((stageSize.height-baseHeight*zoom)/2+pan.y)}}>{content.children}</div>:playingOriginal ? <video key={src} className="image-lightbox__original-video" src={src} aria-label="原图视频" controls autoPlay muted loop playsInline preload="metadata" onLoadedMetadata={() => setOriginalLoaded(true)} /> : <img ref={imageRef} src={displaySrc} alt={alt} draggable={false} data-full-resolution={showOriginal ? "true" : undefined} className={natural.width ? undefined : "is-loading"} onLoad={event => { setNatural({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight }); if (showOriginal && event.currentTarget.getAttribute("src") === src) setOriginalLoaded(true); }} style={natural.width ? { width: baseWidth * zoom, height: baseHeight * zoom, left: Math.round((stageSize.width - baseWidth * zoom) / 2 + pan.x), top: Math.round((stageSize.height - baseHeight * zoom) / 2 + pan.y) } : undefined} />}
       {onOverlayTarget && natural.width > 0 && <div ref={setOverlayElement} className="image-lightbox__lettering" style={{ width: baseWidth * zoom, height: baseHeight * zoom, left: Math.round((stageSize.width - baseWidth * zoom) / 2 + pan.x), top: Math.round((stageSize.height - baseHeight * zoom) / 2 + pan.y) }} />}
     </div>
     <div className="image-lightbox__footer"><div className="image-lightbox__info">{footer}</div><div className="image-lightbox__zoom">

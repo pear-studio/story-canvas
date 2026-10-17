@@ -1,0 +1,31 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://storyvisualizer.local/schemas/comic-page.schema.json",
+  "description":"可选 pages/<目录页ID>.comic.json；目录页自身作为第一格，其余格在 pages/index.json 用 parent_page_id 归属。画面与 Prompt 沿用独立页面事实。",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["version","canvas","margin","gutter","layout","order","panels"],
+  "properties":{
+    "version":{"const":1},
+    "canvas":{"enum":["3:4","1:1","4:3","2:3","9:16"]},
+    "margin":{"type":"integer","minimum":0,"maximum":64,"description":"整页逻辑宽度1024下的外边距"},
+    "gutter":{"type":"integer","minimum":0,"maximum":64,"description":"整页逻辑宽度1024下的格间距"},
+    "layout":{"$ref":"#/$defs/node"},
+    "order":{"type":"array","minItems":1,"maxItems":12,"uniqueItems":true,"items":{"$ref":"#/$defs/pageId"}},
+    "panels":{"type":"object","minProperties":1,"maxProperties":12,"propertyNames":{"$ref":"#/$defs/pageId"},"additionalProperties":{"$ref":"#/$defs/panel"}}
+  },
+  "$defs":{
+    "pageId":{"type":"string","pattern":"^page-(?:[0-9]{3}|[a-f0-9]{12})$"},
+    "node":{"oneOf":[
+      {"type":"object","additionalProperties":false,"required":["page_id"],"properties":{"page_id":{"$ref":"#/$defs/pageId"}}},
+      {"type":"object","additionalProperties":false,"required":["id","axis","ratio","first","second"],"properties":{
+        "id":{"type":"string","pattern":"^split-[a-f0-9]{12}$"},"axis":{"enum":["x","y"]},"ratio":{"type":"number","minimum":0.1,"maximum":0.9},"first":{"$ref":"#/$defs/node"},"second":{"$ref":"#/$defs/node"}
+      }}
+    ]},
+    "panel":{"type":"object","additionalProperties":false,"required":["candidate_id","crop","size_mode"],"properties":{
+      "candidate_id":{"type":["string","null"],"pattern":"^candidate-[a-f0-9-]{36}$"},
+      "size_mode":{"enum":["panel","preset"]},
+      "crop":{"type":"object","additionalProperties":false,"required":["x","y","zoom"],"properties":{"x":{"type":"number","minimum":0,"maximum":1},"y":{"type":"number","minimum":0,"maximum":1},"zoom":{"type":"number","minimum":1,"maximum":4}}}
+    }}
+  }
+}

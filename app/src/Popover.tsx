@@ -17,7 +17,7 @@ export function Popover({ className, children, onOpenChange }: {
     const panel = trigger?.nextElementSibling;
     if (trigger && panel instanceof HTMLElement) return mountFloatingLayer(panel, trigger, panel.classList.contains("generate-split__options") && !panel.classList.contains("generate-split__options--down"));
   }, [open]);
-  return <details ref={ref} className={className} name="workbench-popover" onToggle={(event) => {
+  return <details ref={ref} className={className} name="workbench-popover" onKeyDown={event=>{if(event.key==='Escape'&&event.currentTarget.open){event.preventDefault();event.stopPropagation();close();}}} onToggle={(event) => {
     const next = event.currentTarget.open;
     setOpen(next);
     onOpenChange?.(next);

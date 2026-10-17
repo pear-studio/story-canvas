@@ -20,14 +20,19 @@ export function validatePagesIndexDocument(value) {
     const fields = entry.owner_kind === 'story' ? ['sequence_id'] : entry.owner_kind === 'character' ? ['character_id','variant_id'] : entry.owner_kind === 'scene' ? ['scene_id','variant_id'] : null;
     if (!fields) { errors.push('页面归属类型无效'); continue; }
     for (const field of fields) if (!idPattern.test(entry[field] ?? '')) errors.push('页面归属字段无效：' + field);
-    if (Object.keys(entry).some(key => !['page_id','owner_kind',...fields].includes(key))) errors.push('页面归属包含未知字段');
+    if (entry.parent_page_id !== undefined && (entry.owner_kind !== 'story' || !isPageId(entry.parent_page_id) || entry.parent_page_id === entry.page_id)) errors.push('分镜归属无效');
+    if (Object.keys(entry).some(key => !['page_id','owner_kind','parent_page_id',...fields].includes(key))) errors.push('页面归属包含未知字段');
+  }
+  for (const entry of value.pages) if (entry?.parent_page_id) {
+    const parent=value.pages.find(page=>page.page_id===entry.parent_page_id);
+    if(!parent||parent.parent_page_id||parent.owner_kind!=='story'||parent.sequence_id!==entry.sequence_id)errors.push('分镜父页不存在或归属不一致');
   }
   return errors;
 }
 export function pageRelativePath(pageId, kind) {
   if (!isPageId(pageId)) throw new TypeError('无效页面 ID');
   const normalized = kind === 'narrative' || kind === 'goal' ? 'content' : kind;
-  if (!['content','prompt','render','rewrite','text-sources'].includes(normalized)) throw new TypeError('无效页面事实类型');
+  if (!['content','prompt','render','rewrite','text-sources','comic'].includes(normalized)) throw new TypeError('无效页面事实类型');
   return `pages/${pageId}.${normalized}.json`;
 }
 export async function readPageIndex(directory) {
@@ -50,11 +55,12 @@ export async function readPageContent(directory,id) { return JSON.parse(await re
 export async function readPagePrompt(directory,id) { return JSON.parse(await readFile(path.join(directory,pageRelativePath(id,'prompt')),'utf8')); }
 export function storyPagesIndexProjection(index) {
   const by_sequence = {};
-  for(const page of index.pages) if(page.owner_kind==='story') (by_sequence[page.sequence_id] ??= []).push(page.page_id);
+  for(const page of index.pages) if(page.owner_kind==='story'&&!page.parent_page_id) (by_sequence[page.sequence_id] ??= []).push(page.page_id);
   return {$schema:STORY_PAGES_INDEX_SCHEMA_ID,by_sequence};
 }
 export async function readStoryPagesIndex(directory) {return storyPagesIndexProjection(await readPageIndex(directory));}
 export function mergeStoryPagesIndex(current,index) {
-  return {$schema:PAGES_INDEX_SCHEMA_ID,pages:[...current.pages.filter(page=>page.owner_kind!=='story'),...Object.entries(index.by_sequence).flatMap(([sequence_id,ids])=>ids.map(page_id=>({page_id,owner_kind:'story',sequence_id})))]};
+  const parents=Object.fromEntries(Object.entries(index.by_sequence).flatMap(([seq,ids])=>ids.map(id=>[id,seq])));
+  return {$schema:PAGES_INDEX_SCHEMA_ID,pages:[...current.pages.filter(page=>page.owner_kind!=='story'),...current.pages.filter(page=>page.parent_page_id&&parents[page.parent_page_id]).map(page=>({...page,sequence_id:parents[page.parent_page_id]})),...Object.entries(index.by_sequence).flatMap(([sequence_id,ids])=>ids.map(page_id=>({page_id,owner_kind:'story',sequence_id})))]};
 }
 export async function writeStoryPagesIndex(directory,index) {return writePageIndex(directory,mergeStoryPagesIndex(await readPageIndex(directory),index));}

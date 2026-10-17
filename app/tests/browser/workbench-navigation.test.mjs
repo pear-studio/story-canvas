@@ -52,7 +52,7 @@ function qwenRunSettingsMock(task) {
   };
 }
 
-async function setup(t, { character = false, mobile = false, visualPages = false, longStory = false, generationSettings = false, projectLoras = false } = {}) {
+async function setup(t, { character = false, mobile = false, visualPages = false, longStory = false, generationSettings = false, projectLoras = false,comic = false } = {}) {
   const page = await browser.newPage({ viewport: mobile ? { width: 390, height: 844 } : { width: 1500, height: 1000 }, hasTouch: mobile });
   page.setDefaultTimeout(8000);
   const errors = [], renders = [];
@@ -62,6 +62,10 @@ async function setup(t, { character = false, mobile = false, visualPages = false
   const pages = ["a", "b", "c"].map(id => ({ kind: "story", model_id: 'anima', page_id: id, page_key: { page_id: id }, title: `页面${id}`, scene_description: "窗台", characters: [], dialogue: [], prompt, content_sha256: "a".repeat(64), prompt_sha256: "b".repeat(64), prompt_context_sha256: "c".repeat(64), lettering: { page: id, items: [] } }));
   const views = Object.fromEntries(["alpha", "beta"].map(id => [id, { version: 4, project: { id, title: id, canvas: "2:3", default_render_profile: "anima", lettering_settings: defaultLetteringSettings(), lettering_settings_sha256: "e".repeat(64) }, outline: { synopsis: "", chapters: [{ id: "chapter", title: "第一章", summary: "", sequences: [{ id: "sequence", title: "单元", summary: "", pages: structuredClone(pages) }] }] }, characters: [], render_capabilities: { candidates: { available: true, counts: [1, 3] } }, diagnostics: [] }]));
   if(generationSettings) for(const view of Object.values(views)) for(const page of view.outline.chapters[0].sequences[0].pages) Object.assign(page,{model_id:'qwen',prompt:{text:'quiet garden'},render:{version:1,model_id:'qwen',profile_id:'qwen-image-2-1',canvas:'3:4'},render_sha256:'initial-render'});
+  if(comic)for(const view of Object.values(views)){
+    const root=view.outline.chapters[0].sequences[0].pages[1],first=structuredClone(root),second={...structuredClone(root),page_id:'panel-extra',page_key:{page_id:'panel-extra'},parent_page_id:root.page_id,title:'另一格'};
+    root.comic={sha256:'comic-version',document:{version:1,canvas:'2:3',margin:0,gutter:0,layout:{id:'split-123456789abc',axis:'x',ratio:.5,first:{page_id:root.page_id},second:{page_id:second.page_id}},order:[root.page_id,second.page_id],panels:Object.fromEntries([root.page_id,second.page_id].map(id=>[id,{candidate_id:null,crop:{x:.5,y:.5,zoom:1},size_mode:'panel'}]))},panels:[first,second]};
+  }
   if (projectLoras) for (const view of Object.values(views)) for (const page of view.outline.chapters[0].sequences[0].pages) page.project_loras = [
     { filename: 'project-a.safetensors', sha256: 'a'.repeat(64), weight: .9 },
     { filename: 'project-b.safetensors', sha256: 'b'.repeat(64), weight: .8 },
@@ -553,7 +557,7 @@ for(const mobile of [false,true])for(const dirty of [false,true])test(`页面拖
   if(dirty)assert.equal(await page.getByLabel('画面内容',{exact:true}).inputValue(),'未保存画面');
   await page.locator('.tree-page').filter({hasText:'页面c'}).click();
   if(dirty){
-    const confirmation=page.getByRole('dialog',{name:'放弃未保存修改',exact:true});
+    const confirmation=page.getByRole('dialog',{name:'未保存的修改',exact:true});
     await confirmation.waitFor();
     assert.equal(new URL(page.url()).searchParams.get('page'),'b');
   }else await page.waitForFunction(()=>new URLSearchParams(location.search).get('page')==='c');
@@ -667,7 +671,7 @@ test("分区浏览不离开草稿，搜索实际打开页面并同步目录和�
   assert.equal(new URL(page.url()).searchParams.get('page'), 'b');
   assert.equal(await page.getByRole('button', { name: '后退', exact: true }).isDisabled(), true);
   await search.fill('3'); await search.press('Enter');
-  await page.getByRole('dialog').getByRole('button', { name: '确认', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: '放弃修改', exact: true }).click();
   await page.waitForURL('**page=c');
   assert.equal(await page.locator('.navigation-sections').getByRole('button', { name: '系列', exact: true }).getAttribute('aria-pressed'), 'true');
   await page.getByRole('button', { name: '后退', exact: true }).click();
@@ -810,4 +814,16 @@ test("剧情范围目录全部展开，局部渲染且后台刷新不抢滚动",
   await page.waitForTimeout(100);
   assert.equal(await page.evaluate(() => document.querySelector('.story-reading-toolbar').getBoundingClientRect().top >= document.querySelector('.topbar').getBoundingClientRect().bottom - 1), true, '手机阅读栏避开顶部状态栏');
   await page.screenshot({ path: 'Saved/story-overview-mobile.png' });
+});
+
+test('离开普通页可取消或保存后切换，保存失败继续保留草稿',async t=>{
+ const {page}=await setup(t,{generationSettings:true});let saves=[];
+ await page.getByLabel('画面内容',{exact:true}).fill('需要保留的修改');await page.locator('.tree-page').filter({hasText:'页面c'}).click();let dialog=page.getByRole('dialog',{name:'未保存的修改',exact:true});await dialog.getByRole('button',{name:'取消',exact:true}).click();assert.equal(await page.getByLabel('画面内容',{exact:true}).inputValue(),'需要保留的修改');
+ await page.route('**/workbench/page-save',route=>route.fulfill({status:500,json:{error:'save_failed'}}));await page.locator('.tree-page').filter({hasText:'页面c'}).click();await dialog.getByRole('button',{name:'保存后切换',exact:true}).click();await dialog.getByRole('alert').waitFor();assert.equal(new URL(page.url()).searchParams.get('page'),'b');await dialog.getByRole('button',{name:'取消',exact:true}).click();
+ await page.unroute('**/workbench/page-save');await page.route('**/workbench/page-save',route=>{const body=route.request().postDataJSON();saves.push(body);return route.fulfill({json:{content:body.content,prompt:body.prompt,content_sha256:'saved-content',prompt_sha256:'saved-prompt',lettering:{page:body.page_key.page_id,items:body.lettering.items},layout_sha256:'saved-layout'}});});
+ await page.locator('.tree-page').filter({hasText:'页面c'}).click();await dialog.getByRole('button',{name:'保存后切换',exact:true}).click();await page.waitForFunction(()=>new URLSearchParams(location.search).get('page')==='c');assert.equal(saves[0].content.scene_description,'需要保留的修改');
+});
+test('整页布局草稿也阻止切页，并可明确放弃',async t=>{
+ const {page}=await setup(t,{generationSettings:true,comic:true});await page.getByLabel('整页画幅').selectOption('4:3');await page.locator('.tree-page').filter({hasText:'页面c'}).click();const dialog=page.getByRole('dialog',{name:'未保存的修改',exact:true});await dialog.waitFor();await dialog.getByRole('button',{name:'取消',exact:true}).click();assert.equal(await page.getByLabel('整页画幅').inputValue(),'4:3');
+ await page.locator('.tree-page').filter({hasText:'页面c'}).click();await dialog.getByRole('button',{name:'放弃修改',exact:true}).click();await page.waitForFunction(()=>new URLSearchParams(location.search).get('page')==='c');
 });

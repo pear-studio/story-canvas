@@ -20,6 +20,7 @@ export type FeedbackConfirmation = {
   cancelLabel?: string;
   danger?: boolean;
   acknowledgeOnly?: boolean;
+  onSave?:()=>Promise<boolean>;
 };
 
 type FeedbackContextValue = {
@@ -52,6 +53,7 @@ function normalizeConfirmation(confirmation: FeedbackConfirmation | string): Fee
 export function FeedbackProvider({ children }: { children: ReactNode }) {
   const [notice, setNotice] = useState<FeedbackNotice | null>(null);
   const [confirmation, setConfirmation] = useState<ConfirmationState | null>(null);
+  const [savingConfirmation,setSavingConfirmation]=useState(false),[savingError,setSavingError]=useState('');
   const activeConfirmation = useRef<ConfirmationState | null>(null);
   const confirmationQueue = useRef<ConfirmationState[]>([]);
 
@@ -76,6 +78,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
   }, [confirm]);
 
   const finishConfirmation = useCallback((accepted: boolean) => {
+    setSavingError('');setSavingConfirmation(false);
     const current = activeConfirmation.current;
     if (!current) return;
     const next = confirmationQueue.current.shift() ?? null;
@@ -83,6 +86,12 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
     setConfirmation(next);
     current.resolve(accepted);
   }, []);
+  async function saveBeforeLeaving(){
+    if(!confirmation?.onSave||savingConfirmation)return;setSavingConfirmation(true);setSavingError('');
+    try{if(await confirmation.onSave())finishConfirmation(true);else setSavingError('保存未完成，未切换页面。可取消后检查并继续编辑。');}
+    catch(error){setSavingError(error instanceof Error?error.message:String(error));}
+    finally{setSavingConfirmation(false);}
+  }
 
   useEffect(() => () => {
     const pending = [activeConfirmation.current, ...confirmationQueue.current].filter((item): item is ConfirmationState => Boolean(item));
@@ -103,7 +112,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
       <div><strong>{notice.title ?? defaultTitles[notice.kind ?? "info"]}</strong><p>{notice.message}</p></div>
       <button type="button" aria-label="关闭提示" onClick={() => setNotice(null)}>×</button>
     </div>}
-    {confirmation && <Modal size="content" title={confirmation.title ?? "请确认此操作"} subtitle={confirmation.kind ? defaultTitles[confirmation.kind] : "请确认"} onClose={() => finishConfirmation(false)} className={`feedback-confirmation-modal ${confirmation.danger ? "feedback-confirmation-modal--danger" : ""}`.trim()} ariaLabel={confirmation.title ?? "请确认此操作"} footer={<>{!confirmation.acknowledgeOnly && <button type="button" onClick={() => finishConfirmation(false)}>{confirmation.cancelLabel ?? "取消"}</button>}<button type="button" className={confirmation.danger ? "button--danger" : "button--primary"} onClick={() => finishConfirmation(true)}>{confirmation.confirmLabel ?? (confirmation.acknowledgeOnly ? "知道了" : "确认")}</button></>}><p className="feedback-confirmation-message">{confirmation.message.split("\n").map((line, index) => <span key={`${line}-${index}`}>{index > 0 && <br />}{line}</span>)}</p></Modal>}
+    {confirmation && <Modal busy={savingConfirmation} size="content" title={confirmation.title ?? "请确认此操作"} subtitle={confirmation.kind ? defaultTitles[confirmation.kind] : "请确认"} onClose={() => finishConfirmation(false)} className={`feedback-confirmation-modal ${confirmation.danger ? "feedback-confirmation-modal--danger" : ""}`.trim()} ariaLabel={confirmation.title ?? "请确认此操作"} footer={<>{!confirmation.acknowledgeOnly && <button type="button" disabled={savingConfirmation} onClick={() => finishConfirmation(false)}>{confirmation.cancelLabel ?? "取消"}</button>}<button type="button" disabled={savingConfirmation} className={confirmation.danger ? "button--danger" : "button--primary"} onClick={() => finishConfirmation(true)}>{confirmation.confirmLabel ?? (confirmation.acknowledgeOnly ? "知道了" : "确认")}</button>{confirmation.onSave&&<button type="button" className="button--primary" disabled={savingConfirmation} onClick={()=>void saveBeforeLeaving()}>{savingConfirmation?'保存中…':'保存后切换'}</button>}</>}><p className="feedback-confirmation-message">{confirmation.message.split("\n").map((line, index) => <span key={`${line}-${index}`}>{index > 0 && <br />}{line}</span>)}</p>{savingError&&<p role="alert">{savingError}</p>}</Modal>}
   </FeedbackContext.Provider>;
 }
 
