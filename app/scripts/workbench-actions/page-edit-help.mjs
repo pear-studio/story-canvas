@@ -23,7 +23,7 @@ export const pageEditHelp = {
   },
   dialogue: {
     summary:'对白模式、说话人、稳定 ID 与数组编辑',
-    details:'section:content 的 dialogue 是完整数组，提交时整项替换。speech（说话）和 thought（心理）必须有 speaker，取角色 ID；npc 只可说话，不可 thought。heart（心声）可省略 speaker。narration（旁白）不得有 speaker，可选 position:top/bottom；每页至多一条，最多200字。text 必须非空。已有条目保留其原 id；新增条目省略 id。ID 跟随同一条对白，不按数组索引分配或复用被删条目的 ID。删除已排版对白前先用 lettering.page.read/save 移除对应布局锚点；不要自动清空无关布局。文字页用 body/display_title，dialogue 必须为空。',
+    details:'section:content 的 dialogue 是完整数组，提交时整项替换。speech（说话）和 thought（心理）必须有 speaker，取角色 ID；npc 只可说话，不可 thought。heart（心声）可省略 speaker。narration（旁白）不得有 speaker，可选 position:top/bottom；每页至多一条，最多200字。text 必须非空。已有条目保留其原 id；新增条目省略 id。ID 跟随同一条对白，不按数组索引分配或复用被删条目的 ID。page.copy 为副本生成新对白 ID 并同步转换嵌字、译文与原文出处引用；复制后读取副本的 ID 再编辑。旧页面的跨页同名 ID 不表示数据损坏，引用仍以页面和对白 ID 共同定位。删除已排版对白前先用 lettering.page.read/save 移除对应布局锚点；不要自动清空无关布局。文字页用 body/display_title，dialogue 必须为空。',
     example:{section:'content',changes:{dialogue:[{id:'dialogue-012345abcdef',mode:'speech',speaker:'alice',text:'原对白的新文字'},{mode:'narration',text:'次日',position:'top'}]}},
   },
   fragments: {

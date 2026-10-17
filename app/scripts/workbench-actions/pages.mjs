@@ -34,7 +34,7 @@ export const pageActions = {
     ...position,
     character_id: id('可选：模板引用角色 ID'), variant_id: id('可选：模板引用角色的子设定 ID'),
   }, ['owner'], '先确认分页草案。可用 content 一次创建初始正文（不含 Prompt），新增对白不填 id；返回 edit.document 与 edit.save 可继续编辑，不能跨页复用凭据。多页正文用 page.editor.batch.read/save；正文完成后 prompt.batch.read/save 一次处理最多16页，共享继承来源去重。page_kind:video 创建 H3 动态页；prompt.read/save 编辑 text、duration（3–15秒）、loop、quality（preview/standard）、steps；reference.save 导入一张候选图，generation.run 默认生成一个视频。黑底字幕、时间过渡等纯文字内容使用 page_kind:"text"，无需扩散模型生成背景图。文字页仅限 story 归属且不能使用模板；创建后 page.editor.read section:content 修改 body（正文）、display_title（显示标题）和 text_layout（排版），finished.output 直接制作成品。插画页省略 page_kind。owner 与模板范围必须一致；不要传旧式顶层 sequence_id。'),
-  'page.copy': pageAction('复制任意归属页面，保留归属与设置', 'duplicate-page', page),
+  'page.copy': pageAction('复制任意归属页面，保留归属与设置', 'duplicate-page', page, undefined, '副本生成新的页面和对白 ID，同步转换嵌字、译文及原文出处引用，保留对白内容与顺序。源页不变；返回后读取副本再编辑，不复用源页对白 ID 或保存凭据。已有页面不会批量重编号。'),
   'page.delete': pageAction('删除任意归属页面并归档', 'delete-page', page, undefined, '有活动生成或成品任务时拒绝删除。'),
   'page.move': pageAction('移动页面到指定归属和位置', 'move-page', { ...page, owner, ...position }, ['page_key', 'owner'], '支持剧情、角色和场景；文字页不能移到角色或场景。移动只改归属和位置，不重写页面正文。'),
 };

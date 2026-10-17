@@ -13,7 +13,7 @@ const helpTopics = Object.fromEntries(Object.entries(pageEditHelp).filter(([key]
 const post = async (action,args,execution={}) => (await requestWorkbench(`/api/agent/prompt/${action}`,{method:'POST',body:args,signal:execution.signal})).value;
 const sourceErrors = new Set(['prompt_source_conflict','prompt_source_read_required']);
 const recover = (error,args) => {
-  if(error.code==='edit_receipt_target_mismatch'||error.code==='invalid_prompt_fingerprint')return {message:'读据无效或不属于此目标；读取该目标，核对正文后使用它自己的 save.args。',next:{operation:'prompt.read',args:{project_id:args.project_id,target:args.target}}};
+  if(error.code==='edit_receipt_corrupted'||error.code==='edit_receipt_target_mismatch'||error.code==='invalid_prompt_fingerprint')return {message:'读据无效或不属于此目标；读取该目标，核对正文后使用它自己的 save.args。',next:{operation:'prompt.read',args:{project_id:args.project_id,target:args.target}}};
   if ([400,422].includes(error.status) && /^(invalid_|prompt_source_requires_|prompt_source_target_)/.test(error.code ?? '')) return {action:'correct_changes',message:'本项未保存；按 details 修正字段后使用原保存参数提交，无需重读。若随后发生版本冲突再重读判断。'};
   const sources=sourceErrors.has(error.code)&&Array.isArray(error.details)?error.details.filter(value=>typeof value==='string'):[];
   if(sources.length) return {message:'读取列出的来源并判断原修改是否仍适用，再合并 source_versions；保留原 expected_sha256，不盲目换版本重放。',

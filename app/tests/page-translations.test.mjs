@@ -30,7 +30,9 @@ test('中文删除条目同步清理译文；页面复制和归档包含译文',
   await f.operations.mutateTargetFacts('demo',()=>savePageContent(f.root,'demo',{page_key:key,expected_sha256:page.content_sha256,content:{title:page.title,scene_description:page.scene_description,characters:[],dialogue:page.dialogue.slice(0,1)}}));
   const document=await readTranslationDocument(f.directory,key.page_id);assert.deepEqual(Object.keys(document.en.dialogue),[first]);assert.deepEqual(validateTranslationDocument(document,{dialogue:page.dialogue.slice(0,1)}),[]);
   const duplicate=(await f.operations.mutateTargetFacts('demo',()=>duplicatePage(f.root,'demo',key.page_id))).value;
-  assert.deepEqual(await readTranslationDocument(f.directory,duplicate.page_id),document);
+  const copiedContent=JSON.parse(await readFile(path.join(f.directory,`pages/${duplicate.page_id}.content.json`),'utf8'));
+  const newId=copiedContent.dialogue[0].id;assert.notEqual(newId,first);
+  assert.deepEqual(await readTranslationDocument(f.directory,duplicate.page_id),{...document,en:{dialogue:{[newId]:document.en.dialogue[first]}}});
   await f.operations.mutateTargetFacts('demo',()=>deletePage(f.root,'demo',duplicate.page_id));assert.equal(await readTranslationDocument(f.directory,duplicate.page_id),null);
 });
 test('外语成品阻止缺译；复用中文底图；语言输出、过时和删除互不干扰',async t=>{

@@ -10,7 +10,7 @@ export const projectActions = {
     details: '返回 id/title/type/temporary/available，不载入项目正文；next_offset 非空时继续翻页。实际目录与 Git 状态用 project.info。',
     async execute(args) {
       const { value } = await requestWorkbench('/api/project-library');
-      return paginate(value.projects.map(({ id, title, type, temporary, available }) => ({ id, title, type, temporary, available })), args);
+      return paginate(value.projects.map(item => Object.fromEntries(['id','title','type','temporary','available'].filter(key=>item[key]!==undefined).map(key=>[key,item[key]]))), args);
     },
   },
   'project.info': {

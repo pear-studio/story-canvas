@@ -94,5 +94,7 @@ test('创建已提交而回执读取失败时保留成功状态，错目标的�
  const wrong=mediaActions['page.editor.save'].recover({status:409,code:'edit_receipt_target_mismatch'},args);
  assert.match(wrong.message,/其他目标/);assert.doesNotMatch(wrong.message,/已变化/);assert.deepEqual(wrong.next,next);
  const stale=mediaActions['page.editor.save'].recover({status:409,code:'page_edit_conflict'},args);
- assert.match(stale.message,/已变化/);
+ assert.match(stale.message,/版本.*不匹配/);
+ const corrupt=mediaActions['page.editor.save'].recover({status:400,code:'edit_receipt_corrupted'},args);
+ assert.match(corrupt.message,/转写错误/);assert.deepEqual(corrupt.next,next);
 });

@@ -55,6 +55,13 @@ async function fixture(t, responder = () => assert.fail('不应发送请求')) {
   const tools = new Map(), variables = new Map();
   apply({ tools: { register: definition => tools.set(definition.name, definition) }, systemPrompt: { variable: (name, value) => variables.set(name, value) } });
   assert.deepEqual([...tools.keys()], ['story_canvas']);
+  const tool=tools.get('story_canvas'),execute=tool.execute;
+  tool.execute=async (...args)=>{
+    const result=await execute(...args);
+    // 模拟 Harness 在渲染前检查原始返回值，不能靠 JSON.stringify 悄悄丢掉 undefined。
+    assert.deepEqual(result,JSON.parse(JSON.stringify(result)),'工具回执必须是无损 JSON');
+    return result;
+  };
   return { root, tool: tools.get('story_canvas'), requests, variables };
 }
 async function failure(tool, input) {
@@ -180,6 +187,73 @@ test('批量页面编辑预检重复目标，遇到未知保存结果停止，�
   assert.deepEqual(saved.results.map(r=>r.status),['saved','unknown','not_executed']);
   assert.deepEqual(f.requests.map(r=>r.body.page_key.page_id),['page-001','page-002']);
   assert.equal(saved.results[1].next.args.page_key.page_id,'page-002');
+});
+
+test('断连回执保留逐页状态，格式工具复查失败不丢失已保存结果',async t=>{
+  let offline=false;
+  const f=await fixture(t,(req,res)=>{
+    if(offline)return res.destroy();
+    const page_key=req.body.page_key,save={operation:'page.editor.save',args:{project_id:'demo',section:'content',page_key,expected_sha256:'version'}};
+    if(req.url.endsWith('/save')&&page_key.page_id==='page-002'){offline=true;return res.destroy();}
+    res.end(JSON.stringify({saved:true,document:{title:'测试',dialogue:[{id:'dialogue-aaaa00000001',mode:'speech',speaker:'alice',text:'回家。'}]},save}));
+  });
+  const args={project_id:'demo',page_keys:['page-001','page-002','page-003'].map(page_id=>({page_id}))};
+  const preview=await f.tool.execute({operation:'page.dialogue.format.preview',args});
+  const result=await f.tool.execute(preview.apply);
+  assert.equal(result.complete,false);
+  assert.deepEqual(result.results.map(row=>row.status),['saved','unknown','not_executed']);
+  assert.equal(result.counts.verification_failed,3);
+  assert.equal(result.results[1].error.code,'workbench_unavailable');
+  assert.equal(Object.hasOwn(result.results[1].error,'details'),false);
+  assert.deepEqual(f.requests.filter(req=>req.url.endsWith('/save')).map(req=>req.body.page_key.page_id),['page-001','page-002']);
+  const read=await f.tool.execute({operation:'page.editor.batch.read',args:{...args,section:'content'}});
+  assert.deepEqual(read.counts,{failed:3});
+  const failedPreview=await f.tool.execute({operation:'page.dialogue.format.preview',args});
+  assert.equal(failedPreview.counts.failed,3);
+  assert.equal((await f.tool.execute(failedPreview.inspect)).failures.length,3);
+});
+
+test('21页批处理自动逐页提交；排版读取可直接保存，多余字段指出准确路径',async t=>{
+  const f=await fixture(t,(req,res)=>{
+    if(req.method==='GET')return res.end(JSON.stringify({lettering:{page:'page-001',items:[]},expected_sha256:'a'.repeat(64)}));
+    res.end(JSON.stringify({saved:true,save:{operation:'page.editor.save',args:req.body}}));
+  });
+  const result=await f.tool.execute({operation:'page.editor.batch.save',args:{project_id:'demo',section:'content',items:Array.from({length:21},(_,i)=>({page_key:{page_id:`page-${i}`},expected_sha256:'fingerprint',changes:{title:'标题'}}))}});
+  assert.deepEqual(result.counts,{saved:21});assert.equal(f.requests.length,21);
+  const layout=await f.tool.execute({operation:'lettering.page.read',args:{project_id:'demo',page_key:{page_id:'page-001'}}});
+  assert.deepEqual(layout.lettering,{items:[]});
+  await f.tool.execute(layout.save);
+  assert.deepEqual(f.requests.at(-1).body.lettering,{items:[]});
+  const error=await failure(f.tool,{operation:'lettering.page.save',args:{...layout.save.args,lettering:{...layout.lettering,page:'page-001'}}});
+  assert.match(error.message,/lettering.page/);
+});
+
+test('全项目格式计划覆盖超过16页、冻结凭据并验收剩余问题，不覆盖并发内容',async t=>{
+  const pages=Array.from({length:21},(_,i)=>({page_id:`page-${i}`}));
+  const docs=new Map(pages.map(({page_id})=>[page_id,{title:page_id,dialogue:[{id:'d-'+page_id,mode:'thought',speaker:'alice',text:'（回家吧……。）'}]}]));
+  const versions=new Map(pages.map(({page_id})=>[page_id,1]));
+  const f=await fixture(t,(req,res)=>{
+    if(req.url.includes('/index/'))return res.end(JSON.stringify({document:{pages}}));
+    const id=req.body.page_key.page_id;
+    if(req.url.endsWith('/save')) {
+      if(req.body.expected_sha256!==String(versions.get(id))){res.statusCode=409;return res.end(JSON.stringify({error:'page_edit_conflict'}));}
+      docs.get(id).dialogue=req.body.changes.dialogue;versions.set(id,versions.get(id)+1);
+    }
+    res.end(JSON.stringify({saved:true,document:docs.get(id),save:{operation:'page.editor.save',args:{project_id:'demo',section:'content',page_key:{page_id:id},expected_sha256:String(versions.get(id))}}}));
+  });
+  const preview=await f.tool.execute({operation:'page.dialogue.format.preview',args:{project_id:'demo'}});
+  assert.equal(preview.counts.scanned,21);assert.equal(preview.counts.changed,21);assert.equal(preview.items.length,20);assert.equal(preview.next_offset,20);
+  assert.equal(f.requests.filter(req=>req.url.endsWith('/save')).length,0);
+  const rest=await f.tool.execute({...preview.inspect,args:{...preview.inspect.args,offset:20}});assert.equal(rest.items.length,1);
+  docs.get('page-0').dialogue[0].text='（用户新内容。）';versions.set('page-0',2);
+  const applied=await f.tool.execute(preview.apply);
+  assert.equal(applied.counts.saved,20);assert.equal(applied.counts.failed,1);assert.equal(applied.counts.remaining_pages,1);assert.equal(applied.complete,false);
+  assert.equal(applied.counts.unchanged,0);assert.equal(applied.verification.compliant,20);
+  assert.equal(docs.get('page-0').dialogue[0].text,'（用户新内容。）');
+  assert.deepEqual(docs.get('page-20').dialogue,[{id:'d-page-20',mode:'thought',speaker:'alice',text:'回家吧……'}]);
+  const retry=await f.tool.execute(applied.next);assert.equal(retry.counts.changed,1);
+  const done=await f.tool.execute(retry.apply);assert.equal(done.complete,true);assert.equal(done.counts.remaining_pages,0);assert.equal(done.counts.scanned,21);
+  const clean=await f.tool.execute(done.next);assert.equal(clean.counts.changed,0);assert.equal((await f.tool.execute(clean.apply)).complete,true);
 });
 
 test('词库默认输出有界，分页可继续，完整解释由详情文件保留',async t=>{
@@ -658,6 +732,18 @@ test('统一工具经真实 HTTP Adapter 完成结构、设定及三类页面生
   }
   const malformed=await failure(f.tool,{operation:'page.editor.save',args:{...afterBatch.results[0].save.args,expected_sha256:'PLACEHOLDER',changes:{title:'不应写入'}}});
   assert.equal(malformed.status,400);assert.equal(malformed.details[0].field,'expected_sha256');
+  // 真实领域保存中保留对白身份与排版锚；格式计划不直接写事实文件。
+  const formatSource=await run('page.editor.save',{...afterBatch.results[0].save.args,changes:{dialogue:[{mode:'heart',text:'咚。'}]}});
+  const dialogueId=formatSource.document.dialogue[0].id;
+  const formatLayout=await run('lettering.page.read',{page_key});
+  await run('lettering.page.save',{...formatLayout.save.args,lettering:{items:[{dialogue_id:dialogueId,box:{x:0.1,y:0.1,w:0.3,h:0.2}}]}});
+  const formatPlan=await run('page.dialogue.format.preview',{page_keys:[page_key]});
+  assert.equal(formatPlan.counts.changed,1);
+  const formatted=await f.tool.execute(formatPlan.apply);
+  assert.equal(formatted.complete,true);
+  const formatResult=await run('page.editor.read',{page_key,section:'content'});
+  assert.equal(formatResult.document.dialogue[0].id,dialogueId);assert.equal(formatResult.document.dialogue[0].text,'咚');
+  assert.equal((await run('lettering.page.read',{page_key})).lettering.items[0].dialogue_id,dialogueId);
   const sheet = await run('candidate.sheet',{sequence_id:owners[0].sequence_id});
   assert.ok(sheet.pages >= 2); assert.ok(sheet.sheets.length); assert.equal(sheet.images,3);
   const sheetManifest=JSON.parse(await readFile(sheet.manifest,'utf8'));

@@ -11,6 +11,7 @@ import { workspaceActions } from './workspace.mjs';
 import { mediaActions } from './media-actions.mjs';
 import { translationActions } from './translations.mjs';
 import { pageBatchActions } from './page-batch.mjs';
+import { dialogueFormatActions } from './dialogue-format.mjs';
 import { dictionaryActions } from './dictionary.mjs';
 import { managementActions } from './management.mjs';
 import { comparisonActions } from './comparison.mjs';
@@ -20,7 +21,7 @@ import { workbenchRestrictions } from './access-policy.mjs';
 import { videoHelp } from './video-help.mjs';
 import { invalid, validate, schema, string, object } from './contract.mjs';
 const actions = {};
-for (const catalog of [projectActions,structureActions,settingActionsCatalog,pageActions,factActions,promptActions,projectSettingsActions,workspaceActions,mediaActions,translationActions,pageBatchActions,dictionaryActions,managementActions,comparisonActions,trainingActions,executionActions]) {
+for (const catalog of [projectActions,structureActions,settingActionsCatalog,pageActions,factActions,promptActions,projectSettingsActions,workspaceActions,mediaActions,translationActions,pageBatchActions,dialogueFormatActions,dictionaryActions,managementActions,comparisonActions,trainingActions,executionActions]) {
   for (const [name, definition] of Object.entries(catalog)) {
     if (Object.hasOwn(actions,name)) throw new Error(`重复工具操作 ${name}`);
     actions[name]=definition;

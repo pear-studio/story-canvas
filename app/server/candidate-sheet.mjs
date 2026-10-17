@@ -7,6 +7,7 @@ import { ApiError } from './http-support.mjs';
 import { readPageIndex, readPageContent } from './pages-store.mjs';
 import { readRenderTaskBusiness } from './render-task-storage.mjs';
 import { readPageMedia } from './page-media.mjs';
+import { readFinishedRecord } from './finished-pages.mjs';
 
 // 事实读取边界内冻结阅读顺序；后续读取媒体和绘图不持有项目锁。
 export async function captureCandidateSheet(projectDirectory, input) {
@@ -55,7 +56,7 @@ export function sheetPageCells(page, ordinal, task, candidates) {
   });
 }
 
-const statusText = value => ({available:'已出图',completed:'已完成',queued:'排队中',running:'生成中',failed:'失败',cancelled:'已取消',missing:'图片缺失',image_unavailable:'图片无法读取',not_generated:'未生成',text:'文字页',discarded:'已删除',skipped:'已跳过'}[value] ?? value);
+const statusText = value => ({available:'候选可用',completed:'任务完成',queued:'排队中',running:'生成中',failed:'失败',cancelled:'已取消',missing:'图片缺失',image_unavailable:'图片无法读取',not_generated:'未生成',text:'文字页',discarded:'候选已删除',skipped:'已跳过'}[value] ?? value);
 const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
 const textImage = (text,width) => sharp({text:{text:escape(String(text).trim() || '（空白文字页）'),font:'Microsoft YaHei 24',width,rgba:true,wrap:'word-char'}}).png().toBuffer();
 export async function renderCandidateSheet(cells) {
@@ -77,14 +78,26 @@ export async function renderCandidateSheet(cells) {
   return sharp({create:{width:columns*width,height:Math.ceil(cells.length/columns)*height,channels:3,background:'white'}}).composite(layers).png().toBuffer();
 }
 
+export function summarizeSheetPage(page,task,candidates,cells,record) {
+  const latestCells=cells.filter(cell=>cell.page_key.page_id===page.page_key.page_id);
+  const issues=[...new Set(latestCells.filter(cell=>['failed','missing','image_unavailable'].includes(cell.status)).map(cell=>cell.status))];
+  if(page.page_kind!=='text'&&!candidates.length)issues.push('no_available_candidates');
+  return {page_number:page.page_number,page_key:page.page_key,title:page.title,page_kind:page.page_kind,
+    latest_task_id:task?.id??null,latest_task_status:task?.status??null,
+    latest_available:latestCells.filter(cell=>cell.status==='available').length,
+    total_available:candidates.length,
+    finished_record:record?{locale:'zh',candidate_id:record.candidate_id??null,created_at:record.created_at}:null,
+    issues};
+}
 export async function exportCandidateSheet(projectRoot, projectDirectory, snapshot) {
   // 在 catalog 锁内取得业务快照；最新失败/零图任务不依赖已清理档案。
   const latest = (await readRenderTaskBusiness(projectDirectory)).pages;
-  const cells=[];
+  const cells=[],pageStates=[];
   for(const [index,page] of snapshot.pages.entries()) {
     const task=latest[page.page_key.page_id];
-    const media=page.page_kind==='text'||!task ? {candidates:[]} : (await readPageMedia(projectRoot,snapshot.project_id,{page_key:page.page_key})).media;
+    const media=page.page_kind==='text' ? {candidates:[]} : (await readPageMedia(projectRoot,snapshot.project_id,{page_key:page.page_key})).media;
     cells.push(...sheetPageCells(page,index+1,task,media.candidates));
+    pageStates.push({page,task,candidates:media.candidates,record:await readFinishedRecord(projectDirectory,page.page_key.page_id)});
   }
   const folder=path.join(projectRoot,'Saved','Agent','candidate-sheets',randomUUID());
   await mkdir(folder,{recursive:true});
@@ -94,10 +107,12 @@ export async function exportCandidateSheet(projectRoot, projectDirectory, snapsh
     await writeFile(file,await renderCandidateSheet(part));
     sheets.push({file,first_page:part[0].page_number??part[0].ordinal,last_page:part.at(-1).page_number??part.at(-1).ordinal});
   }
-  const problems=cells.filter(c=>!['available','text'].includes(c.status)||c.task_status&&c.task_status!=='completed');
+  const page_summaries=pageStates.map(({page,task,candidates,record})=>summarizeSheetPage(page,task,candidates,cells,record));
+  const problems=page_summaries.filter(page=>page.issues.length).map(({page_key,issues})=>({page_key,issues}));
   const manifest=path.join(folder,'manifest.json');
-  await writeFile(manifest,JSON.stringify({...snapshot,cells,sheets},null,2));
+  await writeFile(manifest,JSON.stringify({...snapshot,cells,sheets,page_summaries},null,2));
   return {captured_at:snapshot.captured_at,pages:snapshot.pages.length,images:cells.filter(c=>c.absolute_file).length,
-    sheets,manifest,problem_count:problems.length,problems:problems.slice(0,8).map(({page_key,status,task_status})=>({page_key,status,task_status})),
+    sheets,manifest,page_summaries,problem_count:problems.length,problems,
+    semantics:'拼图仅展示最新批次；total_available 统计页面所有批次的现存候选。候选可用不等于选中或成品。finished_record 仅表示中文成品记录存在，文件及过时状态用 finished.inspect 核验。正常删除或取消的候选不单独计为问题；problem_count 按有问题的页面计数。',
     read:'按 sheets 顺序用 read_image 读取 file；manifest 保存完整页序和候选身份。此为读取时快照，不自动追踪后续生成。'};
 }

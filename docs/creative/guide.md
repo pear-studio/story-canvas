@@ -33,4 +33,6 @@
 
 机械操作只读保证正确所需的事实，不为每次操作扫描全项目。语料检索指定所属项目，资料归属见[项目事实](../reference/project-files.md)；进入 Prompt 或出图时读[Prompt 与生成规则](prompt-generation.md)。
 
+已授权的跨页文案格式清理使用 `page.dialogue.format.preview/inspect/apply`，机械范围与参数以工具 help 为准；报告扫描范围、保存失败及剩余问题，不能把局部完成说成全项目完成。
+
 需要制作英文、日文版本时，按需读取[嵌字翻译规则](translation.md)。

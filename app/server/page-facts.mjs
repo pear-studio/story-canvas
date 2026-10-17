@@ -122,18 +122,37 @@ export async function movePage(root,projectId,pageId,owner,{beforePageId=null,af
   const next=clone(index);next.pages=next.pages.filter(page=>page.page_id!==pageId);insertEntry(next,{page_id:pageId,...owner},{beforePageId,afterPageId});
   await commitFactChanges(directory,[{relative:'pages/index.json',before:index,after:next}]);return {page_id:pageId,page_key:{page_id:pageId},...owner};
 }
+// 副本对白拥有新身份；同一映射同步转换所有页内引用，随页面一起原子提交。
+async function copyDialogueDocuments(directory,sourceId,targetId,content,writes,layouts,updatedLayouts) {
+  const ids=new Map(),used=new Set(content.dialogue.map(line=>line.id));
+  for(const line of content.dialogue) {
+    let id;do{id=`dialogue-${randomBytes(6).toString('hex')}`;}while(used.has(id));
+    used.add(id);ids.set(line.id,id);line.id=id;
+  }
+  const remap=entries=>Object.fromEntries(Object.entries(entries).map(([key,value])=>[ids.get(key)??key,value]));
+  writes.push({relative:pageRelativePath(targetId,'content'),before:null,after:content});
+  const translations=await readTranslationDocument(directory,sourceId);
+  if(translations){
+    for(const locale of ['en','ja'])if(translations[locale]?.dialogue)translations[locale].dialogue=remap(translations[locale].dialogue);
+    writes.push({relative:translationPath(targetId),before:null,after:translations});
+  }
+  const sources=await optionalJson(directory,pageRelativePath(sourceId,'text-sources'));
+  if(sources)writes.push({relative:pageRelativePath(targetId,'text-sources'),before:null,after:remap(sources)});
+  const layout=layouts?.pages.find(item=>item.page===sourceId);
+  if(layout)updatedLayouts.pages.push({...clone(layout),page:targetId,items:layout.items.map(item=>({...clone(item),dialogue_id:ids.get(item.dialogue_id)??item.dialogue_id}))});
+}
 export async function duplicatePage(root,projectId,pageId) {
   const {projectDirectory:directory}=await projectAt(root,projectId),index=await readPageIndex(directory),source=await requirePage(directory,pageId);
   const id=await newPageId(directory,index),next=clone(index);insertEntry(next,{...source,page_id:id},{afterPageId:pageId});
   const content=await readPageContent(directory,pageId),prompt=await readPagePrompt(directory,pageId);
   const suffix=content.title.match(/\d+$/);
   content.title=suffix?content.title.slice(0,-suffix[0].length)+(BigInt(suffix[0])+1n):`${content.title}2`;
-  const writes=[{relative:pageRelativePath(id,'content'),before:null,after:content},{relative:pageRelativePath(id,'prompt'),before:null,after:prompt}];
-  const translations=await readTranslationDocument(directory,pageId);if(translations)writes.push({relative:translationPath(id),before:null,after:translations});
+  const writes=[{relative:pageRelativePath(id,'prompt'),before:null,after:prompt}];
   writes.push({relative:pageRelativePath(id,'render'),before:null,after:await readPageRenderSettings(directory,pageId)});
-  const sources=await optionalJson(directory,pageRelativePath(pageId,'text-sources'));if(sources)writes.push({relative:pageRelativePath(id,'text-sources'),before:null,after:sources});
-  const layouts=await optionalJson(directory,'lettering/dialogue-layouts.json');const layout=layouts?.pages.find(item=>item.page===pageId);
-  if(layout){const updated=clone(layouts);updated.pages.push({...clone(layout),page:id});writes.push({relative:'lettering/dialogue-layouts.json',before:layouts,after:updated});}
+  const layouts=await optionalJson(directory,'lettering/dialogue-layouts.json');
+  const updatedLayouts=layouts?clone(layouts):null;
+  await copyDialogueDocuments(directory,pageId,id,content,writes,layouts,updatedLayouts);
+  if(updatedLayouts&&hashCanonicalJson(updatedLayouts)!==hashCanonicalJson(layouts))writes.push({relative:'lettering/dialogue-layouts.json',before:layouts,after:updatedLayouts});
   writes.push({relative:'pages/index.json',before:index,after:next});await commitFactChanges(directory,writes);
   return {page_id:id,page_key:{page_id:id},source_page_id:pageId};
 }

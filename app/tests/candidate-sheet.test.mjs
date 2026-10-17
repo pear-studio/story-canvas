@@ -3,8 +3,21 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, writeFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
-import { captureCandidateSheet, latestPageTask, sheetPageCells, renderCandidateSheet, exportCandidateSheet } from '../server/candidate-sheet.mjs';
+import { captureCandidateSheet, latestPageTask, sheetPageCells, renderCandidateSheet, exportCandidateSheet, summarizeSheetPage } from '../server/candidate-sheet.mjs';
 import { PAGES_INDEX_SCHEMA_ID } from '../server/pages-store.mjs';
+
+test('候选数量与成品记录分开；正常淘汰不刷问题，最新批次零图不抹掉旧候选',()=>{
+  const page={page_number:139,page_key:{page_id:'page-a'},title:'示例',page_kind:'illustration'};
+  const task={id:'new',status:'completed',items:['kept','deleted1','deleted2'].map((candidate_id,i)=>({page_key:page.page_key,candidate_id,status:i?'discarded':'available'}))};
+  const candidates=[{candidate_id:'kept',task_id:'new',absolute_file:'kept.png'}];
+  const cells=sheetPageCells(page,1,task,candidates);
+  let summary=summarizeSheetPage(page,task,candidates,cells,null);
+  assert.equal(summary.total_available,1);assert.equal(summary.latest_available,1);assert.deepEqual(summary.issues,[]);assert.equal(summary.finished_record,null);
+  const cancelled={id:'cancelled',status:'cancelled',items:[{page_key:page.page_key,status:'cancelled'}]};
+  summary=summarizeSheetPage(page,cancelled,candidates,sheetPageCells(page,1,cancelled,candidates),{candidate_id:'kept',created_at:'today'});
+  assert.equal(summary.latest_available,0);assert.equal(summary.total_available,1);assert.deepEqual(summary.issues,[]);assert.equal(summary.finished_record.candidate_id,'kept');
+  assert.deepEqual(summarizeSheetPage(page,cancelled,[],sheetPageCells(page,1,cancelled,[]),null).issues,['no_available_candidates']);
+});
 
 test('最新任务零图不回退，部分结果按任务内顺序而非媒体排序',()=>{
   const page={page_key:{page_id:'page-001'},title:'页面',page_kind:'illustration'};

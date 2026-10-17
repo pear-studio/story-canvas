@@ -32,6 +32,9 @@ import {
 import { readStoryPagesIndex, readPageIndex } from "../server/pages-store.mjs";
 import { STORY_PAGE_NARRATIVE_SCHEMA_ID } from "../server/story-files.mjs";
 import { hashCanonicalJson } from "../server/workflow-definition.mjs";
+import { readPageEditContext, savePageEditChanges } from '../server/page-edit-context.mjs';
+import { readPageTranslation, savePageTranslation } from '../server/page-translations.mjs';
+import { translationSources, TRANSLATIONS_SCHEMA } from '../server/page-translation-document.mjs';
 
 async function readJson(target) {
   return JSON.parse(await readFile(target, "utf8"));
@@ -283,16 +286,40 @@ test("duplicateStoryPage 复制 narrative/prompt、紧随源页插入 index 并�
   });
   await writeFile(letteringTarget, `${JSON.stringify(lettering, null, 2)}\n`, "utf8");
 
+  const oldId=narrative.dialogue[0].id;
+  const translations={$schema:TRANSLATIONS_SCHEMA,...Object.fromEntries(['en','ja'].map(locale=>[locale,{dialogue:{[oldId]:{text:locale==='en'?'It is raining.':'雨だ。',source_sha256:translationSources(narrative)[0].source_sha256}}}]))};
+  const sources={[oldId]:{source_file:'reference.txt',offset:0,original_sentence:'下雨了。'}};
+  const translationsFile=path.join(fixture.projectDirectory,`pages/${source.page_id}.translations.json`);
+  const sourcesFile=path.join(fixture.projectDirectory,`pages/${source.page_id}.text-sources.json`);
+  await writeFile(translationsFile,JSON.stringify(translations));await writeFile(sourcesFile,JSON.stringify(sources));
+  const originalFiles=[source.content_file,source.prompt_file,translationsFile,sourcesFile];
+  const originalBytes=await Promise.all(originalFiles.map(file=>readFile(file,'utf8')));
   const duplicated = await duplicateWorkbenchStoryPage(fixture.root, fixture.projectId, source.page_id);
 
   assert.notEqual(duplicated.page_id, source.page_id);
-  assert.deepEqual(await readJson(path.join(fixture.projectDirectory, `pages/${duplicated.page_id}.content.json`)), { ...narrative, title: `${narrative.title}2` });
+  const copied=await readJson(path.join(fixture.projectDirectory, `pages/${duplicated.page_id}.content.json`));
+  const newId=copied.dialogue[0].id;assert.match(newId,/^dialogue-[a-f0-9]{12}$/);assert.notEqual(newId,oldId);
+  assert.deepEqual(copied, { ...narrative, title: `${narrative.title}2`,dialogue:[{...narrative.dialogue[0],id:newId}] });
+  assert.deepEqual(await readJson(path.join(fixture.projectDirectory,`pages/${duplicated.page_id}.text-sources.json`)),{[newId]:sources[oldId]});
+  for(const locale of ['en','ja']){
+    const translated=await readPageTranslation(fixture.projectDirectory,{page_key:duplicated.page_key,locale});
+    assert.deepEqual(translated.summary,{total:1,missing:0,stale:0});assert.equal(translated.lines[0].id,newId);
+    assert.equal(translated.lines[0].translation,translations[locale].dialogue[oldId].text);
+  }
   assert.deepEqual(await readJson(path.join(fixture.projectDirectory, `pages/${duplicated.page_id}.prompt.json`)), prompt);
   assert.deepEqual((await readStoryIndex(fixture)).by_sequence.arrival,
     [source.page_id, duplicated.page_id, neighbor.page_id], "副本紧随源页");
   const layouts = await readJson(letteringTarget);
   assert.deepEqual(layouts.pages.map((page) => page.page), [source.page_id, duplicated.page_id]);
-  assert.deepEqual(layouts.pages[1].items, lettering.pages[0].items, "嵌字条目复制且对白 id 引用仍有效");
+  assert.deepEqual(layouts.pages[1].items, lettering.pages[0].items.map(item=>({...item,dialogue_id:newId})), "嵌字条目绑定副本的新对白 ID");
+  const options={projectRoot:fixture.root,projectId:fixture.projectId,pageKey:duplicated.page_key,section:'content'};
+  const edit=await readPageEditContext(options);
+  await savePageEditChanges({...options,expectedSha256:edit.save.args.expected_sha256,changes:{dialogue:[{...copied.dialogue[0],text:'雨停了。'}]}});
+  const translation=await readPageTranslation(fixture.projectDirectory,{page_key:duplicated.page_key,locale:'en'});
+  assert.equal(translation.summary.stale,1);
+  await savePageTranslation(fixture.projectDirectory,{...translation,entries:{[newId]:'The rain has stopped.'}});
+  assert.deepEqual(await Promise.all(originalFiles.map(file=>readFile(file,'utf8'))),originalBytes,'编辑副本文案和译文不改变源文件');
+  assert.deepEqual((await readJson(letteringTarget)).pages,layouts.pages,'修改文字不改变任一页布局锚点');
 
   const duplicatedNeighbor = await duplicateWorkbenchStoryPage(fixture.root, fixture.projectId, neighbor.page_id);
   assert.deepEqual((await readStoryIndex(fixture)).by_sequence.arrival,

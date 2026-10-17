@@ -1,6 +1,6 @@
 // 参数契约同时用于逐项帮助和执行校验。
 export const string = description => ({ type: 'string', description });
-export const object = description => ({ type: 'object', description });
+export const object = description => ({ type: 'object', ...(description===undefined?{}:{description}) });
 export const schema = (properties = {}, required = Object.keys(properties)) => ({ type: 'object', additionalProperties: false, properties, required });
 export function invalid(message) { return Object.assign(new Error(message), { code: 'invalid_arguments' }); }
 export function validate(parameters, args, prefix = '') {
@@ -15,8 +15,8 @@ export function validate(parameters, args, prefix = '') {
     if (rule.enum && !rule.enum.includes(value)) throw invalid(`${key} 可选值：${rule.enum.join(', ')}`);
     if ((rule.minimum !== undefined && value < rule.minimum) || (rule.maximum !== undefined && value > rule.maximum)) throw invalid(`${key} 超出允许范围`);
     if (rule.type === 'array') {
-      if (rule.minItems !== undefined && value.length < rule.minItems || rule.maxItems !== undefined && value.length > rule.maxItems) throw invalid(`${key} 数量超出允许范围`);
-      if (rule.items) for (const item of value) validate(schema({ item: rule.items }), { item });
+      if (rule.minItems !== undefined && value.length < rule.minItems || rule.maxItems !== undefined && value.length > rule.maxItems) throw invalid(`${prefix}${key} 数量 ${value.length} 超出允许范围 ${rule.minItems??0}–${rule.maxItems??'不限'}`);
+      if (rule.items) for (const [index,item] of value.entries()) validate(schema({ [index]: rule.items }), { [index]:item }, `${prefix}${key}.`);
     }
     if (rule.type === 'object' && rule.properties) validate(rule, value, `${prefix}${key}.`);
   }

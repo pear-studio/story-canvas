@@ -307,13 +307,17 @@ test("页面删除时 text-sources 一并归档", async (context) => {
   assert.deepEqual(archived[SPEECH_ID], textSourceEntry(SENTENCE_QUOTED));
 });
 
-test("页面复制逐字节复制 text-sources，源页面无映射时容忍", async (context) => {
+test("页面复制重绑 text-sources 对白 ID，原文出处不变，源页面无映射时容忍", async (context) => {
   const fixture = await createFixture(context);
   await saveSpeechSource(fixture);
   const duplicated = await duplicateStoryPage(fixture.repositoryRoot, fixture.projectId, "page-001");
   const sourceBytes = await readFile(path.join(fixture.pagesDirectory, "page-001.text-sources.json"));
   const copiedBytes = await readFile(path.join(fixture.pagesDirectory, `${duplicated.page_id}.text-sources.json`));
-  assert.deepEqual(copiedBytes, sourceBytes, "text-sources 必须逐字节一致");
+  const content=JSON.parse(await readFile(path.join(fixture.pagesDirectory,`${duplicated.page_id}.content.json`),'utf8'));
+  const original=JSON.parse(await readFile(path.join(fixture.pagesDirectory,'page-001.content.json'),'utf8'));
+  const ids=new Map(original.dialogue.map((line,i)=>[line.id,content.dialogue[i].id]));
+  assert.ok([...ids].every(([oldId,newId])=>oldId!==newId));
+  assert.deepEqual(JSON.parse(copiedBytes),Object.fromEntries(Object.entries(JSON.parse(sourceBytes)).map(([id,entry])=>[ids.get(id)??id,entry])));
 
   const plain = await duplicateStoryPage(fixture.repositoryRoot, fixture.projectId, "page-002");
   assert.equal(plain.text_sources_file, undefined);

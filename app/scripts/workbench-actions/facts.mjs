@@ -34,7 +34,7 @@ export const factActions = {
       if(source && view!=='sources')throw Object.assign(new Error('source 仅用于 sources 视图'),{code:'invalid_arguments'});
       const pack=await readPromptContext(project_id,page_key);
       if(view==='details')return {...await jsonArtifact({page_key:pack.page_key,context:pack.context}),fields:['context.final','context.configuration','context.references'],read:'优先使用 final/render/sources 窄视图；文件仅作完整诊断。'};
-      const status={page_key:pack.page_key,status:pack.context.status,diagnostics:pack.context.diagnostics};
+      const status={page_key:pack.page_key??page_key,status:pack.context.status,...(pack.context.diagnostics===undefined?{}:{diagnostics:pack.context.diagnostics})};
       if(view==='final')return {...status,final:editingContext(pack.context).final};
       if(view==='render')return {...status,...pack.context.configuration};
       if(view==='sources') {
@@ -42,7 +42,7 @@ export const factActions = {
         if(source&&!references.length)throw Object.assign(new Error('未知来源键，可用：'+pack.context.references.map(r=>r.source).join(', ')),{code:'invalid_arguments'});
         return {...status,references:source ? references : references.map(ref=>({source:ref.source,name:ref.prompt_name,kind:ref.kind,overridden:ref.override!==null || Object.keys(ref.adjustments??{}).length>0,images:ref.reference_images?.length??0}))};
       }
-      return {page_key:pack.page_key,context:editingContext(pack.context),edit:{operation:'prompt.read',args:{project_id,target:{kind:'page',id:page_key.page_id}}}};
+      return {page_key:pack.page_key??page_key,context:editingContext(pack.context),edit:{operation:'prompt.read',args:{project_id,target:{kind:'page',id:page_key.page_id}}}};
     },
   },
 };
