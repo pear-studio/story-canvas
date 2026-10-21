@@ -34,7 +34,7 @@ Linux 使用 `start-remote-workbench.sh` 或开发入口 `start-remote-workbench
 Anima 训练使用 `lora_training.sd_scripts.trainer_root/python`，固定版本见 `library/lora-training/sd-scripts.json`；默认外部目录为 `../story-canvas-trainer/sd-scripts`，Python 为其 `.venv/Scripts/python.exe`。环境预检核对版本、入口、CUDA 和 BF16，不自动安装或升级训练器。
 
 Qwen 的 `lora_training.diffsynth` 和 `prompt_rewrite` 配置归[Qwen](qwen.md)。
-跨设备生成地址优先级在 `app/comfyui-endpoints.json`；各设备分别配置直连地址。任务使用提交时选定实例，不随之后切换改变。
+跨设备生成地址优先级在被忽略的 `Config/comfyui-endpoints.json`；各设备分别配置直连地址。本机部署时提供端点文件，随 `Config/` 单独备份，不通过工具 Git 同步。`setup` 只在文件不存在时创建空配置；未配置任何地址时工作台显示未配置，格式错误时明确报错。任务使用提交时选定实例，不随之后切换改变。
 
 ## 模型目录规范
 

@@ -152,10 +152,6 @@ async function serveCliFixture(context, fixture) {
 
 async function prepareWriteAuditFixture(fixture) {
   await mkdir(path.join(fixture.repositoryRoot, "app"), { recursive: true });
-  await cp(
-    path.join(sourceRepositoryRoot, "app", "comfyui-endpoints.json"),
-    path.join(fixture.repositoryRoot, "app", "comfyui-endpoints.json"),
-  );
   for (const directory of ["render-profiles", "render-recipes", "workflows"]) {
     await cp(path.join(sourceRepositoryRoot, "library", directory), path.join(fixture.repositoryRoot, "library", directory), { recursive: true });
   }

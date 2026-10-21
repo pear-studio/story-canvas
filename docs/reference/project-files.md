@@ -7,7 +7,7 @@
 | 位置 | 内容与管理 |
 |---|---|
 | 工具 `app/`、`library/`、`docs/` | 应用、全局资产和说明，进入工具 Git |
-| `Config/local.json`、`Config/projects.json` | 本机环境和显式项目登记，忽略并单独备份 |
+| `Config/` | 本机环境、跨设备生成端点和显式项目登记，忽略并单独备份；配置见[环境搭建](setup.md) |
 | 工具 `workspace/` | 临时项目，不初始化 Git |
 | 正式项目外部目录 | 各自独立 Git，不进入工具仓库 |
 | 项目 `Outputs/`、`Training/` | 生成成果、训练冻结输入与结果，忽略并单独备份 |

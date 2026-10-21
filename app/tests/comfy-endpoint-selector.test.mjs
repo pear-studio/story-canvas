@@ -56,28 +56,28 @@ test("ComfyUI 配置只保留有序且去重的非空地址", () => {
 
 test("共享地址在当前生成设备上以本机直连替代自己的 Tailscale 地址", () => {
   const sharedUrls = [
-    "http://desktop-home.tail6c2b26.ts.net:8188",
-    "http://gih-d-27166.tail6c2b26.ts.net:8188",
+    "http://renderer-a.example.invalid:8188",
+    "http://renderer-b.example.invalid:8188",
   ];
 
   assert.deepEqual(resolveComfyUiUrls({
     sharedUrls,
     localUrls: ["http://127.0.0.1:8288"],
-    hostName: "GIH-D-27166",
+    hostName: "RENDERER_B",
   }), [
-    "http://desktop-home.tail6c2b26.ts.net:8188",
+    "http://renderer-a.example.invalid:8188",
     "http://127.0.0.1:8288",
   ]);
   assert.deepEqual(resolveComfyUiUrls({
     sharedUrls,
     localUrls: ["http://127.0.0.1:8188"],
-    hostName: "Desktop_Home",
+    hostName: "RENDERER_A",
   }), [
     "http://127.0.0.1:8188",
-    "http://gih-d-27166.tail6c2b26.ts.net:8188",
+    "http://renderer-b.example.invalid:8188",
   ]);
   assert.deepEqual(resolveComfyUiUrls({
     sharedUrls,
-    hostName: "VM-0-5-ubuntu",
+    hostName: "VIEWER",
   }), sharedUrls);
 });

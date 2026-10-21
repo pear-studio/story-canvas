@@ -36,6 +36,13 @@ try {
   await copyFile(path.join(appRoot, "config.local.example.json"), localConfig);
 }
 
+try {
+  await writeFile(path.join(projectRoot, "Config", "comfyui-endpoints.json"), "[]\n", { flag: "wx" });
+} catch (error) {
+  if (error?.code !== "EEXIST") throw error;
+}
+
 console.log("StoryCanvas 本地目录已就绪。");
 console.log("下一步：在 Config/local.json 填写 comfy_cli、comfyui_root（comfy-cli workspace）与模型目录；网络受限设备可选填 comfy_install_source；需要时显式调用 comfy-cli 安装或更新，再启动工作台。");
+console.log("跨设备生成地址填写在 Config/comfyui-endpoints.json，按优先级排列；文件仅在本机保存并单独备份。");
 console.log("图片超分模型为可选能力：由 Agent 按 library/lora-training/upscalers/real-esrgan-x4plus-anime-6b.json 提前检查和处理，setup 不自动下载。");

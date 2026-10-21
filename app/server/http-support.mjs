@@ -149,9 +149,26 @@ export function configuredPath(projectRoot, value) {
 
 export async function loadLocalConfig(appRoot) {
   const defaults = { port: 3000, comfyui_urls: [], comfy_cli: "" };
-  const sharedUrls = JSON.parse(await readFile(path.join(appRoot, "comfyui-endpoints.json"), "utf8"));
+  const configRoot = path.join(appRoot, "..", "Config");
+  let sharedUrls = [];
   try {
-    const local = JSON.parse(await readFile(path.join(appRoot, "..", "Config", "local.json"), "utf8"));
+    sharedUrls = JSON.parse(await readFile(path.join(configRoot, "comfyui-endpoints.json"), "utf8"));
+  } catch (error) {
+    if (error instanceof SyntaxError) throw new Error("Config/comfyui-endpoints.json 不是有效 JSON。");
+    if (error?.code !== "ENOENT") throw error;
+  }
+  if (!Array.isArray(sharedUrls) || !sharedUrls.every((value) => {
+    if (typeof value !== "string" || !value.trim()) return false;
+    try {
+      return ["http:", "https:"].includes(new URL(value).protocol);
+    } catch {
+      return false;
+    }
+  })) {
+    throw new Error("Config/comfyui-endpoints.json 必须是 HTTP(S) 地址数组。");
+  }
+  try {
+    const local = JSON.parse(await readFile(path.join(configRoot, "local.json"), "utf8"));
     return {
       ...defaults,
       ...local,
