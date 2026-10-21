@@ -180,7 +180,7 @@ for(const mobile of [false,true])test(`目录四类页面使用彩色图标和�
   const image=tree.locator('.tree-page[data-page-type="image"]'),text=tree.locator('.tree-page[data-page-type="text"]'),video=tree.locator('.tree-page[data-page-type="video"]'),comic=tree.locator('.tree-page[data-page-type="comic"]');
   await image.getByText('3 张',{exact:true}).waitFor();
   assert.equal(await text.locator('.page-status').count(),0);
-  assert.equal(await video.locator('.page-status').innerText(),'2 段 · 处理后 3.25 秒');
+  assert.equal(await video.locator('.page-status').innerText(),'2 段 · 3.25 秒');
   assert.equal(await comic.locator('.page-status').innerText(),'2 格','不显示根页候选或缺图警告');
   const colors=await tree.locator('.navigation-page-type').evaluateAll(nodes=>nodes.map(node=>getComputedStyle(node).color));assert.equal(new Set(colors).size,4);
   for(const row of [image,text,video,comic]){
@@ -939,7 +939,7 @@ for(const mobile of [false,true])test(`总览按类型集中查看，批量操�
   await page.waitForFunction(()=>document.querySelectorAll('.story-filtered-pages .story-overview-page').length===7);
   assert.equal(await page.locator('.story-summary-reader').count(),0);
   assert.equal(await page.locator('.story-overview-page-number').first().innerText(),'02');
-  await page.locator('.story-page-card-meta').first().getByText('2 段 · 处理后 3.25 秒',{exact:true}).waitFor();
+  await page.locator('.story-page-card-meta').first().getByText('2 段 · 3.25 秒',{exact:true}).waitFor();
   assert.ok((await page.locator('.story-page-source').first().innerText()).includes('章节1 / 单元1-1'));
   assert.equal(await page.getByRole('button',{name:'更多',exact:true}).count(),0);
   const videos=await page.locator('.story-overview-page').evaluateAll(nodes=>nodes.map(node=>node.dataset.pageId));

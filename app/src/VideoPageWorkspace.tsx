@@ -83,7 +83,7 @@ export function VideoPageWorkspace({projectId,page,pages,breadcrumb,onReload}:{p
   const current=candidates.find(c=>c.candidate_id===selected)??candidates[0];
   function candidateDuration(candidate:Candidate) {
     if(!candidate.video)return '时长未知';
-    try{return `处理后 ${videoPostprocessTiming(candidate.video,appliedPostprocess).duration_seconds.toFixed(2)} 秒`;}
+    try{return `${videoPostprocessTiming(candidate.video,appliedPostprocess).duration_seconds.toFixed(2)} 秒`;}
     catch{return '裁剪范围无效';}
   }
   const unapplied=JSON.stringify(postprocess)!==JSON.stringify(appliedPostprocess);
@@ -116,7 +116,7 @@ export function VideoPageWorkspace({projectId,page,pages,breadcrumb,onReload}:{p
       {preview.error?<p role="alert">{previewUrl?'高清预览加载失败，当前显示小预览。':'动图预览加载失败，候选原视频仍保留。'}<span className="video-field-hint">{preview.error}</span><button type="button" className="button" onClick={()=>setPreviewAttempt(value=>value+1)}>重试预览</button></p>:preview.pending&&<p role="status">{previewUrl?'正在加载高清预览…':'正在加载动图预览…'}</p>}
       </>}
     </div>:<div className="video-empty-state">{mediaError?<p role="alert">候选列表读取失败，正在重试。</p>:!mediaLoaded?<p role="status">正在读取候选列表…</p>:<><b>尚无视频候选</b><p>生成中的候选会在完成后自动出现。</p></>}</div>}
-    {current&&<><p className="video-result-meta">{current.video?.width} × {current.video?.height} · 处理后 {previewDuration?.toFixed(2)??'—'} 秒 · Seed {current.seed}</p>
+    {current&&<><p className="video-result-meta">{current.video?.width} × {current.video?.height} · {previewDuration?.toFixed(2)??'—'} 秒 · Seed {current.seed}</p>
       <div className="video-result-actions">
         {!appliedError&&preview.width===1024&&<a className="button button--quiet" href={previewUrl} download="animation.webp">下载 WebP</a>}
         <button type="button" className="button button--quiet" disabled={Boolean(appliedError)||!previewUrl} onClick={()=>setLargeOpen(true)}>查看大图</button>
@@ -174,7 +174,7 @@ export function VideoPageWorkspace({projectId,page,pages,breadcrumb,onReload}:{p
         <label className="video-field">裁掉结尾（秒）<input aria-label="裁掉结尾（秒）" type="number" min={0} max={3600} step={0.1} value={Number.isFinite(postprocess.trim_end_seconds)?postprocess.trim_end_seconds:''} disabled={busy||!contentScope} onChange={e=>setPostprocess({...postprocess,trim_end_seconds:e.target.valueAsNumber})}/><input type="range" aria-label="裁掉结尾滑条" min={0} max={Math.max(0,Math.floor(((current?.video?.duration_seconds??15)-1/(current?.video?.fps??24))*10)/10)} step={0.1} value={Number.isFinite(postprocess.trim_end_seconds)?postprocess.trim_end_seconds:0} disabled={busy||!contentScope} onChange={e=>setPostprocess({...postprocess,trim_end_seconds:e.target.valueAsNumber})}/></label>
         <label className="video-field">播放倍率<input aria-label="播放倍率" type="number" min={0.1} max={4} step={0.1} value={Number.isFinite(postprocess.speed)?postprocess.speed:''} disabled={busy||!contentScope} onChange={e=>setPostprocess({...postprocess,speed:e.target.valueAsNumber})}/><input type="range" aria-label="播放倍率滑条" min={0.1} max={4} step={0.1} value={Number.isFinite(postprocess.speed)?postprocess.speed:0.1} disabled={busy||!contentScope} onChange={e=>setPostprocess({...postprocess,speed:e.target.valueAsNumber})}/><small>0.1–4.0 ×，每步 0.1</small></label>
       </div>
-      {postprocessError?<p role="alert" className="video-message video-message--error">{postprocessError}</p>:<p className="video-field-hint">{current?.video?`原始 ${current.video.duration_seconds.toFixed(2)} 秒 → 处理后 ${processedDuration?.toFixed(2)} 秒`:'生成候选后即可预览'} · 首尾裁剪对齐视频帧</p>}
+      {postprocessError?<p role="alert" className="video-message video-message--error">{postprocessError}</p>:<p className="video-field-hint">{current?.video?`原始 ${current.video.duration_seconds.toFixed(2)} 秒 → ${processedDuration?.toFixed(2)} 秒`:'生成候选后即可预览'} · 首尾裁剪对齐视频帧</p>}
       <div className="video-postprocess-actions"><button type="button" className="button button--primary" disabled={busy||!contentScope||Boolean(postprocessError)||!unapplied} onClick={()=>{setAppliedPostprocess(normalizeVideoPostprocess(postprocess));history.checkpoint();}}>应用</button>
       <button type="button" className="button button--quiet" disabled={busy||!contentScope} onClick={()=>{history.checkpoint();setPostprocess({...defaultVideoPostprocess});}}>重置后处理</button></div>
       {unapplied&&<p className="video-field-hint" role="status">参数尚未应用，右侧保留上次应用的预览；点击应用或保存即可更新。</p>}

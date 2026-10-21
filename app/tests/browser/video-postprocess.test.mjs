@@ -63,13 +63,13 @@ test('动态页后处理：滑条与显式应用、候选切换、保存重开�
   assert.equal(await page.getByLabel('播放倍率',{exact:true}).inputValue(),'1.1');
   await page.waitForTimeout(600);
   assert.equal(previews.length,initialPreviews,'输入与滑条不会启动编码');
-  assert.ok((await page.locator('.video-candidate-list small').first().innerText()).includes('处理后 8.00 秒'),'未应用草稿不改候选显示时长');
+  assert.ok((await page.locator('.video-candidate-list small').first().innerText()).includes('8.00 秒'),'未应用草稿不改候选显示时长');
   await page.getByRole('button',{name:'应用',exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('img[alt="动态后处理预览"]')?.getAttribute('data-preview-source')?.includes('video_edit='));
   await page.getByRole('button',{name:'查看大图',exact:true}).waitFor();
   await page.waitForFunction(()=>!document.querySelector('.video-candidate-preview')?.disabled);
   const edit={trim_start_seconds:.5,trim_end_seconds:1,speed:1.1};
-  assert.ok((await page.locator('.video-candidate-list small').first().innerText()).includes('处理后 5.91 秒'));
+  assert.ok((await page.locator('.video-candidate-list small').first().innerText()).includes('5.91 秒'));
   assert.deepEqual(JSON.parse(previews.findLast(url=>url.searchParams.has('video_edit')).searchParams.get('video_edit')),edit);
   assert.equal(await page.getByRole('button',{name:'原始',exact:true}).count(),0);
   await page.getByRole('button').filter({has:page.getByAltText('视频 Seed 2',{exact:true})}).click();

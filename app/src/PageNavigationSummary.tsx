@@ -14,7 +14,7 @@ export function pageNavigationInfo(page:WorkbenchPage,counts:Record<string,numbe
   const quantity=count===null?'…':String(count);
   if(type==='video'){
     let timing=count===null?'时长加载中':count===0?'未生成':'时长未知';
-    if(count!==0&&video)try{timing=`处理后 ${videoPostprocessTiming(video,page.video_postprocess).duration_seconds.toFixed(2)} 秒`;}
+    if(count!==0&&video)try{timing=`${videoPostprocessTiming(video,page.video_postprocess).duration_seconds.toFixed(2)} 秒`;}
     catch{timing='裁剪范围无效';}
     return {type,label:`${quantity} 段 · ${timing}`,description:`动态页，${count===null?'候选数量正在读取':`${count} 个可用视频候选`}，${video?'最新候选，':''}${timing}`};
   }
