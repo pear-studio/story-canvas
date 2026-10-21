@@ -65,6 +65,7 @@ export type Candidate = {
 export type PageMedia = {
   candidates: Candidate[];
 };
+export type VideoTimings = Record<string,{frames:number;fps:number}>;
 export type TextSourceEntry = {
   source_file: string;
   offset: number;
@@ -103,6 +104,7 @@ export type WorkbenchPage = {
   characters?: Array<{ character_id: string; variant_id: string }>;
   dialogue?: Array<{ id: string; mode: "narration" | "speech" | "thought" | "heart"; speaker?: string; text: string; position?: "top" | "bottom" }>;
   page_kind?: "text" | "video" | null;
+  video_postprocess?: import('../shared/video-postprocess.mjs').VideoPostprocess;
   body?: string;
   display_title?: string;
   text_layout?: TextPageLayout;
@@ -610,7 +612,7 @@ export async function deleteCandidates(
 }
 
 export async function loadCandidateCounts(projectId: string, signal?: AbortSignal, knownRevision?: string) {
-  const result = await workbenchResponseJson<{ unchanged?: false; counts: Record<string, number>; revision: string } | { unchanged: true; revision: string }>(await readFacts(`${base(projectId)}/candidate-counts`, {
+  const result = await workbenchResponseJson<{ unchanged?: false; counts: Record<string, number>; latest_videos: VideoTimings; revision: string } | { unchanged: true; revision: string }>(await readFacts(`${base(projectId)}/candidate-counts`, {
     headers: knownRevision ? { "x-story-canvas-media-revision": knownRevision } : {},
     signal,
   }));

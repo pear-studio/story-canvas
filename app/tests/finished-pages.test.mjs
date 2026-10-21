@@ -50,7 +50,7 @@ test("动态成品原样复制、不超分；混排 ZIP 与 HTML 导出动画 We
   for (let i = 0; i < 128 * 192 * 2; i++) pixels[i * 3 + (i < 128 * 192 ? 0 : 2)] = 255;
   const animation = await sharp(pixels, {raw:{width:128,height:384,pageHeight:192,channels:3}}).webp({lossless:true,loop:0,delay:[41,42]}).toBuffer();
   const info = await stat(path.join(f.directory, first.outputs.clean));
-  const cacheId = createHash('sha1').update(`animation-v1:${first.outputs.clean}:${info.size}:${info.mtimeMs}:${info.ctimeMs}:1024`).digest('hex');
+  const cacheId = createHash('sha1').update(`animation-v2:${first.outputs.clean}:${info.size}:${info.mtimeMs}:${info.ctimeMs}:1024`).digest('hex');
   await mkdir(path.join(f.directory, 'Saved/media-cache'), {recursive:true});
   await writeFile(path.join(f.directory, 'Saved/media-cache', `${cacheId}.webp`), animation);
   const server=createServer(async(request,response)=>{try{await handleFinishedRequest({request,response,decodedPath:new URL(request.url,"http://local").pathname,projectRoot:f.root,readFacts:f.operations.readFacts});}catch(error){response.writeHead(error.status??500);response.end(error.message);}});

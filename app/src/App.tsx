@@ -1,3 +1,4 @@
+import {pageNavigationInfo,PageNavigationLabel} from './PageNavigationSummary';
 import {currentPageSave,usePageChanges} from './use-page-changes';
 import {ComicMergeDialog} from './ComicMergeDialog';
 import {useSaveShortcut} from './use-save-shortcut';
@@ -14,7 +15,7 @@ import { ProjectMenu, type ProjectAction } from "./ProjectMenu";
 import { navigationIdentity, navigationSection, rememberNavigation, type NavigationSection, type NavigationHistory } from "./navigation-history";
 import { PageMoveDialog } from './PageMoveDialog';
 import { SettingView } from './SettingView';
-import type { Scene } from './project-workbench-client';
+import type { Scene, VideoTimings } from './project-workbench-client';
 import { PromptOverview } from "./PromptOverview";
 import type { ImageOverlayTarget } from "./ImageLightbox";
 import {type LetteringLocale} from "./page-translations";
@@ -40,7 +41,7 @@ import { initialWorkbenchNavigation, projectNavigation, openNavigationPage, open
 import { characterRevealBranchKeys, sceneRevealBranchKeys, chooseInitialProjectId, navigationCollapsedStorageKey, readCollapsedBranchKeys, readLastProjectId, storyRevealBranchKeys, writeCollapsedBranchKeys, writeLastProjectId } from "./navigation-collapse";
 import { navigationDropBeforeId } from "./navigation-drop";
 import ProjectGenerationSettingsView from "./ProjectGenerationSettingsView";
-import StoryOverview, { type StoryOverviewTarget } from "./StoryOverview";
+import StoryOverview, { type StoryOverviewTarget, type StoryReadingPosition } from "./StoryOverview";
 import { createProjectRequestGuard } from "./project-request-guard";
 import { createWorkbenchSnapshotSync } from "./workbench-snapshot-sync";
 import { isEditablePage, isEditableSetting, type EditableWorkbenchPage } from './project-workbench-client';
@@ -121,11 +122,6 @@ function pageKey(page: WorkbenchPage) {
 
 /** 子设定 ID 规则：小写字母、数字与连字符（与服务端 storyIdPattern 一致）。 */
 const characterVariantIdPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-
-function pageCandidateStatus(page: WorkbenchPage, counts: Record<string, number> | null) {
-  const count = counts === null ? null : counts[pageKeyId(page.page_key)] ?? 0;
-  return { className: count ? "page-status--prompt" : "", label: count === null ? "—" : `${count} 张`, title: count === null ? "候选数量尚未读取" : `${count} 张可用候选图` };
-}
 
 const emptyPageMedia: PageMedia = { candidates: [] };
 
@@ -429,9 +425,10 @@ function NavigationReorderPreviewOverlay({ reorder }: { reorder: NavigationReord
   return <div className="page-reorder-preview" style={{ left: preview.x + 12, top: preview.y + 12 }} aria-hidden="true"><i>⋮</i><span>{preview.title}</span></div>;
 }
 
-function StoryNavigation({ view, candidateCounts, selectedKey, revealKeys, revealRequest, overviewTarget, onSelect, onOpenOverview, onRequestMenu, onDrop, chapterMenuItems, sequenceMenuItems, pageMenuItems }: {
+function StoryNavigation({ view, candidateCounts, latestVideos, selectedKey, revealKeys, revealRequest, overviewTarget, onSelect, onOpenOverview, onRequestMenu, onDrop, chapterMenuItems, sequenceMenuItems, pageMenuItems }: {
   view: ProjectWorkbenchView;
   candidateCounts: Record<string, number> | null;
+  latestVideos: VideoTimings;
   selectedKey: string | null;
   revealKeys: readonly string[];
   revealRequest: number;
@@ -453,10 +450,10 @@ function StoryNavigation({ view, candidateCounts, selectedKey, revealKeys, revea
       <div className={["tree-group-heading", navigationDropClass(reorder, "chapter", chapter.id)].filter(Boolean).join(" ")} data-nav-kind="chapter" data-nav-id={chapter.id} data-long-press-context-menu onPointerDown={(event) => longPress.start(event, (point) => onRequestMenu(point, `章节 · ${chapter.title}`, chapterMenuItems(chapter)))} onContextMenu={(event) => onRequestMenu(event, `章节 · ${chapter.title}`, chapterMenuItems(chapter))}><NavigationReorderHandle label={chapter.title} source={{ kind: "chapter", id: chapter.id, group: null, title: chapter.title }} reorder={reorder} />{chapter.sequences.length > 0 && <NavigationDisclosureButton expanded={chapterOpen} label={`章节“${chapter.title}”`} onClick={() => toggle(chapterKey)} />}<button type="button" aria-selected={overviewTarget?.kind === "chapter" && overviewTarget.id === chapter.id} className={`tree-toggle ${overviewTarget?.kind === "chapter" && overviewTarget.id === chapter.id ? "is-active" : ""}`} onClick={() => onOpenOverview({ kind: "chapter", id: chapter.id })}><small className="navigation-kind">章节</small><span>{chapter.title}</span></button><small className="navigation-child-count">{chapter.sequences.length} 情节单元</small></div>
       {chapterOpen && <div className="tree-children">{chapter.sequences.map((sequence) => { const sequenceKey = `sequence:${sequence.id}`; const sequenceOpen = !collapsed.has(sequenceKey); return <div className="tree-subgroup" key={sequence.id}>
         <div className={["tree-subgroup-heading", navigationDropClass(reorder, "sequence", sequence.id)].filter(Boolean).join(" ")} data-nav-kind="sequence" data-nav-id={sequence.id} data-nav-group={chapter.id} data-long-press-context-menu onPointerDown={(event) => longPress.start(event, (point) => onRequestMenu(point, `情节单元 · ${sequence.title}`, sequenceMenuItems(sequence)))} onContextMenu={(event) => onRequestMenu(event, `情节单元 · ${sequence.title}`, sequenceMenuItems(sequence))}><NavigationReorderHandle label={sequence.title} source={{ kind: "sequence", id: sequence.id, group: chapter.id, title: sequence.title }} reorder={reorder} />{sequence.pages.length > 0 && <NavigationDisclosureButton expanded={sequenceOpen} label={`情节单元“${sequence.title}”`} onClick={() => toggle(sequenceKey)} />}<button type="button" aria-selected={overviewTarget?.kind === "sequence" && overviewTarget.id === sequence.id} className={`tree-subgroup-toggle ${overviewTarget?.kind === "sequence" && overviewTarget.id === sequence.id ? "is-active" : ""}`} onClick={() => onOpenOverview({ kind: "sequence", id: sequence.id })}><small className="navigation-kind">单元</small><span>{sequence.title}</span></button><small className="navigation-child-count">{sequence.pages.length} 剧情页</small></div>
-        {sequenceOpen && <div className="tree-subgroup-children">{sequence.pages.map((page) => { const status = pageCandidateStatus(page, candidateCounts); return <div className={["tree-page-row", navigationSourceClass(reorder, "story-page", page.page_id), navigationDropClass(reorder, "story-page", page.page_id)].filter(Boolean).join(" ")} key={page.page_id} data-nav-kind="story-page" data-nav-id={page.page_id} data-nav-group={sequence.id}>
+        {sequenceOpen && <div className="tree-subgroup-children">{sequence.pages.map((page) => { const status = pageNavigationInfo(page, candidateCounts, latestVideos[pageKeyId(page.page_key)]); return <div className={["tree-page-row", navigationSourceClass(reorder, "story-page", page.page_id), navigationDropClass(reorder, "story-page", page.page_id)].filter(Boolean).join(" ")} key={page.page_id} data-nav-kind="story-page" data-nav-id={page.page_id} data-nav-group={sequence.id}>
           <NavigationReorderHandle label={page.title} source={{ kind: "story-page", id: page.page_id, group: sequence.id, title: page.title }} reorder={reorder} />
-          <button type="button" data-long-press-context-menu aria-selected={selectedKey === pageKey(page)} className={`tree-page tree-page--compact ${selectedKey === pageKey(page) ? "is-active" : ""} ${selectedKey === pageKey(page) ? "is-selected" : ""}`} onClick={() => onSelect(page)} onPointerDown={(event) => longPress.start(event, (point) => onRequestMenu(point, `剧情页 · ${page.title}`, pageMenuItems(page)))} onContextMenu={(event) => onRequestMenu(event, `剧情页 · ${page.title}`, pageMenuItems(page))}>
-            <span><i className="navigation-page-number">{String(pageNumbers.get(page.page_id)).padStart(2, "0")}</i>{page.title}</span><small className={`page-status ${status.className}`} title={status.title}>{status.label}</small>
+          <button type="button" data-long-press-context-menu data-page-type={status.type} data-tooltip={`${page.title} · ${status.description}`} aria-label={`${page.title}，${status.description}`} aria-selected={selectedKey === pageKey(page)} className={`tree-page tree-page--compact ${selectedKey === pageKey(page) ? "is-active" : ""} ${selectedKey === pageKey(page) ? "is-selected" : ""}`} onClick={() => onSelect(page)} onPointerDown={(event) => longPress.start(event, (point) => onRequestMenu(point, `剧情页 · ${page.title}`, pageMenuItems(page)))} onContextMenu={(event) => onRequestMenu(event, `剧情页 · ${page.title}`, pageMenuItems(page))}>
+            <PageNavigationLabel page={page} number={pageNumbers.get(page.page_id)!} type={status.type}/>{status.label&&<small className="page-status page-status--summary">{status.label}</small>}
           </button>
         </div>; })}</div>}
       </div>})}</div>}
@@ -465,10 +462,11 @@ function StoryNavigation({ view, candidateCounts, selectedKey, revealKeys, revea
   </div>;
 }
 
-function SettingNavigation({ kind = "character", view, candidateCounts, selectedKey, revealKeys, revealRequest, activeCharacterId, activeCharacterSettingId, onCharacter, onPage, onRequestMenu, onDrop, characterMenuItems, settingMenuItems, pageMenuItems }: {
+function SettingNavigation({ kind = "character", view, candidateCounts, latestVideos, selectedKey, revealKeys, revealRequest, activeCharacterId, activeCharacterSettingId, onCharacter, onPage, onRequestMenu, onDrop, characterMenuItems, settingMenuItems, pageMenuItems }: {
   kind?: "character" | "scene";
   view: ProjectWorkbenchView;
   candidateCounts: Record<string, number> | null;
+  latestVideos: VideoTimings;
   selectedKey: string | null;
   revealKeys: readonly string[];
   revealRequest: number;
@@ -496,9 +494,9 @@ function SettingNavigation({ kind = "character", view, candidateCounts, selected
         const variantOpen = !collapsed.has(variantKey);
         return <div className="tree-subgroup" key={variant.id}>
           <div className={["tree-subgroup-heading", navigationDropClass(reorder, (kind === "scene" ? "scene-variant" : "character-variant"), variant.id)].filter(Boolean).join(" ")} data-nav-kind={kind === "scene" ? "scene-variant" : "character-variant"} data-nav-id={variant.id} data-nav-group={character.id} data-nav-owner={character.id} data-long-press-context-menu onPointerDown={(event) => longPress.start(event, (point) => onRequestMenu(point, `子设定 · ${character.name} · ${variant.name}`, settingMenuItems(character, variant)))} onContextMenu={(event) => onRequestMenu(event, `子设定 · ${character.name} · ${variant.name}`, settingMenuItems(character, variant))}><NavigationReorderHandle label={variant.name} source={{ kind: (kind === "scene" ? "scene-variant" : "character-variant"), id: variant.id, group: character.id, owner: character.id, title: variant.name }} reorder={reorder} />{pages.length > 0 && <NavigationDisclosureButton expanded={variantOpen} label={`子设定“${variant.name}”的视觉页`} onClick={() => toggle(variantKey)} />}<button type="button" aria-selected={active} aria-label={variant.name} className={`tree-subgroup-toggle ${active ? "is-active" : ""}`} onClick={() => onCharacter(character, variant.id)}><small className="navigation-kind">设定</small><span>{variant.name}</span></button><small className="navigation-child-count">{pages.length} 视觉页</small></div>
-          {variantOpen && <div className="tree-subgroup-children">{pages.map((page) => { const status = pageCandidateStatus(page, candidateCounts); return <div className={["tree-page-row", navigationSourceClass(reorder, (kind === "scene" ? "scene-page" : "character-page"), page.page_id), navigationDropClass(reorder, (kind === "scene" ? "scene-page" : "character-page"), page.page_id)].filter(Boolean).join(" ")} key={page.page_id} data-nav-kind={kind === "scene" ? "scene-page" : "character-page"} data-nav-id={page.page_id} data-nav-group={variant.id} data-nav-owner={character.id}>
+          {variantOpen && <div className="tree-subgroup-children">{pages.map((page) => { const status = pageNavigationInfo(page, candidateCounts, latestVideos[pageKeyId(page.page_key)]); return <div className={["tree-page-row", navigationSourceClass(reorder, (kind === "scene" ? "scene-page" : "character-page"), page.page_id), navigationDropClass(reorder, (kind === "scene" ? "scene-page" : "character-page"), page.page_id)].filter(Boolean).join(" ")} key={page.page_id} data-nav-kind={kind === "scene" ? "scene-page" : "character-page"} data-nav-id={page.page_id} data-nav-group={variant.id} data-nav-owner={character.id}>
             <NavigationReorderHandle label={page.title} source={{ kind: (kind === "scene" ? "scene-page" : "character-page"), id: page.page_id, group: variant.id, owner: character.id, title: page.title }} reorder={reorder} />
-            <button type="button" data-long-press-context-menu aria-selected={selectedKey === pageKey(page)} className={`tree-page tree-page--compact ${selectedKey === pageKey(page) ? "is-active" : ""} ${selectedKey === pageKey(page) ? "is-selected" : ""}`} onClick={() => onPage(page)} onPointerDown={(event) => longPress.start(event, (point) => onRequestMenu(point, `${kind === "scene" ? "场景" : "角色"}视觉页 · ${page.title}`, pageMenuItems(character, page)))} onContextMenu={(event) => onRequestMenu(event, `${kind === "scene" ? "场景" : "角色"}视觉页 · ${page.title}`, pageMenuItems(character, page))}><span><i className="navigation-page-number">{String(pages.indexOf(page) + 1).padStart(2, "0")}</i>{page.title}</span><small className={`page-status ${status.className}`} title={status.title}>{status.label}</small></button>
+            <button type="button" data-long-press-context-menu data-page-type={status.type} data-tooltip={`${page.title} · ${status.description}`} aria-label={`${page.title}，${status.description}`} aria-selected={selectedKey === pageKey(page)} className={`tree-page tree-page--compact ${selectedKey === pageKey(page) ? "is-active" : ""} ${selectedKey === pageKey(page) ? "is-selected" : ""}`} onClick={() => onPage(page)} onPointerDown={(event) => longPress.start(event, (point) => onRequestMenu(point, `${kind === "scene" ? "场景" : "角色"}视觉页 · ${page.title}`, pageMenuItems(character, page)))} onContextMenu={(event) => onRequestMenu(event, `${kind === "scene" ? "场景" : "角色"}视觉页 · ${page.title}`, pageMenuItems(character, page))}><PageNavigationLabel page={page} number={pages.indexOf(page)+1} type={status.type}/>{status.label&&<small className="page-status page-status--summary">{status.label}</small>}</button>
           </div>; })}</div>}
         </div>;
       })}</div>}
@@ -900,6 +898,7 @@ export default function StoryWorkbench({ initialImagesHidden, imagePrivacyStorag
   const [navigation, setNavigation] = useState(() => initialWorkbenchNavigation(window.location.search));
   const navigationRef = useRef(navigation);
   const historyRef = useRef<NavigationHistory>({ entries: [], index: -1 });
+  const storyReadingPositions = useRef(new Map<string,StoryReadingPosition>());
   const [revealRequest, setRevealRequest] = useState(0);
   const [directorySection, setDirectorySection] = useState<NavigationSection>(() => navigationSection(navigation.activeTab) ?? "story");
   const directoryScroll = useRef<Record<string, number>>({});
@@ -959,8 +958,9 @@ export default function StoryWorkbench({ initialImagesHidden, imagePrivacyStorag
   }, () => workbenchScope(navigationRef.current)));
   const requestedScopeKey = JSON.stringify(workbenchScope(navigation));
   const scopeReady = view && JSON.stringify(view.scope) === requestedScopeKey;
-  const [countSnapshot, setCountSnapshot] = useState<{ projectId: string; counts: Record<string, number> } | null>(null);
+  const [countSnapshot, setCountSnapshot] = useState<{ projectId: string; counts: Record<string, number>; latestVideos: VideoTimings } | null>(null);
   const candidateCounts = countSnapshot?.projectId === projectId ? countSnapshot.counts : null;
+  const latestVideos = countSnapshot?.projectId === projectId ? countSnapshot.latestVideos : {};
   useEffect(() => {
     setCountSnapshot(null);
     if (!projectId) return;
@@ -972,7 +972,7 @@ export default function StoryWorkbench({ initialImagesHidden, imagePrivacyStorag
         const result = await loadCandidateCounts(projectId, controller.signal, revision);
         if (!controller.signal.aborted && result) {
           revision = result.revision;
-          setCountSnapshot({ projectId, counts: result.counts });
+          setCountSnapshot({ projectId, counts: result.counts, latestVideos: result.latest_videos ?? {} });
         }
       } catch { /* 暂时离线保留已知数量，下一轮重试。 */ }
     } });
@@ -1818,18 +1818,18 @@ export default function StoryWorkbench({ initialImagesHidden, imagePrivacyStorag
                   {!!view?.characters.length && <NavigationDisclosureButton expanded={expandedUtilities.characters} label="角色" onClick={() => setExpandedUtilities(c => ({ ...c, characters: !c.characters }))} />}
                   <b>角色</b><small className="navigation-child-count">{view?.characters.length ?? '—'}</small>
                 </div>
-                {view && expandedUtilities.characters && <SettingNavigation key={projectId} revealRequest={revealRequest} view={view} candidateCounts={candidateCounts} selectedKey={selectedKey} revealKeys={characterNavRevealKeys} activeCharacterId={activeTab === 'characters' ? activeCharacterId : null} activeCharacterSettingId={activeCharacterSettingId} onCharacter={chooseCharacter} onPage={chooseNavigationPage} onRequestMenu={showNavigationMenu} onDrop={handleNavigationDrop} characterMenuItems={settingMenuItems} settingMenuItems={settingVariantMenuItems} pageMenuItems={settingPageMenuItems} />}
+                {view && expandedUtilities.characters && <SettingNavigation key={projectId} revealRequest={revealRequest} view={view} candidateCounts={candidateCounts} latestVideos={latestVideos} selectedKey={selectedKey} revealKeys={characterNavRevealKeys} activeCharacterId={activeTab === 'characters' ? activeCharacterId : null} activeCharacterSettingId={activeCharacterSettingId} onCharacter={chooseCharacter} onPage={chooseNavigationPage} onRequestMenu={showNavigationMenu} onDrop={handleNavigationDrop} characterMenuItems={settingMenuItems} settingMenuItems={settingVariantMenuItems} pageMenuItems={settingPageMenuItems} />}
                 <div className="section-heading-row" {...sectionMenu('场景', [{ id: 'create-scene', label: '新增场景', onSelect: () => void createScene() }])}>
                   {!!view?.scenes?.scenes.length && <NavigationDisclosureButton expanded={expandedUtilities.scenes} label="场景" onClick={() => setExpandedUtilities(c => ({ ...c, scenes: !c.scenes }))} />}
                   <b>场景</b><small className="navigation-child-count">{view?.scenes?.scenes.length ?? (view ? 0 : '—')}</small>
                 </div>
-                {view && expandedUtilities.scenes && <SettingNavigation key={`${projectId}:scenes`} kind="scene" view={view} revealRequest={revealRequest} candidateCounts={candidateCounts} selectedKey={selectedKey}
+                {view && expandedUtilities.scenes && <SettingNavigation key={`${projectId}:scenes`} kind="scene" view={view} revealRequest={revealRequest} candidateCounts={candidateCounts} latestVideos={latestVideos} selectedKey={selectedKey}
                   revealKeys={sceneRevealBranchKeys(view.scenes?.scenes ?? [],selectedKey,activeTab==='scenes'?selectedSceneId:null,sceneSettingId)} activeCharacterId={activeTab==='scenes'?selectedSceneId:null} activeCharacterSettingId={sceneSettingId}
                   onCharacter={(scene,id)=>void chooseScene(scene.id,id)} onPage={chooseNavigationPage} onRequestMenu={showNavigationMenu} onDrop={handleNavigationDrop}
                   characterMenuItems={scene=>settingMenuItems(scene,'scene')} settingMenuItems={(scene,variant)=>settingVariantMenuItems(scene,variant,'scene')} pageMenuItems={(scene,page)=>settingPageMenuItems(scene,page,'scene')} />}
                 {!!view?.orphan_pages?.length && <button className="button button--quiet" onClick={()=>void openTab('orphan-pages')}>待整理页面 · {view.orphan_pages.length}</button>}
               </div>
-              <div hidden={directorySection !== 'story'}>{view && <StoryNavigation key={projectId} revealRequest={revealRequest} overviewTarget={activeTab === "project-story" ? storyOverviewTarget : null} view={view} candidateCounts={candidateCounts} selectedKey={selectedKey} revealKeys={storyNavRevealKeys} onSelect={chooseNavigationPage} onOpenOverview={target => void openStoryOverview(target)} onRequestMenu={showNavigationMenu} onDrop={handleNavigationDrop} chapterMenuItems={chapterMenuItems} sequenceMenuItems={sequenceMenuItems} pageMenuItems={storyPageMenuItems} />}</div>
+              <div hidden={directorySection !== 'story'}>{view && <StoryNavigation key={projectId} revealRequest={revealRequest} overviewTarget={activeTab === "project-story" ? storyOverviewTarget : null} view={view} candidateCounts={candidateCounts} latestVideos={latestVideos} selectedKey={selectedKey} revealKeys={storyNavRevealKeys} onSelect={chooseNavigationPage} onOpenOverview={target => void openStoryOverview(target)} onRequestMenu={showNavigationMenu} onDrop={handleNavigationDrop} chapterMenuItems={chapterMenuItems} sequenceMenuItems={sequenceMenuItems} pageMenuItems={storyPageMenuItems} />}</div>
               <div className="utility-nav global-utility-nav" hidden={directorySection !== 'output'}><button type="button" className={activeTab === 'finished' ? 'is-active' : ''} onClick={() => void openTab('finished')}>成品</button><button type="button" className={activeTab === 'project-lettering' ? 'is-active' : ''} onClick={() => void openTab('project-lettering')}>项目嵌字样式</button></div>
             </>}
             {activeTab === "comparison" && <div className="utility-nav global-utility-nav"><button type="button" className="is-active">对比实验</button></div>}
@@ -1855,7 +1855,7 @@ export default function StoryWorkbench({ initialImagesHidden, imagePrivacyStorag
           : activeTab === "project-settings" && view.project.canvas && view.project.default_render_profile ? <ProjectSettingsView projectId={projectId} project={{ ...view.project, canvas: view.project.canvas, default_render_profile: view.project.default_render_profile }} busy={utilityBusy} onSave={(settings) => saveProjectSettings({ ...view.project, ...settings }, "基础设置")} directory={currentRegisteredProject?.path} />
           : activeTab === "project-render-profile" && view.project.canvas && view.project.default_render_profile ? <ProjectGenerationSettingsView projectId={projectId} project={{ ...view.project, canvas: view.project.canvas, default_render_profile: view.project.default_render_profile }} busy={utilityBusy} onSaveProject={(settings) => saveProjectSettings({ ...view.project, ...settings }, "生成设置")} />
           : activeTab === "project-lettering" && view.project.lettering_settings && view.project.lettering_settings_sha256 ? <ProjectLetteringSettingsView projectId={projectId} settings={view.project.lettering_settings} settingsSha256={view.project.lettering_settings_sha256} characters={view.characters.map(({ id, name }) => ({ id, name }))} previewCanvasWidth={letteringCanvasWidth} busy={utilityBusy} onSave={saveProjectLetteringSettings} />
-          : activeTab === "project-story" ? <StoryOverview key={projectId} projectId={projectId} view={view} focusTarget={storyOverviewTarget} onSelectTarget={target => void openStoryOverview(target)} busy={loading} onReload={reload} onOpenPage={(page) => void choosePage(page)} onSaved={(result) => {
+          : activeTab === "project-story" ? <StoryOverview key={projectId} readingPositions={storyReadingPositions.current} projectId={projectId} view={view} pageType={navigation.storyPageType??'all'} onPageTypeChange={async pageType=>{if(await leaveCurrentAllowed())navigate({...navigationRef.current,storyPageType:pageType==='all'?undefined:pageType});}} focusTarget={storyOverviewTarget} onSelectTarget={target => void openStoryOverview(target)} busy={loading} onReload={reload} onOpenPage={(page) => void choosePage(page)} onSaved={(result) => {
             if (!projectRequestGuard.current.isProjectCurrent(renderedProjectScope)) return;
             setView((current) => {
               if (!current) return current;

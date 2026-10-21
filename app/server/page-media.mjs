@@ -157,7 +157,10 @@ export function createPageMediaReader({ projectRoot, watchDirectory = watch, now
         state.counts = versioned({ counts: Object.fromEntries([...media]
           .filter(([, value]) => value.candidates.length)
           .map(([canonical, value]) => [canonical, value.candidates.length])
-          .sort(([a], [b]) => a.localeCompare(b, "en"))) });
+          .sort(([a], [b]) => a.localeCompare(b, "en"))),
+          latest_videos: Object.fromEntries([...media].filter(([,value])=>value.candidates[0]?.video)
+            .map(([canonical,value])=>[canonical,{frames:value.candidates[0].video.frames,fps:value.candidates[0].video.fps}])
+            .sort(([a],[b])=>a.localeCompare(b,"en"))) });
       })();
       state.pending = operation;
       try { await operation; } finally { if (state.pending === operation) state.pending = null; }

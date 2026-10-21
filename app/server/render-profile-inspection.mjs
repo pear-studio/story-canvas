@@ -226,7 +226,7 @@ function inspectRoutes(bundle, diagnosis) {
   return routes;
 }
 
-export function inspectRenderProfile({ bundle, diagnosis, baseDiagnosis = diagnosis }) {
+export function inspectRenderProfile({ bundle, diagnosis, baseDiagnosis = diagnosis, includeStyleLoras = true }) {
   const context = inspectionContext(bundle);
   if (!isRecord(diagnosis) || !isRecord(baseDiagnosis)) throw new Error("render profile inspection 缺少诊断结果");
   const profile = context.active.resolved_profile;
@@ -257,7 +257,7 @@ export function inspectRenderProfile({ bundle, diagnosis, baseDiagnosis = diagno
     project_override: overrideProjection(context),
     prompt: promptProjection(profile),
     models: Object.fromEntries(Object.entries(profile.models).map(([id, model]) => [id, modelProjection(id, model, diagnosis.models?.[id])])),
-    style_loras: Object.fromEntries(Object.entries(profile.style_loras).map(([id, lora]) => [id, loraProjection(id, lora, diagnosis.style_loras?.[id])])),
+    style_loras: includeStyleLoras ? Object.fromEntries(Object.entries(profile.style_loras).map(([id, lora]) => [id, loraProjection(id, lora, diagnosis.style_loras?.[id])])) : {},
     routes,
   };
 }

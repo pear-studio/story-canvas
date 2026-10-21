@@ -2,7 +2,6 @@ import {writeQwenFixtureJson} from './qwen-fixture.mjs';
 import { registerFixtureProjects } from "../project-registry-fixture.mjs";
 import { PAGES_INDEX_SCHEMA_ID } from "../../server/pages-store.mjs";
 import { mkdtemp, mkdir, symlink, writeFile, rm } from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
@@ -16,7 +15,9 @@ export const key = { page_id: "page-001" };
 export const candidateId = "candidate-11111111-1111-4111-8111-111111111111";
 export const json = writeQwenFixtureJson;
 export async function fixture(t) {
-  const root = await mkdtemp(path.join(os.tmpdir(), "finished-pages-"));
+  const testRoot=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..","..","..","Saved","Tests");
+  await mkdir(testRoot,{recursive:true});
+  const root = await mkdtemp(path.join(testRoot, "finished-pages-"));
   await symlink(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "library"), path.join(root, "library"), process.platform === "win32" ? "junction" : "dir");
   const directory = path.join(root, "workspace", "demo");
   const operations = createProjectOperations({ projectRoot: root });

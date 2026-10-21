@@ -6,7 +6,8 @@ export function navigationIdentity(state: NavigationState) {
   return JSON.stringify([state.projectId, state.activeTab, state.activePageKey && pageKeyId(state.activePageKey), state.activeCharacterId, state.activeCharacterSettingId,
     state.activeTab === 'scenes' ? state.sceneId : null, state.activeTab === 'scenes' ? state.sceneSettingId : null,
     state.activeTab === 'project-story' ? state.overviewTarget?.kind : null,
-    state.activeTab === 'project-story' && state.overviewTarget?.kind !== 'overview' ? state.overviewTarget?.id : null]);
+    state.activeTab === 'project-story' && state.overviewTarget?.kind !== 'overview' ? state.overviewTarget?.id : null,
+    state.activeTab === 'project-story' ? state.storyPageType??'all' : null]);
 }
 export function rememberNavigation(history: NavigationHistory, next: NavigationState, replace = false): NavigationHistory {
   if (next.activeTab === 'comparison' || next.activeTab.startsWith('lora-') || next.activeTab.startsWith('resource-')) return history;

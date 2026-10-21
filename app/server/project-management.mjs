@@ -1,6 +1,6 @@
 import { registeredProjectPath, listRegisteredProjects, registerProject, unregisterProject, readProjectRegistry } from "./project-registry.mjs";
 import { projectFactDirectories, projectSettingFiles } from "./project-storage-layout.mjs";
-import { listFinishedJobs } from "./finished-jobs.mjs";
+import { listFinishedJobs, finishedBusyStatuses } from "./finished-jobs.mjs";
 import { randomUUID } from "node:crypto";
 import { copyFile, lstat, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -54,7 +54,7 @@ async function readJsonOptional(target) {
 }
 
 export async function requireIdleProject(projectDirectory) {
-  if ((await listFinishedJobs(projectDirectory)).some(job => ["queued", "upscaling", "lettering", "publishing"].includes(job.status))) throw new ProjectContractError(409, "project_has_active_tasks");
+  if ((await listFinishedJobs(projectDirectory)).some(job => finishedBusyStatuses.has(job.status))) throw new ProjectContractError(409, "project_has_active_tasks");
   const taskIds = await listActiveProjectTaskIds(projectDirectory);
   if (taskIds.length) throw new ProjectContractError(409, "project_has_active_tasks", taskIds);
   for (const scope of ["comparisons"]) {

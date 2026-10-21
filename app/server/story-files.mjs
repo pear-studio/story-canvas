@@ -1,4 +1,5 @@
 import { parseOverrideSource } from "./prompt-contract.mjs";
+import { normalizeVideoPostprocess } from '../shared/video-postprocess.mjs';
 import { validateModelPromptDocument, promptModelEntries } from './model-prompts.mjs';
 import { NARRATION_CHARACTER_LIMIT } from "../shared/story-content-guidance.mjs";
 export const STORY_OUTLINE_SCHEMA_ID = "https://storyvisualizer.local/schemas/story-outline.schema.json";
@@ -139,9 +140,13 @@ export function storyNarrativeSpeakerIds(narrative) {
 export function validateStoryPageNarrativeDocument(narrative) {
   const errors = [];
   if (!isRecord(narrative)) return ["narrative 必须是 JSON 对象"];
-  checkExactKeys(narrative, ["$schema", "title", "scene_description", "characters", "dialogue", "page_kind", "body", "display_title", "text_layout"], "narrative", errors);
+  checkExactKeys(narrative, ["$schema", "title", "scene_description", "characters", "dialogue", "page_kind", "body", "display_title", "text_layout", "video_postprocess"], "narrative", errors);
   if (narrative.$schema !== STORY_PAGE_NARRATIVE_SCHEMA_ID) errors.push("narrative.$schema 不匹配");
   const isTextPage = narrative.page_kind === "text";
+  if (narrative.video_postprocess !== undefined) {
+    if (narrative.page_kind !== 'video') errors.push('video_postprocess 仅动态页使用');
+    try { normalizeVideoPostprocess(narrative.video_postprocess); } catch (error) { errors.push(error.message); }
+  }
   if (narrative.page_kind !== undefined && !["text","video"].includes(narrative.page_kind)) errors.push("未知页面格式");
   if (narrative.body !== undefined && (!isTextPage || typeof narrative.body !== "string")) errors.push("narrative.body 仅文字页使用，必须是字符串");
   if (narrative.display_title !== undefined && (!isTextPage || typeof narrative.display_title !== "string")) errors.push("narrative.display_title 仅文字页使用，必须是字符串");

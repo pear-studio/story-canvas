@@ -15,7 +15,7 @@ export function videoHelp(actions, availability) {
       call('reference.list',{project_id,target:{kind:'page',id:page_key.page_id}}),
       call('reference.save',{project_id,target:{kind:'page',id:page_key.page_id},expected_sha256:'reference.list返回的sha256',page_key:{page_id:'来源插画页ID'},candidate_id:'来源候选ID'}),
     ]},
-    {instruction:'导入完成后读取 H3 Prompt，使用该读据 save.args 加 changes 保存。中文可用；duration 为3–15秒，loop 是循环目标，quality 为 preview（低分辨率）或 standard；无需指定帧率。可批量用 prompt.batch.read/save。',calls:[
+    {instruction:'导入完成后读取 H3 Prompt，使用该读据 save.args 加 changes 保存。中文可用；duration 为3–15秒，loop 是循环目标，quality 为 preview（低分辨率）或 standard；无需指定帧率。loras 添加本页 LoRA；lora_overrides 按 filename 覆盖 weight/enabled，删除覆盖键恢复项目继承。启用项的触发词只加入编译输入，不改动作原文；关闭项不加载也不追加触发词。LoRA 须匹配底模，裁剪版兼容性另行核验。可批量用 prompt.batch.read/save。',calls:[
       call('prompt.read',{project_id,target}),
       call('prompt.save',{project_id,target,expected_sha256:'原读据中的expected_sha256',source_versions:{},changes:{text:'人物挥手，镜头固定。',duration:3,loop:false,quality:'preview',steps:12}}),
     ]},
@@ -24,7 +24,11 @@ export function videoHelp(actions, availability) {
       call('generation.run',{project_id,page_key,count:1}),
       call('task.wait',{targets:[{project_id,task_id:'生成返回的task_id'}]}),
     ]},
-    {instruction:'查看终态的图片路径及 task.results/candidate.list 的原视频、抽帧审阅路径。抽帧不能证明全程一致或循环接缝自然。仅在用户授权制作成品时 finished.output，必须传选定视频 candidate_id；内部保留无音频 MP4，不超分、不嵌字，网页下载与 finished.export 使用动画 WebP。',calls:[
+    {instruction:'按需调整页面后处理：通过 content 保存 video_postprocess，跟随页面，不绑定候选；trim_start_seconds/trim_end_seconds 分别裁掉原片首尾秒数（默认0，对齐最近帧），speed 为0.1–4.0且步长0.1（默认1）。至少保留一帧；只改预览和下次成品，不改原候选或生成 Prompt。使用读取回执的 save.args 提交。',calls:[
+      call('page.editor.read',{project_id,page_key,section:'content'}),
+      call('page.editor.save',{project_id,page_key,section:'content',expected_sha256:'原读据中的expected_sha256',changes:{video_postprocess:{trim_start_seconds:0.5,trim_end_seconds:0.5,speed:0.8}}}),
+    ]},
+    {instruction:'查看终态的图片路径及 task.results/candidate.list 的原视频、抽帧审阅路径。抽帧不能证明全程一致或循环接缝自然。仅在用户授权制作成品时 finished.output，必须传选定视频 candidate_id；成品冻结并应用本页已保存的后处理，失败保留旧成品，原候选不变。内部保留无音频 MP4，不超分、不嵌字，网页下载与 finished.export 使用动画 WebP。',calls:[
       call('candidate.list',{project_id,page_key,task_id:'生成返回的task_id'}),
       call('finished.output',{project_id,page_key,candidate_id:'选定视频候选ID'}),
       call('task.wait',{targets:[{project_id,task_id:'成品返回的任务ID',purpose:'finished'}]}),

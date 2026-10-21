@@ -17,6 +17,7 @@ export function useDraftHistory<T>(value:T,restore:(value:T)=>void,identity:stri
   },[signature,identity]);
   const step=useCallback((redo:boolean)=>{const history=state.current,source=redo?history.future:history.past,target=source.pop();if(target===undefined)return;(redo?history.past:history.future).push(history.current);history.current=structuredClone(target);history.changedAt=0;latest.current(structuredClone(target));render();},[]);
   const undo=useCallback(()=>step(false),[step]),redo=useCallback(()=>step(true),[step]);
+  const checkpoint=useCallback(()=>{state.current.changedAt=-Infinity;},[]);
   useEffect(()=>{
     if(!enabled)return;
     const key=(event:KeyboardEvent)=>{
@@ -27,5 +28,5 @@ export function useDraftHistory<T>(value:T,restore:(value:T)=>void,identity:stri
     };
     window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);
   },[enabled,undo,redo]);
-  return {undo,redo,canUndo:state.current.past.length>0,canRedo:state.current.future.length>0};
+  return {undo,redo,checkpoint,canUndo:state.current.past.length>0,canRedo:state.current.future.length>0};
 }

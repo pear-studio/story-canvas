@@ -15,6 +15,7 @@ import {videoTiming} from '../server/models/h3/prompt.mjs';
 import {validateFrozenRenderTask} from '../server/render-task-contract.mjs';
 import {readVideoSource} from '../server/video-source.mjs';
 import {finishedReaderDocument} from '../shared/finished-reader.mjs';
+import {readProjectWorkbenchView} from '../server/project-workbench.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const schema=name=>`https://storyvisualizer.local/schemas/${name}.schema.json`;
 test('H3 时长按原生帧网格转换，拒绝越界或非数值',()=>{
@@ -35,6 +36,8 @@ test('动态页创建、来源推荐、中文输入、单视频冻结和循环�
   const illustration=await createPage(base,'demo',owner);
   await createPage(base,'demo',owner,{pageKind:'text'});
   const video=await createPage(base,'demo',owner,{pageKind:'video'});
+  const directoryVideo=async()=> (await readProjectWorkbenchView(base,'demo',{kind:'directory'})).outline.chapters[0].sequences[0].pages.find(page=>page.page_id===video.page_id);
+  assert.equal('configured_duration_seconds' in await directoryVideo(),false,'目录不把生成配置当作候选时长');
   const lookup=await readVideoSource(base,'demo',directory,{page_key:video.page_key});assert.deepEqual(lookup.source_page_key,illustration.page_key);assert.deepEqual(lookup.candidates,[]);
   const target={kind:'page',id:video.page_id};
   const bytes=await sharp({create:{width:384,height:512,channels:3,background:'blue'}}).png().toBuffer();
@@ -43,6 +46,9 @@ test('动态页创建、来源推荐、中文输入、单视频冻结和循环�
   const args={projectId:'demo',domain:'page',kind:'prompt',targetId:video.page_id};const draft=await readFactDraft(base,args);
   draft.document.models.h3={...draft.document.models.h3,text:'女子走过门口，镜头固定。',duration:3,quality:'preview',steps:12};
   await saveFactDraft(base,{...args,document:draft.document,expectedSha256:draft.expected_sha256,expectedContextSha256:draft.expected_context_sha256});
+  const summary=await directoryVideo();
+  assert.equal('configured_duration_seconds' in summary,false,'修改生成配置不向目录发布错误的候选时长');
+  for(const field of ['prompt','render','render_capabilities'])assert.equal(field in summary,false,'目录不携带完整生成设置');
   const compile=()=>compileAndPersistWorkbenchRenderTask(base,'demo',{page_key:video.page_key});
   const ordinary=await compile();assert.equal(ordinary.task.items.length,1);validateFrozenRenderTask(ordinary.task);
   const inspection=await inspectPageRender({repositoryRoot:base,projectDirectory:directory,pageKey:video.page_key});

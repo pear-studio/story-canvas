@@ -17,6 +17,10 @@ export function StoryCandidateRefresh({ projectId, pages, busy, scopeLabel = "�
   const controller = useRef<AbortController | null>(null);
   const stop = useRef(false);
   const mounted = useRef(true);
+  const sources=pages.filter(page=>page.page_kind!=='text').flatMap((page,index)=>{
+    const number=pageOrder?.get(page.page_id)??index+1;
+    return page.comic?page.comic.document.order.map((id,panel)=>({page_key:{page_id:id},title:`${page.title} · 分镜 ${panel+1}`,number})):[{page_key:page.page_key,title:page.title,number}];
+  });
   useEffect(() => {
     mounted.current = true;
     return () => { mounted.current = false; controller.current?.abort(); stop.current = true; };
@@ -30,7 +34,7 @@ export function StoryCandidateRefresh({ projectId, pages, busy, scopeLabel = "�
     setScope(action === "clean" ? "mismatch" : "missing");
     setPerPage(1);
     controller.current = request;
-    const source = [...pages];
+    const source = [...sources];
     const rows: Row[] = [];
     setSession({ action, phase: "scan", rows: [], done: 0, total: source.length });
     try {
@@ -39,7 +43,7 @@ export function StoryCandidateRefresh({ projectId, pages, busy, scopeLabel = "�
         const batch = source.slice(offset, offset + 8);
         const result = await inspectStoryCandidates(projectId, batch.map((page) => page.page_key), request.signal);
         if (request.signal.aborted) return;
-        rows.push(...result.pages.map((page, index) => ({ ...page, title: batch[index].title, number: pageOrder?.get(batch[index].page_id) ?? offset + index + 1 })));
+        rows.push(...result.pages.map((page, index) => ({ ...page, title: batch[index].title, number: batch[index].number })));
         setSession({ action, phase: "scan", rows: [], done: rows.length, total: source.length });
       }
       setSession({ action, phase: "confirm", rows, done: rows.length, total: source.length });
@@ -83,8 +87,8 @@ export function StoryCandidateRefresh({ projectId, pages, busy, scopeLabel = "�
 
   const title = session?.action === "clean" ? "清理候选" : "生成候选";
   return <>
-    <button type="button" className="button button--quiet" disabled={busy || !pages.length || Boolean(session)} onClick={() => void scan("clean")}>清理候选</button>
-    <button type="button" className="button button--quiet" disabled={busy || !pages.length || Boolean(session)} onClick={() => void scan("generate")}>生成候选</button>
+    <button type="button" className="button button--quiet" disabled={busy || !sources.length || Boolean(session)} onClick={() => void scan("generate")}>批量生成</button>
+    <button type="button" className="button button--quiet" disabled={busy || !sources.length || Boolean(session)} onClick={() => void scan("clean")}>批量移除</button>
     {session && <Modal title={title} subtitle={scopeLabel} className="story-candidate-refresh-modal"
       onClose={close} busy={session.phase === "execute"} footer={session.phase === "execute"
         ? <button type="button" className="button button--quiet" onClick={() => { stop.current = true; }}>停止后续提交</button>

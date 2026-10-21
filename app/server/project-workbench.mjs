@@ -286,6 +286,7 @@ export async function readProjectWorkbenchView(projectRoot, projectId, requested
       ...membership, kind: membership.owner_kind, owner: structuredClone(membership),
       owner_id: membership.character_id ?? membership.scene_id,
       page_key: createPageKey(pageId), title: content.title, page_kind: content.page_kind ?? null,
+      ...(content.page_kind === 'video' && content.video_postprocess ? {video_postprocess:structuredClone(content.video_postprocess)} : {}),
       ...(edit || story || output ? { scene_description: content.scene_description, body: content.body ?? '',
       ...(content.page_kind === 'text' ? {display_title:content.display_title ?? '',text_layout:structuredClone(content.text_layout ?? defaultTextPageLayout)} : {}),
       characters: structuredClone(content.characters), dialogue: structuredClone(content.dialogue),

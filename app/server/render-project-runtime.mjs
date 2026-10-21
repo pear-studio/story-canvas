@@ -272,8 +272,8 @@ async function runRender(options, assignedTaskId) {
   const runtimeConfig = { ...localConfig, comfyui_urls: [apiUrl] };
   const purpose = task.purpose;
   const profile = task.snapshot.profile;
-  // 迭代使用条目中已冻结的 LoRA 开关；实际文件由 assertFrozenItemModels 校验。
-  const diagnosticProfile = task.items.every(item => item.iteration) ? { ...profile, style_loras: {} } : profile;
+  // 每个条目的有效 LoRA 已冻结，实际文件由 assertFrozenItemModels 校验。
+  const diagnosticProfile = { ...profile, style_loras: {} };
   const profileDiagnosis = await diagnoseRenderProfile(diagnosticProfile, repositoryRoot, runtimeConfig, null, { modelShaPolicy: "advisory" });
   if (!profileDiagnosis.available) {
     const details = [

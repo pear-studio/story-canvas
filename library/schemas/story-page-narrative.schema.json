@@ -2,6 +2,16 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://storyvisualizer.local/schemas/story-page-narrative.schema.json",
   "$defs": {
+    "video_postprocess": {
+      "type": "object",
+      "description": "动态页后处理，跟随页面；缺省不裁剪、1倍播放。裁剪对齐最近的原片帧。",
+      "properties": {
+        "trim_start_seconds": { "type": "number", "minimum": 0, "maximum": 3600, "default": 0 },
+        "trim_end_seconds": { "type": "number", "minimum": 0, "maximum": 3600, "default": 0 },
+        "speed": { "type": "number", "enum": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 3, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9, 4], "default": 1 }
+      },
+      "additionalProperties": false
+    },
     "text_layout": {
       "type": "object",
       "required": [
@@ -222,6 +232,7 @@
         "video"
       ]
     },
+    "video_postprocess": { "$ref": "#/$defs/video_postprocess" },
     "body": {
       "type": "string",
       "description": "仅文字页使用：黑屏正文，可为空字符串。"
@@ -253,6 +264,10 @@
     }
   },
   "allOf": [
+    {
+      "if": { "properties": { "page_kind": { "const": "video" } }, "required": ["page_kind"] },
+      "else": { "properties": { "video_postprocess": false } }
+    },
     {
       "if": {
         "properties": {

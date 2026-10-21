@@ -5,7 +5,8 @@ import { readFacts } from "./project-write-client";
 import { workbenchResponseJson } from "./api-response";
 import "./FinishedPagesView.css";
 
-export function FinishedOutputButton({locale="zh", projectId, pageId, candidateId, dirty, disabled, onOutput }: {
+export function FinishedOutputButton({locale="zh", projectId, pageId, candidateId, dirty, disabled, onOutput, dirtyLabel="保存嵌字并输出成品" }: {
+  dirtyLabel?:string;
   locale?:LetteringLocale;projectId: string; pageId: string; candidateId?: string; dirty: boolean; disabled: boolean;
   onOutput: (candidateId?: string) => Promise<FinishedJob | null>;
 }) {
@@ -33,7 +34,7 @@ export function FinishedOutputButton({locale="zh", projectId, pageId, candidateI
     finally { if(currentIdentity.current===identity)setSubmitting(false); }
   }
   const status = error || job?.error || finishedJobLabel(job?.status);
-  return <div className="finished-output-action"><button type="button" className="button" disabled={disabled || submitting || finishedBusy(job?.status)} onClick={() => void output()}>{submitting ? "正在提交…" : dirty ? "保存嵌字并输出成品" : "输出成品"}{locale!=='zh'&&` · ${localeLabels[locale]}`}</button>
+  return <div className="finished-output-action"><button type="button" className="button" disabled={disabled || submitting || finishedBusy(job?.status)} onClick={() => void output()}>{submitting ? "正在提交…" : dirty ? dirtyLabel : "输出成品"}{locale!=='zh'&&` · ${localeLabels[locale]}`}</button>
     {status && <small>{status}</small>}
   </div>;
 }

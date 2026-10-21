@@ -8,6 +8,7 @@ import path from "node:path";
 
 import { listProjectRenderProfiles, readRenderProfileBundle } from "./global-resources.mjs";
 import { resolveMediaVariantWidth } from "./media-variants.mjs";
+import {normalizeVideoPostprocess} from '../shared/video-postprocess.mjs';
 import {
   ApiError,
   imageContentType,
@@ -264,7 +265,12 @@ export async function handleProjectRequest({
 
   const mediaMatch = /^\/api\/projects\/([^/]+)\/media\/(.+)$/.exec(decodedPath);
   if (request.method === "GET" && mediaMatch) {
-    await serveProjectMedia(response, projectRoot, mediaMatch[1], mediaMatch[2], { variantWidth: resolveMediaVariantWidth(requestUrl.searchParams.get("w")) });
+    let videoPostprocess;
+    if(requestUrl.searchParams.has('video_edit')) {
+      try {videoPostprocess=normalizeVideoPostprocess(JSON.parse(requestUrl.searchParams.get('video_edit')));}
+      catch(error) {throw new ApiError(400,'invalid_video_postprocess',[error.message]);}
+    }
+    await serveProjectMedia(response, projectRoot, mediaMatch[1], mediaMatch[2], { variantWidth: resolveMediaVariantWidth(requestUrl.searchParams.get("w")),videoPostprocess });
     return true;
   }
 

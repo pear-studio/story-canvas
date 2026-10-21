@@ -570,8 +570,10 @@
           }
         },
         "loras": {
-          "type": "array",
-          "maxItems": 0
+          "$ref": "#/$defs/anima/properties/loras"
+        },
+        "lora_overrides": {
+          "$ref": "#/$defs/loraOverrides"
         }
       },
       "additionalProperties": false

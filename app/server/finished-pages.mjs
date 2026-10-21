@@ -2,6 +2,8 @@ import { requireLetteringLocale, readTranslationDocument, translationProjection,
 import { defaultTextPageLayout } from "../shared/text-page-layout.mjs";
 import {storyPageNumbers} from '../shared/story-page-numbers.mjs';
 import {comicGeometry} from '../shared/comic-layout.mjs';
+import {hasVideoPostprocess,normalizeVideoPostprocess,videoPostprocessTiming} from '../shared/video-postprocess.mjs';
+import {processVideoBytes} from './video-media.mjs';
 
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rmdir, stat, unlink, writeFile } from "node:fs/promises";
@@ -97,7 +99,7 @@ export async function readFinishedPages(repositoryRoot, projectId, directory, { 
     const available = files.length === 2 && files.every(Boolean);
     const dimensions = page.page_kind === 'text' ? (page.render_capabilities ?? view.render_capabilities).text_page?.dimensions : null;
     const dimensionsChanged = dimensions && record && (record.width !== dimensions.width || record.height !== dimensions.height);
-    const stale = record ? Boolean(dimensionsChanged) || (candidate !== null && candidate !== record.candidate_id) || Boolean(translation_summary?.missing||translation_summary?.stale) || page.comic && hashCanonicalJson(page.comic.document)!==record.comic_sha256 || !page.comic&&record.page_kind==='comic' || hashCanonicalJson(await localizedSnapshot(view, page,directory,mediaLocale,page.page_kind === "text" ? undefined : record.lettering.canvas)) !== hashCanonicalJson(record.lettering) : false;
+    const stale = record ? (page.page_kind==='video' && hashCanonicalJson(normalizeVideoPostprocess(page.video_postprocess))!==hashCanonicalJson(normalizeVideoPostprocess(record.video_postprocess))) || Boolean(dimensionsChanged) || (candidate !== null && candidate !== record.candidate_id) || Boolean(translation_summary?.missing||translation_summary?.stale) || page.comic && hashCanonicalJson(page.comic.document)!==record.comic_sha256 || !page.comic&&record.page_kind==='comic' || hashCanonicalJson(await localizedSnapshot(view, page,directory,mediaLocale,page.page_kind === "text" ? undefined : record.lettering.canvas)) !== hashCanonicalJson(record.lettering) : false;
     const url = kind => `/api/projects/${encodeURIComponent(projectId)}/media/${record.outputs[kind]}`;
     pages.push({ ...chapter,page_number:numbers.get(page.page_id)??null,locale:mediaLocale,translation_summary, page_id: page.page_id, page_key: page.page_key, title: page.title,
       ...(page.comic?{comic_sha256:page.comic.sha256}:{}),
@@ -199,7 +201,9 @@ export async function prepareFinishedPage(repositoryRoot, projectId, directory, 
     if(candidate?.media_kind!=='video')fail('请选择视频候选');
     const video=await resolveExistingProjectMedia(directory,candidate.video_file);if(!video)fail('视频文件缺失');
     const sourceBuffer=await readFile(video.target);if(sha(sourceBuffer)!==candidate.video_sha256)fail('视频文件已改变');
-    const snapshot={page_key:page.page_key,page_kind:'video',candidate_id:value.candidate_id,source_sha256:candidate.video_sha256,video:candidate.video,lettering:letteringSnapshot(view,page)};
+    const postprocess=normalizeVideoPostprocess(page.video_postprocess);
+    if(hasVideoPostprocess(postprocess))videoPostprocessTiming(candidate.video,postprocess);
+    const snapshot={page_key:page.page_key,page_kind:'video',candidate_id:value.candidate_id,source_sha256:candidate.video_sha256,video:candidate.video,video_postprocess:postprocess,lettering:letteringSnapshot(view,page)};
     await writeJson(jobPath(directory,id),job);
     return {job,snapshot,sourceBuffer,posterBuffer:await readFile(source.target),video:true,expected:hashCanonicalJson(old),old};
   }
@@ -255,7 +259,7 @@ export async function composeComicImage(document,sources) {
   return sharp({create:{width,height,channels:3,background:'#ffffff'}}).composite(layers).png().toBuffer();
 }
 export async function runFinishedPage({ repositoryRoot, projectId, directory, prepared, config, origin, mutateTargetFacts,
-  upscale = upscaleFinishedImage, render = (...args) => import("./finished-render.mjs").then(module => module.renderFinishedImage(...args)) }) {
+  processVideo = processVideoBytes, upscale = upscaleFinishedImage, render = (...args) => import("./finished-render.mjs").then(module => module.renderFinishedImage(...args)) }) {
   const { job, snapshot } = prepared;
   let outputs = null;
   let newPoster = null;
@@ -263,11 +267,17 @@ export async function runFinishedPage({ repositoryRoot, projectId, directory, pr
   const update = async (status, error = null) => { job.status = status; job.error = error; const now = new Date().toISOString(); job.started_at ??= now; if (status === "completed") job.completed_at = now; if (status === "failed") job.failed_at = now; await writeJson(jobPath(directory, job.page_id,job.locale), job); };
   try {
     if(prepared.video) {
+      let videoBytes=prepared.sourceBuffer,posterBytes=prepared.posterBuffer,videoMetadata=snapshot.video;
+      if(hasVideoPostprocess(snapshot.video_postprocess)) {
+        await update('processing');
+        const processed=await processVideo(prepared.sourceBuffer,directory,snapshot.video_postprocess);
+        videoBytes=processed.bytes;posterBytes=processed.poster;videoMetadata={...snapshot.video,...processed.metadata};
+      }
       await update('publishing');const prefix=`Outputs/finished/${job.page_id}/${job.id}`;
       outputs={clean:prefix+'/video.mp4',lettered:prefix+'/video.mp4'};
       const poster=prefix+'/poster.png';newPoster=poster;await mkdir(path.join(directory,prefix),{recursive:true});
-      await writeFile(path.join(directory,outputs.clean),prepared.sourceBuffer);await writeFile(path.join(directory,poster),prepared.posterBuffer);
-      const record={$schema:'https://storyvisualizer.local/schemas/finished-page.schema.json',...snapshot,width:snapshot.video.width,height:snapshot.video.height,created_at:new Date().toISOString(),outputs,poster};
+      await writeFile(path.join(directory,outputs.clean),videoBytes);await writeFile(path.join(directory,poster),posterBytes);
+      const record={$schema:'https://storyvisualizer.local/schemas/finished-page.schema.json',...snapshot,video:videoMetadata,width:videoMetadata.width,height:videoMetadata.height,created_at:new Date().toISOString(),outputs,poster};
       await mutateTargetFacts(projectId,()=>publishFinishedPage(repositoryRoot,projectId,directory,prepared,record));published=true;await update('completed');
       warmMediaVariants(directory, outputs.clean);
     } else {

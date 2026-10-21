@@ -270,18 +270,25 @@ export async function readLoraAssetRequest(request) {
   return { group_id: String(form.get("group_id") ?? ""), asset_id: sharedAssetId, files, prepare: form.get('prepare') !== 'false' };
 }
 
-export async function serveProjectMedia(response, projectRoot, projectId, relativePath, { variantWidth = null } = {}) {
+export async function serveProjectMedia(response, projectRoot, projectId, relativePath, { variantWidth = null, videoPostprocess } = {}) {
   const { projectDirectory } = await requireProjectDirectory(projectRoot, projectId);
   let media = await resolveProjectMedia(projectDirectory, relativePath);
   const immutableOutput = /^Outputs\/(?:pages|finished|comparisons)\//.test(relativePath);
+  if(videoPostprocess && (!variantWidth || !immutableOutput || media.contentType!=='video/mp4')) throw new ApiError(400,'invalid_video_postprocess_media');
   if (variantWidth && immutableOutput) {
+    const controller=new AbortController();
+    const disconnect=()=>controller.abort();
+    response.once('close',disconnect);
+    if(response.destroyed)controller.abort();
     try {
-      media = await ensureMediaVariant(projectDirectory, media, relativePath, variantWidth);
+      media = await ensureMediaVariant(projectDirectory, media, relativePath, variantWidth, videoPostprocess,controller.signal);
     } catch (error) {
+      if(controller.signal.aborted)return;
       if (media.contentType === 'video/mp4') throw new ApiError(503, 'video_preview_failed', {message:error.message});
       // 变体生成失败时回退原图
-    }
+    } finally {response.off('close',disconnect);}
   }
+  if(response.destroyed)return;
   sendFile(response, media, { headers: { "x-content-type-options": "nosniff", ...(immutableOutput ? { "cache-control": "private, max-age=31536000, immutable" } : {}) } });
 }
 

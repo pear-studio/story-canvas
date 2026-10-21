@@ -1,7 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 
-export const finishedBusyStatuses = new Set(["queued", "upscaling", "lettering", "publishing"]);
+export const finishedBusyStatuses = new Set(["queued", "upscaling", "lettering", "processing", "publishing"]);
 export function finishedTaskSummary(job, projectId, projectTitle) {
   const status = finishedBusyStatuses.has(job.status) ? job.status === "queued" ? "queued" : "running" : job.status;
   const counts = { total: 1, available: Number(status === "completed"), skipped: 0, discarded: 0, cancelled: 0, running: Number(status === "running"), queued: Number(status === "queued"), failed: Number(status === "failed") };

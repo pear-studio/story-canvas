@@ -2,7 +2,7 @@
   "$schema": "../schemas/render-profile.schema.json",
   "id": "minimax-h3",
   "name": "MiniMax H3（裁剪版）",
-  "description": "裁剪版 H3 INT8 ConvRot，不加载 LoRA；24 fps，无音频导出和超分。",
+  "description": "裁剪版 H3 INT8 ConvRot，支持项目与页面 LoRA；24 fps，无音频导出和超分。LoRA 须另行核验裁剪底模兼容性。",
   "tags": [
     "动态页",
     "图生视频"

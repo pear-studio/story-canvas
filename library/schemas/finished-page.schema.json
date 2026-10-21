@@ -173,6 +173,9 @@
     "video": {
       "type": "object"
     },
+    "video_postprocess": {
+      "$ref": "https://storyvisualizer.local/schemas/story-page-narrative.schema.json#/$defs/video_postprocess"
+    },
     "comic": {
       "$ref": "https://storyvisualizer.local/schemas/comic-page.schema.json"
     },

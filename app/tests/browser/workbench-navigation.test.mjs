@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
 import { chromium } from "playwright";
 import { defaultLetteringSettings } from "../../server/lettering-settings.mjs";
+import {mkdir} from 'node:fs/promises';
 
 let server, browser, origin;
 before(async () => {
@@ -52,7 +53,7 @@ function qwenRunSettingsMock(task) {
   };
 }
 
-async function setup(t, { character = false, mobile = false, visualPages = false, longStory = false, generationSettings = false, projectLoras = false,comic = false } = {}) {
+async function setup(t, { character = false, mobile = false, visualPages = false, longStory = false, wideStory=false, generationSettings = false, projectLoras = false,comic = false,pageTypes=false,mixedStory=false } = {}) {
   const page = await browser.newPage({ viewport: mobile ? { width: 390, height: 844 } : { width: 1500, height: 1000 }, hasTouch: mobile });
   page.setDefaultTimeout(8000);
   const errors = [], renders = [];
@@ -70,6 +71,12 @@ async function setup(t, { character = false, mobile = false, visualPages = false
     { filename: 'project-a.safetensors', sha256: 'a'.repeat(64), weight: .9 },
     { filename: 'project-b.safetensors', sha256: 'b'.repeat(64), weight: .8 },
   ];
+  if(pageTypes)for(const view of Object.values(views)){
+    const entries=view.outline.chapters[0].sequences[0].pages;
+    Object.assign(entries[0],{page_kind:'video',model_id:'h3',video_postprocess:{trim_start_seconds:.5,trim_end_seconds:1,speed:2}});
+    entries[2].comic={document:{order:['c','internal-panel']}};
+    entries.push({...structuredClone(entries[1]),page_id:'d',page_key:{page_id:'d'},title:'文字尾声',page_kind:'text'});
+  }
   if (character) views.alpha.characters = [{
     id: "alice", model_id: 'anima', name: "Alice", description: "角色设定", profile_sha256: "profile",
     visual: { description: "视觉说明", variants: [{ id: "daily", name: "日常", description: "原日常说明" }, { id: "dress", name: "礼服", description: "原礼服说明" }] },
@@ -83,12 +90,20 @@ async function setup(t, { character = false, mobile = false, visualPages = false
   }));
   if (longStory) views.alpha.outline.chapters = Array.from({ length: 3 }, (_, c) => ({
     id: `chapter-${c}`, title: `章节${c + 1}`, summary: '章节摘要', sequences: Array.from({ length: 3 }, (_, s) => ({
-      id: `seq-${c}-${s}`, title: `单元${c + 1}-${s + 1}`, summary: '单元摘要', pages: pages.map((item, p) => ({
+      id: `seq-${c}-${s}`, title: `单元${c + 1}-${s + 1}`, summary: '单元摘要', pages: (wideStory?[...pages,...pages]:pages).map((item, p) => ({
         ...structuredClone(item), page_id: `p-${c}-${s}-${p}`, page_key: { page_id: `p-${c}-${s}-${p}` },
         dialogue: [{ id: 'line', mode: 'narration', text: Array(12).fill('用于验证连续阅读的位置。').join('\n') }],
       })),
     })),
   }));
+  if(mixedStory)views.alpha.outline.chapters.flatMap(chapter=>chapter.sequences.flatMap(sequence=>sequence.pages)).forEach((page,index)=>{
+    if(index%4===0)Object.assign(page,{page_kind:'text',body:'用于阅读的正文。',display_title:'正文'});
+    else if(index%4===1)Object.assign(page,{page_kind:'video',model_id:'h3',video_postprocess:{trim_start_seconds:.5,trim_end_seconds:1,speed:2}});
+    else if(index%4===2){
+      const ids=[page.page_id,`internal-${page.page_id}`];
+      page.comic={sha256:'comic',panels:[],document:{version:1,canvas:'4:3',margin:0,gutter:0,layout:{id:`split-${String(index).padStart(12,'0')}`,axis:'x',ratio:.4,first:{page_id:ids[0]},second:{page_id:ids[1]}},order:ids,panels:Object.fromEntries(ids.map(id=>[id,{candidate_id:'candidate-11111111-1111-4111-8111-111111111111',crop:{x:.2,y:.6,zoom:1.4},size_mode:'panel'}]))}};
+    }
+  });
   let revision = 1;
   await page.route("**/api/**", async route => {
     const url = new URL(route.request().url()), pathname = url.pathname;
@@ -122,7 +137,7 @@ async function setup(t, { character = false, mobile = false, visualPages = false
       delete view.render_capabilities;
       return reply(view);
     }
-    if (pathname.endsWith("/candidate-counts")) return reply({ revision: "media", counts: {} });
+    if (pathname.endsWith("/candidate-counts")) return reply({ revision: "media", latest_videos:pageTypes?{'v3/a':{frames:192,fps:24}}:{}, counts: pageTypes?{'v3/a':2,'v3/b':3,'v3/c':99,'v3/d':88}:{} });
     if (pathname.endsWith("/page-media")) return reply({ revision: "media", media: { candidates: [] } });
     if (pathname.endsWith("/page-render-inspection")) return reply({ inspection: { ready: true, blockers: [], warnings: [], structured_import: null, generation_signature: "test", audit: { status: "complete", errors: [], warnings: [] }, prompt: { positive: "", negative: "", images: [] }, generation: {profile_name:'测试配置',canvas:'3:4',parameters:null,models:[],loras:[],prompt:{positive:'',negative:'',sections:[]}} } });
     if (pathname.endsWith("/render")) { renders.push(route.request().postDataJSON()); return reply({ task: { task_id: "render-test" } }); }
@@ -157,6 +172,39 @@ async function setup(t, { character = false, mobile = false, visualPages = false
   };
   return { page, renders, switchTo };
 }
+
+for(const mobile of [false,true])test(`目录四类页面使用彩色图标和各自摘要${mobile?'（手机）':''}`,async t=>{
+  const {page}=await setup(t,{pageTypes:true,mobile});
+  if(mobile)await page.getByRole('button',{name:'目录',exact:true}).click();
+  const tree=page.locator('#workbench-navigation');
+  const image=tree.locator('.tree-page[data-page-type="image"]'),text=tree.locator('.tree-page[data-page-type="text"]'),video=tree.locator('.tree-page[data-page-type="video"]'),comic=tree.locator('.tree-page[data-page-type="comic"]');
+  await image.getByText('3 张',{exact:true}).waitFor();
+  assert.equal(await text.locator('.page-status').count(),0);
+  assert.equal(await video.locator('.page-status').innerText(),'2 段 · 处理后 3.25 秒');
+  assert.equal(await comic.locator('.page-status').innerText(),'2 格','不显示根页候选或缺图警告');
+  const colors=await tree.locator('.navigation-page-type').evaluateAll(nodes=>nodes.map(node=>getComputedStyle(node).color));assert.equal(new Set(colors).size,4);
+  for(const row of [image,text,video,comic]){
+    assert.equal(await row.locator('svg').getAttribute('aria-hidden'),'true');
+    assert.ok((await row.getAttribute('aria-label')).includes('页'));
+    assert.ok(await row.evaluate(node=>node.scrollWidth<=node.clientWidth));
+  }
+  const screenshotDirectory=fileURLToPath(new URL('../../../Saved/Tests/directory-types/',import.meta.url));await mkdir(screenshotDirectory,{recursive:true});
+  await page.screenshot({path:`${screenshotDirectory}/${mobile?'mobile':'desktop'}.png`});
+  let countReply;
+  await page.route('**/candidate-counts',route=>route.fulfill({json:countReply}));
+  for(const [revision,counts,latest_videos,label] of [
+    ['empty',{}, {},'0 段 · 未生成'],
+    ['unknown',{'v3/a':1},{},'1 段 · 时长未知'],
+    ['invalid',{'v3/a':1},{'v3/a':{frames:24,fps:24}},'1 段 · 裁剪范围无效'],
+  ]) {
+    countReply={revision,counts,latest_videos};
+    await video.locator('.page-status').getByText(label,{exact:true}).waitFor();
+  }
+  if(mobile){await page.getByRole('button',{name:'关闭目录',exact:true}).click();await page.getByRole('button',{name:'更多工具',exact:true}).click();}
+  const search=page.getByRole('combobox',{name:'搜索项目内容'});await search.fill('动态页');
+  const result=page.getByRole('option').filter({hasText:'页面a'});await result.waitFor();assert.equal(await result.locator('.navigation-page-type--video').count(),1);
+  await search.press('Escape');
+});
 
 test('手机顶部保持单行，工具按需展开且切页自动收起', async t => {
   const {page}=await setup(t,{mobile:true});
@@ -780,7 +828,7 @@ test('子设定 ID 草稿跨子设定切换保留且离开设定仍提示', asyn
 test("剧情范围目录全部展开，局部渲染且后台刷新不抢滚动", async t => {
   const { page } = await setup(t, { longStory: true });
   const directory = page.getByRole('navigation', { name: '剧情阅读目录' });
-  assert.equal(await directory.getByRole('button').count(), 13);
+  assert.equal(await directory.getByRole('button').count(), 16);
   await page.waitForFunction(count=>document.querySelectorAll('.story-overview-page').length===count, 27);
   assert.equal(await page.locator('.story-overview-page').count(), 27);
   await directory.getByRole('button', { name: '2. 章节2', exact: true }).click();
@@ -789,14 +837,14 @@ test("剧情范围目录全部展开，局部渲染且后台刷新不抢滚动",
   await directory.getByRole('button', { name: /2\.2 单元2-2/ }).click();
   await page.waitForFunction(count=>document.querySelectorAll('.story-overview-page').length===count, 3);
   assert.equal(await page.locator('.story-overview-page').count(), 3);
-  assert.equal(await directory.getByRole('button').count(), 13);
+  assert.equal(await directory.getByRole('button').count(), 16);
   assert.equal(await page.locator('.story-overview-page-number').first().innerText(), '13');
   await page.getByRole('button', { name: '下一个情节单元', exact: true }).click();
   await page.locator('.story-reading-location').filter({hasText:'单元2-3'}).waitFor();
   assert.match(await page.locator('.story-reading-location').innerText(), /单元2-3/);
-  await page.locator('.story-reading-controls').getByRole('button', { name: '更多', exact: true }).click();
-  assert.match(await page.locator('.story-reading-actions').innerText(), /当前范围：章节2 \/ 单元2-3/);
-  await page.locator('.story-reading-controls').getByRole('button', { name: '更多', exact: true }).click();
+  assert.equal(await page.getByRole('button',{name:'更多',exact:true}).count(),0);
+  await page.getByRole('button',{name:'批量生成',exact:true}).waitFor();
+  await page.getByRole('button',{name:'批量移除',exact:true}).waitFor();
   await page.locator('.project-main').evaluate(node => node.scrollBy(0, 450));
   const position = await page.locator('.project-main').evaluate(node => node.scrollTop);
   assert.ok(position > 200);
@@ -807,13 +855,115 @@ test("剧情范围目录全部展开，局部渲染且后台刷新不抢滚动",
   await directory.getByRole('button', { name: '全文', exact: true }).click();
   await page.waitForFunction(count=>document.querySelectorAll('.story-overview-page').length===count, 27);
   assert.equal(await page.locator('.story-overview-page').count(), 27);
-  await page.screenshot({ path: 'Saved/story-overview-desktop.png' });
+  const screenshots=fileURLToPath(new URL('../../../Saved/Tests/story-browse/',import.meta.url));await mkdir(screenshots,{recursive:true});
+  await page.screenshot({ path: screenshots+'/desktop.png' });
   await page.setViewportSize({ width: 390, height: 844 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await directory.getByRole('button', { name: /2\.2 单元2-2/ }).click();
   await page.waitForTimeout(100);
   assert.equal(await page.evaluate(() => document.querySelector('.story-reading-toolbar').getBoundingClientRect().top >= document.querySelector('.topbar').getBoundingClientRect().bottom - 1), true, '手机阅读栏避开顶部状态栏');
-  await page.screenshot({ path: 'Saved/story-overview-mobile.png' });
+  await page.screenshot({ path: screenshots+'/mobile.png' });
+});
+
+for(const mobile of [false,true])for(const filtered of [false,true])test(`从页面后退到剧情总览恢复阅读位置${filtered?'（类型筛选）':''}${mobile?'（手机）':''}`,async t=>{
+  const {page}=await setup(t,{longStory:true,wideStory:true,mobile});
+  await page.waitForFunction(()=>document.querySelectorAll('.story-overview-page').length===54);
+  if(filtered)await page.getByLabel('页面类型',{exact:true}).selectOption('image');
+  const open=filtered?page.locator('.story-filtered-pages .story-page-open').nth(14):page.locator('.story-overview-sequence').nth(4).locator('.story-page-open').last();
+  await open.scrollIntoViewIfNeeded();
+  const position=()=>page.evaluate(()=>{
+    const main=document.querySelector('.project-main');
+    return {top:getComputedStyle(main).overflowY==='visible'?scrollY:main.scrollTop,
+      strips:[...document.querySelectorAll('.story-overview-pages')].map(node=>node.scrollLeft)};
+  });
+  const before=await position();
+  assert.ok(before.top>200,'先滚到总览中段');
+  if(!filtered)assert.ok(before.strips.some(left=>left>0),'同时验证横向卡片位置');
+  await open.click();
+  await page.waitForURL(url=>url.searchParams.get('tab')==='story');
+  await page.locator('.document-editor').waitFor();
+  for(let round=0;round<2;round++){
+    if(mobile)await page.getByRole('button',{name:'更多工具',exact:true}).click();
+    await page.getByRole('button',{name:'后退',exact:true}).click();
+    await page.getByRole('navigation',{name:'剧情阅读目录',exact:true}).waitFor();
+    await page.waitForFunction(({top,strips})=>{
+      const main=document.querySelector('.project-main');
+      const actual=getComputedStyle(main).overflowY==='visible'?scrollY:main.scrollTop;
+      return Math.abs(actual-top)<3&&[...document.querySelectorAll('.story-overview-pages')].every((node,i)=>Math.abs(node.scrollLeft-strips[i])<3);
+    },before).catch(async error=>{t.diagnostic(JSON.stringify({round,before,after:await position(),url:page.url()}));throw error;});
+    assert.equal(await page.getByLabel('页面类型',{exact:true}).inputValue(),filtered?'image':'all');
+    await page.waitForTimeout(150);
+    assert.ok(Math.abs((await position()).top-before.top)<3,'媒体加载及重渲染不能把恢复位置覆盖掉');
+    if(round===0){
+      if(mobile)await page.getByRole('button',{name:'更多工具',exact:true}).click();
+      await page.getByRole('button',{name:'前进',exact:true}).click();
+      await page.locator('.document-editor').waitFor();
+    }
+  }
+});
+
+test('切换总览类型保护未保存摘要，返回全部恢复正文和横向阅读位置',async t=>{
+  const {page}=await setup(t,{longStory:true});
+  await page.waitForFunction(()=>document.querySelectorAll('.story-overview-page').length===27);
+  await page.locator('.story-overview-pages').first().evaluate(node=>node.scrollLeft=230);
+  const left=await page.locator('.story-overview-pages').first().evaluate(node=>node.scrollLeft);
+  await page.locator('.project-main').evaluate(node=>node.scrollTop=500);
+  const type=page.getByLabel('页面类型',{exact:true});await type.selectOption('image');
+  await page.waitForFunction(()=>document.querySelectorAll('.story-filtered-pages .story-overview-page').length===27);
+  await type.selectOption('all');await page.waitForFunction(()=>Math.abs(document.querySelector('.project-main').scrollTop-500)<3);
+  assert.ok(Math.abs(await page.locator('.story-overview-pages').first().evaluate(node=>node.scrollLeft)-left)<3);
+  await page.getByRole('button',{name:'编辑故事梗概',exact:true}).click();await page.getByLabel('故事梗概',{exact:true}).fill('还没有保存的梗概');
+  await type.selectOption('video');const dialog=page.getByRole('dialog',{name:'放弃未保存修改',exact:true});await dialog.getByRole('button',{name:'取消',exact:true}).click();
+  assert.equal(await type.inputValue(),'all');assert.equal(await page.getByLabel('故事梗概',{exact:true}).inputValue(),'还没有保存的梗概');
+  await page.locator('.story-summary-editor').getByRole('button',{name:'取消',exact:true}).click();
+  const directory=page.getByRole('navigation',{name:'剧情阅读目录',exact:true});await directory.getByRole('button',{name:'折叠章节：章节1',exact:true}).click();
+  assert.equal(await directory.getByRole('button',{name:/1\.1 单元1-1/}).count(),0);
+  await page.getByLabel('阅读范围',{exact:true}).selectOption('chapter:chapter-0');await directory.getByRole('button',{name:/1\.1 单元1-1/}).waitFor();
+});
+
+for(const mobile of [false,true])test(`总览按类型集中查看，批量操作只处理筛选结果及分镜各格${mobile?'（手机）':''}`,async t=>{
+  const {page}=await setup(t,{longStory:true,mixedStory:true,mobile});
+  const inspect=[],executed=[];
+  await page.route('**/story-candidate-refresh',route=>{
+    const body=route.request().postDataJSON();
+    if(body.action==='inspect'){
+      inspect.push(...body.page_keys.map(key=>key.page_id));
+      return route.fulfill({json:{pages:body.page_keys.map(page_key=>({page_key,status:'ready',signature:'current',matched:0,candidate_ids:['old'],all_candidate_ids:['old']}))}});
+    }
+    executed.push(body);return route.fulfill({json:{status:body.action==='clean'?'deleted':'queued',count:1}});
+  });
+  await page.route('**/story-*.svg*',route=>route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="640" height="800"><rect width="640" height="800" fill="#719789"/></svg>'}));
+  await page.route('**/page-media',route=>route.fulfill({json:{revision:'preview',media:{candidates:[{candidate_id:'newest',url:'/story-latest.svg',video:{frames:192,fps:24}},{candidate_id:'candidate-11111111-1111-4111-8111-111111111111',url:'/story-selected.svg'}]}}}));
+  const type=page.getByLabel('页面类型',{exact:true}),scope=page.getByLabel('阅读范围',{exact:true});
+  await type.selectOption('video');
+  await page.waitForFunction(()=>document.querySelectorAll('.story-filtered-pages .story-overview-page').length===7);
+  assert.equal(await page.locator('.story-summary-reader').count(),0);
+  assert.equal(await page.locator('.story-overview-page-number').first().innerText(),'02');
+  await page.locator('.story-page-card-meta').first().getByText('2 段 · 处理后 3.25 秒',{exact:true}).waitFor();
+  assert.ok((await page.locator('.story-page-source').first().innerText()).includes('章节1 / 单元1-1'));
+  assert.equal(await page.getByRole('button',{name:'更多',exact:true}).count(),0);
+  const videos=await page.locator('.story-overview-page').evaluateAll(nodes=>nodes.map(node=>node.dataset.pageId));
+  await page.getByRole('button',{name:'批量生成',exact:true}).click();const generate=page.getByRole('dialog',{name:'生成候选',exact:true});await generate.getByRole('button',{name:'生成 7 张',exact:true}).click();await generate.waitFor({state:'hidden'});
+  assert.deepEqual(inspect,videos);assert.deepEqual(executed.map(value=>value.page_key.page_id),videos);
+  inspect.length=0;executed.length=0;
+  await type.selectOption('comic');await page.waitForFunction(()=>document.querySelectorAll('.story-filtered-pages .story-overview-page').length===7);
+  const first=page.locator('.story-overview-page').first();await first.locator('.story-comic-frame img').first().waitFor();
+  assert.equal(await first.locator('.story-comic-frame img').count(),2);
+  assert.equal(await first.locator('.story-comic-frame img').first().evaluate(node=>getComputedStyle(node).objectFit),'cover','分镜缩略图按分格裁切，不受普通候选图 contain 样式影响');
+  assert.ok((await first.locator('.story-comic-frame img').first().getAttribute('src')).includes('story-selected.svg'));
+  assert.equal(await first.locator('.story-page-card-meta').innerText(),'2 格');
+  assert.equal(await first.locator('.story-page-generate').count(),0);
+  await first.getByRole('button',{name:/查看分镜整页/}).click();const full=page.getByRole('dialog',{name:/整页预览/});await full.waitFor();assert.equal(await full.locator('.story-comic-frame img').count(),2);await page.keyboard.press('Escape');
+  const comics=await page.locator('.story-overview-page').evaluateAll(nodes=>nodes.flatMap(node=>[node.dataset.pageId,`internal-${node.dataset.pageId}`]));
+  await page.getByRole('button',{name:'批量移除',exact:true}).click();const clean=page.getByRole('dialog',{name:'清理候选',exact:true});await clean.getByRole('button',{name:'删除 14 张',exact:true}).click();await clean.waitFor({state:'hidden'});
+  assert.deepEqual(inspect,comics);assert.deepEqual(executed.map(value=>value.page_key.page_id),comics);
+  await type.selectOption('text');assert.equal(await page.getByRole('button',{name:'批量生成',exact:true}).isDisabled(),true);assert.equal(await page.getByRole('button',{name:'批量移除',exact:true}).isDisabled(),true);
+  await type.selectOption('image');await scope.selectOption('sequence:seq-0-0');await page.getByText('当前范围没有图片页。',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'查看全项目图片页',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('.story-filtered-pages .story-overview-page').length===6);
+  await type.selectOption('video');await scope.selectOption('chapter:chapter-1');await page.reload();await type.waitFor();assert.equal(await type.inputValue(),'video');assert.equal(await scope.inputValue(),'chapter:chapter-1');
+  await page.waitForFunction(()=>document.querySelectorAll('.story-filtered-pages .story-overview-page').length===3);assert.equal(await page.locator('.story-overview-page-number').first().innerText(),'10');
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+  const screenshots=fileURLToPath(new URL('../../../Saved/Tests/story-browse/',import.meta.url));await mkdir(screenshots,{recursive:true});await page.screenshot({path:screenshots+`/filtered-${mobile?'mobile':'desktop'}.png`});
 });
 
 test('离开普通页可取消或保存后切换，保存失败继续保留草稿',async t=>{

@@ -1,8 +1,9 @@
 import { FloatingPanel } from "./FloatingPanel";
+import {pageNavigationInfo,pageTypeLabels,PageTypeIcon} from './PageNavigationSummary';
 import { useId, useMemo, useState, useRef } from 'react';
 import type { ProjectWorkbenchView, WorkbenchPage, WorkbenchCharacter } from './project-workbench-client';
 
-type Result = { id: string; title: string; detail: string; number?: number; open: () => void };
+type Result = { id: string; title: string; detail: string; number?: number; pageType?:ReturnType<typeof pageNavigationInfo>['type']; open: () => void };
 export function NavigationSearch({ view, onPage, onCharacter, onScene }: {
   view: ProjectWorkbenchView; onPage: (page: WorkbenchPage) => void;
   onCharacter: (character: WorkbenchCharacter, settingId: string) => void; onScene: (id: string, settingId: string) => void;
@@ -13,7 +14,8 @@ export function NavigationSearch({ view, onPage, onCharacter, onScene }: {
   const entries = useMemo(() => {
     const result: Result[] = []; let number = 0;
     for (const chapter of view.outline.chapters) for (const sequence of chapter.sequences) for (const page of sequence.pages) {
-      number++; result.push({ id: `story:${page.page_id}`, number, title: page.title, detail: `剧情页 · ${chapter.title} / ${sequence.title}`, open: () => onPage(page) });
+      const {type}=pageNavigationInfo(page,null);
+      number++; result.push({ id: `story:${page.page_id}`, number, title: page.title, pageType:type, detail: `${pageTypeLabels[type]} · ${chapter.title} / ${sequence.title}`, open: () => onPage(page) });
     }
     for (const character of view.characters) {
       result.push({ id: character.id, title: character.name, detail: '角色', open: () => onCharacter(character, 'profile') });
@@ -37,6 +39,6 @@ export function NavigationSearch({ view, onPage, onCharacter, onScene }: {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); setVisible(true); setIndex(value => Math.max(0, Math.min(results.length - 1, value + (e.key === 'ArrowDown' ? 1 : -1)))); }
       if (e.key === 'Enter' && visible && results[index]) { e.preventDefault(); choose(results[index]); }
     }} />
-    {visible && term && <FloatingPanel target={inputRef.current ?? undefined} style={{ width: 320 }} id={id} role="listbox" className="navigation-search-results">{results.length ? results.map((entry, i) => <button key={entry.id} id={`${id}-${i}`} role="option" aria-selected={i === index} type="button" onMouseDown={e => e.preventDefault()} onClick={() => choose(entry)}><span>{entry.number ? `${entry.number} · ` : ''}{entry.title}</span><small>{entry.detail}</small></button>) : <p>没有匹配内容</p>}</FloatingPanel>}
+    {visible && term && <FloatingPanel target={inputRef.current ?? undefined} style={{ width: 320 }} id={id} role="listbox" className="navigation-search-results">{results.length ? results.map((entry, i) => <button key={entry.id} id={`${id}-${i}`} role="option" aria-selected={i === index} type="button" onMouseDown={e => e.preventDefault()} onClick={() => choose(entry)}><span className="navigation-search-label">{entry.pageType&&<PageTypeIcon type={entry.pageType}/>}<span>{entry.number ? `${entry.number} · ` : ''}{entry.title}</span></span><small>{entry.detail}</small></button>) : <p>没有匹配内容</p>}</FloatingPanel>}
   </div>;
 }

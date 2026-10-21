@@ -4,7 +4,7 @@ import type { ProjectWorkbenchView, WorkbenchPage } from "./project-workbench-cl
 
 const tabs = ["scenes", "orphan-pages", "prompt-overview", "finished", "project-story", "project-settings", "project-render-profile", "project-lettering", "project-tasks", "project-materials", "comparison", "resource-base", "resource-loras", "lora-datasets", "lora-tasks", "lora-runs", "lora-history", "characters", "story"] as const;
 export type ActiveTab = typeof tabs[number];
-export type NavigationState = Omit<NavigationUrlState, "activeTab"> & { activeTab: ActiveTab; editorTab?: "visual" | "lettering" | "flow"; overviewTarget?: { kind: "overview" } | { kind: "chapter" | "sequence"; id: string } };
+export type NavigationState = Omit<NavigationUrlState, "activeTab"> & { activeTab: ActiveTab; editorTab?: "visual" | "lettering" | "flow" };
 
 export function projectNavigation(projectId: string): NavigationState {
   return { projectId, activeTab: "project-settings", activePageKey: null, activeCharacterId: "", activeCharacterSettingId: "profile", sceneId: "", sceneSettingId: "profile" };

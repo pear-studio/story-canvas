@@ -47,18 +47,20 @@ async function diagnoseProfileContext(context, repositoryRoot, config) {
   if (!context.active_profile || !context.compiled_profile) {
     return { diagnosis: null, inspection: null, blockers: [], warnings: [] };
   }
-  const diagnosis = await diagnoseRenderProfile(context.active_profile, repositoryRoot, config);
+  // 页面 LoRA 已合并继承与开关，下面单独诊断；配置层仅检查基础模型。
+  const diagnosis = await diagnoseRenderProfile({...context.active_profile, style_loras:{}}, repositoryRoot, config);
   const baseBundle = context.compiled_profile.base_bundle ?? context.compiled_profile;
   const activeSha = context.compiled_profile.blocked
     ? baseBundle.resolved_profile_sha256
     : context.compiled_profile.effective_profile_sha256;
   const baseDiagnosis = activeSha === baseBundle.resolved_profile_sha256
     ? diagnosis
-    : await diagnoseRenderProfile(baseBundle.resolved_profile, repositoryRoot, config);
+    : await diagnoseRenderProfile({...baseBundle.resolved_profile, style_loras:{}}, repositoryRoot, config);
   const inspection = inspectRenderProfile({
     bundle: context.compiled_profile,
     diagnosis,
     baseDiagnosis,
+    includeStyleLoras: false,
   });
   return { diagnosis, inspection, ...profileDiagnosticIssues(inspection) };
 }

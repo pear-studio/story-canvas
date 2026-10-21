@@ -36,7 +36,7 @@ async function fixture(context, pageCount = 2, watchDirectory) {
     },
   });
   context.after(async () => { reader.close(); await rm(root, { recursive: true, force: true }); });
-  async function add(key) {
+  async function add(key,video) {
     const id = `candidate-${String(++sequence).padStart(8, "0")}-1111-4111-8111-111111111111`;
     const file = candidateFileRelativePath(key, id);
     const target = path.join(directory, file);
@@ -44,6 +44,7 @@ async function fixture(context, pageCount = 2, watchDirectory) {
     await writeFile(target, "media fixture");
     await writeFile(path.join(path.dirname(target), "result.json"), JSON.stringify({
       version: 1, candidate_id: id, page_key: key, file, status: "available", task_id: "test-task", generated_at: String(sequence),
+      ...(video?{media_kind:'video',video,video_file:file.replace('image.png','video.mp4'),review_file:file}:{}),
     }));
     return file;
   }
@@ -51,6 +52,23 @@ async function fixture(context, pageCount = 2, watchDirectory) {
   return { directory, reader, scans, add, event: file => event("rename", file), advance: (ms = 60_001) => { clock += ms; },
     intercept: action => { intercept = action; }, read: key => reader.read("demo", { page_key: key }) };
 }
+
+test('数量摘要携带最新候选原时间轴，时长变化和删除会更新版本，不额外扫描',async t=>{
+  const f=await fixture(t),key=story(1),canonical=encodePageKey(key);
+  const older=await f.add(key,{frames:124,fps:24});
+  const first=await f.reader.counts('demo');
+  assert.deepEqual(first.latest_videos,{[canonical]:{frames:124,fps:24}});
+  const newer=await f.add(key,{frames:192,fps:24});f.event(newer);
+  const next=await f.reader.counts('demo');
+  assert.notEqual(next.revision,first.revision);
+  assert.deepEqual(next.latest_videos,{[canonical]:{frames:192,fps:24}});
+  f.scans.length=0;
+  await f.read(key);await f.reader.counts('demo');assert.deepEqual(f.scans,[]);
+  await rm(path.dirname(path.join(f.directory,newer)),{recursive:true});f.event(newer);
+  assert.deepEqual((await f.reader.counts('demo')).latest_videos,first.latest_videos);
+  await rm(path.dirname(path.join(f.directory,older)),{recursive:true});f.event(older);
+  assert.deepEqual((await f.reader.counts('demo')).latest_videos,{});
+});
 
 test("监听启动失败或运行中断后恢复订阅，后续候选无需等待全量复查", async context => {
   for (const initialFailure of [true, false]) await context.test(initialFailure ? "启动失败" : "运行中断", async t => {

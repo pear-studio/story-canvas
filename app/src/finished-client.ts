@@ -13,8 +13,8 @@ export type FinishedPage = {
 };
 const base = (id: string) => `/api/projects/${encodeURIComponent(id)}/finished`;
 export const deleteFinishedPage = async (id: string, page: FinishedPage) => responseJson(await mutateTargetFacts(base(id), { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ locale:page.locale??'zh',page_key: page.page_key, expected_sha256: page.record!.sha256 }) }));
-export const finishedBusy = (status?: string) => ["queued", "upscaling", "lettering", "publishing"].includes(status ?? "");
-export const finishedJobLabel = (status?: string) => ({ queued: "等待输出", upscaling: "正在超分", lettering: "正在嵌字", publishing: "正在保存", completed: "成品已输出", failed: "输出失败" }[status ?? ""] ?? "");
+export const finishedBusy = (status?: string) => ["queued", "upscaling", "lettering", "processing", "publishing"].includes(status ?? "");
+export const finishedJobLabel = (status?: string) => ({ queued: "等待输出", upscaling: "正在超分", lettering: "正在嵌字", processing: "正在后处理", publishing: "正在保存", completed: "成品已输出", failed: "输出失败" }[status ?? ""] ?? "");
 export const loadFinishedPages = async (id: string, signal?: AbortSignal, pageId?: string,locale:LetteringLocale='zh') => responseJson<{ pages: FinishedPage[] }>(await readFacts(`${base(id)}?locale=${locale}${pageId ? `&page_id=${encodeURIComponent(pageId)}` : ""}`, { signal, cache: "no-store" }));
 export const startFinishedPage = async (id: string, page_key: PageKey, candidate_id?: string,locale:LetteringLocale='zh') => responseJson<{ job: FinishedJob }>(await mutateDerived(`${base(id)}/output`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({locale, page_key, ...(candidate_id ? { candidate_id } : {}) }) }));
 export const startFinishedBatch = async (id: string, chapter_id: string, force = false,locale:LetteringLocale='zh') => responseJson<{ queued: number; skipped: { page_id: string; title: string; reason: string }[] }>(await mutateDerived(`${base(id)}/output-batch`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({locale, chapter_id: chapter_id || null, force }) }));

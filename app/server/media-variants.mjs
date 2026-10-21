@@ -3,11 +3,16 @@ import { mkdir, readFile, rename, stat, writeFile, rm } from "node:fs/promises";
 import path from "node:path";
 
 import sharp from "sharp";
-import { writeVideoPreview } from './video-media.mjs';
+import { writeVideoPreview,logVideoProcessing } from './video-media.mjs';
+import {hasVideoPostprocess,normalizeVideoPostprocess} from '../shared/video-postprocess.mjs';
+import {randomUUID} from 'node:crypto';
+import {createMediaVariantTasks} from './media-variant-tasks.mjs';
+import {retimeWebp} from './webp-timing.mjs';
+import {trimWebp} from './webp-trim.mjs';
 
 export const MEDIA_VARIANT_WIDTHS = [320, 1024];
 
-const inflight = new Map();
+const joinVariant = createMediaVariantTasks();
 
 export function resolveMediaVariantWidth(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -19,15 +24,47 @@ export function resolveMediaVariantWidth(value) {
   return null;
 }
 
-async function generateVariant(projectDirectory, media, relativePath, width, target) {
+async function generateVariant(projectDirectory, media, relativePath, width, target, postprocess, signal) {
+  signal?.throwIfAborted();
   await mkdir(path.dirname(target), { recursive: true });
-  const staging = path.join(path.dirname(target), `.${path.basename(target, ".webp")}.${process.pid}.tmp`);
+  const staging = path.join(path.dirname(target), `.${path.basename(target, ".webp")}.${randomUUID()}.tmp`);
   if (path.extname(media.target).toLowerCase() === '.mp4') {
+    const started=performance.now();
+    const trimmed=postprocess.trim_start_seconds!==0||postprocess.trim_end_seconds!==0;
+    let retimeStarted,status='completed',failure,rebuiltFrames;
     try {
-      await writeVideoPreview(media.target, staging, width);
+      if(postprocess.speed!==1) {
+        // 不同倍率共用同一裁剪范围的原速派生物。
+        const base=await ensureMediaVariant(projectDirectory,media,relativePath,width,{...postprocess,speed:1},signal);
+        retimeStarted=performance.now();
+        const source=await readFile(base.target,{signal});
+        signal?.throwIfAborted();
+        await writeFile(staging,retimeWebp(source,postprocess.speed),{signal});
+      } else if(trimmed) {
+        // 不同裁剪范围共用完整原速 WebP，边界以外的压缩帧直接复用。
+        const base=await ensureMediaVariant(projectDirectory,media,relativePath,width,undefined,signal);
+        retimeStarted=performance.now();
+        const source=await readFile(base.target,{signal});
+        const result=await trimWebp(source,postprocess,signal);
+        rebuiltFrames=result.rebuiltFrames;
+        await writeFile(staging,result.bytes,{signal});
+      } else {
+        await writeVideoPreview(media.target, staging, width, postprocess, signal);
+      }
+      signal?.throwIfAborted();
       await rename(staging, target);
       return { target, info: await stat(target), contentType: 'image/webp' };
-    } finally { await rm(staging, {force:true}); }
+    } catch(error) {
+      status=signal?.aborted?'cancelled':'failed';failure=status==='failed'?error.message:undefined;throw error;
+    } finally {
+      await rm(staging, {force:true});
+      if(postprocess.speed!==1)logVideoProcessing({event:'video_preview_retime',status,source:relativePath,width,settings:postprocess,
+        elapsed_ms:Math.round(performance.now()-started),base_wait_ms:Math.round((retimeStarted??performance.now())-started),
+        retime_ms:retimeStarted===undefined?null:Math.round(performance.now()-retimeStarted),error:failure});
+      else if(trimmed)logVideoProcessing({event:'video_preview_trim',status,source:relativePath,width,settings:postprocess,
+        elapsed_ms:Math.round(performance.now()-started),base_wait_ms:Math.round((retimeStarted??performance.now())-started),
+        trim_ms:retimeStarted===undefined?null:Math.round(performance.now()-retimeStarted),rebuilt_frames:rebuiltFrames,error:failure});
+    }
   }
   // Buffer 输入避免 libvips 缓存持有原图句柄，阻止 Windows 删除候选目录。
   const buffer = await sharp(await readFile(media.target), { animated: true })
@@ -40,23 +77,26 @@ async function generateVariant(projectDirectory, media, relativePath, width, tar
   return { target, info: await stat(target), contentType: "image/webp" };
 }
 
-export async function ensureMediaVariant(projectDirectory, media, relativePath, width) {
-  const animation = /\.(mp4|webp)$/i.test(relativePath) ? 'animation-v1:' : '';
+export async function ensureMediaVariant(projectDirectory, media, relativePath, width, postprocess, signal) {
+  signal?.throwIfAborted();
+  const started=performance.now();
+  const edit=normalizeVideoPostprocess(postprocess),edited=hasVideoPostprocess(edit);
+  if(edited&&path.extname(media.target).toLowerCase()!=='.mp4')throw new Error('后处理只支持 MP4 视频');
+  const animation = /\.mp4$/i.test(relativePath) ? 'animation-v2:' : /\.webp$/i.test(relativePath) ? 'animation-v1:' : '';
   const key = createHash("sha1")
-    .update(`${animation}${relativePath}:${media.info.size}:${media.info.mtimeMs}:${media.info.ctimeMs}:${width}`)
+    .update(`${animation}${relativePath}:${media.info.size}:${media.info.mtimeMs}:${media.info.ctimeMs}:${width}${edited?':edit-v1:'+JSON.stringify(edit):''}`)
     .digest("hex");
   const target = path.join(projectDirectory, "Saved", "media-cache", `${key}.webp`);
   try {
     const info = await stat(target);
-    if (info.isFile()) return { target, info, contentType: "image/webp" };
+    if (info.isFile()) {
+      if(path.extname(media.target).toLowerCase()==='.mp4')logVideoProcessing({event:'video_preview_cache',key,status:'hit',elapsed_ms:Math.round(performance.now()-started),source:relativePath,width,settings:edit});
+      return { target, info, contentType: "image/webp" };
+    }
   } catch {
     // 缓存未命中，按需生成
   }
-  if (inflight.has(key)) return inflight.get(key);
-  const task = generateVariant(projectDirectory, media, relativePath, width, target)
-    .finally(() => { inflight.delete(key); });
-  inflight.set(key, task);
-  return task;
+  return joinVariant(target,signal=>generateVariant(projectDirectory, media, relativePath, width, target, edit,signal),signal);
 }
 
 // 图片入库时后台预热全部档位，首次访问直接命中磁盘缓存。

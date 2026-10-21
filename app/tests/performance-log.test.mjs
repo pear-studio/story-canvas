@@ -26,6 +26,14 @@ test('浏览器计时只接收约定字段，不保留正文，拒绝无效耗�
   assert.equal(browserPerformanceRecord({event:'workbench-load',outcome:'applied',duration_ms:-1}),null);
 });
 
+test('动图浏览器日志区分请求与解码失败，并排除图片和查询参数',()=>{
+  const source='/api/projects/demo/media/Outputs/pages/page/candidate/video.mp4';
+  const record=browserPerformanceRecord({event:'video-preview',outcome:'failed',stage:'decode',width:1024,source,duration_ms:120.6,fetch_ms:100,decode_ms:20,status:200,bytes:42,image:'secret'});
+  assert.equal(record.stage,'decode');assert.equal(record.duration_ms,121);assert.equal(record.image,undefined);
+  assert.equal(browserPerformanceRecord({...record,source:source+'?prompt=secret'}),null);
+  assert.equal(browserPerformanceRecord({...record,width:100}),null);
+});
+
 test('HTTP 计时关联请求并接收浏览器记录，日志不包含查询正文', async t => {
   const { createServer } = await import('node:http');
   const { createHttpRequestHandler } = await import('../server/http-app.mjs');

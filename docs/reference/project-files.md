@@ -25,7 +25,7 @@
 | `story/outline.json` | 故事、章节、seq 粗骨架，不含分页 |
 | `characters/`、`scenes/` | 索引及各设定的 profile、visual、prompt；visual 管理子设定身份 |
 | `pages/index.json` | 稳定页面 ID、归属和顺序 |
-| `pages/<id>.content.json` | 标题、画面内容、角色引用与嵌字；文字页另有正文和排版 |
+| `pages/<id>.content.json` | 标题、画面内容、角色引用与嵌字；文字页另有正文和排版，动态页另有后处理设置 |
 | `pages/<id>.prompt.json`、`.render.json` | 各模型输入，以及本页模型、配置、画幅 |
 | `pages/<id>.comic.json` | 可选分镜页布局、阅读顺序和逐格选图／裁切；格式见 `comic-page.schema.json` |
 | `pages/<id>.rewrite.json`、`.text-sources.json` | 改写稿、可选语料出处；普通创作不要求维护出处映射 |

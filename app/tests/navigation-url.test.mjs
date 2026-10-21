@@ -18,3 +18,14 @@ test("场景和角色子设定深链保留设置且切换工具时清理", () =>
   assert.equal(sync({ activeTab: "characters", activeCharacterId: "hero", activeCharacterSettingId: "daily" }).search, "?project=alpha&tab=characters&character=hero&setting=daily");
   assert.equal(sync({ activeTab: "resource-base", activePageKey: { page_id: "page-a" }, sceneId: "room" }).search, "?tab=resource-base");
 });
+
+test('剧情总览的范围与类型支持刷新恢复，编辑页 URL 不携带浏览筛选',()=>{
+  for(const kind of ['chapter','sequence'])for(const type of ['image','text','video','comic']){
+    const state={activeTab:'project-story',storyPageType:type,overviewTarget:{kind,id:'arrival'}};
+    const url=sync(state),restored=readNavigationUrlState(url.search);
+    assert.equal(restored.storyPageType,type);assert.deepEqual(restored.overviewTarget,state.overviewTarget);
+    const next=new URL(syncNavigationUrl(url,{...base,...state,activeTab:'story',activePageKey:{page_id:'page-001'}}),'http://local');
+    for(const key of ['page_type','chapter','sequence'])assert.equal(next.searchParams.has(key),false);
+  }
+  assert.equal(readNavigationUrlState('?tab=project-story&page_type=invalid').storyPageType,undefined);
+});
