@@ -24,10 +24,10 @@ export function createPerformanceLog(root, maxBytes = 5 * 1024 * 1024, filename 
 export function browserPerformanceRecord(value) {
   if(value?.event==='video-preview') {
     if(!['loaded','failed','cancelled'].includes(value.outcome)||!['fetch','decode'].includes(value.stage)
-      ||![320,1024].includes(value.width)||!Number.isFinite(value.duration_ms)||value.duration_ms<0
+      ||(![320,1024].includes(value.width)&&!['preview','original'].includes(value.profile))||!Number.isFinite(value.duration_ms)||value.duration_ms<0
       ||typeof value.source!=='string'||!/^\/api\/projects\/[^/?]+\/media\/Outputs\/[^?]+\.mp4$/.test(value.source))return null;
     const number=field=>Number.isFinite(value[field])&&value[field]>=0?Math.round(value[field]):0;
-    return {kind:'browser',event:value.event,outcome:value.outcome,stage:value.stage,width:value.width,
+    return {kind:'browser',event:value.event,outcome:value.outcome,stage:value.stage,...(value.profile?{profile:value.profile}:{width:value.width}),
       request_id:String(value.request_id??'').slice(0,80),source:value.source.slice(0,500),
       duration_ms:number('duration_ms'),fetch_ms:number('fetch_ms'),decode_ms:number('decode_ms'),bytes:number('bytes'),status:number('status')};
   }

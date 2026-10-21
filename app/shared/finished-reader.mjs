@@ -12,6 +12,16 @@ function startReader() {
   for (const button of viewport.querySelectorAll('[data-original]')) button.addEventListener('click', () => {
     const original = button.closest('figure').querySelector('video');
     const preview = button.closest('figure').querySelector('img');
+    if(!original){
+      if(button.dataset.opened==='true'){
+        preview.src=button.dataset.preview;button.dataset.opened='false';button.textContent='查看原图';return;
+      }
+      button.disabled=true;button.textContent='原图准备中…';
+      const image=new Image();
+      image.onload=()=>{preview.src=button.dataset.original;preview.hidden=false;preview.closest('figure').querySelector('.reader-placeholder')?.remove();button.dataset.opened='true';button.disabled=false;button.textContent='返回动图预览';};
+      image.onerror=()=>{button.disabled=false;button.textContent='原图加载失败，重试';};
+      image.src=button.dataset.original;return;
+    }
     const opening = original.hidden;
     original.hidden = !opening; preview.hidden = opening;
     button.textContent = opening ? '返回动图预览' : '查看原图';
@@ -93,7 +103,7 @@ export function finishedReaderFigure(src, number, width, height, mediaKind = "im
   if(!src)return `<figure data-page="${Number(number)}" style="--ratio:${Number(width)}/${Number(height)}"><p class="reader-placeholder">第 ${Number(number)} 页 · ${escapeHtml(message||'尚未制作')}</p></figure>\n`;
   if (mediaKind === 'video' && originalSrc) return `<figure data-page="${Number(number)}" style="--ratio:${Number(width)}/${Number(height)}"><img loading="lazy" src="${escapeHtml(src)}" width="${Number(width)}" height="${Number(height)}" alt="第 ${Number(number)} 页动态预览"><video hidden controls muted loop playsinline preload="none" width="${Number(width)}" height="${Number(height)}" aria-label="第 ${Number(number)} 页原图视频"></video><button type="button" class="reader-original" data-original="${escapeHtml(originalSrc)}">查看原图</button></figure>\n`;
   if(mediaKind === "video") return `<figure data-page="${Number(number)}" style="--ratio:${Number(width)}/${Number(height)}"><video controls muted loop playsinline preload="metadata" src="${escapeHtml(src)}" width="${Number(width)}" height="${Number(height)}" aria-label="第 ${Number(number)} 页动态画面"></video></figure>\n`;
-  return `<figure data-page="${Number(number)}" style="--ratio:${Number(width)}/${Number(height)}"><img loading="lazy" src="${escapeHtml(src)}" width="${Number(width)}" height="${Number(height)}" alt="第 ${Number(number)} 页">${stale?'<figcaption class="reader-stale">旧版成品 · 内容已变化</figcaption>':''}</figure>\n`;
+  return `<figure data-page="${Number(number)}" style="--ratio:${Number(width)}/${Number(height)}"><img loading="lazy" src="${escapeHtml(src)}" width="${Number(width)}" height="${Number(height)}" alt="第 ${Number(number)} 页">${originalSrc?`<button type="button" class="reader-original" data-preview="${escapeHtml(src)}" data-original="${escapeHtml(originalSrc)}">查看原图</button>`:''}${stale?'<figcaption class="reader-stale">旧版成品 · 内容已变化</figcaption>':''}</figure>\n`;
 }
 export const finishedReaderTail = `</main><output class="reader-number" aria-label="当前页码"></output><script>(${startReader.toString()})()</script></body></html>\n`;
 export function finishedReaderDocument(pages, title,locale='zh') {

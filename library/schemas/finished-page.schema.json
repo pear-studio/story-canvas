@@ -163,6 +163,10 @@
         "lettered": {
           "type": "string",
           "pattern": "^Outputs/finished/"
+        },
+        "gif": {
+          "type": "string",
+          "pattern": "^Outputs/finished/.*\\.gif$"
         }
       },
       "additionalProperties": false
@@ -189,6 +193,27 @@
       "maxItems": 12,
       "items": {
         "type": "object"
+      }
+    },
+    "media_format": {
+      "enum": [
+        "webp"
+      ]
+    },
+    "source_video": {
+      "type": "object"
+    },
+    "source_backup": {
+      "type": "string",
+      "pattern": "^Outputs/finished/"
+    },
+    "gif": {
+      "type": "object"
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
       }
     }
   },
@@ -320,6 +345,39 @@
               "generation",
               "upscale"
             ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "media_format"
+        ]
+      },
+      "then": {
+        "required": [
+          "source_video",
+          "source_backup",
+          "gif",
+          "warnings"
+        ],
+        "properties": {
+          "page_kind": {
+            "const": "video"
+          },
+          "outputs": {
+            "required": [
+              "gif"
+            ],
+            "properties": {
+              "clean": {
+                "pattern": "\\.webp$"
+              },
+              "lettered": {
+                "pattern": "\\.webp$"
+              }
+            }
           }
         }
       }

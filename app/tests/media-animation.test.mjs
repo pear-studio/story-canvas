@@ -33,3 +33,10 @@ test('工作台混排阅读先载入 WebP，MP4 只在查看原图时加载', ()
   assert.doesNotMatch(html,/<video[^>]+src=/);
   assert.ok(html.indexOf('/cover.png')<html.indexOf('/clip.mp4'));
 });
+
+test('WebP成品阅读默认小图，原图按需加载且不被当作MP4',()=>{
+  const html=finishedReaderDocument([{src:'/animation.webp?w=320',original_src:'/animation.webp',number:1,width:1280,height:720,media_kind:'image'}]);
+  assert.match(html,/<img loading="lazy" src="\/animation.webp\?w=320"/);
+  assert.match(html,/data-original="\/animation.webp">查看原图/);
+  assert.doesNotMatch(html,/<video/);
+});

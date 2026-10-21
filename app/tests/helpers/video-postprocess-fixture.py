@@ -11,10 +11,11 @@ mode, file = sys.argv[1], Path(sys.argv[2])
 if mode == 'create':
     with av.open(str(file), 'w') as container:
         stream = container.add_stream('libx264', rate=24)
-        stream.width, stream.height, stream.pix_fmt = 64, 48, 'yuv420p'
+        width = int(sys.argv[3]) if len(sys.argv) > 3 else 64
+        stream.width, stream.height, stream.pix_fmt = width, 48, 'yuv420p'
         stream.options = {'crf': '10'}
         for i in range(48):
-            frame = av.VideoFrame.from_image(Image.new('RGB', (64, 48), (i * 4, 80, 200 - i * 3)))
+            frame = av.VideoFrame.from_image(Image.new('RGB', (width, 48), (i * 4, 80, 200 - i * 3)))
             frame.pts, frame.time_base = i, Fraction(1, 24)
             for packet in stream.encode(frame):
                 container.mux(packet)

@@ -270,7 +270,9 @@ export async function handleProjectRequest({
       try {videoPostprocess=normalizeVideoPostprocess(JSON.parse(requestUrl.searchParams.get('video_edit')));}
       catch(error) {throw new ApiError(400,'invalid_video_postprocess',[error.message]);}
     }
-    await serveProjectMedia(response, projectRoot, mediaMatch[1], mediaMatch[2], { variantWidth: resolveMediaVariantWidth(requestUrl.searchParams.get("w")),videoPostprocess });
+    const profile=requestUrl.searchParams.get('video_profile');
+    if(profile&&!['preview','original'].includes(profile))throw new ApiError(400,'invalid_video_profile');
+    await serveProjectMedia(response, projectRoot, mediaMatch[1], mediaMatch[2], { variantWidth: profile==='original'?'original':profile==='preview'?320:resolveMediaVariantWidth(requestUrl.searchParams.get("w")),videoPostprocess });
     return true;
   }
 

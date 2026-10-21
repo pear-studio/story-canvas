@@ -27,7 +27,7 @@ test('插画和动态页缺失或错误候选 ID 返回400，且不创建输出�
   }
 });
 
-test("动态成品原样复制、不超分；混排 ZIP 与 HTML 导出动画 WebP 一次，替换及删除清理封面", async t => {
+test("动态成品发布双格式、不超分；混排 ZIP 导出一对、HTML 一次，替换及删除清理全部产物", async t => {
   const f = await fixture(t);
   await f.run(await f.prepare());
   const video = await createPage(f.root, "demo", { owner_kind:"story", sequence_id:"sequence" }, { pageKind:"video" });
@@ -39,20 +39,22 @@ test("动态成品原样复制、不超分；混排 ZIP 与 HTML 导出动画 We
   await writeFile(path.join(f.directory,videoFile), bytes);
   await json(path.join(f.directory,file.replace(/image\.png$/, "result.json")), {version:1,status:"available",page_key:video.page_key,candidate_id:candidateId,file,task_id:"render-test",media_kind:"video",video_file:videoFile,video_sha256:createHash("sha256").update(bytes).digest("hex"),video:{width:128,height:192,fps:24,frames:73,actual_duration:73/24,audio_streams:0}});
   const prepare=()=>f.operations.mutateDerived("demo",()=>prepareFinishedPage(f.root,"demo",f.directory,{page_key:video.page_key,candidate_id:candidateId})).then(result=>result.value);
-  const run=prepared=>f.run(prepared,{upscale:()=>assert.fail("视频不应超分"),render:()=>assert.fail("视频不应嵌字")});
-  assert.equal((await run(await prepare())).status,"completed");
-  const first=await readFinishedRecord(f.directory,video.page_id);
-  assert.deepEqual(await readFile(path.join(f.directory,first.outputs.clean)),bytes);
-  assert.equal(first.outputs.clean,first.outputs.lettered);
-  assert.equal(first.upscale,undefined);
-  // 准备生成接收层转换后的缓存，导出测试无需本机 Python 或 GPU。
   const pixels = Buffer.alloc(128 * 192 * 3 * 2);
   for (let i = 0; i < 128 * 192 * 2; i++) pixels[i * 3 + (i < 128 * 192 ? 0 : 2)] = 255;
   const animation = await sharp(pixels, {raw:{width:128,height:384,pageHeight:192,channels:3}}).webp({lossless:true,loop:0,delay:[41,42]}).toBuffer();
-  const info = await stat(path.join(f.directory, first.outputs.clean));
-  const cacheId = createHash('sha1').update(`animation-v2:${first.outputs.clean}:${info.size}:${info.mtimeMs}:${info.ctimeMs}:1024`).digest('hex');
-  await mkdir(path.join(f.directory, 'Saved/media-cache'), {recursive:true});
-  await writeFile(path.join(f.directory, 'Saved/media-cache', `${cacheId}.webp`), animation);
+  const gif=await sharp(animation,{animated:true}).gif().toBuffer();
+  const run=prepared=>f.run(prepared,{processVideo:async source=>{assert.deepEqual(source,bytes);return {webp:animation,gif,poster:await readFile(f.file),metadata:{width:128,height:192,frames:2,encoded_frames:2,duration_seconds:.083,gif:{encoded_frames:2},warnings:[]}};},upscale:()=>assert.fail('视频不应超分'),render:()=>assert.fail('视频不应嵌字')});
+  assert.equal((await run(await prepare())).status,'completed');
+  const first=await readFinishedRecord(f.directory,video.page_id);
+  assert.deepEqual(await readFile(path.join(f.directory,first.outputs.clean)),animation);
+  assert.deepEqual(await readFile(path.join(f.directory,first.source_backup)),bytes);
+  assert.deepEqual(await readFile(path.join(f.directory,first.outputs.gif)),gif);
+  assert.equal(first.outputs.clean,first.outputs.lettered);
+  assert.equal(first.upscale,undefined);
+  assert.equal(first.media_format,'webp');
+  assert.equal(first.source_video.frames,73);
+  const taskResult=await readWorkspaceTaskResults(f.root,'demo',first.outputs.clean.split('/')[3],'finished');
+  assert.equal(taskResult[0].media_format,'webp');
   const server=createServer(async(request,response)=>{try{await handleFinishedRequest({request,response,decodedPath:new URL(request.url,"http://local").pathname,projectRoot:f.root,readFacts:f.operations.readFacts});}catch(error){response.writeHead(error.status??500);response.end(error.message);}});
   await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));
   t.after(()=>new Promise(resolve=>server.close(resolve)));
@@ -62,7 +64,7 @@ test("动态成品原样复制、不超分；混排 ZIP 与 HTML 导出动画 We
     const zip=Buffer.from(await archive.arrayBuffer());
     const names=[];let offset=0;
     while((offset=zip.indexOf(Buffer.from([0x50,0x4b,0x01,0x02]),offset))!==-1){const length=zip.readUInt16LE(offset+28);names.push(zip.subarray(offset+46,offset+46+length).toString());offset+=46+length;}
-    assert.deepEqual(names, [...(variant==='clean'?[]:['嵌字版/001.png']),...(variant==='lettered'?[]:['无字版/001.png']),'动态页/002.webp']);
+    assert.deepEqual(names, [...(variant==='clean'?[]:['嵌字版/001.png']),...(variant==='lettered'?[]:['无字版/001.png']),'动态页/002.webp','动态页/002.gif']);
     assert.ok(zip.includes(animation));assert.ok(!zip.includes(bytes));
     const response=await send(true,variant);assert.equal(response.status,200);const html=await response.text();
     assert.doesNotMatch(html,/<video|data:video\/mp4/);
@@ -74,11 +76,15 @@ test("动态成品原样复制、不超分；混排 ZIP 与 HTML 导出动画 We
     assert.equal(Number(response.headers.get("x-export-total")),Buffer.byteLength(html));
   }
   assert.equal((await run(await prepare())).status,"completed");
-  for(const relative of [first.outputs.clean,first.poster])await assert.rejects(readFile(path.join(f.directory,relative)),{code:"ENOENT"});
+  for(const relative of [first.outputs.clean,first.outputs.gif,first.poster,first.source_backup])await assert.rejects(readFile(path.join(f.directory,relative)),{code:"ENOENT"});
   const current=await readFinishedRecord(f.directory,video.page_id);
   const listed=(await readFinishedPages(f.root,"demo",f.directory)).pages.find(page=>page.page_id===video.page_id);
+  assert.equal(listed.record.media_format,'webp');
+  await unlink(path.join(f.directory,current.source_backup));
+  const missingBackup=(await readFinishedPages(f.root,'demo',f.directory)).pages.find(page=>page.page_id===video.page_id);
+  assert.equal(missingBackup.status,'ready');assert.equal(missingBackup.record.backup_missing,true);
   await f.operations.mutateTargetFacts("demo",()=>deleteFinishedPage(f.directory,{page_key:video.page_key,expected_sha256:listed.record.sha256}));
-  for(const relative of [current.outputs.clean,current.poster])await assert.rejects(readFile(path.join(f.directory,relative)),{code:"ENOENT"});
+  for(const relative of [current.outputs.clean,current.outputs.gif,current.poster,current.source_backup])await assert.rejects(readFile(path.join(f.directory,relative)),{code:"ENOENT"});
   assert.deepEqual(await readFile(path.join(f.directory,videoFile)),bytes);
 });
 

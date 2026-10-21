@@ -182,7 +182,7 @@ export async function readWorkspaceTaskResults(projectRoot, projectId, taskId, p
     if (!job) throw Object.assign(new Error("任务不存在"), { status: 404 });
     const record = job.status === "completed" ? await readJsonOptional(path.join(projectDirectory, "finished", `${job.page_id}${job.locale&&job.locale!=='zh'?`.${job.locale}`:''}.json`)) : null;
     items = record ? [{ id: job.id, file: record.poster ?? record.outputs.lettered, url: mediaUrl(projectId, record.poster ?? record.outputs.lettered),
-      ...(record.page_kind === 'video' ? {media_kind:'video', video:record.video, video_url:mediaUrl(projectId,record.outputs.lettered), absolute_video:path.resolve(projectDirectory,record.outputs.lettered)} : {}) }] : [];
+      ...(record.page_kind === 'video' ? {media_kind:'video',media_format:record.media_format??'mp4', video:record.video, video_url:mediaUrl(projectId,record.outputs.lettered), absolute_video:path.resolve(projectDirectory,record.outputs.lettered)} : {}) }] : [];
   } else if (purpose === "comparison") {
     const record = await readComparisonExperimentView(projectDirectory, taskId);
     items = record.status.cells.filter(cell => cell.status === "completed").map(cell => ({
@@ -201,7 +201,7 @@ export async function readWorkspaceTaskResults(projectRoot, projectId, taskId, p
   const images = await Promise.all(items.map(async item => {
     const media=await resolveExistingProjectMedia(projectDirectory,item.file);
     const result=item.candidate_id?await readCandidateResult(projectDirectory,item.page_key,item.candidate_id):null;
-    const video=result?.media_kind==='video'?{media_kind:'video',video:result.video,video_url:mediaUrl(projectId,result.video_file),absolute_video:path.resolve(projectDirectory,result.video_file),absolute_review:path.resolve(projectDirectory,result.review_file)}:item.media_kind==='video'?{media_kind:item.media_kind,video:item.video,video_url:item.video_url,absolute_video:item.absolute_video}:{};
+    const video=result?.media_kind==='video'?{media_kind:'video',video:result.video,video_url:mediaUrl(projectId,result.video_file),absolute_video:path.resolve(projectDirectory,result.video_file),absolute_review:path.resolve(projectDirectory,result.review_file)}:item.media_kind==='video'?{media_kind:item.media_kind,media_format:item.media_format,video:item.video,video_url:item.video_url,absolute_video:item.absolute_video}:{};
     return media?{id:item.id,url:item.url,absolute_file:media.target,...video,...(item.candidate_id?{candidate_id:item.candidate_id}:{}),...(item.page_key?{page_key:item.page_key}:{})}:null;
   }));
   return images.filter(Boolean);

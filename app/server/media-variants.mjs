@@ -7,12 +7,13 @@ import { writeVideoPreview,logVideoProcessing } from './video-media.mjs';
 import {hasVideoPostprocess,normalizeVideoPostprocess} from '../shared/video-postprocess.mjs';
 import {randomUUID} from 'node:crypto';
 import {createMediaVariantTasks} from './media-variant-tasks.mjs';
-import {retimeWebp} from './webp-timing.mjs';
+import {retimeWebp,webpPlaybackMetadata} from './webp-timing.mjs';
 import {trimWebp} from './webp-trim.mjs';
 
 export const MEDIA_VARIANT_WIDTHS = [320, 1024];
 
 const joinVariant = createMediaVariantTasks();
+const sourceHashes=new Map();
 
 export function resolveMediaVariantWidth(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -28,6 +29,7 @@ async function generateVariant(projectDirectory, media, relativePath, width, tar
   signal?.throwIfAborted();
   await mkdir(path.dirname(target), { recursive: true });
   const staging = path.join(path.dirname(target), `.${path.basename(target, ".webp")}.${randomUUID()}.tmp`);
+  const frozenSource=staging+'.mp4';
   if (path.extname(media.target).toLowerCase() === '.mp4') {
     const started=performance.now();
     const trimmed=postprocess.trim_start_seconds!==0||postprocess.trim_end_seconds!==0;
@@ -49,15 +51,19 @@ async function generateVariant(projectDirectory, media, relativePath, width, tar
         rebuiltFrames=result.rebuiltFrames;
         await writeFile(staging,result.bytes,{signal});
       } else {
-        await writeVideoPreview(media.target, staging, width, postprocess, signal);
+        // 共享任务拥有输入快照；某个请求取消或候选被删不影响其余消费者。
+        await writeFile(frozenSource,media.sourceBytes,{signal});
+        await writeVideoPreview(frozenSource, staging, width, postprocess, signal);
       }
       signal?.throwIfAborted();
+      webpPlaybackMetadata(await readFile(staging,{signal}));
       await rename(staging, target);
       return { target, info: await stat(target), contentType: 'image/webp' };
     } catch(error) {
       status=signal?.aborted?'cancelled':'failed';failure=status==='failed'?error.message:undefined;throw error;
     } finally {
       await rm(staging, {force:true});
+      await rm(frozenSource,{force:true});
       if(postprocess.speed!==1)logVideoProcessing({event:'video_preview_retime',status,source:relativePath,width,settings:postprocess,
         elapsed_ms:Math.round(performance.now()-started),base_wait_ms:Math.round((retimeStarted??performance.now())-started),
         retime_ms:retimeStarted===undefined?null:Math.round(performance.now()-retimeStarted),error:failure});
@@ -70,7 +76,7 @@ async function generateVariant(projectDirectory, media, relativePath, width, tar
   const buffer = await sharp(await readFile(media.target), { animated: true })
     .rotate()
     .resize({ width, withoutEnlargement: true })
-    .webp({ quality: 82 })
+    .webp({ quality: media.animated&&width===320 ? 65 : 82 })
     .toBuffer();
   await writeFile(staging, buffer);
   await rename(staging, target);
@@ -82,9 +88,26 @@ export async function ensureMediaVariant(projectDirectory, media, relativePath, 
   const started=performance.now();
   const edit=normalizeVideoPostprocess(postprocess),edited=hasVideoPostprocess(edit);
   if(edited&&path.extname(media.target).toLowerCase()!=='.mp4')throw new Error('后处理只支持 MP4 视频');
-  const animation = /\.mp4$/i.test(relativePath) ? 'animation-v2:' : /\.webp$/i.test(relativePath) ? 'animation-v1:' : '';
+  const video=/\.mp4$/i.test(media.target);
+  let sourceHash;
+  if(video){
+    const fingerprint=`${media.target}:${media.info.size}:${media.info.mtimeMs}:${media.info.ctimeMs}`;
+    sourceHash=sourceHashes.get(fingerprint);
+    if(!sourceHash){
+      media={...media,sourceBytes:media.sourceBytes??await readFile(media.target,{signal})};
+      sourceHash=createHash('sha256').update(media.sourceBytes).digest('hex');
+      if(sourceHashes.size>=512)sourceHashes.delete(sourceHashes.keys().next().value);
+      sourceHashes.set(fingerprint,sourceHash);
+    }
+  }
+  else if(/\.webp$/i.test(media.target))media={...media,animated:(await sharp(await readFile(media.target)).metadata()).pages>1};
+  if(video)width=width===320?320:'original';
+  if(width==='original'&&!video)throw new Error('原尺寸动画档位只支持 MP4');
+  const animation = video ? 'animation-v3-q65-q80:' : media.animated ? 'animation-v2-q65:' : /\.webp$/i.test(relativePath)?'animation-v1:':'';
+  // 用源字节身份让冻结成品和候选共用缓存，路径变化不影响原片身份。
+  const identity=video?sourceHash:`${relativePath}:${media.info.size}:${media.info.mtimeMs}:${media.info.ctimeMs}`;
   const key = createHash("sha1")
-    .update(`${animation}${relativePath}:${media.info.size}:${media.info.mtimeMs}:${media.info.ctimeMs}:${width}${edited?':edit-v1:'+JSON.stringify(edit):''}`)
+    .update(`${animation}${identity}:${width}${edited?':edit-v1:'+JSON.stringify(edit):''}`)
     .digest("hex");
   const target = path.join(projectDirectory, "Saved", "media-cache", `${key}.webp`);
   try {
@@ -96,6 +119,8 @@ export async function ensureMediaVariant(projectDirectory, media, relativePath, 
   } catch {
     // 缓存未命中，按需生成
   }
+  // 只有完整缓存缺失才需要源字节，裁剪和变速不再读取 MP4。
+  if(video&&!edited&&!media.sourceBytes)media={...media,sourceBytes:await readFile(media.target,{signal})};
   return joinVariant(target,signal=>generateVariant(projectDirectory, media, relativePath, width, target, edit,signal),signal);
 }
 
@@ -105,7 +130,8 @@ export function warmMediaVariants(projectDirectory, relativePath) {
   return (async () => {
     const target = path.join(projectDirectory, ...relativePath.split("/"));
     const media = { target, info: await stat(target) };
-    for (const width of MEDIA_VARIANT_WIDTHS) {
+    const animated=/\.mp4$/i.test(relativePath)||(/\.webp$/i.test(relativePath)&&(await sharp(await readFile(target)).metadata()).pages>1);
+    for (const width of animated ? [320] : MEDIA_VARIANT_WIDTHS) {
       await ensureMediaVariant(projectDirectory, media, relativePath, width);
     }
   })().catch(() => {});

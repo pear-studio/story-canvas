@@ -5,6 +5,7 @@ import yazl from "yazl";
 import { readFile, stat } from "node:fs/promises";
 import { ApiError, readJsonBody } from "./http-support.mjs";
 import { ensureMediaVariant } from "./media-variants.mjs";
+import {prepareAnimationFiles} from './animation-output.mjs';
 import { resolveExistingProjectMedia } from "./render-media.mjs";
 import { finishedReaderHead, finishedReaderFigure, finishedReaderTail } from "../shared/finished-reader.mjs";
 import { deleteFinishedPage, listFinishedJobs, planFinishedBatch, prepareFinishedPage, readFinishedPages, readFinishedRecord, runFinishedBatch, runFinishedPage } from "./finished-pages.mjs";
@@ -75,7 +76,7 @@ export async function handleFinishedRequest({ request, response, decodedPath, pr
         const record = await readFinishedRecord(projectDirectory, page.page_id,page.locale);
         const video = record.page_kind === 'video';
         // 动态页没有嵌字／无字两个版本，混合导出只收录一次。
-        for (const kind of video ? [kinds[0]] : kinds) entries.push({ index, kind,stale:page.status==='stale', relative: record.outputs[kind], width: record.width, height: record.height, media_kind: video ? 'video' : 'image' });
+        for (const kind of video ? [kinds[0]] : kinds) entries.push({ index, kind,stale:page.status==='stale', relative: record.outputs[kind],gif:record.outputs.gif,warnings:record.warnings??[], width: record.width, height: record.height, media_kind: video ? 'video' : 'image' });
       }
       if (!entries.length) throw new ApiError(409, "finished_export_empty");
       return { projectDirectory, entries,missing };
@@ -83,17 +84,42 @@ export async function handleFinishedRequest({ request, response, decodedPath, pr
     const { projectDirectory, entries,missing } = result.value;
     if (preview && kinds.length > 1) entries.sort((a, b) => kinds.indexOf(a.kind) - kinds.indexOf(b.kind) || a.index - b.index);
     // 逐张解析并统计大小，随后边读边流式写出，不在内存里攒整包。
-    const files = [];
+    const files = [],warnings=[];
+    const controller=new AbortController();
+    const disconnected=()=>{if(!response.writableEnded)controller.abort();};
+    response.once('close',disconnected);
+    try {
     for (const entry of entries) {
+      controller.signal.throwIfAborted();
       if(!entry.relative){files.push({...entry,size:0,target:null});continue;}
       const media = await resolveExistingProjectMedia(projectDirectory, entry.relative);
       if (!media) throw new ApiError(409, "finished_export_file_missing");
-      const exported = preview || entry.media_kind === 'video'
-        ? await ensureMediaVariant(projectDirectory, { target: media.target, info: await stat(media.target) }, entry.relative, 1024)
+      if(entry.media_kind==='video') {
+        const prefix=`动态页/${String(entry.index+1).padStart(3,'0')}`;
+        if(path.extname(media.target).toLowerCase()==='.mp4') {
+          // 旧成品 MP4 已应用设置，身份后处理；只派生缓存，不改写旧记录。
+          const pair=await prepareAnimationFiles(await readFile(media.target,{signal:controller.signal}),projectDirectory,undefined,controller.signal);
+          files.push({...entry,name:prefix+'.webp',target:pair.webpTarget,size:pair.webp.length});
+          if(!preview)files.push({...entry,name:prefix+'.gif',target:pair.gifTarget,size:pair.gif.length});
+          warnings.push(...pair.metadata.warnings.map(message=>`第 ${entry.index+1} 页 · ${message}`));
+        } else {
+          files.push({...entry,name:prefix+'.webp',target:media.target,size:(await stat(media.target)).size});
+          if(!preview){
+            const gif=entry.gif&&await resolveExistingProjectMedia(projectDirectory,entry.gif);
+            if(!gif)throw new ApiError(409,'finished_export_file_missing');
+            files.push({...entry,name:prefix+'.gif',target:gif.target,size:(await stat(gif.target)).size});
+          }
+          warnings.push(...entry.warnings.map(message=>`第 ${entry.index+1} 页 · ${message}`));
+        }
+        continue;
+      }
+      const exported = preview
+        ? await ensureMediaVariant(projectDirectory, { target: media.target, info: await stat(media.target) }, entry.relative, 1024,undefined,controller.signal)
         : media;
       const folder = entry.media_kind === 'video' ? '动态页' : entry.kind === 'lettered' ? '嵌字版' : '无字版';
       files.push({ ...entry,name: `${folder}/${String(entry.index + 1).padStart(3, "0")}${path.extname(exported.target)}`, target: exported.target, size: (await stat(exported.target)).size, width: entry.width, height: entry.height });
     }
+    } finally {response.off('close',disconnected);}
     if (preview) {
       const head = finishedReaderHead(`${projectId}-${requireLetteringLocale(value.locale)}-预览`,requireLetteringLocale(value.locale));
       const figure = (file, index, base64 = "") => finishedReaderFigure(file.target?`data:image/webp;base64,${base64}`:'', file.index + 1, file.width, file.height,'image',undefined,file.message,file.stale);
@@ -113,6 +139,7 @@ export async function handleFinishedRequest({ request, response, decodedPath, pr
     zip.outputStream.on("error", error => response.destroy(error));
     zip.outputStream.pipe(response);
     for (const file of files) zip.addFile(file.target, file.name, { compress: false });
+    if(warnings.length)zip.addBuffer(Buffer.from(warnings.join('\n')+'\n'),'发布提示.txt');
     if(missing.length)zip.addBuffer(Buffer.from(`${requireLetteringLocale(value.locale)} 版缺页说明\n${missing.join('\n')}\n`),'缺页说明.txt');
     zip.end();
     return true;

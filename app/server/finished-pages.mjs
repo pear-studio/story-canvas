@@ -3,7 +3,7 @@ import { defaultTextPageLayout } from "../shared/text-page-layout.mjs";
 import {storyPageNumbers} from '../shared/story-page-numbers.mjs';
 import {comicGeometry} from '../shared/comic-layout.mjs';
 import {hasVideoPostprocess,normalizeVideoPostprocess,videoPostprocessTiming} from '../shared/video-postprocess.mjs';
-import {processVideoBytes} from './video-media.mjs';
+import {prepareAnimationFiles} from './animation-output.mjs';
 
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rmdir, stat, unlink, writeFile } from "node:fs/promises";
@@ -96,7 +96,9 @@ export async function readFinishedPages(repositoryRoot, projectId, directory, { 
     const candidates = page.page_kind === "text" || page.comic ? null : await readGenerationCandidateRecords(directory, { pageKey: page.page_key });
     const candidate = candidates?.length === 1 ? candidates[0].candidate_id : null;
     const files = record ? await Promise.all(["lettered", "clean"].map(kind => resolveExistingProjectMedia(directory, record.outputs[kind]))) : [];
-    const available = files.length === 2 && files.every(Boolean);
+    const gifFile=record?.outputs.gif?await resolveExistingProjectMedia(directory,record.outputs.gif):null;
+    const available = files.length === 2 && files.every(Boolean) && (!record?.outputs.gif || Boolean(gifFile));
+    const backupMissing=Boolean(record?.source_backup&&!await resolveExistingProjectMedia(directory,record.source_backup));
     const dimensions = page.page_kind === 'text' ? (page.render_capabilities ?? view.render_capabilities).text_page?.dimensions : null;
     const dimensionsChanged = dimensions && record && (record.width !== dimensions.width || record.height !== dimensions.height);
     const stale = record ? (page.page_kind==='video' && hashCanonicalJson(normalizeVideoPostprocess(page.video_postprocess))!==hashCanonicalJson(normalizeVideoPostprocess(record.video_postprocess))) || Boolean(dimensionsChanged) || (candidate !== null && candidate !== record.candidate_id) || Boolean(translation_summary?.missing||translation_summary?.stale) || page.comic && hashCanonicalJson(page.comic.document)!==record.comic_sha256 || !page.comic&&record.page_kind==='comic' || hashCanonicalJson(await localizedSnapshot(view, page,directory,mediaLocale,page.page_kind === "text" ? undefined : record.lettering.canvas)) !== hashCanonicalJson(record.lettering) : false;
@@ -107,7 +109,7 @@ export async function readFinishedPages(repositoryRoot, projectId, directory, { 
       batch_skip_reason: page.comic && page.comic.document.order.some(id=>!page.comic.document.panels[id].candidate_id) ? '部分分镜尚未选图' : translation_summary?.missing||translation_summary?.stale ? `译文未就绪：缺译 ${translation_summary.missing} 条、原文变化 ${translation_summary.stale} 条` : candidates?.length === 0 ? "没有候选图" : candidates && candidates.length > 1 ? `有 ${candidates.length} 张候选，请只保留一张` : null,
       status: !record ? "missing" : !available ? "files_missing" : stale ? "stale" : "ready",
       job: jobs.find(job => job.page_id === page.page_id&&(job.locale??'zh')===mediaLocale) ?? null,
-      record: record ? { media_kind:record.page_kind==='video'?'video':'image', poster_url:record.poster ? `/api/projects/${encodeURIComponent(projectId)}/media/${record.poster}` : null, sha256: hashCanonicalJson(record), candidate_id: record.candidate_id ?? null, width: record.width, height: record.height, created_at: record.created_at,
+      record: record ? { media_format:record.media_format??(record.page_kind==='video'?'mp4':'png'), backup_missing:backupMissing, warnings:record.warnings??[], gif_bytes:gifFile?(await stat(gifFile.target)).size:null, media_kind:record.page_kind==='video'?'video':'image', poster_url:record.poster ? `/api/projects/${encodeURIComponent(projectId)}/media/${record.poster}` : null, sha256: hashCanonicalJson(record), candidate_id: record.candidate_id ?? null, width: record.width, height: record.height, created_at: record.created_at,
         bytes: available ? (await stat(files[0].target)).size : null,
         lettered_url: available ? url("lettered") : null, clean_url: available ? url("clean") : null } : null });
   }
@@ -121,7 +123,7 @@ export async function deleteFinishedPage(directory, value) {
   const record = await readFinishedRecord(directory, id,locale);
   if (!record || hashCanonicalJson(record) !== value.expected_sha256) fail("本页成品已变化，请刷新后再删除");
   await unlink(recordPath(directory, id,locale));
-  for (const relative of new Set([...Object.values(record.outputs),...(record.poster?[record.poster]:[])])) {
+  for (const relative of new Set([...Object.values(record.outputs),...[record.poster,record.source_backup].filter(Boolean)])) {
     if (!relative.startsWith(`Outputs/finished/${id}/`)) continue;
     const media = await resolveExistingProjectMedia(directory, relative);
     if (media) { await unlink(media.target); await rmdir(path.dirname(media.target)).catch(() => {}); }
@@ -259,25 +261,25 @@ export async function composeComicImage(document,sources) {
   return sharp({create:{width,height,channels:3,background:'#ffffff'}}).composite(layers).png().toBuffer();
 }
 export async function runFinishedPage({ repositoryRoot, projectId, directory, prepared, config, origin, mutateTargetFacts,
-  processVideo = processVideoBytes, upscale = upscaleFinishedImage, render = (...args) => import("./finished-render.mjs").then(module => module.renderFinishedImage(...args)) }) {
+  processVideo = prepareAnimationFiles, upscale = upscaleFinishedImage, render = (...args) => import("./finished-render.mjs").then(module => module.renderFinishedImage(...args)) }) {
   const { job, snapshot } = prepared;
   let outputs = null;
   let newPoster = null;
+  let newBackup = null;
   let published = false;
   const update = async (status, error = null) => { job.status = status; job.error = error; const now = new Date().toISOString(); job.started_at ??= now; if (status === "completed") job.completed_at = now; if (status === "failed") job.failed_at = now; await writeJson(jobPath(directory, job.page_id,job.locale), job); };
   try {
     if(prepared.video) {
-      let videoBytes=prepared.sourceBuffer,posterBytes=prepared.posterBuffer,videoMetadata=snapshot.video;
-      if(hasVideoPostprocess(snapshot.video_postprocess)) {
-        await update('processing');
-        const processed=await processVideo(prepared.sourceBuffer,directory,snapshot.video_postprocess);
-        videoBytes=processed.bytes;posterBytes=processed.poster;videoMetadata={...snapshot.video,...processed.metadata};
-      }
+      await update('processing');
+      const processed=await processVideo(prepared.sourceBuffer,directory,snapshot.video_postprocess);
+      const {gif,warnings,...videoMetadata}=processed.metadata;
       await update('publishing');const prefix=`Outputs/finished/${job.page_id}/${job.id}`;
-      outputs={clean:prefix+'/video.mp4',lettered:prefix+'/video.mp4'};
+      outputs={clean:prefix+'/animation.webp',lettered:prefix+'/animation.webp',gif:prefix+'/animation.gif'};
+      newBackup=prefix+'/source.mp4';
       const poster=prefix+'/poster.png';newPoster=poster;await mkdir(path.join(directory,prefix),{recursive:true});
-      await writeFile(path.join(directory,outputs.clean),videoBytes);await writeFile(path.join(directory,poster),posterBytes);
-      const record={$schema:'https://storyvisualizer.local/schemas/finished-page.schema.json',...snapshot,video:videoMetadata,width:videoMetadata.width,height:videoMetadata.height,created_at:new Date().toISOString(),outputs,poster};
+      await writeFile(path.join(directory,outputs.clean),processed.webp);await writeFile(path.join(directory,outputs.gif),processed.gif);
+      await writeFile(path.join(directory,newBackup),prepared.sourceBuffer);await writeFile(path.join(directory,poster),processed.poster);
+      const record={$schema:'https://storyvisualizer.local/schemas/finished-page.schema.json',...snapshot,source_video:snapshot.video,source_backup:newBackup,media_format:'webp',video:videoMetadata,gif,warnings,width:videoMetadata.width,height:videoMetadata.height,created_at:new Date().toISOString(),outputs,poster};
       await mutateTargetFacts(projectId,()=>publishFinishedPage(repositoryRoot,projectId,directory,prepared,record));published=true;await update('completed');
       warmMediaVariants(directory, outputs.clean);
     } else {
@@ -313,7 +315,8 @@ export async function runFinishedPage({ repositoryRoot, projectId, directory, pr
   // 只清理本次失败产物或已被成功替换的两个文件，不递归清理生成目录。
   const obsolete = published ? prepared.old?.outputs : outputs;
   const obsoletePoster=published?prepared.old?.poster:newPoster;
-  for (const relative of new Set([...Object.values(obsolete ?? {}),...(obsoletePoster?[obsoletePoster]:[])])) {
+  const obsoleteBackup=published?prepared.old?.source_backup:newBackup;
+  for (const relative of new Set([...Object.values(obsolete ?? {}),...[obsoletePoster,obsoleteBackup].filter(Boolean)])) {
     if (!relative.startsWith(`Outputs/finished/${job.page_id}/`)) continue;
     const media = await resolveExistingProjectMedia(directory, relative).catch(() => null);
     if (media) { await unlink(media.target).catch(() => {}); await rmdir(path.dirname(media.target)).catch(() => {}); }

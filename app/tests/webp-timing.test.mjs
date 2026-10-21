@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {retimeWebp} from '../server/webp-timing.mjs';
+import {retimeWebp,webpPlaybackMetadata} from '../server/webp-timing.mjs';
 
 const chunk=(type,payload)=>{
   const header=Buffer.alloc(8);header.write(type);header.writeUInt32LE(payload.length,4);
@@ -44,4 +44,10 @@ test('损坏的容器与非法时长明确失败；静止片段不重新编码',
   assert.throws(()=>retimeWebp(animation([0xffffff]),.1),/范围/);
   for(const speed of [NaN,Infinity,0,-1])assert.throws(()=>retimeWebp(source,speed));
   const still=riff([chunk('VP8L',Buffer.from([1,2,3]))]);assert.deepEqual(retimeWebp(still,1.2),still);
+});
+
+test('播放校验采用最终 ANMF 时长，拒绝浏览器会拉长的帧，不误拒绝合并帧',()=>{
+  assert.throws(()=>webpPlaybackMetadata(retimeWebp(animation([41,42]),4)),/10ms/);
+  assert.deepEqual(webpPlaybackMetadata(retimeWebp(animation([83,84]),4)),{encoded_frames:2,duration_seconds:.042});
+  assert.throws(()=>webpPlaybackMetadata(animation([0])),/10ms/);
 });

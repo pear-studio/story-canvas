@@ -27,6 +27,16 @@ export function writeWebpChunks(chunks) {
   return Buffer.concat([header,...chunks]);
 }
 
+// 浏览器会把 <= 10ms 的动画帧当作 100ms 播放；检查编码后的真实帧。
+export function webpPlaybackMetadata(source) {
+  const durations=readWebpChunks(source).filter(chunk=>chunk.type==='ANMF').map(({payload})=>{
+    if(payload.length<16)throw new Error('WebP 动画帧头不完整');
+    return payload.readUIntLE(12,3);
+  });
+  if(durations.some(value=>value<=10))throw new Error('当前倍率产生不超过 10ms 的 WebP 帧，浏览器无法正确播放，请降低倍率');
+  return {encoded_frames:durations.length||1,duration_seconds:durations.length?durations.reduce((a,b)=>a+b,0)/1000:null};
+}
+
 export function retimeWebp(source, speed) {
   if(!Number.isFinite(speed)||speed<=0)throw new TypeError('WebP 播放倍率无效');
   const offsets=[];

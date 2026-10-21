@@ -27,6 +27,7 @@ export function VideoPageWorkspace({projectId,page,pages,breadcrumb,onReload}:{p
   const [candidates,setCandidates]=useState<Candidate[]>([]),[sourceCandidates,setSourceCandidates]=useState<Candidate[]>([]),[sourceId,setSourceId]=useState(''),[selected,setSelected]=useState(''),[count,setCount]=useState(1),[seed,setSeed]=useState('');
   const [detail,setDetail]=useState<CandidateDetail|null>(null),[sourceOpen,setSourceOpen]=useState(false),[previewOpen,setPreviewOpen]=useState(false);
   const [largeOpen,setLargeOpen]=useState(false);
+  const [originalIdentity,setOriginalIdentity]=useState('');
   const [contentScope,setContentScope]=useState<ContentScope|null>(null),[postprocess,setPostprocess]=useState<VideoPostprocess>(()=>normalizeVideoPostprocess(page.video_postprocess));
   const [appliedPostprocess,setAppliedPostprocess]=useState<VideoPostprocess>(()=>normalizeVideoPostprocess(page.video_postprocess));
   const [previewAttempt,setPreviewAttempt]=useState(0);
@@ -94,10 +95,11 @@ export function VideoPageWorkspace({projectId,page,pages,breadcrumb,onReload}:{p
   } catch(e){postprocessError=e instanceof Error?e.message:String(e);}
   try {
     if(current?.video)previewDuration=videoPostprocessTiming(current.video,appliedPostprocess).duration_seconds;
-    if(current?.video_url){requestedPreview=videoPreviewUrl(current.video_url,1024,appliedPostprocess);smallPreview=videoPreviewUrl(current.video_url,320,appliedPostprocess);}
+    if(current?.video_url){requestedPreview=videoPreviewUrl(current.video_url,'original',appliedPostprocess);smallPreview=videoPreviewUrl(current.video_url,320,appliedPostprocess);}
   } catch(e){appliedError=e instanceof Error?e.message:String(e);}
-  const preview=useVideoPreview(smallPreview,requestedPreview,previewAttempt),previewUrl=preview.url;
-  useEffect(()=>setLargeOpen(false),[requestedPreview]);
+  const preview=useVideoPreview(smallPreview,originalIdentity===requestedPreview?requestedPreview:'',previewAttempt),previewUrl=preview.url;
+  const openOriginal=()=>{setOriginalIdentity(requestedPreview);setLargeOpen(true);};
+  useEffect(()=>{setLargeOpen(false);setOriginalIdentity('');},[requestedPreview]);
   const frames=17*Math.round(((draft.duration??5)*24-5)/17)+5;
   const input=draft.reference_images?.[0];
   const generateDisabled=busy||!scope||!contentScope||!input||!draft.text?.trim();
@@ -112,14 +114,14 @@ export function VideoPageWorkspace({projectId,page,pages,breadcrumb,onReload}:{p
     <div className="video-result-main">
     {current?.video_url?<div className="video-preview-stage">
       {appliedError?<p role="alert">{appliedError}</p>:<>
-      <button type="button" className="video-candidate-preview" disabled={!previewUrl} aria-label="查看动态候选大图" onClick={()=>setLargeOpen(true)}>{previewUrl&&<img className="video-candidate-player" src={previewUrl} data-preview-source={requestedPreview} data-preview-width={preview.width} alt="动态后处理预览"/>}</button>
+      <button type="button" className="video-candidate-preview" disabled={!previewUrl} aria-label="查看动态候选原图" onClick={openOriginal}>{previewUrl&&<img className="video-candidate-player" src={previewUrl} data-preview-source={preview.profile==='original'?requestedPreview:smallPreview} data-preview-profile={preview.profile} alt="动态后处理预览"/>}</button>
       {preview.error?<p role="alert">{previewUrl?'高清预览加载失败，当前显示小预览。':'动图预览加载失败，候选原视频仍保留。'}<span className="video-field-hint">{preview.error}</span><button type="button" className="button" onClick={()=>setPreviewAttempt(value=>value+1)}>重试预览</button></p>:preview.pending&&<p role="status">{previewUrl?'正在加载高清预览…':'正在加载动图预览…'}</p>}
       </>}
     </div>:<div className="video-empty-state">{mediaError?<p role="alert">候选列表读取失败，正在重试。</p>:!mediaLoaded?<p role="status">正在读取候选列表…</p>:<><b>尚无视频候选</b><p>生成中的候选会在完成后自动出现。</p></>}</div>}
     {current&&<><p className="video-result-meta">{current.video?.width} × {current.video?.height} · {previewDuration?.toFixed(2)??'—'} 秒 · Seed {current.seed}</p>
       <div className="video-result-actions">
-        {!appliedError&&preview.width===1024&&<a className="button button--quiet" href={previewUrl} download="animation.webp">下载 WebP</a>}
-        <button type="button" className="button button--quiet" disabled={Boolean(appliedError)||!previewUrl} onClick={()=>setLargeOpen(true)}>查看大图</button>
+        {!appliedError&&preview.profile==='original'&&<a className="button button--quiet" href={previewUrl} download="animation.webp">下载 WebP</a>}
+        <button type="button" className="button button--quiet" disabled={Boolean(appliedError)||!previewUrl} onClick={openOriginal}>查看原图</button>
         <button type="button" className="button button--quiet" onClick={()=>void run(async()=>{setDetail((await loadCandidateDetail(projectId,page.page_key,current.candidate_id)).detail);})}>生成详情</button>
         <button type="button" className="button button--danger" disabled={busy} onClick={()=>void run(async()=>{if(!await confirm({title:'删除视频候选',message:'删除此候选的视频与审阅文件，输入图和页面设置会保留。',danger:true,confirmLabel:'删除'}))return;await deleteCandidate(projectId,page.page_key,current.candidate_id);await refresh();})}>删除</button>
       </div></>}
@@ -185,7 +187,7 @@ export function VideoPageWorkspace({projectId,page,pages,breadcrumb,onReload}:{p
     </div>
     {compact&&<div className="mobile-generate-bar video-mobile-actions" aria-label="页面操作">{editingActions}<button type="button" className="button button--quiet" aria-haspopup="dialog" aria-expanded={previewOpen} onClick={()=>setPreviewOpen(true)}>候选 {candidates.length}</button></div>}
     {previewOpen&&compact&&<Modal size="workspace" title="视频候选" subtitle={page.title} className="video-preview-modal" onClose={()=>setPreviewOpen(false)}>{results}</Modal>}
-    {largeOpen&&previewUrl&&!appliedError&&<ZoomableImageLightbox src={previewUrl} fullResolutionOnly alt="动态后处理预览" footer={<span>{page.title} · Seed {current?.seed}</span>} onClose={()=>setLargeOpen(false)}/>}
+    {largeOpen&&previewUrl&&!appliedError&&<ZoomableImageLightbox src={previewUrl} fullResolutionOnly alt="动态后处理预览" footer={<span>{page.title} · Seed {current?.seed}{preview.pending?' · 原图准备中…':preview.error?` · ${preview.error}`:''}{preview.profile==='original'&&<a className="button" href={previewUrl} download="animation.webp">下载 WebP</a>}</span>} onClose={()=>{setLargeOpen(false);setOriginalIdentity('');}}/>}
     {sourceOpen&&<Modal title="导入候选图" subtitle="选择后复制为本页输入图" className="video-source-modal" onClose={()=>setSourceOpen(false)} busy={busy}>
       {error&&<p role="alert" className="video-message video-message--error">{error}</p>}
       <label className="video-field">来源页面<select aria-label="来源页面" disabled={busy} value={sourceId} onChange={e=>setSourceId(e.target.value)}><option value="">选择插画页</option>{eligible.map(p=><option key={p.page_id} value={p.page_id}>{p.title}</option>)}</select></label>

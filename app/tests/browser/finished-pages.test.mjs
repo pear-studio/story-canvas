@@ -1,3 +1,4 @@
+import {finishedReaderDocument} from '../../shared/finished-reader.mjs';
 import assert from "node:assert/strict";
 import test from "node:test";
 import { mkdir, readFile, writeFile, cp } from "node:fs/promises";
@@ -16,8 +17,39 @@ import { renderFinishedImage } from "../../server/finished-render.mjs";
 import { createStoryCanvasServer } from "../../server/index.mjs";
 import { hashCanonicalJson } from "../../server/workflow-definition.mjs";
 
+const testAppRoot=process.env.STORY_CANVAS_TEST_APP_ROOT??fileURLToPath(new URL('../../',import.meta.url));
+
+test('WebP阅读原图按需载入，失败保留小图且可重试',async t=>{
+  const browser=await chromium.launch({headless:true,channel:process.env.BROWSER_CHANNEL||(process.platform==='win32'?'msedge':undefined)});t.after(()=>browser.close());
+  const page=await browser.newPage(),requests=[];
+  let fail=true,smallFail=false;
+  await page.route('https://media.test/**',route=>{
+    requests.push(route.request().url());
+    if(route.request().url().endsWith('/small-failure.webp')&&smallFail)return route.fulfill({status:503,body:'unavailable'});
+    if(route.request().url().endsWith('/original.webp')&&fail)return route.fulfill({status:503,body:'unavailable'});
+    return route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="320" height="240"><rect width="320" height="240" fill="green"/></svg>'});
+  });
+  await page.setContent(finishedReaderDocument([{src:'https://media.test/small.webp',original_src:'https://media.test/original.webp',media_kind:'image',number:1,width:640,height:480}]));
+  await page.locator('img').waitFor();
+  assert.equal(requests.some(url=>url.endsWith('/original.webp')),false);
+  await page.getByRole('button',{name:'查看原图',exact:true}).click();
+  await page.getByRole('button',{name:'原图加载失败，重试',exact:true}).waitFor();
+  assert.match(await page.locator('img').getAttribute('src'),/small.webp$/);assert.equal(await page.locator('img').isVisible(),true);
+  fail=false;await page.getByRole('button',{name:'原图加载失败，重试',exact:true}).click();
+  await page.getByRole('button',{name:'返回动图预览',exact:true}).waitFor();
+  assert.match(await page.locator('img').getAttribute('src'),/original.webp$/);assert.equal(await page.locator('video').count(),0);
+  await page.getByRole('button',{name:'返回动图预览',exact:true}).click();
+  assert.match(await page.locator('img').getAttribute('src'),/small.webp$/);
+  smallFail=true;
+  await page.setContent(finishedReaderDocument([{src:'https://media.test/small-failure.webp',original_src:'https://media.test/original.webp',media_kind:'image',number:1,width:640,height:480}]));
+  await page.locator('.reader-placeholder').waitFor();
+  await page.getByRole('button',{name:'查看原图',exact:true}).click();
+  await page.getByRole('button',{name:'返回动图预览',exact:true}).waitFor();
+  assert.equal(await page.locator('img').isVisible(),true);assert.equal(await page.locator('.reader-placeholder').count(),0);
+});
+
 test('正式渲染的横竖屏、译文和分镜均沿用竖屏短边字号',async t=>{
-  const distRoot=fileURLToPath(new URL('../../dist/',import.meta.url));
+  const distRoot=path.join(testAppRoot,'dist');
   const server=createServer((request,response)=>void serveProductionAsset(response,new URL(request.url,'http://local'),distRoot));
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>new Promise(resolve=>server.close(resolve)));
   const browser=await chromium.launch({headless:true,channel:process.env.BROWSER_CHANNEL||(process.platform==='win32'?'msedge':undefined)});t.after(()=>browser.close());
@@ -48,7 +80,7 @@ test('正式渲染的横竖屏、译文和分镜均沿用竖屏短边字号',asy
 });
 
 test("正式嵌字使用浏览器共享排版，输出保持尺寸且无字时保留底图像素", async t => {
-  const distRoot = fileURLToPath(new URL("../../dist/", import.meta.url));
+  const distRoot = path.join(testAppRoot,'dist');
   const server = createServer((request, response) => void serveProductionAsset(response, new URL(request.url, "http://local"), distRoot));
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   t.after(() => new Promise(resolve => server.close(resolve)));
@@ -92,7 +124,7 @@ test("浏览器成品导航、双版本切换、返回编辑与输出按钮可�
   const running = f.run(await f.prepare(), { render: async clean => { rendering(); await outputGate; return clean; } });
   t.after(async () => { releaseOutput(); await running; });
   await renderingStarted;
-  const server = await createStoryCanvasServer({ projectRoot: f.root, appRoot: fileURLToPath(new URL("../../", import.meta.url)), production: true, localConfig: { comfyui_urls: [] }, hardwareStatusReader: async () => ({ cpu: { available: false }, memory: { available: false }, gpu: { available: false }, comfyui: { connected: false, status: "offline" } }) });
+  const server = await createStoryCanvasServer({ projectRoot: f.root, appRoot: testAppRoot, production: true, localConfig: { comfyui_urls: [] }, hardwareStatusReader: async () => ({ cpu: { available: false }, memory: { available: false }, gpu: { available: false }, comfyui: { connected: false, status: "offline" } }) });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   const browser = await chromium.launch(process.platform === "win32" ? { channel: "msedge", headless: true } : { headless: true });
   t.after(async () => { await browser.close(); await new Promise(resolve => server.close(resolve)); });

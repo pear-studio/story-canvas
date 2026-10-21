@@ -70,7 +70,7 @@ test('页面后处理保存保留正文和候选，冻结输出、过时检测�
   assert.equal((await f.run(prepared,{processVideo:async(bytes,directory,settings)=>{
     assert.deepEqual(bytes,original);assert.deepEqual(settings,edit);
     await assert.rejects(requireIdleProject(directory),e=>e.status===409);
-    return {bytes:processed,poster:await readFile(f.file),metadata:{width:128,height:192,...videoPostprocessTiming({frames:48,fps:24},settings)}};
+    return {webp:processed,gif:Buffer.from('gif'),poster:await readFile(f.file),metadata:{width:128,height:192,gif:{},warnings:[],...videoPostprocessTiming({frames:48,fps:24},settings)}};
   }})).status,'completed');
   const first=await readFinishedRecord(f.directory,video.page_id);
   assert.deepEqual(first.video_postprocess,edit);

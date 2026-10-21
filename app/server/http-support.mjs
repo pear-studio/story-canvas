@@ -31,6 +31,7 @@ const contentTypes = new Map([
   [".png", "image/png"],
   [".svg", "image/svg+xml"],
   [".webp", "image/webp"],
+  [".gif", "image/gif"],
 ]);
 const mediaDirectories = new Set(["Outputs", "materials"]);
 const imageTypes = new Map([
@@ -39,6 +40,7 @@ const imageTypes = new Map([
   [".jpg", "image/jpeg"],
   [".png", "image/png"],
   [".webp", "image/webp"],
+  [".gif", "image/gif"],
 ]);
 
 export class ApiError extends Error {

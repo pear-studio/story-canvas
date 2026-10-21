@@ -7,10 +7,11 @@ import { mergeTaskHistory, type GlobalTask, type RuntimePageKey } from "./runtim
 import { formatTaskDuration, formatTaskMoment, taskPageLabel } from "./task-summary";
 import ZoomableImageLightbox from "./ImageLightbox";
 import { mediaVariantUrl } from "./media-variant";
+import {videoPreviewUrl} from './video-preview';
 import { taskHistoryMoment, CANDIDATE_HISTORY_LIMIT } from "../shared/task-history.mjs";
 import "./tasks.css";
 
-export type TaskImage = { id: string; url: string; media_kind?: "image" | "video"; video_url?: string };
+export type TaskImage = { id: string; url: string; media_kind?: "image" | "video"; media_format?: "webp" | "mp4"; video_url?: string };
 export type TaskPreview = { images: TaskImage[]; index: number; title: string };
 export type OpenTaskPreview = (preview: TaskPreview) => void;
 
@@ -19,7 +20,7 @@ export function TaskResultViewer({ preview, onClose }: { preview: TaskPreview; o
   const image = preview.images[index];
   const previous = index > 0 ? () => setIndex(index - 1) : undefined;
   const next = index + 1 < preview.images.length ? () => setIndex(index + 1) : undefined;
-  if (image.media_kind === "video" && image.video_url) return <ZoomableImageLightbox src={image.video_url} originalVideo alt={`${preview.title} · 动态预览`} footer={`${preview.title} · ${index + 1} / ${preview.images.length} · 动态预览`} onPrevious={previous} onNext={next} onClose={onClose} />;
+  if (image.media_kind === "video" && image.video_url) return <ZoomableImageLightbox src={image.media_format==='webp'?image.video_url:videoPreviewUrl(image.video_url,'original')} fullResolutionOnly alt={`${preview.title} · 动态预览`} footer={`${preview.title} · ${index + 1} / ${preview.images.length} · 动态预览`} onPrevious={previous} onNext={next} onClose={onClose} />;
   return <ZoomableImageLightbox src={image.url} alt={`${preview.title} · 第 ${index + 1} 张`} footer={`${preview.title} · ${index + 1} / ${preview.images.length}`} onPrevious={index > 0 ? () => setIndex(index - 1) : undefined} onNext={index + 1 < preview.images.length ? () => setIndex(index + 1) : undefined} onClose={onClose} />;
 }
 
@@ -60,7 +61,7 @@ function TaskResultStrip({ task, enabled, onPreview }: { task: GlobalTask; enabl
   }, [enabled, visibleIdentity, identity, task.project_id, task.id, task.purpose, task.status, task.item_counts.available, task.item_counts.discarded, retry]);
   return <div className="task-results" ref={container}>
     {images.length > 0 && <div className="task-results__strip">{images.map((image, index) => <button type="button" key={image.id} className="task-results__image" aria-label={`全屏查看第 ${index + 1} 张生成结果`} onClick={() => onPreview({ images, index, title: task.pages[0] ? taskPageLabel(task.pages[0]) : task.project_title })}>
-      <img src={mediaVariantUrl(image.video_url ?? image.url, 320)} alt={`第 ${index + 1} 张生成结果`} loading="lazy" draggable={false} onError={() => setImages(current => current.filter(item => item.id !== image.id))} />
+      <img src={image.video_url&&image.media_format!=='webp'?videoPreviewUrl(image.video_url,320):mediaVariantUrl(image.video_url ?? image.url,320)} alt={`第 ${index + 1} 张生成结果`} loading="lazy" draggable={false} onError={() => setImages(current => current.filter(item => item.id !== image.id))} />
       {image.media_kind === "video" && <span className="task-results__video">▶ 视频</span>}
     </button>)}</div>}
     <div className="task-results__status" aria-live="polite">{!enabled || visibleIdentity !== identity ? "等待加载结果" : loading ? <span className="task-spinner" role="status" aria-label="加载结果" /> : error ? <button type="button" className="button" title={error} onClick={() => setRetry(value => value + 1)}>图片读取失败 · 重试</button> : !images.length ? (task.item_counts.available > 0 || task.item_counts.discarded > 0 ? "图片已删除或不可用" : "尚未生成图片") : null}</div>

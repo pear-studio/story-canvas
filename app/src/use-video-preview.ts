@@ -1,54 +1,41 @@
 import {useEffect,useState} from 'react';
 
-type Preview={identity:string;url:string;width:number;pending:boolean;error:string};
-const empty:Preview={identity:'',url:'',width:0,pending:false,error:''};
-
-/** 两档独立加载，先显示可用的小图；高清失败不抹去小图，旧请求不能覆盖新候选。 */
-export function useVideoPreview(small:string,large:string,attempt=0) {
+type Preview={identity:string;url:string;pending:boolean;error:string};
+const empty:Preview={identity:'',url:'',pending:false,error:''};
+function usePreviewLayer(source:string,profile:'preview'|'original',attempt:number) {
   const [state,setState]=useState<Preview>(empty);
   useEffect(()=>{
-    const controller=new AbortController(),urls=new Set<string>();
-    let best=0,finished=0,largeError='';
-    setState({...empty,identity:large,pending:Boolean(large)});
-    async function load(source:string,width:number) {
-      const started=performance.now();
-      let failure='',stage='fetch',outcome='loaded',requestId='',status=0,bytes=0,fetchMs=0,decodeMs=0;
+    if(!source){setState(empty);return;}
+    const controller=new AbortController();let url='';
+    setState({...empty,identity:source,pending:true});
+    void (async()=>{
+      const started=performance.now();let stage='fetch',status=0,bytes=0,fetchMs=0,requestId='',outcome='loaded';
       try {
         const response=await fetch(source,{signal:controller.signal});
-        requestId=response.headers.get('x-story-canvas-request-id')??'';status=response.status;
-        if(!response.ok)throw Error(`HTTP ${response.status}`);
-        const blob=await response.blob();
-        bytes=blob.size;fetchMs=Math.round(performance.now()-started);
+        status=response.status;requestId=response.headers.get('x-story-canvas-request-id')??'';
+        if(!response.ok){const error=await response.json().catch(()=>null);throw Error(error?.details?.message??`HTTP ${status}`);}
+        const blob=await response.blob();bytes=blob.size;fetchMs=Math.round(performance.now()-started);
         if(controller.signal.aborted)return;
-        const url=URL.createObjectURL(blob);urls.add(url);
-        stage='decode';const decodeStarted=performance.now();
-        const image=new Image();image.src=url;
-        await image.decode();
-        decodeMs=Math.round(performance.now()-decodeStarted);
-        if(controller.signal.aborted)return;
-        if(width>best){best=width;setState(previous=>({...previous,identity:large,url,width}));}
+        url=URL.createObjectURL(blob);stage='decode';const image=new Image();image.src=url;await image.decode();
+        if(!controller.signal.aborted)setState({identity:source,url,pending:false,error:''});
       } catch(error) {
-        outcome=controller.signal.aborted?'cancelled':'failed';
-        if(controller.signal.aborted)return;
-        failure=error instanceof Error?error.message:String(error);
+        outcome='failed';
+        if(!controller.signal.aborted)setState({identity:source,url:'',pending:false,error:error instanceof Error?error.message:String(error)});
       } finally {
         const duration=Math.round(performance.now()-started);
-        if(stage==='fetch')fetchMs=duration;
-        else decodeMs=Math.max(0,duration-fetchMs);
-        // 只上报来源路径和阶段，不记录图片、Prompt 或 URL 查询参数。
         void fetch('/api/performance',{method:'POST',headers:{'content-type':'application/json'},keepalive:true,body:JSON.stringify({
-          event:'video-preview',outcome:controller.signal.aborted?'cancelled':outcome,stage,width,status,bytes,
-          request_id:requestId,source:source.split('?')[0],duration_ms:duration,fetch_ms:fetchMs,decode_ms:decodeMs,
+          event:'video-preview',outcome:controller.signal.aborted?'cancelled':outcome,stage,profile,status,bytes,
+          request_id:requestId,source:source.split('?')[0],duration_ms:duration,fetch_ms:stage==='fetch'?duration:fetchMs,decode_ms:stage==='decode'?duration-fetchMs:0,
         })}).catch(()=>{});
-        if(!controller.signal.aborted) {
-          finished++;
-          if(width===1024)largeError=failure;
-          setState(previous=>({...previous,pending:best<1024&&finished<2,error:finished===2&&best<1024?(largeError||failure):''}));
-        }
       }
-    }
-    if(small&&large){void load(small,320);void load(large,1024);}
-    return()=>{controller.abort();urls.forEach(url=>URL.revokeObjectURL(url));};
-  },[small,large,attempt]);
-  return state.identity===large?state:{...empty,identity:large,pending:Boolean(large)};
+    })();
+    return()=>{controller.abort();if(url)URL.revokeObjectURL(url);};
+  },[source,profile,attempt]);
+  return state.identity===source?state:{...empty,identity:source,pending:Boolean(source)};
+}
+
+/** 原图按需加载；开启或关闭原图不会重取、撤销已就绪的小图。 */
+export function useVideoPreview(small:string,large:string,attempt=0) {
+  const preview=usePreviewLayer(small,'preview',attempt),original=usePreviewLayer(large,'original',attempt);
+  return {url:original.url||preview.url,profile:original.url?'original':'preview',pending:preview.pending||original.pending,error:original.error||preview.error};
 }
