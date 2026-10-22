@@ -1,3 +1,8 @@
+import {createPortal} from 'react-dom';
+import {emptyLayers} from '../shared/image-layers.mjs';
+import {useLayerMedia} from './image-layer-client';
+import {ImageLayerCanvas} from './ImageLayerCanvas';
+import type {ImageOverlayTarget} from './ImageLightbox';
 import {useEffect,useRef,useState,type CSSProperties} from 'react';
 import {comicGeometry} from '../shared/comic-layout.mjs';
 import {loadPageMedia,type WorkbenchPage,type PageMedia} from './project-workbench-client';
@@ -21,6 +26,8 @@ function CollagePagePreview({projectId,page}:{projectId:string;page:WorkbenchPag
 function GeneratedStoryPagePreview({projectId,page,onMediaChange}:{projectId:string;page:WorkbenchPage;onMediaChange:(media:PageMedia)=>void}){
   const root=useRef<HTMLButtonElement>(null);
   const [state,setState]=useState<{media:Record<string,PageMedia>;loaded:boolean;failed:boolean}>({media:{},loaded:false,failed:false});
+  const layerDocument=page.layers?.document??emptyLayers(),layerMedia=useLayerMedia(projectId,layerDocument,root);
+  const [layerCanvas,setLayerCanvas]=useState('3:4'),[layerTarget,setLayerTarget]=useState<ImageOverlayTarget|null>(null);
   const [fullscreen,setFullscreen]=useState(false),[broken,setBroken]=useState(false);
   const ids=page.comic?.document.order??[page.page_id],identity=ids.join(',');
   useEffect(()=>{
@@ -59,8 +66,9 @@ function GeneratedStoryPagePreview({projectId,page,onMediaChange}:{projectId:str
   </span>:null;
   return <>
     <button type="button" className={`story-page-thumbnail ${document?'story-page-thumbnail--comic':''}`} style={document?{aspectRatio:document.canvas.replace(':',' / ')}:undefined} ref={root} aria-label={`${document?'查看分镜整页':page.page_kind==='video'?'查看动态':'查看图片'}：${page.title}`} disabled={!hasImage} onClick={()=>setFullscreen(true)}>
-      {document?composite():hasImage?<img src={thumbnail} alt={`${page.title}最新候选图`} loading="lazy" onError={()=>setBroken(true)}/>:<span>{state.failed||broken?'缩略图暂不可用':!state.loaded?'加载缩略图…':page.page_kind==='video'?'暂无视频候选':'暂无候选图'}</span>}
+      {document?composite():hasImage?<span className="material-preview-frame"><img src={thumbnail} alt={`${page.title}最新候选图`} loading="lazy" onLoad={e=>setLayerCanvas(`${e.currentTarget.naturalWidth}:${e.currentTarget.naturalHeight}`)} onError={()=>setBroken(true)}/>{page.layers&&<ImageLayerCanvas projectId={projectId} document={layerDocument} media={layerMedia} canvas={layerCanvas}/>}</span>:<span>{state.failed||broken?'缩略图暂不可用':!state.loaded?'加载缩略图…':page.page_kind==='video'?'暂无视频候选':'暂无候选图'}</span>}
     </button>
-    {fullscreen&&(document&&geometry?<ZoomableImageLightbox fullResolutionOnly content={{width:geometry.width*2,height:geometry.height*2,children:composite(true)}} alt={`${page.title}整页预览`} footer={page.title} onClose={()=>setFullscreen(false)}/>:url&&<ZoomableImageLightbox src={candidate?.video_url?videoPreviewUrl(url,'original',page.video_postprocess):url} fullResolutionOnly={Boolean(candidate?.video_url)} alt={`${page.title}最新候选图`} footer={page.title} onClose={()=>setFullscreen(false)}/>)}
+    {fullscreen&&layerTarget&&page.layers&&createPortal(<ImageLayerCanvas projectId={projectId} document={layerDocument} media={layerMedia} canvas={layerTarget.canvas}/>,layerTarget.element)}
+    {fullscreen&&(document&&geometry?<ZoomableImageLightbox fullResolutionOnly content={{width:geometry.width*2,height:geometry.height*2,children:composite(true)}} alt={`${page.title}整页预览`} footer={page.title} onClose={()=>setFullscreen(false)}/>:url&&<ZoomableImageLightbox src={candidate?.video_url?videoPreviewUrl(url,'original',page.video_postprocess):url} onOverlayTarget={setLayerTarget} fullResolutionOnly={Boolean(candidate?.video_url)} alt={`${page.title}最新候选图`} footer={page.title} onClose={()=>setFullscreen(false)}/>)}
   </>;
 }

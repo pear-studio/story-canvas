@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {readPageLayers,resolveLayerMedia} from '../server/page-layers.mjs';
 
 import { validatePagesIndexDocument } from '../server/pages-store.mjs';
 import {validateComicDocument,comicLeaves} from '../shared/comic-layout.mjs';
@@ -149,6 +150,7 @@ export async function validateProject(projectRoot) {
     if (!ownerValid) warnings.push(`页面归属待整理：${entry.page_id}`);
     const content = storyNarratives[entry.page_id];
     for (const reference of content?.characters ?? []) if (!knownCharacters.has(reference.character_id) || !visualByCharacter[reference.character_id]?.variants.some(v => v.id === reference.variant_id)) warnings.push(`页面角色引用待修复：${entry.page_id}/${reference.character_id}/${reference.variant_id}`);
+    try{const layers=await readPageLayers(projectRoot,entry.page_id);if(layers.document.items.length){if(content?.page_kind||entry.parent_page_id)errors.push(`此页面不支持素材图层：${entry.page_id}`);for(const media of Object.values(await resolveLayerMedia(projectRoot,layers.document)))if(media.error)warnings.push(`素材未就绪：${entry.page_id} / ${media.material_file}`);}}catch(error){errors.push(`素材布局无效：${entry.page_id} / ${error.message}`);}
     if(content?.page_kind==='collage'){
       try{const doc=await readCollage(projectRoot,entry.page_id);if(!doc)errors.push(`组图文档缺失：${entry.page_id}`);else for(const media of Object.values(await resolveCollageMedia(projectRoot,doc)))if(media.error)warnings.push(`组图来源未就绪：${entry.page_id} / ${media.page_id}：${media.error}`);}catch(error){errors.push(`组图无效：${entry.page_id}：${error.message}`);}
       continue;

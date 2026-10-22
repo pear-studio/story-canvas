@@ -1,3 +1,6 @@
+import {resolveImageMaterial,imageMaterialBytes,imageMaterialLabels} from './image-materials.mjs';
+import {imageComposite} from './image-layer-render.mjs';
+import {layerGeometryErrors} from '../shared/image-layers.mjs';
 import {storyPageNumbers} from '../shared/story-page-numbers.mjs';
 import path from 'node:path';
 import {readFile,writeFile,stat} from 'node:fs/promises';
@@ -52,11 +55,12 @@ export async function resolveCollagePage(directory,pageId,index){
 }
 export async function resolveCollageMedia(directory,document){
   const errors=validateCollage(document);if(errors.length)fail(errors.join('；'));
-  const index=await readPageIndex(directory),resolved=new Map();
+  const index=await readPageIndex(directory),resolved=new Map(),materialLabels=await imageMaterialLabels(directory);
   const outline=JSON.parse(await readFile(path.join(directory,'story/outline.json'),'utf8'));
   const chapters=outline.chapters.map(c=>({...c,sequences:c.sequences.map(s=>({...s,pages:index.pages.filter(p=>!p.parent_page_id&&p.owner_kind==='story'&&p.sequence_id===s.id)}))}));
   const numbers=storyPageNumbers(chapters),chapterNames=new Map(chapters.flatMap(c=>c.sequences.flatMap(s=>s.pages.map(p=>[p.page_id,c.title]))));
   return Object.fromEntries(await Promise.all(Object.entries(document.assets).map(async([id,asset])=>{
+    if(asset.file)return [id,await resolveImageMaterial(directory,asset.file,materialLabels.get(asset.file))];
     if(!resolved.has(asset.page_id))resolved.set(asset.page_id,resolveCollagePage(directory,asset.page_id,index));
     const media=await resolved.get(asset.page_id);
     const title=index.pages.some(p=>p.page_id===asset.page_id)?(await readPageContent(directory,asset.page_id)).title:'来源已移除';
@@ -68,6 +72,7 @@ export function collageMediaFingerprint(document,media){
   return hashCanonicalJson(Object.fromEntries(ids.map(id=>{const {label,...source}=media[id];return [id,source];})));
 }
 export async function collageAssetBytes(directory,asset){
+  if(asset.material_file)return imageMaterialBytes(directory,asset);
   if(asset.error)fail(asset.page_id+'：'+asset.error);
   const media=await resolveExistingProjectMedia(directory,asset.file);if(!media)fail('候选图片缺失');
   const bytes=await readFile(media.target);
@@ -88,11 +93,13 @@ export async function saveCollage(directory,id,value){
   doc.assets=Object.fromEntries(Object.entries(doc.assets).filter(([key])=>used.has(key)));
   const index=await readPageIndex(directory);
   for(const [key,asset] of Object.entries(doc.assets)){
-    if(before.document.assets[key]?.page_id===asset.page_id)continue;
+    if(JSON.stringify(before.document.assets[key])===JSON.stringify(asset))continue;
+    if(asset.file){const media=await resolveImageMaterial(directory,asset.file);if(media.error)fail(media.error);continue;}
     const entry=index.pages.find(p=>p.page_id===asset.page_id);if(!entry)fail('来源页面不存在');
     const content=await readPageContent(directory,asset.page_id);
     if(!await isSourcePage(directory,entry,content))fail('来源需要普通静态图片页');
   }
+  const geometryErrors=layerGeometryErrors(doc,await resolveCollageMedia(directory,doc),doc.canvas);if(geometryErrors.length)fail(geometryErrors.join('；'));
   await commitFactChanges(directory,[{relative:pageRelativePath(id,'collage'),before:before.document,after:doc}]);
   return {document:doc,sha256:hashCanonicalJson(doc)};
 }
@@ -120,12 +127,7 @@ export async function captureCollage(directory,document){
 export async function composeCollage(document,{buffers,media},width){
   const size=collageSize(document.canvas,width),layers=[];
   const layer=async(assetId,box,crop,cover=false,opacity=1)=>{
-    const asset=media[assetId],g=imagePlacement(asset,box,crop,document.canvas,cover),s=g.source,b=g.box;
-    const left=Math.min(size.width-1,Math.round(b.x*size.width)),top=Math.min(size.height-1,Math.round(b.y*size.height)),w=Math.max(1,Math.min(size.width-left,Math.round((b.x+b.w)*size.width)-left)),h=Math.max(1,Math.min(size.height-top,Math.round((b.y+b.h)*size.height)-top));
-    const sx=Math.min(asset.width-1,Math.round(s.x*asset.width)),sy=Math.min(asset.height-1,Math.round(s.y*asset.height));
-    let image=sharp(buffers[assetId]).extract({left:sx,top:sy,width:Math.max(1,Math.min(asset.width-sx,Math.round(s.w*asset.width))),height:Math.max(1,Math.min(asset.height-sy,Math.round(s.h*asset.height)))}).resize(w,h).ensureAlpha();
-    if(opacity!==1){const {data,info}=await image.raw().toBuffer({resolveWithObject:true});for(let i=3;i<data.length;i+=4)data[i]=Math.round(data[i]*opacity);image=sharp(data,{raw:info});}
-    layers.push({input:await image.png().toBuffer(),left,top});
+    layers.push(await imageComposite(media[assetId],buffers[assetId],box,crop,size,cover,opacity));
   };
   const b=document.background;if(b?.enabled)await layer(b.asset_id,fullCrop(),b.crop,true,b.opacity);
   for(const item of visibleCollageItems(document))await layer(item.asset_id,item.box,item.crop);
@@ -153,8 +155,8 @@ export async function inspectCollage(root,directory,projectId,value){
   for(const [index,item] of layers.entries()){
     const left=index%columns*cellWidth,top=Math.floor(index/columns)*cellHeight;
     if(!item.source.error){
-      const source=await resolveExistingProjectMedia(directory,item.source.file);
-      if(source){const input=await sharp(source.target).rotate().resize(224,204,{fit:'inside'}).png().toBuffer(),meta=await sharp(input).metadata();composites.push({input,left:left+Math.round((240-meta.width)/2),top:top+8+Math.round((204-meta.height)/2)});}
+      const source=media[item.asset_id];
+      if(source){const input=await sharp(await collageAssetBytes(directory,source)).rotate().resize(224,204,{fit:'inside'}).png().toBuffer(),meta=await sharp(input).metadata();composites.push({input,left:left+Math.round((240-meta.width)/2),top:top+8+Math.round((204-meta.height)/2)});}
     }
     const caption=`${item.number}${item.kind==='background'?' BG':''}${item.enabled?'':' OFF'}${item.source.error?' UNAVAILABLE':''}`;
     composites.push({input:Buffer.from(`<svg width="240" height="24"><text x="120" y="18" text-anchor="middle" font-family="sans-serif" font-size="15" fill="white">${caption}</text></svg>`),left,top:top+212});

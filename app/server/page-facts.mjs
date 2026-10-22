@@ -1,3 +1,4 @@
+import {prepareLayersWrite} from './page-layers.mjs';
 import {emptyCollage} from '../shared/collage-layout.mjs';
 import { readTranslationDocument, translationPath } from './page-translation-document.mjs';
 import { FactError, writeJsonAtomic } from './fact-storage.mjs';
@@ -176,6 +177,8 @@ export async function duplicatePage(root,projectId,pageId) {
   const layouts=await optionalJson(directory,'lettering/dialogue-layouts.json');
   const updatedLayouts=layouts?clone(layouts):null;
   await copyDialogueDocuments(directory,pageId,id,content,writes,layouts,updatedLayouts);
+  const layers=await optionalJson(directory,pageRelativePath(pageId,'layers'));
+  if(layers)writes.push({relative:pageRelativePath(id,'layers'),before:null,after:layers});
   const comic=await optionalJson(directory,pageRelativePath(pageId,'comic'));
   if(comic){
     const ids=new Map([[pageId,id]]);
@@ -201,7 +204,7 @@ export async function deletePage(root,projectId,pageId,{beforeCommit}={}) {
   if((await listFinishedJobs(directory)).some(job=>ids.includes(job.page_id)&&finishedBusyStatuses.has(job.status)))fail('page_finished_output_busy',[pageId]);
   const removedReferences = await Promise.all(ids.map(id=>optionalJson(directory,pageRelativePath(id,'prompt'))));
   const deletionId=`deleted-${randomBytes(6).toString('hex')}`,archive=path.join(path.resolve(root),'Saved/state/deleted-pages',project.projectId,deletionId);
-  const descriptors=ids.flatMap(id=>[...['content','prompt','render','rewrite','text-sources','comic','collage'].map(kind=>pageRelativePath(id,kind)),translationPath(id),`Outputs/pages/${id}`]);
+  const descriptors=ids.flatMap(id=>[...['content','prompt','render','rewrite','text-sources','comic','collage','layers'].map(kind=>pageRelativePath(id,kind)),translationPath(id),`Outputs/pages/${id}`]);
   // 成品与页面一起归档，避免页面已移除却遗留记录；统一参与下面的失败回滚。
   descriptors.push(...ids.flatMap(id=>[
     ...['','.en','.ja'].flatMap(suffix=>[`finished/${id}${suffix}.json`,`Saved/finished/${id}${suffix}.json`]),
@@ -225,7 +228,7 @@ export async function deletePage(root,projectId,pageId,{beforeCommit}={}) {
 function checkHash(document,expected,code) {if(!/^[a-f0-9]{64}$/.test(expected??'')||hashCanonicalJson(document)!==expected)throw factConflict(code);}
 // 所有验证和引用切换确认先完成，再通过同一事实提交一次落盘；失败回滚由 commitFactChanges 负责。
 export async function savePage(root,projectId,value) {
-  const allowed=new Set(['page_key','content','prompt','reference_inputs','source_versions','expected_content_sha256','expected_prompt_sha256','expected_context_sha256','lettering','expected_layout_sha256','expected_layout_items','text_sources','expected_text_sources_sha256']);
+  const allowed=new Set(['page_key','content','prompt','reference_inputs','source_versions','expected_content_sha256','expected_prompt_sha256','expected_context_sha256','lettering','expected_layout_sha256','expected_layout_items','text_sources','expected_text_sources_sha256','layers','expected_layers_sha256']);
   if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(key=>!allowed.has(key))||!value.content||typeof value.content!=='object'||Array.isArray(value.content)||!value.prompt||typeof value.prompt!=='object'||Array.isArray(value.prompt))fail('invalid_page_document',['整页保存需要 content 和 prompt 对象']);
   const pageKey=decodePageKey(value.page_key),pageId=pageKey.page_id;
   const {projectDirectory:directory}=await projectAt(root,projectId);await requirePage(directory,pageId);
@@ -254,6 +257,8 @@ export async function savePage(root,projectId,value) {
   await validatePagePromptSources(directory, { projectId, modelId, narrative: content, prompt: finalPrompt,
     baselineNarrative: beforeContent, baselinePrompt: modelPrompt(beforePrompt,modelId), sourceVersions:value.source_versions }, 'invalid_page_document');
   const writes=[{relative:pageRelativePath(pageId,'content'),before:beforeContent,after:content},{relative:pageRelativePath(pageId,'prompt'),before:beforePrompt,after:persistedPrompt}];
+  const layerWrite=value.layers===undefined?null:await prepareLayersWrite(directory,pageId,{document:value.layers,expected_sha256:value.expected_layers_sha256});
+  if(layerWrite)writes.push(layerWrite.write);
   const dialogueIds=new Set(content.dialogue.map(item=>item.id));
   const dialogueIdMap=new Map(draftIds.map((id,index)=>[id,content.dialogue[index]?.id]));
   let lettering,layoutSha;
@@ -292,6 +297,6 @@ export async function savePage(root,projectId,value) {
   const captured=await capturePromptAuditInput(()=>capturePagePromptSnapshot(directory,pageId,pageKey));
   const audit=await auditSavedPagePrompt(root,directory,auditPrepared,captured);
   return savedFactReceipt(async () => {
-  return {page_key:pageKey,content:publicDocument(content),prompt:publicDocument(modelPrompt(persistedPrompt,modelId)),content_sha256:hashCanonicalJson(content),prompt_sha256:hashCanonicalJson(persistedPrompt),prompt_context_sha256:hashCanonicalJson(await readStoryPromptUpstream(directory,pageId)),...(lettering?{lettering,layout_sha256:layoutSha}:{}),warnings:[...storyContentWarnings(content),...cleanupWarnings],downstream_diagnostics:await narrativeDownstreamDiagnostics(directory,pageId,content),audit};
+  return {page_key:pageKey,content:publicDocument(content),prompt:publicDocument(modelPrompt(persistedPrompt,modelId)),content_sha256:hashCanonicalJson(content),prompt_sha256:hashCanonicalJson(persistedPrompt),prompt_context_sha256:hashCanonicalJson(await readStoryPromptUpstream(directory,pageId)),...(lettering?{lettering,layout_sha256:layoutSha}:{}),...(layerWrite?{layers:layerWrite.scope}:{}),warnings:[...storyContentWarnings(content),...cleanupWarnings],downstream_diagnostics:await narrativeDownstreamDiagnostics(directory,pageId,content),audit};
   }, {operation:'page.editor.read',args:{project_id:projectId,page_key:pageKey,section:'content'}});
 }

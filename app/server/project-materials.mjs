@@ -1,3 +1,4 @@
+import {assertMaterialUnused} from './material-references.mjs';
 import { randomUUID } from "node:crypto";
 import { lstat, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -172,6 +173,7 @@ export async function saveMaterial(projectDirectory, projectId, value) {
 
 export async function deleteMaterial(projectDirectory, relativeFile, { allowMissing = false } = {}) {
   const { target, file } = await resolveMaterialTarget(projectDirectory, relativeFile, { allowMissing });
+  await assertMaterialUnused(projectDirectory,file);
   const info = await lstat(target).catch(error => { if (allowMissing && error.code === 'ENOENT') return null; throw error; });
   if (info && (!info.isFile() || info.isSymbolicLink())) throw new ProjectContractError(409, "material_not_file");
   if (info) await unlink(target);

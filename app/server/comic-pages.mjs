@@ -1,3 +1,4 @@
+import {readPageLayers} from './page-layers.mjs';
 import path from 'node:path';
 import {readFile} from 'node:fs/promises';
 import {randomBytes} from 'node:crypto';
@@ -33,6 +34,7 @@ async function context(root,projectId,id) {
   const {projectDirectory:directory}=await resolveProjectLocation(root,projectId);
   const index=await readPageIndex(directory),entry=index.pages.find(page=>page.page_id===id);
   if(!entry||entry.parent_page_id||entry.owner_kind!=='story')throw new ApiError(422,'comic_story_page_required');
+  if((await readPageLayers(directory,id)).document.items.length)throw new ApiError(422,'comic_layers_unsupported',['请先移除素材图层，再转换为分镜']);
   if((await readPageContent(directory,id)).page_kind)throw new ApiError(422,'comic_image_page_required');
   return {directory,index,entry};
 }
@@ -70,6 +72,7 @@ export async function planComicMerge(root,projectId,id,value){
     const source=index.pages.find(page=>page.page_id===pageId),content=source&&await readPageContent(directory,pageId),comic=source&&await readComicDocument(directory,pageId);
     if(!source||source.parent_page_id||source.owner_kind!=='story'||source.sequence_id!==entry.sequence_id||content.page_kind||comic&&comic.order.length!==1)throw new ApiError(422,'comic_merge_single_pages_required');
     const candidates=await readGenerationCandidateRecords(directory,{pageKey:{page_id:pageId}});
+    if((await readPageLayers(directory,pageId)).document.items.length)throw new ApiError(422,'comic_layers_unsupported',['请先移除素材图层，再合并为分镜']);
     sources.push({page_id:pageId,title:content.title,entry:source,comic,candidate_ids:candidates.map(item=>item.candidate_id)});
   }
   const fingerprint=hashCanonicalJson({sources,axis:value.axis});

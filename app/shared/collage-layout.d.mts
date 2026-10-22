@@ -1,6 +1,6 @@
 export type Rect={x:number;y:number;w:number;h:number};
-export type CollageAsset={page_id:string};
-export type CollageMedia={page_id:string;label?:string;width:number;height:number;file?:string;candidate_id?:string;sha256?:string;error?:string};
+export type CollageAsset=import('./image-layers.mjs').ImageSource;
+export type CollageMedia=import('./image-layers.mjs').ImageMedia;
 export type CollageItem={id:string;asset_id:string;enabled:boolean;box:Rect;crop:Rect};
 export type CollageDocument={version:1;canvas:string;assets:Record<string,CollageAsset>;background:null|{asset_id:string;enabled:boolean;crop:Rect;opacity:number};items:CollageItem[]};
 export const collageLimit:number;

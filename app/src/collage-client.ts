@@ -1,3 +1,4 @@
+import {imageSourceUrl} from './image-layer-client';
 import {useEffect,useRef,useState,type RefObject} from 'react';
 import type {CollageAsset,CollageDocument,CollageMedia} from '../shared/collage-layout.mjs';
 import {readFacts,mutateDerived,mutateTargetFacts} from './project-write-client';
@@ -10,11 +11,7 @@ export async function collageAction<T>(projectId:string,pageId:string,action:'re
   const request=action==='save'?mutateTargetFacts:action==='preview'?mutateDerived:readFacts;
   return workbenchResponseJson<T>(await request(`/api/projects/${encodeURIComponent(projectId)}/workbench/collage/${action}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({page_key:{page_id:pageId},...value}),signal}));
 }
-export function collageAssetUrl(projectId:string,asset:CollageMedia|undefined,width?:number){
-  if(!asset?.file||asset.error)return '';
-  const url=`/api/projects/${encodeURIComponent(projectId)}/media/${asset.file}?v=${asset.sha256}`;
-  return width?mediaVariantUrl(url,width):url;
-}
+export const collageAssetUrl=imageSourceUrl;
 // 只刷新媒体，不替换排版草稿；总览只为进入视口的组图发起请求。
 export function useCollageMedia(projectId:string,document:CollageDocument,visibleRef?:RefObject<HTMLElement|null>){
   const identity=JSON.stringify(document.assets),latest=useRef(document);latest.current=document;

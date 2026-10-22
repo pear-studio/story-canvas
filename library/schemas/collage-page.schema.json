@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://storyvisualizer.local/schemas/collage-page.schema.json",
-  "description": "自由组图；assets 只保存来源 page_id，实时采用该页唯一静态候选。零张或多张候选不自动选择；box 与 crop 为归一化矩形，items 从底到顶，背景固定最底层。",
+  "description": "自由组图；素材引用来源页面的唯一原始候选或项目 materials 图片；items 从底到顶。",
   "type": "object",
   "properties": {
     "version": {
@@ -141,17 +141,34 @@
       "additionalProperties": false
     },
     "asset": {
-      "type": "object",
-      "properties": {
-        "page_id": {
-          "type": "string",
-          "pattern": "^page-(?:[0-9]{3}|[a-f0-9]{12})$"
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "page_id": {
+              "type": "string",
+              "pattern": "^page-(?:[0-9]{3}|[a-f0-9]{12})$"
+            }
+          },
+          "required": [
+            "page_id"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "file": {
+              "type": "string",
+              "pattern": "^[^<>:\"/\\\\\\\\|?*]+\\.(png|jpe?g|webp|PNG|JPG|JPEG|WEBP)$"
+            }
+          },
+          "required": [
+            "file"
+          ],
+          "additionalProperties": false
         }
-      },
-      "required": [
-        "page_id"
-      ],
-      "additionalProperties": false
+      ]
     }
   }
 }

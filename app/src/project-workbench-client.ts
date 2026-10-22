@@ -1,3 +1,5 @@
+import type {ImageLayers} from '../shared/image-layers.mjs';
+import type {LayerScope} from './image-layer-client';
 import type { ReferenceEntry } from "./ReferenceLibrary";
 import type { TextPageLayout } from "../shared/text-page-layout.mjs";
 import type { PageKey } from "./page-key";
@@ -104,6 +106,7 @@ export type WorkbenchPage = {
   characters?: Array<{ character_id: string; variant_id: string }>;
   dialogue?: Array<{ id: string; mode: "narration" | "speech" | "thought" | "heart"; speaker?: string; text: string; position?: "top" | "bottom" }>;
   page_kind?: "text" | "video" | "collage" | null;
+  layers?:LayerScope;
   collage?:{document:import('../shared/collage-layout.mjs').CollageDocument;sha256:string};
   video_postprocess?: import('../shared/video-postprocess.mjs').VideoPostprocess;
   body?: string;
@@ -281,6 +284,7 @@ export type StoryPageContentDraft = {
   characters: Array<{ character_id: string; variant_id: string }>;
   dialogue: Array<{ id?: string; mode: "narration" | "speech" | "thought" | "heart"; speaker?: string; text: string; position?: "top" | "bottom" }>;
   page_kind?: "text" | "video" | "collage" | null;
+  layers?:LayerScope;
   collage?:{document:import('../shared/collage-layout.mjs').CollageDocument;sha256:string};
   body?: string;
   display_title?: string;
@@ -635,11 +639,11 @@ export async function saveSettingScope<T extends object>(projectId: string, targ
   }));
 }
 
-export async function saveWholePage(projectId: string, page: WorkbenchPage, content: StoryPageContentDraft, prompt: PagePrompt, items: LetteringItem[], source_versions?: PromptSourceVersions) {
+export async function saveWholePage(projectId: string, page: WorkbenchPage, content: StoryPageContentDraft, prompt: PagePrompt, items: LetteringItem[], source_versions?: PromptSourceVersions, layers?:ImageLayers) {
   const reference_inputs = (prompt.reference_images ?? []).filter(entry => entry.draft).map(entry => {const {preview_url,...source}=entry.draft!;return {id:entry.id,...source};});
   prompt = { ...prompt, ...(prompt.reference_images ? { reference_images: prompt.reference_images.map(({ draft, ...entry }) => entry) } : {}) };
-  return workbenchResponseJson<{ content: StoryPageContentDraft & { dialogue: NonNullable<WorkbenchPage["dialogue"]> }; content_sha256: string; prompt: PagePrompt; prompt_sha256: string; prompt_context_sha256: string; lettering: { page: string; items: LetteringItem[] }; layout_sha256: string }>(await mutateTargetFacts(`${base(projectId)}/page-save`, {
-    method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ page_key: page.page_key, content, prompt, reference_inputs,
+  return workbenchResponseJson<{ content: StoryPageContentDraft & { dialogue: NonNullable<WorkbenchPage["dialogue"]> }; content_sha256: string; prompt: PagePrompt; prompt_sha256: string; prompt_context_sha256: string; lettering: { page: string; items: LetteringItem[] }; layout_sha256: string;layers?:LayerScope }>(await mutateTargetFacts(`${base(projectId)}/page-save`, {
+    method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ page_key: page.page_key, content, prompt, reference_inputs, ...(layers?{layers,expected_layers_sha256:page.layers?.sha256}:{}),
       expected_content_sha256: page.content_sha256, expected_prompt_sha256: page.prompt_sha256,
       expected_context_sha256: page.prompt_context_sha256, source_versions, lettering: { items }, expected_layout_sha256: page.layout_sha256, expected_layout_items:page.lettering?.items??[] }),
   }));

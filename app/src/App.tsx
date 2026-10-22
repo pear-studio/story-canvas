@@ -1,3 +1,4 @@
+import type {ImageLayers} from '../shared/image-layers.mjs';
 import {useNavigationReorder,NavigationReorderHandle,navigationDropClass,navigationSourceClass,NavigationReorderPreviewOverlay,type NavigationDrop} from './NavigationReorder';
 import {pageNavigationInfo,PageNavigationLabel} from './PageNavigationSummary';
 import {currentPageSave,usePageChanges} from './use-page-changes';
@@ -629,12 +630,12 @@ function SinglePageWorkspace({ panelContext,letteringLocale="zh",onLetteringLoca
     return () => { poller.stop(); mediaRequestGuard.current.cancel(); };
   }, [refreshPageMedia,active]);
 
-  async function saveWhole(draft: WorkbenchPageContentDraft, prompt: PagePrompt, items: LetteringItem[], baseline: WorkbenchPage, sourceVersions: PromptSourceVersions) {
+  async function saveWhole(draft: WorkbenchPageContentDraft, prompt: PagePrompt, items: LetteringItem[], baseline: WorkbenchPage, sourceVersions: PromptSourceVersions,layers?:ImageLayers) {
     const content = { title: draft.title, scene_description: draft.scene_description, characters: draft.characters ?? [], dialogue: draft.dialogue ?? [],
       ...(draft.page_kind === 'text' ? { page_kind: 'text' as const, body: draft.body ?? '', display_title: draft.display_title ?? '', text_layout: draft.text_layout } : {}) };
-    const result = await saveWholePage(projectId, baseline, content, prompt, items, sourceVersions);
+    const result = await saveWholePage(projectId, baseline, content, prompt, items, sourceVersions,layers);
     latestPage.current = { ...latestPage.current, ...result.content, content_sha256: result.content_sha256, prompt: result.prompt, prompt_sha256: result.prompt_sha256,
-      prompt_context_sha256: result.prompt_context_sha256, lettering: result.lettering, layout_sha256: result.layout_sha256 };
+      prompt_context_sha256: result.prompt_context_sha256, lettering: result.lettering, layout_sha256: result.layout_sha256,...(result.layers?{layers:result.layers}:{}) };
     if (isCurrentWorkspace()) onPageChanged(page, latestPage.current);
     return { page: latestPage.current, content: { ...draft, ...result.content }, prompt: result.prompt, items: result.lettering?.items ?? [] };
   }

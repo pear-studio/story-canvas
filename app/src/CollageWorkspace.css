@@ -16,7 +16,7 @@
 .collage-preview-modal .modal__body{padding:14px}
 .collage-preview-hint{margin:0 0 12px;color:var(--muted);font-size:13px}
 .collage-preview-modal .collage-preview-surface{height:min(55dvh,660px)}
-.collage-preview-modal .finished-output-action{display:flex}
+.collage-preview-modal .collage-output-toolbar .finished-output-action{display:flex}
 .collage-canvas{display:block;position:relative;overflow:hidden;width:100%;background:#000;isolation:isolate}
 .collage-image{display:block;position:absolute;overflow:hidden;pointer-events:none}
 .collage-image img{display:block;object-fit:fill!important;max-height:none!important}

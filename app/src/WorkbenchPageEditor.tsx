@@ -1,3 +1,7 @@
+import {emptyLayers,type ImageLayers} from '../shared/image-layers.mjs';
+import {useLayerMedia} from './image-layer-client';
+import {MaterialLayerPanel} from './MaterialLayerPanel';
+import {ImageLayerCanvas} from './ImageLayerCanvas';
 import {useDraftHistory} from './use-draft-history';
 import {cleanPageCharacterInput} from '../shared/page-character-cleanup.mjs';
 import {scaleLetteringHearts} from './lettering';
@@ -143,7 +147,7 @@ export type WorkbenchPageEditorProps = {
   flowPreview?: PageRenderInspection | null;
   flowPreviewError?: string;
   qwenRewrite?: PageRewriteController;
-  onSavePage: (draft: WorkbenchPageContentDraft, prompt: PagePrompt, items: LetteringItem[], baseline: WorkbenchPage, sourceVersions: PromptSourceVersions) => Promise<{ page: WorkbenchPage; content: WorkbenchPageContentDraft & { dialogue: NonNullable<WorkbenchPage["dialogue"]> }; prompt: PagePrompt; items: LetteringItem[] }>;
+  onSavePage: (draft: WorkbenchPageContentDraft, prompt: PagePrompt, items: LetteringItem[], baseline: WorkbenchPage, sourceVersions: PromptSourceVersions,layers?:ImageLayers) => Promise<{ page: WorkbenchPage; content: WorkbenchPageContentDraft & { dialogue: NonNullable<WorkbenchPage["dialogue"]> }; prompt: PagePrompt; items: LetteringItem[] }>;
   onPageSaved?: () => void;
   onReloadContent?: () => Promise<void> | void;
   onReloadPrompt?: () => Promise<void> | void;
@@ -726,6 +730,13 @@ export default function WorkbenchPageEditor({
   const incomingLayoutSignature = JSON.stringify(letteringItems);
   const [layoutBaseline, setLayoutBaseline] = useState(() => clone(letteringItems));
   const [layoutDraft, setLayoutDraft] = useState(() => clone(letteringItems));
+  const supportsLayers=Boolean(page.layers)&&!page.comic&&!page.parent_page_id&&!page.page_kind;
+  const [layerDraft,setLayerDraft]=useState<ImageLayers>(()=>clone(page.layers?.document??emptyLayers()));
+  const [layerBaseline,setLayerBaseline]=useState<ImageLayers>(()=>clone(page.layers?.document??emptyLayers()));
+  const [layerMode,setLayerMode]=useState(false),[selectedLayer,setSelectedLayer]=useState(''),[layerGesture,setLayerGesture]=useState(false),[layerModal,setLayerModal]=useState(false);
+  const layerMedia=useLayerMedia(projectId,layerDraft,undefined,letteringLocale);
+  const layerDirty=!sameJson(layerDraft,layerBaseline),layerEditing=layerGesture||layerModal;
+  useEffect(()=>{if(!layerDirty&&!layerEditing){editBaseline.current={...editBaseline.current,layers:page.layers};setLayerDraft(clone(page.layers?.document??emptyLayers()));setLayerBaseline(clone(page.layers?.document??emptyLayers()));}},[page.layers?.sha256]);
   const [localTab, setLocalTab] = useState<EditorTab>("visual");
   const activeTab = editorTab ?? localTab;
   const setActiveTab = (tab: EditorTab) => { setLocalTab(tab); onEditorTabChange?.(tab); };
@@ -751,6 +762,7 @@ export default function WorkbenchPageEditor({
     setContentBaseline(clone(incomingContent)); setContentDraft(clone(incomingContent)); setDialogueDraft(editableDialogue(incomingContent.dialogue));
     setPromptBaseline(clone(incomingPrompt)); setPromptDraft(clone(incomingPrompt));
     setLayoutBaseline(clone(letteringItems)); setLayoutDraft(clone(letteringItems));
+    setLayerBaseline(clone(page.layers?.document??emptyLayers()));setLayerDraft(clone(page.layers?.document??emptyLayers()));
     setContentPhase('saved'); setPromptPhase('saved'); setContentError(''); setPromptError('');
   }, [pageIdentity, incomingContentSignature, page.content_sha256, page.prompt_sha256, page.prompt_context_sha256, page.layout_sha256, incomingLayoutSignature]);
   useEffect(() => {
@@ -775,8 +787,8 @@ export default function WorkbenchPageEditor({
   const previewDialogue = useMemo(() => dialogueDraft.map(line => ({ ...line, id: dialogueKey(line) })), [dialogueDraft]);
   const previewItems = useMemo(() => letteringStyle ? previewLetteringItems(previewDialogue, layoutDraft, letteringStyle) : layoutDraft, [previewDialogue, layoutDraft, letteringStyle]);
   const layoutDirty = !sameJson(layoutDraft, layoutBaseline);
-  hasDraft.current = contentDirty || promptDirty || layoutDirty;
-  useEffect(() => { onDirtyChange?.(contentDirty || promptDirty || layoutDirty || translations.dirty || contentPhase === "error"); }, [contentDirty, layoutDirty, onDirtyChange, promptDirty, contentPhase,translations.dirty]);
+  hasDraft.current = contentDirty || promptDirty || layoutDirty || layerDirty || layerEditing;
+  useEffect(() => { onDirtyChange?.(contentDirty || promptDirty || layoutDirty || layerDirty || layerEditing || translations.dirty || contentPhase === "error"); }, [contentDirty, layoutDirty, layerDirty,layerEditing,onDirtyChange, promptDirty, contentPhase,translations.dirty]);
   const selectedDialogueId = previewDialogue.find((line) => line.draftKey === selectedDraftKey)?.id ?? "";
   const promptAuditErrors = !promptDirty && flowPreview?.audit.status === "complete" ? flowPreview.audit.errors : [];
   const promptAuditWarnings = flowPreview?.audit.status === "complete" ? flowPreview.audit.warnings : [];
@@ -788,15 +800,16 @@ export default function WorkbenchPageEditor({
   }
 
   async function saveSource(onlyLettering=false): Promise<boolean> {
+    if(layerEditing){setContentError("请先完成当前素材调整");return false;}
     if (!onlyLettering&&references.pending) { setContentError(references.error || '正在读取新引用的设定，请稍后保存。'); return false; }
-    if (savingPage.current || (!contentDirty && !layoutDirty && (onlyLettering||!promptDirty))) return !savingPage.current;
+    if (savingPage.current || (!contentDirty && !layoutDirty && !layerDirty && (onlyLettering||!promptDirty))) return !savingPage.current;
     const run = { identity: pageIdentity };
     savingPage.current = run;
     const isActive = () => savingPage.current === run && activeIdentity.current === pageIdentity;
     setContentPhase('saving'); setPromptPhase('saving'); setContentError(''); setPromptError('');
     const snapshot = { ...clone(contentToSave), dialogue: dialogueDraft.map(line => ({ ...persistedDialogue([line])[0], id: dialogueKey(line) })) };
     try {
-      const saved = await onSavePage(snapshot, onlyLettering?promptBaseline:persistedPrompt, clone(previewItems), editBaseline.current, sourceVersions.current);
+      const saved = await onSavePage(snapshot, onlyLettering?promptBaseline:persistedPrompt, clone(previewItems), editBaseline.current, sourceVersions.current,supportsLayers?clone(layerDraft):undefined);
       if (isActive()) {
         const content = contentFromPage({ ...page, ...saved.content });
         editBaseline.current = saved.page; setExternalConflict(false);
@@ -804,6 +817,7 @@ export default function WorkbenchPageEditor({
         setContentBaseline(clone(content)); setContentDraft(clone(content)); setDialogueDraft(editableDialogue(content.dialogue));
         if(!onlyLettering)setPromptDraft(clone(saved.prompt)); setPromptBaseline(clone(saved.prompt));
         setLayoutDraft(clone(saved.items)); setLayoutBaseline(clone(saved.items));
+        setLayerDraft(clone(saved.page.layers?.document??emptyLayers()));setLayerBaseline(clone(saved.page.layers?.document??emptyLayers()));
         setSelectedDraftKey(''); setContentPhase('saved'); setPromptPhase('saved'); onPageSaved?.();
       }
       return true;
@@ -821,7 +835,7 @@ export default function WorkbenchPageEditor({
     } finally { if (savingPage.current === run) savingPage.current = null; }
   }
   async function saveAll(){if(!await saveSource())return false;return translations.dirty?translations.save():true;}
-  useEffect(()=>{if(!saveLetteringRef)return;saveLetteringRef.current=async()=>letteringLocale==='zh'?saveSource(true):translations.save(letteringLocale);return ()=>{saveLetteringRef.current=null;};});
+  useEffect(()=>{if(!saveLetteringRef)return;saveLetteringRef.current=async()=>letteringLocale==='zh'?saveSource(true):await saveSource(true)&&await translations.save(letteringLocale);return ()=>{saveLetteringRef.current=null;};});
   useEffect(() => {
     if (!saveAllRef) return;
     saveAllRef.current = saveAll;
@@ -842,6 +856,7 @@ export default function WorkbenchPageEditor({
     setContentDraft(clone(incomingContent)); setContentBaseline(clone(incomingContent)); setDialogueDraft(editableDialogue(incomingContent.dialogue));
     setPromptDraft(clone(incomingPrompt)); setPromptBaseline(clone(incomingPrompt));
     setLayoutDraft(clone(letteringItems)); setLayoutBaseline(clone(letteringItems));
+    setLayerDraft(clone(page.layers?.document??emptyLayers()));setLayerBaseline(clone(page.layers?.document??emptyLayers()));
     setSelectedDraftKey(''); setContentPhase('saved'); setPromptPhase('saved'); setContentError(''); setPromptError('');
   }
   useEffect(() => {
@@ -850,9 +865,9 @@ export default function WorkbenchPageEditor({
     return () => { discardAllRef.current = null; };
   });
 
-  const draftHistory=useDraftHistory({content:contentDraft,dialogue:dialogueDraft,prompt:promptDraft,layout:layoutDraft},value=>{setContentDraft(value.content);setDialogueDraft(value.dialogue);setPromptDraft(value.prompt);setLayoutDraft(value.layout);},`${projectId}:${page.page_id}:${page.model_id}:${promptDiscardCount}`,overlayInteractive||Boolean(comicPreview?.editorTarget));
+  const draftHistory=useDraftHistory({content:contentDraft,dialogue:dialogueDraft,prompt:promptDraft,layout:layoutDraft,layers:layerDraft},value=>{setContentDraft(value.content);setDialogueDraft(value.dialogue);setPromptDraft(value.prompt);setLayoutDraft(value.layout);setLayerDraft(value.layers);},`${projectId}:${page.page_id}:${page.model_id}:${promptDiscardCount}`,(overlayInteractive||Boolean(comicPreview?.editorTarget))&&!layerEditing);
   const historyActions=<button type="button" className="button button--quiet" disabled={busy||!draftHistory.canUndo} title="撤销上一步修改（Ctrl+Z）" onClick={draftHistory.undo}>撤销</button>;
-  const anyDirty = contentDirty || promptDirty || layoutDirty || translations.dirty;
+  const anyDirty = contentDirty || promptDirty || layoutDirty || layerDirty || layerEditing || translations.dirty;
   const saveNeeded = anyDirty || externalDirty || contentPhase === "error" || promptPhase === "error";
   const saving = contentPhase === "saving" || promptPhase === "saving" || translations.busy;
 
@@ -920,8 +935,10 @@ export default function WorkbenchPageEditor({
 
     {(visibleTab === "lettering" || isTextPage) && page.page_kind!=='video' && onLetteringLocaleChange && <LetteringLocaleSelect value={letteringLocale} onChange={onLetteringLocaleChange}/>}
     {letteringLocale!=='zh'&&(visibleTab==='lettering'||isTextPage)&&translationBudgetWarnings.length>0&&<p role="status" className="workbench-lettering-note">{translationBudgetWarnings.length} 条译文比中文占用空间大，可缩短；未发生裁切时仍可输出。</p>}
-    {(visibleTab==='lettering'||isTextPage)&&letteringLocale!=='zh'&&<TranslationEditor characterNames={Object.fromEntries(characters.map(character=>[character.id,character.name]))} locale={letteringLocale} branch={activeTranslation} busy={busy||saving} error={translations.error} onEdit={(id,text,confirm)=>translations.edit(letteringLocale,id,text,confirm)} selectedId={selectedDraftKey} onSelect={setSelectedDraftKey}/>}
-    {(visibleTab === "lettering" || isTextPage) && onOpenLetteringSettings && <button type="button" className="button button--quiet lettering-settings-link" onClick={onOpenLetteringSettings}>项目嵌字样式 ↗</button>}
+    {(visibleTab==='lettering'||isTextPage)&&!layerMode&&letteringLocale!=='zh'&&<TranslationEditor characterNames={Object.fromEntries(characters.map(character=>[character.id,character.name]))} locale={letteringLocale} branch={activeTranslation} busy={busy||saving} error={translations.error} onEdit={(id,text,confirm)=>translations.edit(letteringLocale,id,text,confirm)} selectedId={selectedDraftKey} onSelect={setSelectedDraftKey}/>}
+    {supportsLayers&&visibleTab==='lettering'&&<div className="image-layer-mode"><button className={`button ${!layerMode?'is-active':''}`} onClick={()=>setLayerMode(false)}>文案</button><button className={`button ${layerMode?'is-active':''}`} onClick={()=>setLayerMode(true)}>素材{layerDirty?' · 未保存':''}</button></div>}
+    {supportsLayers&&visibleTab==='lettering'&&layerMode&&<MaterialLayerPanel projectId={projectId} pageId={page.page_id} document={layerDraft} media={layerMedia} canvas={canvas} selected={selectedLayer} disabled={busy||contentPhase==='saving'||layerGesture} onSelect={setSelectedLayer} onChange={next=>{draftHistory.checkpoint();setLayerDraft(next);}} onEditing={setLayerModal}/>}
+    {(visibleTab === "lettering" || isTextPage) && !layerMode && onOpenLetteringSettings && <button type="button" className="button button--quiet lettering-settings-link" onClick={onOpenLetteringSettings}>项目嵌字样式 ↗</button>}
     {!isTextPage && visibleTab === "visual" && <section className="current-workbench-prompts character-prompt-editor">
 
       {promptError && <p className="prompt-save-error" role="alert">{promptError}</p>}
@@ -930,8 +947,8 @@ export default function WorkbenchPageEditor({
       <ModelPromptEditor key={promptDiscardCount} header={<SectionHeader title="Prompt" actions={<div className="prompt-save-actions">{promptPhase === "error" && <button type="button" className="button button--quiet" onClick={() => void reloadAll()}>放弃本页草稿并重新载入</button>}{promptAuditWarnings.length > 0 && <button type="button" className="issue-indicator issue-indicator--warning" aria-label={`查看 ${promptAuditWarnings.length} 条 Prompt 警告`} title="查看 Prompt 警告" onClick={() => setPromptWarningsOpen(true)}>!</button>}</div>} />} projectId={projectId} page={page} prompt={promptDraft} onChange={setPromptDraft} characters={characters} scenes={scenes} references={contentDraft.characters??[]} onReferencesChange={changeCharacters} disabled={busy||saving} onOpenOverview={onOpenPromptOverview} qwenRewrite={qwenRewrite} dirty={anyDirty}/>
     </section>}
 
-    {!isTextPage && visibleTab === "lettering" && letteringLocale==='zh' && letteringStyle && <>
-      <LetteringEditor dialogue={dialogueDraft} items={previewItems} characters={characters} style={letteringStyle} diagnostics={letteringDiagnostics} hasImage={Boolean(letteringTarget)} projectId={projectId} pageId={page.page_id} selectedDraftKey={selectedDraftKey} onSelectedDraftKeyChange={setSelectedDraftKey} onDialogueChange={setDialogueDraft} onItemsChange={setLayoutDraft} />
+    {!isTextPage && visibleTab === "lettering" && !layerMode && letteringLocale==='zh' && letteringStyle && <>
+      <div hidden={supportsLayers&&layerMode}><LetteringEditor dialogue={dialogueDraft} items={previewItems} characters={characters} style={letteringStyle} diagnostics={letteringDiagnostics} hasImage={Boolean(letteringTarget)} projectId={projectId} pageId={page.page_id} selectedDraftKey={selectedDraftKey} onSelectedDraftKeyChange={setSelectedDraftKey} onDialogueChange={setDialogueDraft} onItemsChange={setLayoutDraft} /></div>
       <p className="workbench-lettering-note">{letteringTarget ? "在右侧拖动文字；普通文字调整框宽，爱心可独立缩放、旋转；旁白固定在画面底部。文案与布局一起保存。" : "文案可先编辑；有候选图后自动显示嵌字。"}</p>
 
     </>}
@@ -940,15 +957,17 @@ export default function WorkbenchPageEditor({
       <TextPageArtwork title={letteringLocale==='zh'?contentDraft.display_title??'':targetValues.display_title??''} body={letteringLocale==='zh'?contentDraft.body??'':targetValues.body??''} layout={letteringLocale==='zh'?contentDraft.text_layout:page.text_layout} style={targetStyle!} onOverflow={setTextOverflow} locale={letteringLocale} />,
       letteringTarget)}
     {!isTextPage && letteringTarget && letteringStyle && createPortal(<>
+      {supportsLayers&&<ImageLayerCanvas projectId={projectId} document={layerDraft} media={layerMedia} canvas={canvas} interactive={overlayInteractive&&layerMode&&visibleTab==='lettering'&&!busy&&!layerModal&&contentPhase!=='saving'} selected={selectedLayer} onSelect={setSelectedLayer} onChange={items=>{draftHistory.checkpoint();setLayerDraft(current=>({...current,items}));}} onEditing={setLayerGesture}/>}
       <WorkbenchLetteringOverlay locale={letteringLocale} sourceDialogue={page.dialogue} dialogue={overlayDialogue??previewDialogue} items={displayLetteringItems} characters={characters} style={displayLetteringStyle!} canvas={canvas} fontCanvas={letteringCanvas} fontScale={1/letteringWidth} comicFrame={comicFrame}
-        selectable={true} interactive={overlayInteractive && letteringLocale==='zh' && !busy && contentPhase !== "saving"} selectedId={letteringLocale==='zh'?selectedDialogueId:selectedDraftKey}
+        selectable={!layerMode} interactive={!layerMode && overlayInteractive && letteringLocale==='zh' && !busy && contentPhase !== "saving"} selectedId={letteringLocale==='zh'?selectedDialogueId:selectedDraftKey}
         onSelect={(id) => {onOverlaySelect?.();setSelectedDraftKey(letteringLocale==='zh'?previewDialogue.find((line) => line.id === id)?.draftKey ?? "":id);}}
         onChange={(item) => {const original=scaleLetteringHearts([item],letteringWidth)[0];if(original.heart)original.heart.font_size=Math.round(original.heart.font_size);setLayoutDraft(previewItems.map((candidate) => candidate.dialogue_id === original.dialogue_id ? original : candidate));}}
         onDiagnosticsChange={setLetteringDiagnostics} onBudgetWarningsChange={setTranslationBudgetWarnings} />
       {layoutDirty && <span className="lettering-unsaved-hint">布局未保存 · 点击「保存」</span>}
     </>, letteringTarget)}
-    {!isTextPage && fullscreenLetteringTarget && letteringStyle && createPortal(
-      <WorkbenchLetteringOverlay locale={letteringLocale} sourceDialogue={page.dialogue} dialogue={overlayDialogue??previewDialogue} items={displayLetteringItems} characters={characters} style={displayLetteringStyle!} canvas={fullscreenLetteringTarget.canvas} fontCanvas={letteringCanvas} />,
+    {!isTextPage && fullscreenLetteringTarget && letteringStyle && createPortal(<>
+      {supportsLayers&&<ImageLayerCanvas projectId={projectId} document={layerDraft} media={layerMedia} canvas={fullscreenLetteringTarget.canvas}/>}
+      <WorkbenchLetteringOverlay locale={letteringLocale} sourceDialogue={page.dialogue} dialogue={overlayDialogue??previewDialogue} items={displayLetteringItems} characters={characters} style={displayLetteringStyle!} canvas={fullscreenLetteringTarget.canvas} fontCanvas={letteringCanvas} /></>,
       fullscreenLetteringTarget.element)}
     {!isTextPage&&comicPreview?.editorTarget&&letteringStyle&&createPortal(<>
       <div className="comic-panel-actions">{historyActions}</div>

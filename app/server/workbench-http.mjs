@@ -1,3 +1,5 @@
+import {listImageMaterials,importImageMaterial} from './image-materials.mjs';
+import {readPageLayers,requireLayersPage,savePageLayers,resolveLayerMedia,inspectPageLayers} from './page-layers.mjs';
 import {factConflict} from './fact-conflict.mjs';
 import path from "node:path";
 import {readVideoSource} from './video-source.mjs';
@@ -93,6 +95,19 @@ export async function handleWorkbenchRequest({
   workbenchRenderLauncher,
   generationScheduler = null,
 }) {
+  const layerRoute=/^\/api\/projects\/([^/]+)\/workbench\/layers\/(read|save|media|inspect|materials|import)$/.exec(decodedPath);
+  if(request.method==='POST'&&layerRoute){
+    const value=await readJsonBody(request,layerRoute[2]==='import'?48*1024*1024:2*1024*1024),id=layerRoute[1],action=layerRoute[2];
+    const boundary=['save','import'].includes(action)?mutateTargetFacts:action==='inspect'?mutateDerivedState:readFacts;
+    sendOperation(200,await boundary(id,async({projectDirectory})=>{
+      if(action==='materials')return listImageMaterials(projectDirectory,id);
+      if(action==='import')return importImageMaterial(projectDirectory,id,value);
+      if(action==='media')return {media:await resolveLayerMedia(projectDirectory,value.document,value.locale??'zh')};
+      if(action==='inspect')return inspectPageLayers(projectDirectory,id,value);
+      await requireLayersPage(projectDirectory,value.page_key?.page_id);
+      return action==='read'?readPageLayers(projectDirectory,value.page_key.page_id):savePageLayers(projectDirectory,value.page_key.page_id,value);
+    }));return true;
+  }
   const collageRoute=/^\/api\/projects\/([^/]+)\/workbench\/collage\/(read|save|sources|preview|arrange|media|inspect)$/.exec(decodedPath);
   if(request.method==='POST'&&collageRoute){
     const value=await readJsonBody(request),id=collageRoute[1],action=collageRoute[2];

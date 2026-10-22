@@ -1,3 +1,4 @@
+import {materialReferences} from './material-references.mjs';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
@@ -19,8 +20,7 @@ export async function promptDocuments(directory) {
 }
 export async function removeUnusedFile(directory, file) {
   if (!file || !/^reference-[a-f0-9-]+\.png$/.test(file)) return;
-  const documents = await promptDocuments(directory);
-  if (documents.some(({ document }) => JSON.stringify(document).includes(JSON.stringify(file)))) return;
+  if ((await materialReferences(directory,file)).length) return;
   await deleteMaterial(directory, file, { allowMissing: true });
 }
 

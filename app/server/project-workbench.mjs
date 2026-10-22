@@ -1,3 +1,4 @@
+import {readPageLayers} from './page-layers.mjs';
 import { targetPath, assertProjectFactBoundary, writeJsonAtomic } from './fact-storage.mjs';
 import {factConflict} from './fact-conflict.mjs';
 import {readCollage} from './collage-pages.mjs';
@@ -294,6 +295,7 @@ export async function readProjectWorkbenchView(projectRoot, projectId, requested
       ...(full || scope.kind === 'page' || output ? {lettering: structuredClone(letteringByPage.get(pageId) ?? {page:pageId,items:[]}), layout_sha256:letteringSha256} : {}),
       } : {}),
     };
+    if(!content.page_kind&&!membership.parent_page_id)page.layers=await readPageLayers(project.projectDirectory,pageId);
     if(content.page_kind==='collage'){const document=await readCollage(project.projectDirectory,pageId);page.collage={document,sha256:hashCanonicalJson(document)};}
     pages.push(page);
     const owner = membership.owner_kind === 'character' ? characterMap.get(membership.character_id) : membership.owner_kind === 'scene' ? sceneMap.get(membership.scene_id) : null;

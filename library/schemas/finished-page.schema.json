@@ -229,6 +229,13 @@
       "type": "string",
       "pattern": "^[a-f0-9]{64}$",
       "description": "输出时冻结的组图来源候选指纹，用于判断成品是否过时"
+    },
+    "layers": {
+      "$ref": "page-layers.schema.json"
+    },
+    "layers_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
     }
   },
   "allOf": [

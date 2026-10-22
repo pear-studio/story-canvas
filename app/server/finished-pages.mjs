@@ -1,3 +1,6 @@
+import {captureLayers,layerFingerprint,resolveLayerMedia} from './page-layers.mjs';
+import {emptyLayers} from '../shared/image-layers.mjs';
+import {composeImageLayers} from './image-layer-render.mjs';
 import { requireLetteringLocale, readTranslationDocument, translationProjection, localizeLettering } from './page-translation-document.mjs';
 import { defaultTextPageLayout } from "../shared/text-page-layout.mjs";
 import {storyPageNumbers} from '../shared/story-page-numbers.mjs';
@@ -81,6 +84,7 @@ export async function prepareTranslationInspection(repositoryRoot,projectId,dire
   else if(value.clean_locale){const record=await readFinishedRecord(directory,id,requireLetteringLocale(value.clean_locale));const media=record&&await resolveExistingProjectMedia(directory,record.outputs.clean);if(!media)fail('指定语言的成品底图不可用');clean=await readFile(media.target);canvas=record.lettering.canvas;}
   else fail('请显式指定 candidate_id 或 clean_locale 选择预览底图',400);
   if(!canvas){const {width,height}=await sharp(clean).metadata();canvas=`${width}:${height}`;}
+  if(page.layers)clean=await composeImageLayers(clean,page.layers.document,await captureLayers(directory,page.layers.document,locale));
   const document=await readTranslationDocument(directory,id);
   return {clean,lettering:await localizedSnapshot(view,page,directory,locale,canvas),translation_summary:page.comic?await pageTranslationSummary(page,directory,locale):translationProjection(page,document,locale).summary};
 }
@@ -108,13 +112,16 @@ export async function readFinishedPages(repositoryRoot, projectId, directory, { 
     const backupMissing=Boolean(record?.source_backup&&!await resolveExistingProjectMedia(directory,record.source_backup));
     const dimensions = page.collage ? collageSize(page.collage.document.canvas) : page.page_kind === 'text' ? (page.render_capabilities ?? view.render_capabilities).text_page?.dimensions : null;
     const dimensionsChanged = dimensions && record && (record.width !== dimensions.width || record.height !== dimensions.height);
-    const stale = record ? Boolean(page.collage&&(hashCanonicalJson(page.collage.document)!==record.collage_sha256||collageMediaFingerprint(page.collage.document,collageMedia)!==record.collage_media_sha256)) || (page.page_kind==='video' && hashCanonicalJson(normalizeVideoPostprocess(page.video_postprocess))!==hashCanonicalJson(normalizeVideoPostprocess(record.video_postprocess))) || Boolean(dimensionsChanged) || (candidate !== null && candidate !== record.candidate_id) || Boolean(translation_summary?.missing||translation_summary?.stale) || page.comic && hashCanonicalJson(page.comic.document)!==record.comic_sha256 || !page.comic&&record.page_kind==='comic' || hashCanonicalJson(await localizedSnapshot(view, page,directory,mediaLocale,page.page_kind === "text" ? undefined : record.lettering.canvas)) !== hashCanonicalJson(record.lettering) : false;
+    const layerDocument=page.layers?.document??emptyLayers(),layerMedia=await resolveLayerMedia(directory,layerDocument,mediaLocale);
+    const layersStale=record&&layerFingerprint(layerDocument,layerMedia,mediaLocale)!==(record.layers_sha256??layerFingerprint(emptyLayers(),{}));
+    const layerError=layerDocument.items.filter(i=>i.enabled).map(i=>layerMedia[i.asset_id]?.error).find(Boolean);
+    const stale = record ? Boolean(layersStale) || Boolean(page.collage&&(hashCanonicalJson(page.collage.document)!==record.collage_sha256||collageMediaFingerprint(page.collage.document,collageMedia)!==record.collage_media_sha256)) || (page.page_kind==='video' && hashCanonicalJson(normalizeVideoPostprocess(page.video_postprocess))!==hashCanonicalJson(normalizeVideoPostprocess(record.video_postprocess))) || Boolean(dimensionsChanged) || (candidate !== null && candidate !== record.candidate_id) || Boolean(translation_summary?.missing||translation_summary?.stale) || page.comic && hashCanonicalJson(page.comic.document)!==record.comic_sha256 || !page.comic&&record.page_kind==='comic' || hashCanonicalJson(await localizedSnapshot(view, page,directory,mediaLocale,page.page_kind === "text" ? undefined : record.lettering.canvas)) !== hashCanonicalJson(record.lettering) : false;
     const url = kind => `/api/projects/${encodeURIComponent(projectId)}/media/${record.outputs[kind]}`;
     pages.push({ ...chapter,page_number:numbers.get(page.page_id)??null,locale:mediaLocale,translation_summary, page_id: page.page_id, page_key: page.page_key, title: page.title,
       ...(page.collage?{collage_sha256:page.collage.sha256}:{}),
       ...(page.comic?{comic_sha256:page.comic.sha256}:{}),
       candidate_id: candidate, candidate_count: candidates?.length ?? null,
-      batch_skip_reason: collageError??comicError??(page.collage&&!visibleCollageItems(page.collage.document).length&&!page.collage.document.background?.enabled?'组图尚未选图':translation_summary?.missing||translation_summary?.stale ? `译文未就绪：缺译 ${translation_summary.missing} 条、原文变化 ${translation_summary.stale} 条` : selection?.reason??null),
+      batch_skip_reason: layerError??collageError??comicError??(page.collage&&!visibleCollageItems(page.collage.document).length&&!page.collage.document.background?.enabled?'组图尚未选图':translation_summary?.missing||translation_summary?.stale ? `译文未就绪：缺译 ${translation_summary.missing} 条、原文变化 ${translation_summary.stale} 条` : selection?.reason??null),
       status: !record ? "missing" : !available ? "files_missing" : stale ? "stale" : "ready",
       job: jobs.find(job => job.page_id === page.page_id&&(job.locale??'zh')===mediaLocale) ?? null,
       record: record ? { media_format:record.media_format??(record.page_kind==='video'?'mp4':'png'), backup_missing:backupMissing, warnings:record.warnings??[], gif_bytes:gifFile?(await stat(gifFile.target)).size:null, media_kind:record.page_kind==='video'?'video':'image', poster_url:record.poster ? `/api/projects/${encodeURIComponent(projectId)}/media/${record.poster}` : null, sha256: hashCanonicalJson(record), candidate_id: record.candidate_id ?? null, width: record.width, height: record.height, created_at: record.created_at,
@@ -234,12 +241,13 @@ export async function prepareFinishedPage(repositoryRoot, projectId, directory, 
   if (!source && !reuse) fail("候选底图已不存在；请根据成品记录重新生成候选，再输出成品");
   const dimensions = await sharp(sourceBuffer ?? await readFile(reuse.target)).metadata();
   const generation = source ? await readCandidateGeneration(directory, page.page_key, value.candidate_id) : base.generation;
-  const snapshot = { page_key: page.page_key, candidate_id: value.candidate_id,
+  const layers=page.layers?.document??emptyLayers(),layerCapture=await captureLayers(directory,layers,locale);
+  const snapshot = { layers,layers_sha256:layerCapture.sha256,page_key: page.page_key, candidate_id: value.candidate_id,
     source_sha256: sourceBuffer ? sha(sourceBuffer) : base.source_sha256,
     generation: Object.fromEntries(["seed", "execution_seed", "prompt", "models", "loras", "recipe", "canvas", "render_profile", "render_route"].map(key => [key, generation[key] ?? null])),
     lettering: await localizedSnapshot(view, page,directory,locale,sourceBuffer ? `${dimensions.width}:${dimensions.height}` : base.lettering.canvas,true), upscale: finishedModel };
   await writeJson(jobPath(directory, id,locale), job);
-  return { job, snapshot, sourceBuffer, reuse: reuse?.target??null, expected: hashCanonicalJson(old), old };
+  return { job, snapshot, layerCapture,sourceBuffer, reuse: reuse?.target??null, expected: hashCanonicalJson(old), old };
 }
 
 export async function publishFinishedPage(repositoryRoot, projectId, directory, prepared, record) {
@@ -317,7 +325,8 @@ export async function runFinishedPage({ repositoryRoot, projectId, directory, pr
       if (width !== original.width * 2 || height !== original.height * 2) fail("超分输出尺寸不是原图的 2 倍");
     }
     await update("lettering");
-    const lettered = prepared.collageBuffers ? clean : await render(clean, snapshot.lettering, origin);
+    const artwork=prepared.layerCapture?await composeImageLayers(clean,snapshot.layers,prepared.layerCapture):clean;
+    const lettered = prepared.collageBuffers ? clean : await render(artwork, snapshot.lettering, origin);
     const dimensions = await sharp(lettered).metadata();
     if (dimensions.width !== width || dimensions.height !== height) fail("嵌字输出尺寸不匹配");
     const prefix = `Outputs/finished/${job.page_id}/${job.locale??'zh'}/${job.id}`;
