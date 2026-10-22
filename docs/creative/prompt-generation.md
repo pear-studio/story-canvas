@@ -1,6 +1,6 @@
 # Prompt 与生成协作
 
-本文维护模型无关的编写和交付规则；操作契约查 `story_canvas` help。日常插画使用 Anima，动态页使用 H3；备用 Qwen 按需读[专用文档](../reference/qwen.md)。
+本文维护模型无关的编写和交付规则；操作契约查 `story_canvas` help。日常插画使用 Anima，动态页使用 H3（专项经验见 [H3 动态页经验](../reference/h3.md)）；备用 Qwen 按需读[专用文档](../reference/qwen.md)。
 
 ## 表达与修正
 
