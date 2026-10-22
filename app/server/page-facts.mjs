@@ -202,6 +202,11 @@ export async function deletePage(root,projectId,pageId,{beforeCommit}={}) {
   const removedReferences = await Promise.all(ids.map(id=>optionalJson(directory,pageRelativePath(id,'prompt'))));
   const deletionId=`deleted-${randomBytes(6).toString('hex')}`,archive=path.join(path.resolve(root),'Saved/state/deleted-pages',project.projectId,deletionId);
   const descriptors=ids.flatMap(id=>[...['content','prompt','render','rewrite','text-sources','comic','collage'].map(kind=>pageRelativePath(id,kind)),translationPath(id),`Outputs/pages/${id}`]);
+  // 成品与页面一起归档，避免页面已移除却遗留记录；统一参与下面的失败回滚。
+  descriptors.push(...ids.flatMap(id=>[
+    ...['','.en','.ja'].flatMap(suffix=>[`finished/${id}${suffix}.json`,`Saved/finished/${id}${suffix}.json`]),
+    `Outputs/finished/${id}`,
+  ]));
   const siblings=index.pages.filter(page=>sameOwner(page,entry)),ordinal=siblings.findIndex(page=>page.page_id===pageId);
   const position={ordinal,previous_page_id:siblings[ordinal-1]?.page_id??null,next_page_id:siblings[ordinal+1]?.page_id??null};
   if(beforeCommit)await beforeCommit();
