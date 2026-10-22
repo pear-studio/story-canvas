@@ -43,6 +43,18 @@ test('工作台独立语言草稿、保存、外语横排、缺译留空；Agent
   const clean=await sharp({create:{width:1024,height:1536,channels:3,background:'#80b0a0'}}).png().toBuffer();
   const inspected=await inspectFinishedLettering(clean,lettering,origin);assert.ok(inspected.diagnostics.objects.length===3);assert.ok(inspected.diagnostics.objects.every(object=>Number.isFinite(object.box.w)));if(inspected.diagnostics.blockers.length)t.diagnostic(JSON.stringify(inspected.diagnostics));assert.deepEqual(inspected.diagnostics.blockers,[]);
   const rendered=await renderFinishedImage(clean,lettering,origin);assert.deepEqual(inspected.image,rendered,'检查图与成品使用相同渲染');
+  const heartSource={id:'dialogue-523456789abc',mode:'heart',text:'好'};
+  const heartItem={dialogue_id:heartSource.id,box:{x:.2,y:.4,w:.2,h:.1},heart:{font_size:80,rotation:-8,seed:42}};
+  const sourceLettering={dialogue:[heartSource],items:[heartItem],settings,canvas:'2:3'};
+  const sourceInspection=await inspectFinishedLettering(clean,sourceLettering,origin);
+  heartItem.box.x=1-sourceInspection.diagnostics.objects[0].box.w-.06;
+  const translated={...sourceLettering,locale:'en',source_dialogue:[heartSource],dialogue:[{...heartSource,text:'Good'}],settings:{...settings,font_family:'SVTranslation'}};
+  const adjusted=await inspectFinishedLettering(clean,translated,origin);
+  assert.deepEqual(adjusted.diagnostics.blockers,[],'贴右侧爱心译文自动向内展开');
+  const adjustedBox=adjusted.diagnostics.objects[0].box;
+  assert.ok(adjustedBox.x<heartItem.box.x && adjustedBox.x+adjustedBox.w<=1);
+  assert.equal(heartItem.box.x,1-sourceInspection.diagnostics.objects[0].box.w-.06,'适配不改写原版位置');
+  assert.deepEqual(adjusted.image,await renderFinishedImage(clean,translated,origin),'自动调整后的检查与输出像素一致');
   await page.goto(`${origin}/?project=demo&tab=finished`);await page.getByLabel('嵌字语言',{exact:true}).selectOption('ja');await page.getByText('缺译 3 · 原文变化 0',{exact:true}).waitFor();
   assert.deepEqual(errors,[]);
 });

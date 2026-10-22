@@ -2,7 +2,15 @@ import {resolveLetteringLayout} from './lettering-layout';
 import {letteringPreset,type LetteringItem,type LetteringStyle} from './lettering';
 import type {WorkbenchDialogueDraft} from './WorkbenchPageEditor';
 import {resolveHeart,heartSettings} from './HeartLettering';
+// @ts-expect-error 浏览器与 Node 回归测试共用位置计算。
+import {placeTranslatedHeart} from '../shared/translated-heart-placement.mjs';
 export const translationFont='SVTranslation';
+type Box={x:number;y:number;w:number;h:number};
+export function translatedHeartBox(box:Box,source:Box,obstacles:Box[],frame?:Box):Box {
+  const toPage=(b:Box):Box=>frame?{x:frame.x+b.x*frame.w,y:frame.y+b.y*frame.h,w:b.w*frame.w,h:b.h*frame.h}:b;
+  const placed=placeTranslatedHeart(toPage(box),toPage(source),obstacles.map(toPage)) as Box;
+  return frame?{x:(placed.x-frame.x)/frame.w,y:(placed.y-frame.y)/frame.h,w:placed.w/frame.w,h:placed.h/frame.h}:placed;
+}
 let measure:CanvasRenderingContext2D|null=null;
 function wrap(text:string,width:number,font:number,locale:string){
   // 与共享样式 lettering-text 的字重一致。

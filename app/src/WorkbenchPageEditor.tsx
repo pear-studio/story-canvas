@@ -69,7 +69,7 @@ import { canvasDimensions, letteringCanvasFontScale, resizeLetteringBox, resolve
 import { TextPageEditor } from "./TextPageEditor";
 import { TextPageArtwork } from "./TextPageArtwork";
 import {LetteringLocaleSelect,TranslationEditor,usePageTranslations,type LetteringLocale} from './page-translations';
-import {resolveTranslatedLettering,translationFont} from './translation-layout';
+import {resolveTranslatedLettering,translatedHeartBox,translationFont} from './translation-layout';
 import "./WorkbenchPageEditor.css";
 import { HeartLettering, DiceIcon, heartSettings, resolveHeart, useHeartFont, type HeartSettings } from "./HeartLettering";
 
@@ -269,9 +269,21 @@ function LetteringOverlayContent({ dialogue,sourceDialogue=dialogue,locale='zh',
   const diagnosticsRef = useRef("");
   const lines = useMemo(() => new Map(dialogue.flatMap((line) => line.id ? [[line.id, line] as const] : [])), [dialogue]);
   const sourceLines = new Map(sourceDialogue.map(line=>[line.id,line]));
-  const resolveObject=(line:WorkbenchDialogueDraft,item:LetteringItem,currentStyle:LetteringStyle,dimensions:{width:number;height:number})=>locale==='zh'
+  const resolveBaseObject=(line:WorkbenchDialogueDraft,item:LetteringItem,currentStyle:LetteringStyle,dimensions:{width:number;height:number})=>locale==='zh'
     ? {...resolveLetteringObject(line,item,currentStyle,dimensions,Boolean(comicFrame)),fontSize:currentStyle.font_size,budgetExceeded:false}
     : resolveTranslatedLettering(line,sourceLines.get(line.id)??line,item,currentStyle,dimensions,locale,Boolean(comicFrame));
+  const resolvedObjects=new Map<string,ReturnType<typeof resolveBaseObject>>(items.flatMap(item=>{
+    const line=lines.get(item.dialogue_id);
+    return line&&line.text.trim()&&line.mode!=='narration'?[[item.dialogue_id,resolveBaseObject(line,item,style,canvasDimensions(canvas))] as const]:[];
+  }));
+  if(locale!=='zh')for(const item of items){
+    const line=lines.get(item.dialogue_id),resolved=resolvedObjects.get(item.dialogue_id);
+    if(line?.mode!=='heart'||!resolved)continue;
+    const source=resolveHeart((sourceLines.get(line.id)??line).text,item,canvasDimensions(canvas),style.font_size);
+    const obstacles=[...resolvedObjects].filter(([id])=>id!==item.dialogue_id).map(([,value])=>value.box);
+    resolved.box=translatedHeartBox(resolved.box,source.box,obstacles,comicFrame);
+  }
+  const resolveObject=(line:WorkbenchDialogueDraft,item:LetteringItem,currentStyle:LetteringStyle,dimensions:{width:number;height:number})=>resolvedObjects.get(item.dialogue_id)??resolveBaseObject(line,item,currentStyle,dimensions);
   const clampValue = (value: number, minimum = 0, maximum = 1) => Math.max(minimum, Math.min(maximum, value));
 
   function beginGesture(event: ReactPointerEvent<HTMLElement>, item: LetteringItem, mode: "move" | "resize" | "rotate") {
@@ -395,7 +407,7 @@ function LetteringOverlayContent({ dialogue,sourceDialogue=dialogue,locale='zh',
         if (event.key === "ArrowDown") next.box.y = clampValue(next.box.y + step, minY, maxY);
         onChange(next);
       }} onClick={(event) => { event.preventDefault(); event.stopPropagation(); onSelect?.(item.dialogue_id); }}>
-        {line.mode === "heart" ? (heartFontReady && <HeartLettering text={line.text} layout={locale==='zh'?resolveHeart(line.text, item, dimensions, style.font_size):resolveObject(line,item,style,dimensions) as ReturnType<typeof resolveHeart>} />) : <span className="lettering-text">{preset.direction === "horizontal" ? resolved.lines.join("\n") : line.text}</span>}
+        {line.mode === "heart" ? (heartFontReady && <HeartLettering text={line.text} layout={locale==='zh'?resolveHeart(line.text, item, dimensions, style.font_size):resolveTranslatedLettering(line,sourceLines.get(line.id)??line,item,style,dimensions,locale,Boolean(comicFrame)) as ReturnType<typeof resolveHeart>} />) : <span className="lettering-text">{preset.direction === "horizontal" ? resolved.lines.join("\n") : line.text}</span>}
         {interactive && selected && line.mode === "heart" && <button type="button" className="lettering-rotate-handle" title="拖动调整排布方向" aria-label="旋转爱心排布" onPointerDown={event => beginGesture(event, item, "rotate")} onPointerMove={move} onPointerUp={end} onPointerCancel={end}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M19 10a7 7 0 1 0-1 7M19 4v6h-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg></button>}
         {interactive && selected && <i className={`lettering-resize-handle lettering-resize-handle--${preset.direction}`} aria-hidden="true" title={line.mode === "heart" ? "拖动缩放爱心文字" : preset.direction === "vertical" ? "拖动调整列高" : "拖动调整行宽"} onPointerDown={(event) => beginGesture(event, item, "resize")} onPointerMove={move} onPointerUp={end} onPointerCancel={end} />}
       </div>;
