@@ -1,5 +1,6 @@
 import { targetPath, assertProjectFactBoundary, writeJsonAtomic } from './fact-storage.mjs';
 import {factConflict} from './fact-conflict.mjs';
+import {readCollage} from './collage-pages.mjs';
 import {readComicDocument} from './comic-pages.mjs';
 import { readPageIndex, pageRelativePath } from './pages-store.mjs';
 import { readPageRenderSettings, pageProjectSettings } from './page-render-settings.mjs';
@@ -249,12 +250,11 @@ export async function readProjectWorkbenchView(projectRoot, projectId, requested
   for (const membership of pagesIndex.pages) {
     const pageId = membership.page_id;
     const output = scope.kind === 'finished' && (!scope.page_id || scope.page_id === pageId || scope.page_id === membership.parent_page_id);
-    const edit = full || scope.kind === 'page' && (scope.page_id === pageId || scope.page_id === membership.parent_page_id) || scope.kind === 'prompts' && membership.owner_kind === 'story';
+    let edit = full || scope.kind === 'page' && (scope.page_id === pageId || scope.page_id === membership.parent_page_id) || scope.kind === 'prompts' && membership.owner_kind === 'story';
     const story = scope.kind === 'story' && membership.owner_kind === 'story' && (!scope.sequence_id || membership.sequence_id === scope.sequence_id) && (!scope.chapter_id || chapterSequences.has(membership.sequence_id));
-    const [narrative, prompt] = await Promise.all([
-      readJson(project.projectDirectory, pageRelativePath(pageId, 'content')),
-      edit ? readJson(project.projectDirectory, pageRelativePath(pageId, 'prompt')) : null,
-    ]);
+    const narrative=await readJson(project.projectDirectory,pageRelativePath(pageId,'content'));
+    if(narrative.page_kind==='collage')edit=false;
+    const prompt=edit?await readJson(project.projectDirectory,pageRelativePath(pageId,'prompt')):null;
     const content = validated(narrative, validateStoryPageNarrativeDocument, pageRelativePath(pageId, 'content'));
     const promptDocument = edit ? validated(prompt, validateStoryPagePromptDocument, pageRelativePath(pageId, 'prompt')) : null;
     const render = edit || output && content.page_kind === 'text' ? await readPageRenderSettings(project.projectDirectory, pageId, projectDocument) : null;
@@ -294,6 +294,7 @@ export async function readProjectWorkbenchView(projectRoot, projectId, requested
       ...(full || scope.kind === 'page' || output ? {lettering: structuredClone(letteringByPage.get(pageId) ?? {page:pageId,items:[]}), layout_sha256:letteringSha256} : {}),
       } : {}),
     };
+    if(content.page_kind==='collage'){const document=await readCollage(project.projectDirectory,pageId);page.collage={document,sha256:hashCanonicalJson(document)};}
     pages.push(page);
     const owner = membership.owner_kind === 'character' ? characterMap.get(membership.character_id) : membership.owner_kind === 'scene' ? sceneMap.get(membership.scene_id) : null;
     const validOwner = membership.owner_kind === 'story' ? knownSequenceIds.has(membership.sequence_id) : Boolean(owner?.visual.variants.some(variant=>variant.id===membership.variant_id));

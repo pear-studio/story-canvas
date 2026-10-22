@@ -2,12 +2,13 @@ import type {WorkbenchPage} from './project-workbench-client';
 import {pageKeyId} from './page-key';
 import {videoPostprocessTiming} from '../shared/video-postprocess.mjs';
 
-export type PageType = 'text' | 'image' | 'video' | 'comic';
-export const pageTypeLabels:Record<PageType,string>={text:'文字页',image:'图片页',video:'动态页',comic:'分镜页'};
-export function pageTypeOf(page:WorkbenchPage):PageType{return page.comic?'comic':page.page_kind==='text'?'text':page.page_kind==='video'?'video':'image';}
+export type PageType = 'text' | 'image' | 'video' | 'comic' | 'collage';
+export const pageTypeLabels:Record<PageType,string>={text:'文字页',image:'图片页',video:'动态页',comic:'分镜页',collage:'组图页'};
+export function pageTypeOf(page:WorkbenchPage):PageType{return page.page_kind==='collage'?'collage':page.comic?'comic':page.page_kind==='text'?'text':page.page_kind==='video'?'video':'image';}
 
 export function pageNavigationInfo(page:WorkbenchPage,counts:Record<string,number>|null,video?:{frames:number;fps:number}){
   const type=pageTypeOf(page);
+  if(type==='collage')return {type,label:`${page.collage?.document.items.length??0} 张`,description:'组图页'};
   if(type==='text')return {type,label:'',description:pageTypeLabels[type]};
   if(type==='comic')return {type,label:`${page.comic!.document.order.length} 格`,description:`分镜页，${page.comic!.document.order.length} 个分镜`};
   const count=counts===null?null:counts[pageKeyId(page.page_key)]??0;
@@ -23,7 +24,7 @@ export function pageNavigationInfo(page:WorkbenchPage,counts:Record<string,numbe
 
 export function PageTypeIcon({type}:{type:PageType}){
   return <svg className={`navigation-page-type navigation-page-type--${type}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    {type==='text'?<><path d="M4 5h16M12 5v15M8 20h8"/></>:type==='image'?<><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></>:type==='video'?<><rect x="3" y="7" width="18" height="14" rx="2"/><path d="M3 11h18M3 7l16-4 2 4M8 6l3 4M14 4l3 4"/></>:<><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M11 3v18M11 12h10"/></>}
+    {type==='text'?<><path d="M4 5h16M12 5v15M8 20h8"/></>:type==='image'?<><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></>:type==='video'?<><rect x="3" y="7" width="18" height="14" rx="2"/><path d="M3 11h18M3 7l16-4 2 4M8 6l3 4M14 4l3 4"/></>:type==='collage'?<><path d="M4 16H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h13a1 1 0 0 1 1 1v1"/><rect x="6" y="7" width="16" height="14" rx="2"/><circle cx="11" cy="11" r="1"/><path d="m7 19 5-5 3 3 3-4 4 5"/></>:<><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M11 3v18M11 12h10"/></>}
   </svg>;
 }
 

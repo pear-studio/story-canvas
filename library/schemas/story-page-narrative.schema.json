@@ -229,7 +229,8 @@
     "page_kind": {
       "enum": [
         "text",
-        "video"
+        "video",
+        "collage"
       ]
     },
     "video_postprocess": { "$ref": "#/$defs/video_postprocess" },

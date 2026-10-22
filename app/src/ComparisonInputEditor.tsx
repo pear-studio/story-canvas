@@ -42,7 +42,7 @@ export function ComparisonInputEditor({ value, onChange, disabled, models }: { v
     if (!project) return;
     const controller = new AbortController();
     void fetch(`/api/projects/${encodeURIComponent(project)}/workbench`, { signal: controller.signal }).then(response => responseJson<ProjectWorkbenchView>(response)).then(view => {
-      setPages([...view.outline.chapters.flatMap(chapter => chapter.sequences.flatMap(sequence => sequence.pages)), ...view.characters.flatMap(character => character.pages)].filter(page => page.page_kind !== "text"));
+      setPages([...view.outline.chapters.flatMap(chapter => chapter.sequences.flatMap(sequence => sequence.pages)), ...view.characters.flatMap(character => character.pages)].filter(page => !['text','collage'].includes(page.page_kind??'')));
     }).catch(error => { if (!controller.signal.aborted) setError(String(error)); });
     return () => controller.abort();
   }, [project]);

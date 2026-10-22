@@ -103,7 +103,7 @@ export type WorkbenchPageContentDraft = {
   scene_description: string;
   characters?: Array<{ character_id: string; variant_id: string }>;
   dialogue?: WorkbenchDialogueDraft[];
-  page_kind?: "text" | "video" | null;
+  page_kind?: "text" | "video" | "collage" | null;
   body?: string;
   display_title?: string;
   text_layout?: TextPageLayout;

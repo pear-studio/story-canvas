@@ -1,0 +1,16 @@
+export type Rect={x:number;y:number;w:number;h:number};
+export type CollageAsset={page_id:string};
+export type CollageMedia={page_id:string;label?:string;width:number;height:number;file?:string;candidate_id?:string;sha256?:string;error?:string};
+export type CollageItem={id:string;asset_id:string;enabled:boolean;box:Rect;crop:Rect};
+export type CollageDocument={version:1;canvas:string;assets:Record<string,CollageAsset>;background:null|{asset_id:string;enabled:boolean;crop:Rect;opacity:number};items:CollageItem[]};
+export const collageLimit:number;
+export function fullCrop():Rect;
+export function emptyCollage(canvas?:string):CollageDocument;
+export function visibleCollageItems(doc:CollageDocument):CollageItem[];
+export function collageSourceIds(doc:CollageDocument):string[];
+export function collageSize(canvas:string,width?:number):{width:number;height:number};
+export function validateCollage(doc:unknown):string[];
+export function validRect(rect:unknown):boolean;
+export function imagePlacement(asset:{width:number;height:number},box:Rect,crop:Rect,canvas:string,cover?:boolean):{source:Rect;box:Rect};
+export function arrangeCollage(doc:CollageDocument,ids?:string[],media?:Record<string,CollageMedia>):CollageDocument;
+export function changeCollageCanvas(doc:CollageDocument,canvas:string):CollageDocument;

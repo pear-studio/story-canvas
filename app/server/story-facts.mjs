@@ -131,7 +131,7 @@ export async function readStoryFactDraft(projectRoot, projectId, pageId, kind) {
   let upstream;
   if (kind === "narrative") {
     upstream = {
-      prompt_sha256: hashCanonicalJson(await readPlainJson(targetPath(project.projectDirectory,targetRelativePath('prompt',pageId)), 'page prompt')),
+      prompt_sha256: persisted.page_kind==='collage'?null:hashCanonicalJson(await readPlainJson(targetPath(project.projectDirectory,targetRelativePath('prompt',pageId)), 'page prompt')),
       membership: await readPageMembership(project.projectDirectory, pageId),
       characters: await readCharacterReferences(project.projectDirectory, persisted.characters, { includePrompt: false, allowMissing: true }),
       speakers: await readDialogueSpeakerIdentities(project.projectDirectory, storyNarrativeSpeakerIds(persisted)),
@@ -260,7 +260,7 @@ async function assertNarrativeUpstream(projectDirectory, baselineContext) {
     const membership = await readPageMembership(projectDirectory, baselineContext.page_id);
     const characters = await readCharacterReferences(projectDirectory, baselineContext.upstream.characters.references, { includePrompt: false, allowMissing: true });
     const speakers = await readDialogueSpeakerIdentities(projectDirectory, baselineContext.upstream.speakers.ids);
-    if (hashCanonicalJson(await readPlainJson(targetPath(projectDirectory,targetRelativePath('prompt',baselineContext.page_id)), 'page prompt')) !== baselineContext.upstream.prompt_sha256
+    if (baselineContext.upstream.prompt_sha256!==null && hashCanonicalJson(await readPlainJson(targetPath(projectDirectory,targetRelativePath('prompt',baselineContext.page_id)), 'page prompt')) !== baselineContext.upstream.prompt_sha256
       || membership.sha256 !== baselineContext.upstream.membership.sha256
       || characters.sha256 !== baselineContext.upstream.characters.sha256
       || speakers.sha256 !== baselineContext.upstream.speakers.sha256) {
@@ -288,6 +288,7 @@ async function assertPromptUpstream(projectDirectory, baselineContext) {
 
 // 剧情引用被移除时，连带清理页面 Prompt 中对应的整段覆盖与图片选择，不保留隐藏草稿。
 async function planRemovedReferenceCleanup(projectDirectory, pageId, persisted, baseline, root, projectId) {
+  if(persisted.page_kind==='collage')return {writes:[]};
   const relative = targetRelativePath("prompt", pageId);
   let prompt;
   try { prompt = await readPlainJson(targetPath(projectDirectory, relative), relative); }
@@ -384,6 +385,7 @@ async function assertPageLetteringAnchors(projectDirectory, pageId, baseline, pe
 }
 
 export async function narrativeDownstreamDiagnostics(projectDirectory, pageId, narrative) {
+  if(narrative.page_kind==='collage')return [];
   try {
     const prompt = await readPlainJson(path.join(projectDirectory, "pages", `${pageId}.prompt.json`), "page prompt");
     const layouts = await readPlainJson(path.join(projectDirectory, "lettering", "dialogue-layouts.json"), "lettering")
@@ -442,16 +444,18 @@ async function listStoryPageFiles(projectRoot, projectDirectory) {
   const indexed = new Set(pageIdsFromIndex(await readStoryPagesIndex(projectDirectory)));
   const narrativePageIds = [];
   const promptPageIds = [];
+  const collagePageIds=[],pageKinds={};
   for (const entry of await readdir(pagesDirectory, { withFileTypes: true })) {
-    const match = /^(page-(?:\d{3}|[a-f0-9]{12}))\.(content|prompt)\.json$/.exec(entry.name);
+    const match = /^(page-(?:\d{3}|[a-f0-9]{12}))\.(content|prompt|collage)\.json$/.exec(entry.name);
     if (!match || !indexed.has(match[1])) continue;
     if (!entry.isFile() || entry.isSymbolicLink()) fail("unsafe_story_edit_file", [`pages/${entry.name} 不是普通文件`]);
-    if (match[2] === "content") narrativePageIds.push(match[1]);
+    if (match[2] === "content") {narrativePageIds.push(match[1]);pageKinds[match[1]]=(await readPlainJson(path.join(pagesDirectory,entry.name),entry.name)).page_kind;}
+    else if(match[2]==='collage')collagePageIds.push(match[1]);
     else promptPageIds.push(match[1]);
   }
   narrativePageIds.sort((left, right) => left.localeCompare(right, "en"));
   promptPageIds.sort((left, right) => left.localeCompare(right, "en"));
-  return { narrativePageIds, promptPageIds };
+  return { narrativePageIds, promptPageIds,collagePageIds,pageKinds };
 }
 
 async function storyPageDiagnostics(projectRoot, projectDirectory, outline, pagesIndex) {

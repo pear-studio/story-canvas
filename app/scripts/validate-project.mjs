@@ -6,6 +6,7 @@ import { validateTranslationDocument } from '../server/page-translation-document
 import { validatePageRewriteDocument } from '../server/page-rewrite.mjs';
 import { validateSceneIndexDocument, validateSceneProfileDocument, validateSceneVisualDocument, validateScenePromptDocument } from '../server/scene-files.mjs';
 import { readFile, readdir } from "node:fs/promises";
+import {readCollage,resolveCollageMedia} from '../server/collage-pages.mjs';
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -116,7 +117,7 @@ export async function validateProject(projectRoot) {
   for(const id of translationPageIds){try{const document=await readJson(projectRoot,`pages/${id}.translations.json`);errors.push(...validateTranslationDocument(document,storyNarratives[id]??{}).map(error=>`pages/${id}.translations.json：${error}`));}catch(error){errors.push(error.message);}}
   for (const id of indexedIds) {
     if (!narrativePageIds.includes(id)) errors.push(`页面文件：missing_content_file（page_id=${id}）`);
-    if (!storyPromptPageIds.includes(id)) errors.push(`页面文件：missing_prompt_file（page_id=${id}）`);
+    if (storyNarratives[id]?.page_kind!=='collage' && !storyPromptPageIds.includes(id)) errors.push(`页面文件：missing_prompt_file（page_id=${id}）`);
   }
   for (const id of new Set([...narrativePageIds, ...storyPromptPageIds, ...rewritePageIds,...translationPageIds])) if (!indexedIds.has(id)) errors.push(`页面文件：unindexed_page（page_id=${id}）`);
   const characterDirectory = path.join(projectRoot, "characters");
@@ -148,6 +149,10 @@ export async function validateProject(projectRoot) {
     if (!ownerValid) warnings.push(`页面归属待整理：${entry.page_id}`);
     const content = storyNarratives[entry.page_id];
     for (const reference of content?.characters ?? []) if (!knownCharacters.has(reference.character_id) || !visualByCharacter[reference.character_id]?.variants.some(v => v.id === reference.variant_id)) warnings.push(`页面角色引用待修复：${entry.page_id}/${reference.character_id}/${reference.variant_id}`);
+    if(content?.page_kind==='collage'){
+      try{const doc=await readCollage(projectRoot,entry.page_id);if(!doc)errors.push(`组图文档缺失：${entry.page_id}`);else for(const media of Object.values(await resolveCollageMedia(projectRoot,doc)))if(media.error)warnings.push(`组图来源未就绪：${entry.page_id} / ${media.page_id}：${media.error}`);}catch(error){errors.push(`组图无效：${entry.page_id}：${error.message}`);}
+      continue;
+    }
     try {
       const prompt = await readJson(projectRoot, `pages/${entry.page_id}.prompt.json`);
       errors.push(...checkPagePromptOverrideReferences(prompt, content?.characters ?? []).map(error => `pages/${entry.page_id}.prompt.json：${error}`));

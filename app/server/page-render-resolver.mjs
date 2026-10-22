@@ -214,6 +214,8 @@ function createSceneReader(projectDirectory) {
 }
 
 async function loadPageSnapshot(projectDirectory, pageId, exactPageKey, renderOverride, readScene) {
+  const source=await readJsonFact(projectDirectory, `pages/${pageId}.content.json`);
+  if(source.value.page_kind==='collage')fail('collage_has_no_generation',['组图页使用 finished.output 合成，无需生成模型']);
   const render = renderOverride ?? await readPageRenderSettings(projectDirectory, pageId);
   const modelId = render.model_id;
   const identity = await readPageIdentity(projectDirectory, pageId);

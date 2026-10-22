@@ -1,3 +1,4 @@
+import {useNavigationReorder,NavigationReorderHandle,navigationDropClass,navigationSourceClass,NavigationReorderPreviewOverlay,type NavigationDrop} from './NavigationReorder';
 import {pageNavigationInfo,PageNavigationLabel} from './PageNavigationSummary';
 import {currentPageSave,usePageChanges} from './use-page-changes';
 import {ComicMergeDialog} from './ComicMergeDialog';
@@ -6,6 +7,7 @@ import {ComicPageWorkspace,type ComicPanelControls} from './ComicPageWorkspace';
 import {comicAction} from './comic-client';
 import { storyPageNumbers } from '../shared/story-page-numbers.mjs';
 import {VideoPageWorkspace} from './VideoPageWorkspace';
+import {CollageWorkspace} from './CollageWorkspace';
 import {usePageRewrite} from './models/qwen/usePageRewrite';
 import { ProjectDirectoryDialog, type RegisteredProject } from "./ProjectDirectoryDialog";
 import { ProjectListEntry } from "./ProjectListEntry";
@@ -283,147 +285,6 @@ function useNavigationCollapse(projectId: string, section: "story" | "characters
   return { collapsed, toggle };
 }
 
-
-type NavigationDragKind = "chapter" | "sequence" | "story-page" | "character-variant" | "character-page" | "scene-variant" | "scene-page";
-
-type NavigationDrop = {
-  owner?: string | null;
-  kind: NavigationDragKind;
-  id: string;
-  sourceGroup: string | null;
-  targetGroup: string | null;
-  targetId: string | null;
-  placement: "before" | "after";
-};
-
-type NavigationReorderSource = { kind: NavigationDragKind; id: string; group: string | null; owner?: string; title: string };
-
-type NavigationReorderPreview = {
-  x: number;
-  y: number;
-  title: string;
-  sourceKind: NavigationDragKind;
-  sourceId: string;
-  targetKind: NavigationDragKind | null;
-  targetId: string | null;
-  placement: "before" | "after";
-};
-
-const navigationGroupHeadingKind: Partial<Record<NavigationDragKind, NavigationDragKind>> = {
-  sequence: "chapter",
-  "story-page": "sequence",
-  "character-page": "character-variant",
-  "scene-page": "scene-variant",
-};
-
-type NavigationReorderDrag = NavigationDrop & {
-  pointerId: number;
-  startX: number;
-  startY: number;
-  title: string;
-  owner: string | null;
-  dragging: boolean;
-  visualKind: NavigationDragKind | null;
-  visualId: string | null;
-};
-
-function useNavigationReorder(onDrop: (drop: NavigationDrop) => void) {
-  const drag = useRef<NavigationReorderDrag | null>(null);
-  const suppressClick = useRef(false);
-  const [preview, setPreview] = useState<NavigationReorderPreview | null>(null);
-
-  function begin(event: ReactPointerEvent<HTMLButtonElement>, source: NavigationReorderSource) {
-    if (event.button !== 0) return;
-    event.stopPropagation();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    drag.current = { pointerId: event.pointerId, kind: source.kind, id: source.id, sourceGroup: source.group, targetGroup: null, targetId: null, placement: "before", startX: event.clientX, startY: event.clientY, title: source.title, owner: source.owner ?? null, dragging: false, visualKind: null, visualId: null };
-  }
-
-  function update(event: ReactPointerEvent<HTMLButtonElement>) {
-    const current = drag.current;
-    if (!current || current.pointerId !== event.pointerId) return;
-    event.stopPropagation();
-    if (!current.dragging) {
-      if (Math.hypot(event.clientX - current.startX, event.clientY - current.startY) < 5) return;
-      current.dragging = true;
-      suppressClick.current = true;
-    }
-    event.preventDefault();
-    current.targetGroup = null;
-    current.targetId = null;
-    current.visualKind = null;
-    current.visualId = null;
-    const element = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-nav-kind]");
-    if (element) {
-      const kind = element.dataset.navKind as NavigationDragKind | undefined;
-      const id = element.dataset.navId ?? "";
-      const group = element.dataset.navGroup ?? null;
-      const owner = element.dataset.navOwner ?? null;
-      if (kind && id && (!current.owner || !owner || owner === current.owner)) {
-        if (kind === current.kind) {
-          const bounds = element.getBoundingClientRect();
-          current.placement = event.clientY < bounds.top + bounds.height / 2 ? "before" : "after";
-          current.targetGroup = group;
-          current.targetId = id;
-          current.visualKind = kind;
-          current.visualId = id;
-        } else if (navigationGroupHeadingKind[current.kind] === kind) {
-          current.placement = "after";
-          current.targetGroup = id;
-          current.visualKind = kind;
-          current.visualId = id;
-        }
-      }
-    }
-    setPreview({ x: event.clientX, y: event.clientY, title: current.title, sourceKind: current.kind, sourceId: current.id, targetKind: current.visualKind, targetId: current.visualId, placement: current.placement });
-  }
-
-  function finish(event: ReactPointerEvent<HTMLButtonElement>) {
-    const current = drag.current;
-    if (!current || current.pointerId !== event.pointerId) return;
-    event.stopPropagation();
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-    drag.current = null;
-    setPreview(null);
-    if (!current.dragging) return;
-    window.requestAnimationFrame(() => { suppressClick.current = false; });
-    if (current.visualKind) onDrop({ owner: current.owner, kind: current.kind, id: current.id, sourceGroup: current.sourceGroup, targetGroup: current.targetGroup, targetId: current.targetId, placement: current.placement });
-  }
-
-  function cancel(event: ReactPointerEvent<HTMLButtonElement>) {
-    const current = drag.current;
-    if (!current || current.pointerId !== event.pointerId) return;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-    drag.current = null;
-    setPreview(null);
-    if (current.dragging) window.requestAnimationFrame(() => { suppressClick.current = false; });
-  }
-
-  return { begin, update, finish, cancel, suppressClick, preview };
-}
-
-type NavigationReorder = ReturnType<typeof useNavigationReorder>;
-
-function NavigationReorderHandle({ label, source, reorder }: { label: string; source: NavigationReorderSource; reorder: NavigationReorder }) {
-  return <button type="button" className="page-reorder-handle" aria-label={`拖动排序：${label}`} title="拖动排序" onPointerDown={(event) => reorder.begin(event, source)} onPointerMove={reorder.update} onPointerUp={reorder.finish} onPointerCancel={reorder.cancel} onClick={(event) => { event.stopPropagation(); if (reorder.suppressClick.current) event.preventDefault(); }} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); }}><svg viewBox="0 0 12 18" aria-hidden="true">{[4, 9, 14].flatMap(y => [3, 8].map(x => <circle key={`${x}:${y}`} cx={x} cy={y} r="1.2" />))}</svg></button>;
-}
-
-function navigationDropClass(reorder: NavigationReorder, kind: NavigationDragKind, id: string) {
-  const preview = reorder.preview;
-  if (!preview || preview.targetKind !== kind || preview.targetId !== id) return "";
-  return preview.placement === "before" ? "is-drop-before" : "is-drop-after";
-}
-
-function navigationSourceClass(reorder: NavigationReorder, kind: NavigationDragKind, id: string) {
-  const preview = reorder.preview;
-  return preview && preview.sourceKind === kind && preview.sourceId === id ? "is-reorder-source" : "";
-}
-
-function NavigationReorderPreviewOverlay({ reorder }: { reorder: NavigationReorder }) {
-  const preview = reorder.preview;
-  if (!preview) return null;
-  return <div className="page-reorder-preview" style={{ left: preview.x + 12, top: preview.y + 12 }} aria-hidden="true"><i>⋮</i><span>{preview.title}</span></div>;
-}
 
 function StoryNavigation({ view, candidateCounts, latestVideos, selectedKey, revealKeys, revealRequest, overviewTarget, onSelect, onOpenOverview, onRequestMenu, onDrop, chapterMenuItems, sequenceMenuItems, pageMenuItems }: {
   view: ProjectWorkbenchView;
@@ -1460,6 +1321,7 @@ export default function StoryWorkbench({ initialImagesHidden, imagePrivacyStorag
       { id: `create-story-page-${sequence.id}`, label: "新增页面", onSelect: () => createStoryPage(sequence) },
       {id:`create-video-${sequence.id}`,label:"新增动态页",onSelect:()=>void performNavigationAction("create-story-page",{sequence_id:sequence.id,page_kind:"video"},"动态页已创建")},
       { id: `create-story-text-page-${sequence.id}`, label: "新增文字页", onSelect: () => void performNavigationAction("create-story-page", { sequence_id: sequence.id, page_kind: "text" }, "文字页已创建") },
+      {id:`create-collage-${sequence.id}`,label:"新增组图页",onSelect:()=>void performNavigationAction("create-story-page",{sequence_id:sequence.id,page_kind:"collage"},"组图页已创建")},
       { id: `delete-sequence-${sequence.id}`, label: "删除情节单元", hint: sequence.pages.length ? "需先删除其中的页面" : undefined, disabled: sequence.pages.length > 0, danger: true, onSelect: () => void (async () => { if (await confirm({ kind: "warning", title: "删除情节单元", message: `删除“${sequence.title}”？`, danger: true })) await performNavigationAction("delete-sequence", { sequence_id: sequence.id }, "情节单元已删除"); })() },
     ];
   }
@@ -1469,6 +1331,7 @@ export default function StoryWorkbench({ initialImagesHidden, imagePrivacyStorag
       { id: `move-${page.page_id}`, label: "移动页面", onSelect: () => setMovingPage(page) },
       { id: `create-story-page-after-${page.page_id}`, label: "新增页面", onSelect: () => { const sequence = view?.outline.chapters.flatMap(c => c.sequences).find(s => s.pages.some(p => p.page_id === page.page_id)); if (sequence) createStoryPage(sequence, page.page_id); } },
       {id:`create-video-after-${page.page_id}`,label:"在此页后新增动态页",onSelect:()=>void performNavigationAction("create-story-page",{sequence_id:page.sequence_id,page_kind:"video",after_page_id:page.page_id},"动态页已创建")},
+      {id:`create-collage-after-${page.page_id}`,label:"在此页后新增组图页",onSelect:()=>void performNavigationAction("create-story-page",{sequence_id:page.sequence_id,page_kind:"collage",after_page_id:page.page_id},"组图页已创建")},
       { id: `duplicate-story-page-${page.page_id}`, label: "复制页面", onSelect: () => void performNavigationAction("duplicate-page", { page_id: page.page_id }, "页面已复制") },
       { id: `delete-story-page-${page.page_id}`, label: "删除页面", danger: true, onSelect: () => void (async () => { if (await confirm({ kind: "warning", title: "删除剧情页", message: `删除“${page.title}”？`, danger: true })) await performNavigationAction("delete-page", { page_id: page.page_id }, "剧情页已删除"); })() },
     ];
@@ -1875,6 +1738,7 @@ export default function StoryWorkbench({ initialImagesHidden, imagePrivacyStorag
           : activeTab === "project-materials" ? <ProjectMaterialsView projectId={projectId} />
 
 
+          : activeLocation?.page.page_kind==='collage'&&activeLocation.page.collage ? <CollageWorkspace key={projectId+activeLocation.page.page_id} projectId={projectId} page={activeLocation.page} breadcrumb={activeLocation.breadcrumb} editorResizer={<PaneResizeHandle className="pane-resizer--editor" label="调整组图参数栏宽度" value={editorWidth} defaultValue={44} min={32} max={64} unit="%" onChange={setEditorWidth}/>} onReload={reload}/>
           : activeLocation?.page.page_kind==='video' ? <VideoPageWorkspace key={projectId+activeLocation.page.page_id} projectId={projectId} page={activeLocation.page} pages={view.outline.chapters.flatMap(c=>c.sequences.flatMap(s=>s.pages))} breadcrumb={activeLocation.breadcrumb} onReload={reload}/>
           : activeLocation && isEditablePage(activeLocation.page) && activeLocation.page.render_capabilities ? <PageWorkspace letteringLocale={letteringLocale} onLetteringLocaleChange={setLetteringLocale} pageOrder={activeLocation.page.kind === "story" ? locations.filter(item => item.page.kind === "story").findIndex(item => item.key === activeLocation.key) + 1 : activeOwnerLocations.findIndex(item => item.key === activeLocation.key) + 1} editorTab={navigation.editorTab} onEditorTabChange={tab => navigate({ ...navigationRef.current, editorTab: tab }, true)} onOpenLetteringSettings={() => void openTab("project-lettering")} onOpenPromptOverview={() => void openPromptOverview(activeLocation.page)} projectId={projectId} location={{...activeLocation, page:activeLocation.page}} ownerPages={activeOwnerLocations} characters={view.characters} scenes={view.scenes?.scenes ?? []} renderCapabilities={activeLocation.page.render_capabilities} defaultRenderProfile={activeLocation.page.render?.profile_id??view.project.default_render_profile} canvas={activeLocation.page.render?.canvas??view.project.canvas} letteringStyle={view.project.lettering_settings} taskCollection={runtimeTasks} busy={loading} editorWidth={editorWidth} candidateWidth={candidateWidth} onEditorWidthChange={setEditorWidth} onCandidateWidthChange={setCandidateWidth} onPageChanged={(page, replacement) => { if (projectRequestGuard.current.isProjectCurrent(renderedProjectScope)) setView((current) => current ? replaceWorkbenchPage(current, page, replacement) : current); }} onReload={reload} onTrackedTasksChange={updateTrackedRuntimeTasks} />
           : activeTab === "characters" && activeCharacter && isEditableSetting(activeCharacter) ? (<SettingView key={`character:${activeCharacter.id}`} projectId={projectId} character={activeCharacter} initialSettingId={activeCharacterSettingId} busy={loading} onSaved={(result) => { if (!projectRequestGuard.current.isProjectCurrent(renderedProjectScope)) return; setView((current) => current ? { ...current, characters: current.characters.map((entry) => entry.id === activeCharacter.id ? { ...entry, ...result } : entry) } : current); void reload(true); }} onSettingChange={(next) => navigate(openNavigationCharacter(navigationRef.current, activeCharacter.id, next))} />)

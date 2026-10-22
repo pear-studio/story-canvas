@@ -17,7 +17,7 @@ export function StoryCandidateRefresh({ projectId, pages, busy, scopeLabel = "�
   const controller = useRef<AbortController | null>(null);
   const stop = useRef(false);
   const mounted = useRef(true);
-  const sources=pages.filter(page=>page.page_kind!=='text').flatMap((page,index)=>{
+  const sources=pages.filter(page=>!['text','collage'].includes(page.page_kind??'')).flatMap((page,index)=>{
     const number=pageOrder?.get(page.page_id)??index+1;
     return page.comic?page.comic.document.order.map((id,panel)=>({page_key:{page_id:id},title:`${page.title} · 分镜 ${panel+1}`,number})):[{page_key:page.page_key,title:page.title,number}];
   });

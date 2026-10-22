@@ -1,3 +1,4 @@
+import {emptyCollage} from '../shared/collage-layout.mjs';
 import { readTranslationDocument, translationPath } from './page-translation-document.mjs';
 import { FactError, writeJsonAtomic } from './fact-storage.mjs';
 import { commitFactChanges } from './fact-commit.mjs';
@@ -70,6 +71,16 @@ async function newPageId(directory,index) {
 export async function createPage(root,projectId,owner,{templateId=null,afterPageId=null,beforePageId=null,pageKind=null,characterId,variantId,content:initialContent,beforeCommit,extraWrites,renderSettings}={}) {
   const project=await projectAt(root,projectId), directory=project.projectDirectory;
   const projectDocument=await optionalJson(directory,'project.json');
+  if(pageKind==='collage'){
+    await assertPageOwner(directory,owner);
+    if(owner.owner_kind!=='story'||owner.parent_page_id||templateId)fail('collage_story_page_required');
+    if(initialContent!==undefined&&(!initialContent||typeof initialContent!=='object'||Array.isArray(initialContent)||Object.keys(initialContent).some(key=>key!=='title')))fail('invalid_page_document',['组图初始 content 仅接受 title，图片使用 page.collage.save 编辑']);
+    const index=await readPageIndex(directory),next=clone(index),id=await newPageId(directory,index);
+    const content={$schema:STORY_PAGE_NARRATIVE_SCHEMA_ID,title:initialContent?.title??'未命名组图',page_kind:'collage',scene_description:'',characters:[],dialogue:[]};
+    assertValid(validateStoryPageNarrativeDocument(content));insertEntry(next,{page_id:id,...owner},{afterPageId,beforePageId});
+    await commitFactChanges(directory,[{relative:pageRelativePath(id,'content'),before:null,after:content},{relative:pageRelativePath(id,'collage'),before:null,after:emptyCollage(projectDocument.canvas)},{relative:'pages/index.json',before:index,after:next}]);
+    return {page_id:id,page_key:{page_id:id},...owner};
+  }
   const bundle=await compileEffectiveRenderProfile({repositoryRoot:root,projectRoot:directory,profileId:projectDocument.default_render_profile});
   if(bundle.blocked)fail('render_profile_override_conflict');
   const render=renderSettings?clone(renderSettings):pageSettingsFromDefaults(projectDocument,profileModelAdapter(bundle.effective_profile).id);
@@ -121,7 +132,7 @@ export async function movePage(root,projectId,pageId,owner,{beforePageId=null,af
   const comic=await optionalJson(directory,pageRelativePath(pageId,'comic'));
   if(comic&&owner.owner_kind!=='story')fail('comic_story_page_required');
   const content=await readPageContent(directory,pageId);
-  if(['text','video'].includes(content.page_kind)&&owner.owner_kind!=='story')fail('text_page_story_only');
+  if(['text','video','collage'].includes(content.page_kind)&&owner.owner_kind!=='story')fail('text_page_story_only');
   if(beforePageId!==null && afterPageId!==null)fail('invalid_page_position',['before_page_id 与 after_page_id 只能提供一个']);
   if(beforePageId===pageId || afterPageId===pageId){if(!sameOwner(source,owner))fail('page_anchor_not_found',[beforePageId]);return {page_id:pageId,...owner};}
   const next=clone(index);next.pages=next.pages.filter(page=>page.page_id!==pageId);insertEntry(next,{page_id:pageId,...owner},{beforePageId,afterPageId});
@@ -151,7 +162,13 @@ export async function duplicatePage(root,projectId,pageId) {
   const {projectDirectory:directory}=await projectAt(root,projectId),index=await readPageIndex(directory),source=await requirePage(directory,pageId);
   if(source.parent_page_id)fail('panel_owned_by_page');
   const id=await newPageId(directory,index),next=clone(index);insertEntry(next,{...source,page_id:id},{afterPageId:pageId});
-  const content=await readPageContent(directory,pageId),prompt=await readPagePrompt(directory,pageId);
+  const content=await readPageContent(directory,pageId);
+  if(content.page_kind==='collage'){
+    const document=await optionalJson(directory,pageRelativePath(pageId,'collage'));
+    await commitFactChanges(directory,[{relative:pageRelativePath(id,'content'),before:null,after:{...content,title:content.title+'2'}},{relative:pageRelativePath(id,'collage'),before:null,after:document},{relative:'pages/index.json',before:index,after:next}]);
+    return {page_id:id,page_key:{page_id:id},source_page_id:pageId};
+  }
+  const prompt=await readPagePrompt(directory,pageId);
   const suffix=content.title.match(/\d+$/);
   content.title=suffix?content.title.slice(0,-suffix[0].length)+(BigInt(suffix[0])+1n):`${content.title}2`;
   const writes=[{relative:pageRelativePath(id,'prompt'),before:null,after:prompt}];
@@ -184,7 +201,7 @@ export async function deletePage(root,projectId,pageId,{beforeCommit}={}) {
   if((await listFinishedJobs(directory)).some(job=>ids.includes(job.page_id)&&finishedBusyStatuses.has(job.status)))fail('page_finished_output_busy',[pageId]);
   const removedReferences = await Promise.all(ids.map(id=>optionalJson(directory,pageRelativePath(id,'prompt'))));
   const deletionId=`deleted-${randomBytes(6).toString('hex')}`,archive=path.join(path.resolve(root),'Saved/state/deleted-pages',project.projectId,deletionId);
-  const descriptors=ids.flatMap(id=>[...['content','prompt','render','rewrite','text-sources','comic'].map(kind=>pageRelativePath(id,kind)),translationPath(id),`Outputs/pages/${id}`]);
+  const descriptors=ids.flatMap(id=>[...['content','prompt','render','rewrite','text-sources','comic','collage'].map(kind=>pageRelativePath(id,kind)),translationPath(id),`Outputs/pages/${id}`]);
   const siblings=index.pages.filter(page=>sameOwner(page,entry)),ordinal=siblings.findIndex(page=>page.page_id===pageId);
   const position={ordinal,previous_page_id:siblings[ordinal-1]?.page_id??null,next_page_id:siblings[ordinal+1]?.page_id??null};
   if(beforeCommit)await beforeCommit();

@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://storyvisualizer.local/schemas/collage-page.schema.json",
+  "description": "自由组图；assets 只保存来源 page_id，实时采用该页唯一静态候选。零张或多张候选不自动选择；box 与 crop 为归一化矩形，items 从底到顶，背景固定最底层。",
+  "type": "object",
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "canvas": {
+      "enum": [
+        "3:4",
+        "1:1",
+        "4:3",
+        "2:3",
+        "9:16"
+      ]
+    },
+    "assets": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-zA-Z0-9_-]{1,90}$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/asset"
+      }
+    },
+    "background": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "asset_id": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9_-]{1,90}$"
+            },
+            "crop": {
+              "$ref": "#/$defs/rect"
+            },
+            "opacity": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "enabled": {
+              "type": "boolean",
+              "description": "false 保留背景选择和设置，仅显示黑底"
+            }
+          },
+          "required": [
+            "asset_id",
+            "crop",
+            "opacity",
+            "enabled"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "items": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]{1,90}$"
+          },
+          "asset_id": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]{1,90}$"
+          },
+          "box": {
+            "$ref": "#/$defs/rect"
+          },
+          "crop": {
+            "$ref": "#/$defs/rect"
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "false 保留图片排版，不参与预览、平铺和成品输出"
+          }
+        },
+        "required": [
+          "id",
+          "asset_id",
+          "box",
+          "crop",
+          "enabled"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "version",
+    "canvas",
+    "assets",
+    "background",
+    "items"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "rect": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "y": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "w": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "exclusiveMinimum": 0
+        },
+        "h": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "exclusiveMinimum": 0
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "w",
+        "h"
+      ],
+      "additionalProperties": false
+    },
+    "asset": {
+      "type": "object",
+      "properties": {
+        "page_id": {
+          "type": "string",
+          "pattern": "^page-(?:[0-9]{3}|[a-f0-9]{12})$"
+        }
+      },
+      "required": [
+        "page_id"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

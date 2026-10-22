@@ -30,7 +30,8 @@
       "enum": [
         "text",
         "video",
-        "comic"
+        "comic",
+        "collage"
       ]
     },
     "candidate_id": {
@@ -75,7 +76,8 @@
           "enum": [
             "text",
             "video",
-            "comic"
+            "comic",
+            "collage"
           ]
         },
         "display_title": {
@@ -215,6 +217,18 @@
       "items": {
         "type": "string"
       }
+    },
+    "collage": {
+      "$ref": "https://storyvisualizer.local/schemas/collage-page.schema.json"
+    },
+    "collage_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "collage_media_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "输出时冻结的组图来源候选指纹，用于判断成品是否过时"
     }
   },
   "allOf": [

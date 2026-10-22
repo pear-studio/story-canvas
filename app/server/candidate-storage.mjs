@@ -109,6 +109,11 @@ export async function readGenerationCandidateRecords(projectDirectory, { pageKey
   return records.filter(Boolean);
 }
 
+// 批量成品和组图页面引用共用：候选必须唯一，不按时间擅自挑选。
+export function uniqueCandidateSelection(candidates) {
+  return {candidate:candidates.length===1?candidates[0]:null,reason:candidates.length===0?'没有候选图':candidates.length>1?`有 ${candidates.length} 张候选，请只保留一张`:null};
+}
+
 // 三个文件准备完才发布整个目录。重复收集只接受已发布的同一任务成果，不覆盖图片。
 // 批量搬移（如存储迁移的临时副本）传 warm: false：预热目标路径随后会被改名，写入即浪费。
 export async function publishCandidateResult(projectDirectory, task, item, image, { submission = null, evidence = null, warm = true } = {}) {

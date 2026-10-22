@@ -31,7 +31,7 @@ export function readNavigationUrlState(search: string): NavigationUrlState {
     sceneId: params.get("scene") ?? "",
     sceneSettingId: params.get("scene_setting") ?? "profile",
     activePageKey: pageId ? { page_id: pageId } : null,
-    ...(story&&['text','image','video','comic'].includes(pageType??'')?{storyPageType:pageType as PageType}:{}),
+    ...(story&&['text','image','video','comic','collage'].includes(pageType??'')?{storyPageType:pageType as PageType}:{}),
     ...(story&&params.get('sequence')?{overviewTarget:{kind:'sequence' as const,id:params.get('sequence')!}}:story&&params.get('chapter')?{overviewTarget:{kind:'chapter' as const,id:params.get('chapter')!}}:{}),
   };
 }

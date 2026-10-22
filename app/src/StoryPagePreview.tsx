@@ -4,9 +4,21 @@ import {loadPageMedia,type WorkbenchPage,type PageMedia} from './project-workben
 import {mediaVariantUrl} from './media-variant';
 import ZoomableImageLightbox from './ImageLightbox';
 import {videoPreviewUrl} from './video-preview';
+import {CollageCanvas} from './CollageCanvas';
+import {Modal} from './Modal';
+import {useCollageMedia} from './collage-client';
+
+export function StoryPagePreview(props:{projectId:string;page:WorkbenchPage;onMediaChange:(media:PageMedia)=>void}){
+  return props.page.collage?<CollagePagePreview projectId={props.projectId} page={props.page}/>:<GeneratedStoryPagePreview {...props}/>;
+}
+function CollagePagePreview({projectId,page}:{projectId:string;page:WorkbenchPage}){
+  const [open,setOpen]=useState(false);
+  const root=useRef<HTMLButtonElement>(null),media=useCollageMedia(projectId,page.collage!.document,root);
+  return <><button type="button" ref={root} className="story-page-thumbnail" style={{aspectRatio:page.collage!.document.canvas.replace(':','/')}} aria-label={`预览 ${page.title}`} onClick={()=>setOpen(true)}><CollageCanvas projectId={projectId} document={page.collage!.document} media={media} width={320}/></button>{open&&<Modal title={page.title} onClose={()=>setOpen(false)}><CollageCanvas projectId={projectId} document={page.collage!.document} media={media}/></Modal>}</>;
+}
 
 /** 只轮询可见卡片；分镜按已保存的各格选图、分格和裁切展示整页。 */
-export function StoryPagePreview({projectId,page,onMediaChange}:{projectId:string;page:WorkbenchPage;onMediaChange:(media:PageMedia)=>void}){
+function GeneratedStoryPagePreview({projectId,page,onMediaChange}:{projectId:string;page:WorkbenchPage;onMediaChange:(media:PageMedia)=>void}){
   const root=useRef<HTMLButtonElement>(null);
   const [state,setState]=useState<{media:Record<string,PageMedia>;loaded:boolean;failed:boolean}>({media:{},loaded:false,failed:false});
   const [fullscreen,setFullscreen]=useState(false),[broken,setBroken]=useState(false);

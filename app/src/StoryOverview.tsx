@@ -163,7 +163,7 @@ function StoryPageCard({ projectId, page, number, busy, letteringStyle, canvasAs
       <button type="button" className="story-page-open" aria-label={`打开页面：${page.title}`} onClick={() => onOpen(page)}>
         <span className="story-overview-page-number">{String(number).padStart(2, "0")}</span><span data-tooltip={info.description}><PageTypeIcon type={info.type}/></span><strong>{page.title}</strong>
       </button>
-      {!page.comic&&page.page_kind !== "text" && <button type="button" className="story-page-generate" aria-label={`为“${page.title}”生成一张候选`} title="生成一张候选" disabled={busy || submitting} aria-busy={submitting} onClick={() => void generate()}>{submitting ? "…" : "+"}</button>}
+      {!page.comic&&!['text','collage'].includes(page.page_kind??'') && <button type="button" className="story-page-generate" aria-label={`为“${page.title}”生成一张候选`} title="生成一张候选" disabled={busy || submitting} aria-busy={submitting} onClick={() => void generate()}>{submitting ? "…" : "+"}</button>}
     </div>
     {info.label&&<small className="story-page-card-meta" data-tooltip={info.description}>{info.label}</small>}
     {source&&<small className="story-page-source" data-tooltip={source}>{source}</small>}

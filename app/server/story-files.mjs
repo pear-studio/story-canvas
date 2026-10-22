@@ -147,7 +147,7 @@ export function validateStoryPageNarrativeDocument(narrative) {
     if (narrative.page_kind !== 'video') errors.push('video_postprocess 仅动态页使用');
     try { normalizeVideoPostprocess(narrative.video_postprocess); } catch (error) { errors.push(error.message); }
   }
-  if (narrative.page_kind !== undefined && !["text","video"].includes(narrative.page_kind)) errors.push("未知页面格式");
+  if (narrative.page_kind !== undefined && !["text","video","collage"].includes(narrative.page_kind)) errors.push("未知页面格式");
   if (narrative.body !== undefined && (!isTextPage || typeof narrative.body !== "string")) errors.push("narrative.body 仅文字页使用，必须是字符串");
   if (narrative.display_title !== undefined && (!isTextPage || typeof narrative.display_title !== "string")) errors.push("narrative.display_title 仅文字页使用，必须是字符串");
   if (narrative.text_layout !== undefined) {
@@ -304,7 +304,7 @@ export function prepareStoryPageNarrativeForPersistence(
   return prepared;
 }
 
-export function diagnoseStoryPageFiles({ outline, pagesIndex, narrativePageIds = [], promptPageIds = [] }) {
+export function diagnoseStoryPageFiles({ outline, pagesIndex, narrativePageIds = [], promptPageIds = [],pageKinds={},collagePageIds=[] }) {
   const diagnostics = [];
   const knownSequences = new Set(sequenceIdsFromOutline(outline));
   const indexed = indexedPages(pagesIndex);
@@ -319,7 +319,8 @@ export function diagnoseStoryPageFiles({ outline, pagesIndex, narrativePageIds =
   const allPageIds = new Set([...indexedPageIds, ...narrativeIds, ...promptIds]);
   for (const pageId of allPageIds) {
     if (!narrativeIds.has(pageId)) diagnostics.push({ code: "missing_narrative_file", page_id: pageId });
-    if (!promptIds.has(pageId)) diagnostics.push({ code: "missing_prompt_file", page_id: pageId });
+    if(pageKinds[pageId]==='collage'){if(!collagePageIds.includes(pageId))diagnostics.push({code:'missing_collage_file',page_id:pageId});}
+    else if (!promptIds.has(pageId)) diagnostics.push({ code: "missing_prompt_file", page_id: pageId });
     if (!indexedPageIds.has(pageId)) diagnostics.push({ code: "unindexed_page_file", page_id: pageId });
   }
   return diagnostics;

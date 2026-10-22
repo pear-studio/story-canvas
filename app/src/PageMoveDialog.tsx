@@ -16,7 +16,7 @@ export function PageMoveDialog({ view, page, onClose, onMove }: {
     ...(page.page_kind === 'text' ? [] : (view.scenes?.scenes ?? []).flatMap(setting => setting.visual.variants.map(variant => ({
       label: `场景 / ${setting.name} / ${variant.name}`, owner: { owner_kind: 'scene' as const, scene_id: setting.id, variant_id: variant.id },
     })))),
-  ].filter(item => page.page_kind !== 'text' || item.owner.owner_kind === 'story');
+  ].filter(item => !['text','video','collage'].includes(page.page_kind??'') && !page.comic || item.owner.owner_kind === 'story');
   const [selected, setSelected] = useState('');
   const [busy, setBusy] = useState(false);
   return <Modal title="移动页面" subtitle={page.title} size="content" busy={busy} onClose={onClose} footer={<>

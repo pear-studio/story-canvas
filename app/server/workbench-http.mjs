@@ -73,6 +73,8 @@ import {
 import {readPageTranslation,savePageTranslation} from './page-translations.mjs';
 import {prepareTranslationInspection} from './finished-pages.mjs';
 import {inspectFinishedLettering} from './finished-render.mjs';
+import {collageContext,saveCollage,listCollageSources,previewCollage,resolveCollageMedia,inspectCollage} from './collage-pages.mjs';
+import {arrangeCollage,validateCollage} from '../shared/collage-layout.mjs';
 import {convertComicPage,saveComicPage,splitComicPanel,readComicDocument,restoreComicPage,planComicMerge,mergeComicPages} from './comic-pages.mjs';
 export async function handleWorkbenchRequest({
   request,
@@ -91,6 +93,24 @@ export async function handleWorkbenchRequest({
   workbenchRenderLauncher,
   generationScheduler = null,
 }) {
+  const collageRoute=/^\/api\/projects\/([^/]+)\/workbench\/collage\/(read|save|sources|preview|arrange|media|inspect)$/.exec(decodedPath);
+  if(request.method==='POST'&&collageRoute){
+    const value=await readJsonBody(request),id=collageRoute[1],action=collageRoute[2];
+    const boundary=action==='save'?mutateTargetFacts:['preview','inspect'].includes(action)?mutateDerivedState:readFacts;
+    const result=await boundary(id,async({projectDirectory})=>{
+      if(action==='sources')return listCollageSources(projectDirectory,id,value);
+      if(action==='read')return collageContext(projectDirectory,value.page_key?.page_id);
+      if(action==='save')return saveCollage(projectDirectory,value.page_key?.page_id,value);
+      if(action==='inspect')return inspectCollage(projectRoot,projectDirectory,id,value);
+      const errors=validateCollage(value.document);if(errors.length)throw new ApiError(422,'invalid_collage',errors);
+      if(action==='media')return {media:await resolveCollageMedia(projectDirectory,value.document)};
+      if(action==='arrange'){
+        if(value.item_ids!==undefined&&(!Array.isArray(value.item_ids)||value.item_ids.some(id=>!value.document.items.some(item=>item.id===id))))throw new ApiError(422,'invalid_collage',['item_ids 必须是现有图层 ID 数组']);
+        return {document:arrangeCollage(value.document,value.item_ids,await resolveCollageMedia(projectDirectory,value.document))};
+      }
+      return previewCollage(projectRoot,projectDirectory,id,value.document);
+    });sendOperation(200,result);return true;
+  }
   const comicRoute=/^\/api\/projects\/([^/]+)\/workbench\/comic\/(read|convert|save|split|restore|merge-plan|merge)$/.exec(decodedPath);
   if(request.method==='POST'&&comicRoute){
     const value=await readJsonBody(request),id=comicRoute[1];

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { projectActions } from './projects.mjs';
 import { pageActions } from './pages.mjs';
+import {collageActions} from './collage.mjs';
 import { factActions } from './facts.mjs';
 import { promptActions } from './prompt.mjs';
 import { structureActions } from './structure.mjs';
@@ -21,7 +22,7 @@ import { workbenchRestrictions } from './access-policy.mjs';
 import { videoHelp } from './video-help.mjs';
 import { invalid, validate, schema, string, object } from './contract.mjs';
 const actions = {};
-for (const catalog of [projectActions,structureActions,settingActionsCatalog,pageActions,factActions,promptActions,projectSettingsActions,workspaceActions,mediaActions,translationActions,pageBatchActions,dialogueFormatActions,dictionaryActions,managementActions,comparisonActions,trainingActions,executionActions]) {
+for (const catalog of [projectActions,structureActions,settingActionsCatalog,pageActions,collageActions,factActions,promptActions,projectSettingsActions,workspaceActions,mediaActions,translationActions,pageBatchActions,dialogueFormatActions,dictionaryActions,managementActions,comparisonActions,trainingActions,executionActions]) {
   for (const [name, definition] of Object.entries(catalog)) {
     if (Object.hasOwn(actions,name)) throw new Error(`重复工具操作 ${name}`);
     actions[name]=definition;

@@ -103,7 +103,8 @@ export type WorkbenchPage = {
   prompt_context_sha256?: string | null;
   characters?: Array<{ character_id: string; variant_id: string }>;
   dialogue?: Array<{ id: string; mode: "narration" | "speech" | "thought" | "heart"; speaker?: string; text: string; position?: "top" | "bottom" }>;
-  page_kind?: "text" | "video" | null;
+  page_kind?: "text" | "video" | "collage" | null;
+  collage?:{document:import('../shared/collage-layout.mjs').CollageDocument;sha256:string};
   video_postprocess?: import('../shared/video-postprocess.mjs').VideoPostprocess;
   body?: string;
   display_title?: string;
@@ -279,7 +280,8 @@ export type StoryPageContentDraft = {
   scene_description: string;
   characters: Array<{ character_id: string; variant_id: string }>;
   dialogue: Array<{ id?: string; mode: "narration" | "speech" | "thought" | "heart"; speaker?: string; text: string; position?: "top" | "bottom" }>;
-  page_kind?: "text" | "video" | null;
+  page_kind?: "text" | "video" | "collage" | null;
+  collage?:{document:import('../shared/collage-layout.mjs').CollageDocument;sha256:string};
   body?: string;
   display_title?: string;
   text_layout?: TextPageLayout;
