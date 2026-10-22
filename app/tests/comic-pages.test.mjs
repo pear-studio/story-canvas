@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {readFile,writeFile,mkdir} from 'node:fs/promises';
+import {readFile,writeFile,mkdir,unlink} from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
 import {fixture,key,candidateId,json} from './helpers/finished-fixture.mjs';
@@ -9,7 +9,7 @@ import {readProjectWorkbenchView} from '../server/project-workbench.mjs';
 import {readPageIndex} from '../server/pages-store.mjs';
 import {comicGeometry} from '../shared/comic-layout.mjs';
 import {hashCanonicalJson} from '../server/workflow-definition.mjs';
-import {prepareFinishedPage,readFinishedPages} from '../server/finished-pages.mjs';
+import {prepareFinishedPage,readFinishedPages,planFinishedBatch} from '../server/finished-pages.mjs';
 import {candidateFileRelativePath} from '../server/candidate-storage.mjs';
 import {compilePageRenderInspectionContext} from '../server/page-render-resolver.mjs';
 import {duplicatePage,movePage,deletePage} from '../server/page-facts.mjs';
@@ -54,6 +54,29 @@ test('转换保留原事实和候选，切分原子建立独立分镜且目录�
   const context=await compilePageRenderInspectionContext({repositoryRoot:f.root,projectDirectory:f.directory,pageKey:{page_id:split.panel_id}});
   assert.deepEqual(context.candidate_recipe.resolutions[context.project.canvas],dimensions);
   await assert.rejects(()=>f.operations.mutateTargetFacts('demo',()=>saveComicPage(f.root,'demo',key.page_id,{expected_sha256:converted.value.sha256,document:doc})),/comic_layout_conflict/);
+});
+
+test('分镜成品列表区分候选计数不适用、未选图及已选图片丢失，批量预检跳过不可输出页',async t=>{
+  const f=await fixture(t),converted=await convertComicPage(f.root,'demo',key.page_id);
+  const listing=async()=>(await readFinishedPages(f.root,'demo',f.directory)).pages[0];
+  let page=await listing();
+  assert.equal(page.candidate_count,null);assert.equal(page.batch_skip_reason,null);assert.equal(page.status,'missing');
+  const split=await splitComicPanel(f.root,'demo',key.page_id,{expected_sha256:converted.sha256,panel_id:key.page_id,axis:'x'});
+  assert.equal((await listing()).batch_skip_reason,'部分分镜尚未选图');
+  const document=structuredClone(split.document),image=path.join(f.directory,candidateFileRelativePath({page_id:split.panel_id},candidateId));
+  await mkdir(path.dirname(image),{recursive:true});await writeFile(image,await readFile(f.file));
+  await json(image.replace('image.png','result.json'),{version:1,status:'available',page_key:{page_id:split.panel_id},candidate_id:candidateId,file:candidateFileRelativePath({page_id:split.panel_id},candidateId),task_id:'test'});
+  document.panels[split.panel_id].candidate_id=candidateId;
+  await saveComicPage(f.root,'demo',key.page_id,{expected_sha256:hashCanonicalJson(split.document),document});
+  assert.equal((await listing()).batch_skip_reason,null);
+  assert.equal((await planFinishedBatch(f.root,'demo',f.directory)).targets.length,1);
+  await unlink(image);
+  page=await listing();
+  assert.equal(page.candidate_count,null);assert.equal(page.batch_skip_reason,'部分分镜选图已不存在，请重新选图');
+  const plan=await planFinishedBatch(f.root,'demo',f.directory);
+  assert.deepEqual(plan.targets,[]);assert.equal(plan.skipped[0].reason,page.batch_skip_reason);
+  await assert.rejects(prepareFinishedPage(f.root,'demo',f.directory,{page_key:key}),/部分分镜选图已不存在/);
+  await assert.rejects(readFile(path.join(f.directory,'Saved/finished/page-001.json')),{code:'ENOENT'});
 });
 
 test('整页输出冻结各格选图与裁切，合成后布局修改标记成品过时',async t=>{

@@ -99,7 +99,7 @@ export async function readFinishedPages(repositoryRoot, projectId, directory, { 
     const candidates = ['text','collage'].includes(page.page_kind) || page.comic ? null : await readGenerationCandidateRecords(directory, { pageKey: page.page_key });
     const selection=candidates?uniqueCandidateSelection(candidates):null;
     const candidate=selection?.candidate?.candidate_id??null;
-    const comicError=page.comic&&page.comic.document.order.some(id=>!page.comic.document.panels[id].candidate_id)?'部分分镜尚未选图':null;
+    const comicError=page.comic?(await inspectComicSources(directory,page.comic.document)).reason:null;
     const collageMedia=page.collage?await resolveCollageMedia(directory,page.collage.document):null;
     const collageError=collageMedia?collageSourceIds(page.collage.document).map(id=>collageMedia[id]).find(a=>a.error)?.error:null;
     const files = record ? await Promise.all(["lettered", "clean"].map(kind => resolveExistingProjectMedia(directory, record.outputs[kind]))) : [];
@@ -251,15 +251,22 @@ export async function publishFinishedPage(repositoryRoot, projectId, directory, 
   await writeJson(recordPath(directory, id,prepared.job.locale), record);
 }
 
+async function inspectComicSources(directory,document){
+  if(document.order.some(id=>!document.panels[id].candidate_id))return {sources:[],reason:'部分分镜尚未选图'};
+  const sources=await Promise.all(document.order.map(async page_id=>{
+    const candidate_id=document.panels[page_id].candidate_id;
+    return {page_id,candidate_id,source:await resolveExistingProjectMedia(directory,candidateFileRelativePath({page_id},candidate_id))};
+  }));
+  return {sources,reason:sources.some(item=>!item.source)?'部分分镜选图已不存在，请重新选图':null};
+}
 async function readComicSources(directory,document){
   const geometry=comicGeometry(document),sources=[];
-  for(const pageId of document.order){
+  const inspected=await inspectComicSources(directory,document);
+  if(inspected.reason)fail(inspected.reason);
+  for(const {page_id:pageId,candidate_id,source} of inspected.sources){
     const choice=document.panels[pageId];
-    if(!choice.candidate_id)fail('请为每个分镜选定候选图');
-    const source=await resolveExistingProjectMedia(directory,candidateFileRelativePath({page_id:pageId},choice.candidate_id));
-    if(!source)fail('分镜候选图已不存在');
     const buffer=await readFile(source.target);
-    sources.push({page_id:pageId,candidate_id:choice.candidate_id,source_sha256:sha(buffer),frame:geometry.frames[pageId],crop:choice.crop,buffer});
+    sources.push({page_id:pageId,candidate_id,source_sha256:sha(buffer),frame:geometry.frames[pageId],crop:choice.crop,buffer});
   }
   return sources;
 }
