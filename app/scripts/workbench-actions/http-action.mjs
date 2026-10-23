@@ -46,7 +46,12 @@ export async function downloadArtifact(route, { method = 'GET', body, extension 
   await mkdir(root, { recursive: true });
   const mime=response.headers.get('content-type')?.split(';')[0];
   const suffix=extension ?? ({'image/png':'png','image/jpeg':'jpg','image/webp':'webp','text/plain':'txt','application/json':'json'}[mime] ?? 'bin');
-  const file = path.join(root, `${randomUUID()}.${suffix}`);
+  const encodedName=/filename\*=UTF-8''([^;]+)/i.exec(response.headers.get('content-disposition')??'')?.[1];
+  let filename;
+  try {if(encodedName)filename=path.basename(decodeURIComponent(encodedName)).replace(/[<>:"/\\|?*\x00-\x1f]/g,'_').replace(/[. ]+$/g,'');}catch{}
+  const destination=filename?path.join(root,randomUUID()):root;
+  await mkdir(destination,{recursive:true});
+  const file = path.join(destination, filename||`${randomUUID()}.${suffix}`);
   try { await pipeline(Readable.fromWeb(response.body), createWriteStream(file, { flags: 'wx' })); }
   catch(error) { await unlink(file).catch(()=>{}); throw error; }
   return { file, content_type: response.headers.get('content-type') };

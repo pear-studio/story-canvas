@@ -15,13 +15,13 @@ function selected(value, id) {
 }
 export const projectSettingsActions = {
   'project.settings.read': {
-    summary: '读取标题、画幅和默认生成配置及 revision', parameters: schema(project),
+    summary: '读取项目名称、作品名称、画幅和默认生成配置及 revision', parameters: schema(project),
     details: '返回 {value,revision}；修改 value 后通过 project.settings.save 保存。无需读取工作台全量正文。',
     execute: ({ project_id }) => read(project_id, 'project'),
   },
   'project.settings.save': {
-    summary: '保存项目基本设置', parameters: schema({ ...project, value: object('read 返回的完整 value：title、canvas、default_render_profile'), revision: string('read 返回的 revision') }),
-    details: '必须携带读取时的 revision；画幅支持3:4、1:1、4:3、2:3、9:16。不会改写各页面模型。409 重新读取，不自动覆盖。',
+    summary: '保存项目基本设置', parameters: schema({ ...project, value: object('read 返回的完整 value：title、可选 work_title、canvas、default_render_profile'), revision: string('read 返回的 revision') }),
+    details: '必须携带读取时的 revision；画幅支持3:4、1:1、4:3、2:3、9:16。work_title 为可选 {zh,en,ja} 作品名称，省略保留，{} 清空；用于导出命名，缺译回退中文作品名、title。不会改写各页面模型。409 重新读取，不自动覆盖。',
     execute: ({ project_id, value, revision }) => putProject(project_id, 'project', value, revision),
   },
   'generation.profiles': {

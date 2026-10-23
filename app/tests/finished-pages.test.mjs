@@ -27,7 +27,7 @@ test('插画和动态页缺失或错误候选 ID 返回400，且不创建输出�
   }
 });
 
-test("动态成品发布双格式、不超分；混排 ZIP 导出一对、HTML 一次，替换及删除清理全部产物", async t => {
+test("动态成品发布双格式、不超分；高清 ZIP 与 Pixiv 分离导出，替换及删除清理全部产物", async t => {
   const f = await fixture(t);
   await f.run(await f.prepare());
   const video = await createPage(f.root, "demo", { owner_kind:"story", sequence_id:"sequence" }, { pageKind:"video" });
@@ -43,7 +43,8 @@ test("动态成品发布双格式、不超分；混排 ZIP 导出一对、HTML �
   for (let i = 0; i < 128 * 192 * 2; i++) pixels[i * 3 + (i < 128 * 192 ? 0 : 2)] = 255;
   const animation = await sharp(pixels, {raw:{width:128,height:384,pageHeight:192,channels:3}}).webp({lossless:true,loop:0,delay:[41,42]}).toBuffer();
   const gif=await sharp(animation,{animated:true}).gif().toBuffer();
-  const run=prepared=>f.run(prepared,{processVideo:async source=>{assert.deepEqual(source,bytes);return {webp:animation,gif,poster:await readFile(f.file),metadata:{width:128,height:192,frames:2,encoded_frames:2,duration_seconds:.083,gif:{encoded_frames:2},warnings:[]}};},upscale:()=>assert.fail('视频不应超分'),render:()=>assert.fail('视频不应嵌字')});
+  const warning='GIF 超过 16 MB，发布前请检查平台文件限制';
+  const run=prepared=>f.run(prepared,{processVideo:async source=>{assert.deepEqual(source,bytes);return {webp:animation,gif,poster:await readFile(f.file),metadata:{width:128,height:192,frames:2,encoded_frames:2,duration_seconds:.083,gif:{encoded_frames:2},warnings:[warning]}};},upscale:()=>assert.fail('视频不应超分'),render:()=>assert.fail('视频不应嵌字')});
   assert.equal((await run(await prepare())).status,'completed');
   const first=await readFinishedRecord(f.directory,video.page_id);
   assert.deepEqual(await readFile(path.join(f.directory,first.outputs.clean)),animation);
@@ -59,22 +60,28 @@ test("动态成品发布双格式、不超分；混排 ZIP 导出一对、HTML �
   await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));
   t.after(()=>new Promise(resolve=>server.close(resolve)));
   const send=(preview,variant)=>fetch(`http://127.0.0.1:${server.address().port}/api/projects/demo/finished/export`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({variant,preview})});
-  for (const variant of ['lettered','clean','both']) {
+  for (const variant of ['lettered','clean']) {
+    for(const preview of [false]){
+      const prepared=await fetch(`http://127.0.0.1:${server.address().port}/api/projects/demo/finished/export`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({variant,preview,prepare:true})});
+      const result=await prepared.json();assert.deepEqual(result.warnings,[]);
+    }
     const archive=await send(false,variant);assert.equal(archive.status,200);
     const zip=Buffer.from(await archive.arrayBuffer());
     const names=[];let offset=0;
     while((offset=zip.indexOf(Buffer.from([0x50,0x4b,0x01,0x02]),offset))!==-1){const length=zip.readUInt16LE(offset+28);names.push(zip.subarray(offset+46,offset+46+length).toString());offset+=46+length;}
-    assert.deepEqual(names, [...(variant==='clean'?[]:['嵌字版/001.png']),...(variant==='lettered'?[]:['无字版/001.png']),'动态页/002.webp','动态页/002.gif']);
+    assert.deepEqual(names, ['001.png','002.webp']);
     assert.ok(zip.includes(animation));assert.ok(!zip.includes(bytes));
-    const response=await send(true,variant);assert.equal(response.status,200);const html=await response.text();
-    assert.doesNotMatch(html,/<video|data:video\/mp4/);
-    const embedded=[...html.matchAll(/data:image\/webp;base64,([A-Za-z0-9+/=]+)/g)].map(m=>Buffer.from(m[1],'base64'));
-    assert.equal(embedded.length,variant==='both'?3:2);
-    assert.equal(embedded.filter(b=>b.equals(animation)).length,1);
-    const metadata=await sharp(embedded.find(b=>b.equals(animation)),{animated:true}).metadata();
-    assert.equal(metadata.width,128);assert.equal(metadata.pages,2);assert.equal(metadata.loop,0);assert.deepEqual(metadata.delay,[41,42]);
-    assert.equal(Number(response.headers.get("x-export-total")),Buffer.byteLength(html));
+
   }
+  const pixiv=await fetch(`http://127.0.0.1:${server.address().port}/api/projects/demo/finished/export`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({variant:'lettered',mode:'pixiv'})});
+  assert.equal(pixiv.status,200);const pixivZip=Buffer.from(await pixiv.arrayBuffer());assert.ok(pixivZip.includes(Buffer.from('静态投稿/01-001-001/001.jpg')));assert.ok(pixivZip.includes(Buffer.from('动画GIF/002.gif')));assert.ok(!pixivZip.includes(Buffer.from('002.webp')));
+  await unlink(path.join(f.directory,first.outputs.gif));
+  assert.equal((await readFinishedPages(f.root,'demo',f.directory)).pages[1].status,'ready','普通导出不依赖GIF');
+  assert.equal((await readFinishedPages(f.root,'demo',f.directory,{mode:'pixiv'})).pages[1].status,'files_missing');
+  await writeFile(path.join(f.directory,first.outputs.gif),gif);
+  await unlink(path.join(f.directory,first.outputs.lettered));
+  assert.equal((await readFinishedPages(f.root,'demo',f.directory,{mode:'pixiv'})).pages[1].status,'ready','P站导出不依赖WebP');
+  await writeFile(path.join(f.directory,first.outputs.lettered),animation);
   assert.equal((await run(await prepare())).status,"completed");
   for(const relative of [first.outputs.clean,first.outputs.gif,first.poster,first.source_backup])await assert.rejects(readFile(path.join(f.directory,relative)),{code:"ENOENT"});
   const current=await readFinishedRecord(f.directory,video.page_id);
@@ -333,7 +340,7 @@ test("批量输出先为全部目标写入排队任务，再逐页串行执行",
   assert.equal((await listWorkspaceRenderTasks(f.root)).tasks.length, 0, "批量结束后没有活动任务");
 });
 
-test("成品按当前索引排序，新增缺页可见，删除页不发布；分享 ZIP 附缺页说明", async t => {
+test("成品按当前索引排序，缺页阻止 ZIP 和 HTML 导出，删除页不发布", async t => {
   const f = await fixture(t);
   await f.run(await f.prepare());
   const record = await readFinishedRecord(f.directory, key.page_id);
@@ -351,32 +358,22 @@ test("成品按当前索引排序，新增缺页可见，删除页不发布；�
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   t.after(() => new Promise(resolve => server.close(resolve)));
   const send = value => fetch(`http://127.0.0.1:${server.address().port}/api/projects/demo/finished/export`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(value) });
-  const response = await send({ variant: "both" });
-  assert.equal(response.status, 200);
-  const outputs = record.outputs;
-  const rawTotal = (await stat(path.join(f.directory, outputs.lettered))).size + (await stat(path.join(f.directory, outputs.clean))).size;
-  assert.equal(Number(response.headers.get("x-export-total")), rawTotal, "ZIP 导出通告原始图片总大小");
-  const bytes = Buffer.from(await response.arrayBuffer());
-  assert.equal(bytes.readUInt32LE(0), 0x04034b50);
-  const names = []; let offset = 0;
-  while ((offset = bytes.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]), offset)) !== -1) { const size = bytes.readUInt16LE(offset + 28); names.push(bytes.subarray(offset + 46, offset + 46 + size).toString()); offset += 46 + size; }
-  assert.deepEqual(names, ["嵌字版/002.png", "无字版/002.png", "缺页说明.txt"]);
-  const previewResponse = await send({ variant: "both", preview: true });
-  assert.equal(previewResponse.status, 200);
-  assert.match(previewResponse.headers.get("content-type"), /text\/html/);
-  const html = await previewResponse.text();
-  assert.equal(Number(previewResponse.headers.get("x-export-total")), Buffer.byteLength(html), "预览 HTML 通告精确总大小");
-  assert.ok(html.includes("<title>demo-zh-预览</title>"), "标题使用项目名和语言");
-  const embedded = [...html.matchAll(/data:image\/webp;base64,([A-Za-z0-9+/=]+)/g)].map(item => Buffer.from(item[1], "base64"));
-  assert.equal(embedded.length, 2, "两个版本各一张内嵌压缩图");
-  for (const bytes of embedded) {
-    const meta = await sharp(bytes).metadata();
-    assert.equal(meta.format, "webp");
-    assert.equal(meta.width, 256, "小图不放大，保持原尺寸");
+  assert.equal((await send({variant:'both'})).status,400,'不再导出混合版本包');
+  for(const variant of ['lettered','clean'])for(const preview of [false,true]){
+    const response=await send({variant,preview});assert.equal(response.status,409);
+    assert.equal(await response.text(),'finished_export_not_ready');
   }
-  assert.deepEqual([...html.matchAll(/data-page="(\d+)"/g)].map(match => match[1]), ["1", "2","1","2"], "两个版本均保留正式页码和缺页占位");
-  assert.ok(html.includes('reader-placeholder')&&html.includes('第 1 页'),"缺失页明确显示占位");
-  const pending = await f.prepare();
+  await setIndex([key.page_id]);
+  const response=await send({variant:'lettered'});assert.equal(response.status,200);
+  const bytes=Buffer.from(await response.arrayBuffer());assert.equal(bytes.readUInt32LE(0),0x04034b50);
+  assert.equal(Number(response.headers.get('content-length')),bytes.length);
+  const previewResponse=await send({variant:'lettered',preview:true});assert.equal(previewResponse.status,200);
+  const html=await previewResponse.text();assert.equal(Number(previewResponse.headers.get('content-length')),Buffer.byteLength(html));
+  assert.ok(html.includes('<title>成品测试</title>'));
+  const embedded=[...html.matchAll(/data:image\/webp;base64,([A-Za-z0-9+/=]+)/g)].map(item=>Buffer.from(item[1],'base64'));
+  assert.equal(embedded.length,1);assert.equal((await sharp(embedded[0]).metadata()).width,256);
+  assert.deepEqual([...html.matchAll(/data-page="(\d+)"/g)].map(match=>match[1]),['1']);
+  const pending=await f.prepare();
   await setIndex([second]);
   assert.equal((await f.run(pending)).status, "failed");
   assert.deepEqual(await readFinishedRecord(f.directory, key.page_id), record);

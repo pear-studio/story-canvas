@@ -28,7 +28,7 @@ export function videoHelp(actions, availability) {
       call('page.editor.read',{project_id,page_key,section:'content'}),
       call('page.editor.save',{project_id,page_key,section:'content',expected_sha256:'原读据中的expected_sha256',changes:{video_postprocess:{trim_start_seconds:0.5,trim_end_seconds:0.5,speed:0.8}}}),
     ]},
-    {instruction:'查看终态的图片路径及 task.results/candidate.list 的原视频、抽帧审阅路径。抽帧不能证明全程一致或循环接缝自然。仅在用户授权制作成品时 finished.output，必须传选定视频 candidate_id；成品冻结并应用本页已保存的后处理，失败保留旧成品，原候选不变。内部保留无音频 MP4，不超分、不嵌字，网页下载与 finished.export 使用动画 WebP。',calls:[
+    {instruction:'查看终态的图片路径及 task.results/candidate.list 的原视频、抽帧审阅路径。抽帧不能证明全程一致或循环接缝自然。仅在用户授权制作成品时 finished.output，必须传选定视频 candidate_id；成品冻结并应用本页已保存的后处理，失败保留旧成品，原候选不变。成品保存原尺寸 WebP 和 GIF，另存原片备份；不超分、不嵌字，finished.export 按导出用途选择格式，具体规则见该操作 help。',calls:[
       call('candidate.list',{project_id,page_key,task_id:'生成返回的task_id'}),
       call('finished.output',{project_id,page_key,candidate_id:'选定视频候选ID'}),
       call('task.wait',{targets:[{project_id,task_id:'成品返回的任务ID',purpose:'finished'}]}),

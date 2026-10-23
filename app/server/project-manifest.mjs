@@ -14,10 +14,18 @@ function checkExactKeys(value, allowed, valuePath, errors) {
 export function validateProjectManifest(project) {
   const errors = [];
   if (!isRecord(project)) return ["project.json 必须是 JSON 对象"];
-  checkExactKeys(project, ["$schema", "format", "title", "canvas", "default_render_profile"], "project.json", errors);
+  checkExactKeys(project, ["$schema", "format", "title", "work_title", "canvas", "default_render_profile"], "project.json", errors);
+  if(project.work_title!==undefined)errors.push(...validateWorkTitle(project.work_title));
   if (project.format !== STORY_PROJECT_FORMAT) errors.push(`project.json 的 format 必须是 ${STORY_PROJECT_FORMAT}`);
   if (typeof project.title !== "string" || !project.title.trim()) errors.push("project.json 的 title 必须是非空字符串");
   if (!canvases.has(project.canvas)) errors.push("project.json 的 canvas 无效");
   if (typeof project.default_render_profile !== "string" || !/^[a-z0-9][a-z0-9-]*$/.test(project.default_render_profile)) errors.push("project.json 的 default_render_profile 不是有效 ID");
+  return errors;
+}
+
+export function validateWorkTitle(value,{allowEmpty=false}={}) {
+  if(!isRecord(value))return ['work_title 必须是对象'];
+  const errors=[];checkExactKeys(value,['zh','en','ja'],'work_title',errors);
+  for(const [locale,title] of Object.entries(value))if(typeof title!=='string'||title.length>160||(!allowEmpty&&!title.trim()))errors.push(`work_title.${locale} 必须是长度不超过160的${allowEmpty?'':'非空'}文本`);
   return errors;
 }

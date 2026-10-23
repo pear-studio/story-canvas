@@ -1,0 +1,17 @@
+{
+  "version": "finished-export-v2",
+  "eh": {
+    "batch_max_bytes": 450000000,
+    "max_pages": 2000,
+    "gallery_max_bytes": 10000000000,
+    "image_max_bytes": 19000000,
+    "max_dimension": 20000,
+    "animation_target_bytes": 9500000,
+    "tiers": [
+      {"max_width": 640, "target_fps": 18, "quality": 80},
+      {"max_width": 512, "target_fps": 15, "quality": 75}
+    ]
+  },
+  "preview": {"crf": 20, "preset": "medium"},
+  "pixiv_gif_max_frames": 500
+}

@@ -1,7 +1,7 @@
-import {finishedReaderDocument} from '../../shared/finished-reader.mjs';
+import {finishedReaderDocument,finishedReaderHead,finishedReaderFigure,finishedReaderAnimation,finishedReaderTail} from '../../shared/finished-reader.mjs';
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdir, readFile, writeFile, cp } from "node:fs/promises";
+import { mkdir, readFile, writeFile, cp, truncate, stat, open } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "node:http";
@@ -10,14 +10,40 @@ import { chromium } from "playwright";
 import { fixture, key, candidateId, json } from "../helpers/finished-fixture.mjs";
 import { PAGES_INDEX_SCHEMA_ID } from "../../server/pages-store.mjs";
 import { candidateFileRelativePath } from "../../server/candidate-storage.mjs";
-import { prepareFinishedPage } from "../../server/finished-pages.mjs";
+import { prepareFinishedPage, readFinishedRecord } from "../../server/finished-pages.mjs";
 import { defaultLetteringSettings } from "../../server/lettering-settings.mjs";
 import { serveProductionAsset } from "../../server/http-support.mjs";
 import { renderFinishedImage } from "../../server/finished-render.mjs";
 import { createStoryCanvasServer } from "../../server/index.mjs";
 import { hashCanonicalJson } from "../../server/workflow-definition.mjs";
+import {createPage} from '../../server/page-facts.mjs';
 
 const testAppRoot=process.env.STORY_CANVAS_TEST_APP_ROOT??fileURLToPath(new URL('../../',import.meta.url));
+
+async function selectExports(dialog,modes,editions) {
+  for(const name of ['高清','EH','Pixiv','网页'])await dialog.getByRole('checkbox',{name,exact:true}).setChecked(modes.includes(name));
+  for(const name of ['中文','英文','日文','无字'])await dialog.getByRole('checkbox',{name,exact:true}).setChecked(editions.includes(name));
+}
+
+test('离线动画只在可见时载入播放，离开暂停；画面点击无暂停且无控件',async t=>{
+  const browser=await chromium.launch({headless:true,channel:process.env.BROWSER_CHANNEL||(process.platform==='win32'?'msedge':undefined)});t.after(()=>browser.close());
+  const page=await browser.newPage({viewport:{width:1000,height:700}});
+  await page.addInitScript(()=>{
+    HTMLMediaElement.prototype.play=function(){this.dataset.state='playing';return Promise.resolve();};
+    HTMLMediaElement.prototype.pause=function(){this.dataset.state='paused';};
+  });
+  await page.goto('about:blank');
+  const svg='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="768" height="1600"><rect width="768" height="1600" fill="green"/></svg>');
+  await page.setContent(finishedReaderHead()+finishedReaderFigure(svg,1,768,1600)+finishedReaderAnimation('data:video/mp4;base64,AAAA',2,768,1024)+finishedReaderTail);
+  assert.equal(await page.locator('video').getAttribute('src'),null);
+  assert.equal(await page.locator('video').getAttribute('controls'),null);
+  await page.locator('video').scrollIntoViewIfNeeded();
+  await page.waitForFunction(()=>document.querySelector('video').dataset.state==='playing');
+  const bounds=await page.locator('video').boundingBox();await page.mouse.click(bounds.x+100,Math.max(30,bounds.y+100));
+  assert.equal(await page.locator('video').getAttribute('data-state'),'playing');
+  await page.locator('.finished-reader').evaluate(el=>el.scrollTo(0,0));
+  await page.waitForFunction(()=>document.querySelector('video').dataset.state==='paused');
+});
 
 test('WebP阅读原图按需载入，失败保留小图且可重试',async t=>{
   const browser=await chromium.launch({headless:true,channel:process.env.BROWSER_CHANNEL||(process.platform==='win32'?'msedge':undefined)});t.after(()=>browser.close());
@@ -96,7 +122,113 @@ test("正式嵌字使用浏览器共享排版，输出保持尺寸且无字时�
   assert.notEqual(hashCanonicalJson([...image]), hashCanonicalJson([...empty]));
 });
 
-test("浏览器成品导航、双版本切换、返回编辑与输出按钮可用", async t => {
+test('四版导出界面独立检查、手机可选择版本、实际下载无字 ZIP',async t=>{
+  const f=await fixture(t);await f.run(await f.prepare());
+  const warning='GIF 超过 16 MB，发布前请检查平台文件限制';
+  const record=await readFinishedRecord(f.directory,key.page_id);
+  await json(path.join(f.directory,'finished',`${key.page_id}.json`),{...record,warnings:[warning]});
+  await createPage(f.root,'demo',{owner_kind:'story',sequence_id:'sequence'},{pageKind:'text'});
+  const server=await createStoryCanvasServer({projectRoot:f.root,appRoot:testAppRoot,production:true,localConfig:{comfyui_urls:[]},hardwareStatusReader:async()=>({cpu:{available:false},memory:{available:false},gpu:{available:false},comfyui:{connected:false,status:'offline'}})});
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  const browser=await chromium.launch({headless:true,...(process.platform==='win32'?{channel:'msedge'}:{}),downloadsPath:path.join(f.root,'downloads')});
+  t.after(async()=>{await browser.close();await new Promise(resolve=>server.close(resolve));});
+  const page=await browser.newPage({viewport:{width:1440,height:1000}});
+  await page.goto(`http://127.0.0.1:${server.address().port}/?project=demo&tab=finished`);
+  await page.getByRole('button',{name:'导出',exact:true}).click();
+  const dialog=page.getByRole('dialog',{name:'导出成品',exact:true});
+  assert.equal(await dialog.getByLabel('保存方式').count(),0);
+  assert.equal(await dialog.getByRole('checkbox').count(),8);
+  await dialog.getByText('部分所选版本尚未就绪，请处理后再导出。').waitFor();
+  for(const name of ['浏览器下载','批量保存'])assert.equal(await dialog.getByRole('button',{name,exact:true}).isDisabled(),true);
+  await selectExports(dialog,['高清'],['无字']);
+  await dialog.getByText(/无字版去掉嵌字/).waitFor();
+  assert.equal(await dialog.getByText(`第 1 页 · ${warning}`,{exact:true}).count(),0);
+  await page.waitForFunction(()=>!document.querySelector('[role="dialog"] button.button--primary')?.disabled);
+  for(const width of [390,1440]){
+    await page.setViewportSize({width,height:1000});
+    for(const name of ['无字','网页']){
+      const bounds=await dialog.getByRole('checkbox',{name,exact:true}).boundingBox();assert.ok(bounds.x>=0&&bounds.x+bounds.width<=width);
+    }
+    for(const name of ['浏览器下载','批量保存']){
+      const bounds=await dialog.getByRole('button',{name,exact:true}).boundingBox();assert.ok(bounds.x>=0&&bounds.x+bounds.width<=width&&bounds.y+bounds.height<=1000);
+    }
+  }
+  const downloaded=page.waitForEvent('download');await dialog.getByRole('button',{name:'浏览器下载',exact:true}).click();
+  const download=await downloaded;assert.match(download.suggestedFilename(),/全文-无字-高清\.zip$/);assert.match(download.url(),/\/finished\/export\?ticket=/);
+  const file=path.join(f.root,'finished-clean.zip');await download.saveAs(file);
+  const zip=await readFile(file);assert.equal(zip.readUInt32LE(0),0x04034b50);assert.ok(zip.includes(Buffer.from('001.png')));assert.ok(!zip.includes(Buffer.from('002.png')));assert.ok(!zip.includes(Buffer.from('发布提示.txt')));
+  await page.getByRole('button',{name:'导出',exact:true}).click();
+  await selectExports(dialog,['Pixiv'],['无字']);
+  await dialog.getByRole('button',{name:'浏览器下载',exact:true}).click();
+  const summary=page.getByRole('dialog',{name:'导出清单',exact:true});await summary.waitFor();
+  assert.match(await summary.innerText(),/静态卷 1.*1 张/);
+  const nextDownload=page.waitForEvent('download');await summary.getByRole('button',{name:'开始下载',exact:true}).click();
+  const pixiv=await nextDownload;assert.match(pixiv.suggestedFilename(),/无字-Pixiv\.zip$/);
+  const pixivFile=path.join(f.root,'pixiv-clean.zip');await pixiv.saveAs(pixivFile);assert.ok((await readFile(pixivFile)).includes(Buffer.from('静态投稿/01-001-001/001.jpg')));
+  await page.getByRole('button',{name:'导出',exact:true}).click();
+  await selectExports(dialog,['高清','网页'],['无字']);
+  const multiple=[];const collect=d=>multiple.push(d);page.on('download',collect);
+  await dialog.getByRole('button',{name:'浏览器下载',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelectorAll('.finished-options a[download]').length===2);
+  for(let i=0;i<50&&multiple.length<2;i++)await new Promise(resolve=>setTimeout(resolve,100));
+  page.off('download',collect);assert.equal(multiple.length,2);
+  for(const item of multiple)assert.equal(await item.failure(),null);
+  assert.ok(multiple.some(d=>d.suggestedFilename().endsWith('全文-无字-网页.html')));
+  await page.getByRole('button',{name:'导出',exact:true}).click();
+  assert.equal(await dialog.getByRole('checkbox',{name:'网页',exact:true}).isChecked(),true,'两种保存操作共用并保留选择');
+  await dialog.getByRole('button',{name:'批量保存',exact:true}).click();
+  await page.getByRole('button',{name:'复制目录',exact:true}).waitFor();
+  const directory=await page.locator('.finished-options code').innerText();
+  assert.ok(directory.startsWith(path.join(f.directory,'Outputs','exports')));
+  for(const [folder,extension] of [['高清','zip'],['网页','html']])assert.ok((await stat(path.join(directory,folder,`成品测试-全文-无字-${folder}.${extension}`))).size>0);
+  await page.goto(`http://127.0.0.1:${server.address().port}/?project=demo&tab=project-settings`);
+  await page.getByLabel('作品名称 · 中文（可选）',{exact:true}).fill('完整作品名称');
+  await page.getByLabel('作品名称 · 英文（可选）',{exact:true}).fill('Full Work Title');
+  await page.getByLabel('作品名称 · 日文（可选）',{exact:true}).fill('作品タイトル');
+  await page.getByRole('button',{name:'保存基础设置',exact:true}).click();
+  await page.getByRole('button',{name:'保存基础设置',exact:true}).waitFor();
+  await page.waitForFunction(()=>document.querySelector('[data-project-fact-dirty="true"]')===null);
+  await page.reload();assert.equal(await page.getByLabel('作品名称 · 英文（可选）',{exact:true}).inputValue(),'Full Work Title');
+  assert.equal(await page.getByLabel('项目名称',{exact:true}).inputValue(),'成品测试');
+});
+
+test('大成品 ZIP 直接下载到磁盘，在受限网页堆内存下保持页面可用',async t=>{
+  const f=await fixture(t);await f.run(await f.prepare());
+  const record=await readFinishedRecord(f.directory,key.page_id);
+  // 隔离成品尾部填充，模拟远大于网页堆上限的媒体；不制造真实项目文件。
+  const mediaSize=128*1024*1024;
+  await truncate(path.join(f.directory,record.outputs.lettered),mediaSize);
+  const server=await createStoryCanvasServer({projectRoot:f.root,appRoot:testAppRoot,production:true,localConfig:{comfyui_urls:[]},hardwareStatusReader:async()=>({cpu:{available:false},memory:{available:false},gpu:{available:false},comfyui:{connected:false,status:'offline'}})});
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  const browser=await chromium.launch({headless:true,channel:process.env.BROWSER_CHANNEL||(process.platform==='win32'?'msedge':undefined),args:['--js-flags=--max-old-space-size=64'],downloadsPath:path.join(f.root,'downloads')});
+  t.after(async()=>{await browser.close();await new Promise(resolve=>server.close(resolve));});
+  const page=await browser.newPage();
+  // 若回退成 fetch 整包或 Blob 下载，立即失败，避免测试本身拖垮浏览器。
+  await page.addInitScript(()=>{
+    const fetch=window.fetch;
+    window.fetch=async(...args)=>{
+      const response=await fetch(...args);
+      if(response.headers.get('content-type')?.includes('application/zip'))throw new Error('ZIP 不应进入网页 fetch');
+      return response;
+    };
+  });
+  await page.goto(`http://127.0.0.1:${server.address().port}/?project=demo&tab=finished`);
+  await page.getByRole('button',{name:'导出',exact:true}).click();
+  const dialog=page.getByRole('dialog',{name:'导出成品',exact:true});
+  await selectExports(dialog,['高清'],['中文']);
+  const downloading=page.waitForEvent('download');await dialog.getByRole('button',{name:'浏览器下载',exact:true}).click();
+  const download=await downloading;assert.match(download.url(),/\/finished\/export\?ticket=/);assert.match(download.suggestedFilename(),/中文-高清\.zip$/);
+  const target=path.join(f.root,'large.zip');await download.saveAs(target);assert.equal(await download.failure(),null);
+  const size=(await stat(target)).size;assert.ok(size>mediaSize);
+  const file=await open(target,'r');
+  try{
+    const head=Buffer.alloc(4),tail=Buffer.alloc(65536);await file.read(head,0,4,0);await file.read(tail,0,tail.length,size-tail.length);
+    assert.equal(head.readUInt32LE(),0x04034b50);assert.ok(tail.includes(Buffer.from('001.png')));assert.ok(tail.includes(Buffer.from([0x50,0x4b,0x05,0x06])),'中央目录写入完成');
+  }finally{await file.close();}
+  await page.getByRole('button',{name:'导出',exact:true}).click();await dialog.waitFor();
+});
+
+test("浏览器成品导航、返回编辑与输出按钮可用", async t => {
   const f = await fixture(t);
   const narrativePath = path.join(f.directory, `pages/${key.page_id}.content.json`);
   const narrative = JSON.parse(await readFile(narrativePath, "utf8"));
@@ -204,17 +336,19 @@ test("浏览器成品导航、双版本切换、返回编辑与输出按钮可�
   await page.setViewportSize({ width: 900, height: 1000 });
   await page.getByRole("button", { name: "阅读预览", exact: true }).click();
   const readerFrame = page.frameLocator('iframe[title="成品连续阅读"]');
-  await readerFrame.getByRole("button", { name: "水平", exact: true }).click();
+  await readerFrame.getByRole("button", { name: "阅读工具", exact: true }).click();
+  await readerFrame.getByRole("switch", { name: "水平阅读", exact: true }).click();
   const reader = readerFrame.locator(".finished-reader");
   await reader.locator("img").first().evaluate(img => img.decode());
   await reader.hover();
   await page.mouse.wheel(0, 900);
-  await readerFrame.getByLabel("当前页码").filter({ hasText: /^2$/ }).waitFor();
+  await readerFrame.getByLabel("当前页码").filter({ hasText: /^2$/ }).waitFor({ state: "attached" });
   assert.ok(await reader.evaluate(element => element.scrollLeft > 0 && element.scrollTop === 0));
   assert.equal(await reader.locator("figcaption, h1, h2").count(), 0, "阅读区仅显示图片");
-  await readerFrame.getByRole("button", { name: "垂直", exact: true }).click();
-  await readerFrame.getByLabel("当前页码").filter({ hasText: /^2$/ }).waitFor();
+  await readerFrame.getByRole("switch", { name: "水平阅读", exact: true }).click();
+  await readerFrame.getByLabel("当前页码").filter({ hasText: /^2$/ }).waitFor({ state: "attached" });
   assert.ok(await reader.evaluate(element => element.scrollTop > 0 && element.scrollLeft === 0));
+  await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
   await page.getByRole("dialog", { name: "阅读预览", exact: true }).waitFor({ state: "hidden" });
   await page.setViewportSize({ width: 1440, height: 1000 });
@@ -265,23 +399,25 @@ test("浏览器成品导航、双版本切换、返回编辑与输出按钮可�
   await page.getByRole("button", { name: "输出", exact: true }).click();
   await page.getByRole("button", { name: "成品", exact: true }).click();
   await page.getByRole("button", { name: "导出", exact: true }).click();
+  await selectExports(page.getByRole("dialog",{name:"导出成品",exact:true}),["高清"],["中文"]);
   const download = page.waitForEvent("download");
-  await page.getByRole("button", { name: "导出媒体 ZIP", exact: true }).click();
-  assert.match((await download).suggestedFilename(), /成品.zip$/);
+  await page.getByRole("button", { name: "浏览器下载", exact: true }).click();
+  assert.match((await download).suggestedFilename(), /高清.zip$/);
   await page.getByRole("button", { name: "导出", exact: true }).click();
-  await page.getByRole("radio", { name: "轻量 HTML", exact: true }).check();
+  await selectExports(page.getByRole("dialog",{name:"导出成品",exact:true}),["网页"],["中文"]);
   const htmlDownload = page.waitForEvent("download");
-  await page.getByRole("button", { name: "导出预览 HTML", exact: true }).click();
+  await page.getByRole("button", { name: "浏览器下载", exact: true }).click();
   const offline = await browser.newPage({ viewport: { width: 900, height: 1000 } });
   await offline.context().setOffline(true);
   await offline.setContent(await readFile(await (await htmlDownload).path(), "utf8"));
   await offline.locator("img").evaluateAll(images => Promise.all(images.map(img => img.decode())));
   assert.equal(await offline.locator("img").count(), 2);
-  await offline.getByRole("button", { name: "水平", exact: true }).click();
+  await offline.getByRole("button", { name: "阅读工具", exact: true }).click();
+  await offline.getByRole("switch", { name: "水平阅读", exact: true }).click();
   await offline.locator(".finished-reader").hover();
   await offline.mouse.wheel(0, 900);
-  await offline.getByLabel("当前页码").filter({ hasText: /^2$/ }).waitFor();
-  await offline.getByRole("button", { name: "垂直", exact: true }).click();
+  await offline.getByLabel("当前页码").filter({ hasText: /^2$/ }).waitFor({ state: "attached" });
+  await offline.getByRole("switch", { name: "水平阅读", exact: true }).click();
   assert.ok(await offline.locator(".finished-reader").evaluate(element => element.scrollTop > 0));
   await offline.close();
   await page.setViewportSize({ width: 390, height: 844 });

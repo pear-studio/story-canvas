@@ -1,0 +1,11 @@
+{
+  "version": "gif-adaptive-15mb-v2",
+  "max_bytes": 15000000,
+  "tiers": [
+    { "max_width": 480, "target_fps": 12, "colors": 256 },
+    { "max_width": 432, "target_fps": 12, "colors": 256 },
+    { "max_width": 360, "target_fps": 12, "colors": 256 },
+    { "max_width": 360, "target_fps": 10, "colors": 256 },
+    { "max_width": 360, "target_fps": 10, "colors": 128 }
+  ]
+}

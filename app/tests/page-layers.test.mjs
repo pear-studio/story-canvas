@@ -71,6 +71,38 @@ test('组图接受项目素材，新增与替换来源均校验，参考自动�
 });
 test('素材语义操作有完整帮助',async()=>{for(const target of ['page.layers.read','page.layers.save','page.layers.import','page.layers.inspect'])assert.ok(await executeWorkbench({operation:'help',target}));});
 
+test('无字独立检查不受素材变化或缺失影响；只需要干净底图文件',async t=>{
+  const f=await setup(t);await f.save();await f.run(await f.prepare());
+  const record=JSON.parse(await readFile(path.join(f.directory,'finished/page-001.json'),'utf8'));
+  await writeFile(path.join(f.directory,'materials',f.material.asset.file),await sharp({create:{width:100,height:4,channels:4,background:'#0000ff'}}).png().toBuffer());
+  const read=variant=>readFinishedPages(f.root,'demo',f.directory,{variant}).then(r=>r.pages[0]);
+  assert.equal((await read('lettered')).status,'stale');assert.equal((await read('clean')).status,'ready');
+  await unlink(path.join(f.directory,'materials',f.material.asset.file));
+  await unlink(path.join(f.directory,record.outputs.lettered));
+  assert.equal((await read('lettered')).status,'files_missing');assert.equal((await read('clean')).status,'ready');
+  assert.equal((await read('clean')).record.clean_url,(await read('clean')).record.lettered_url);
+  await unlink(path.join(f.directory,record.outputs.clean));assert.equal((await read('clean')).status,'files_missing');
+});
+
+test('组图无字保留页面原画布局但去掉素材，旧含素材底图不得冒充无字',async t=>{
+  const f=await setup(t),created=await createPage(f.root,'demo',{owner_kind:'story',sequence_id:'sequence'},{pageKind:'collage'}),scope=await collageContext(f.directory,created.page_id);
+  const document={...scope.document,assets:{...f.document.assets,original:{page_id:key.page_id}},items:[{id:'original',asset_id:'original',enabled:true,box:fullCrop(),crop:fullCrop()},...f.document.items],background:{asset_id:'a',enabled:true,crop:fullCrop(),opacity:1}};
+  const saved=await saveCollage(f.directory,created.page_id,{document,expected_sha256:scope.sha256});
+  const prepared=await prepareFinishedPage(f.root,'demo',f.directory,{page_key:created.page_key});assert.equal((await f.run(prepared)).status,'completed');
+  const recordFile=path.join(f.directory,'finished',created.page_id+'.json'),record=JSON.parse(await readFile(recordFile,'utf8'));
+  const clean=await readFile(path.join(f.directory,record.outputs.clean)),lettered=await readFile(path.join(f.directory,record.outputs.lettered));
+  assert.notDeepEqual(clean,lettered);
+  const pixels=await sharp(clean).removeAlpha().raw().toBuffer();assert.equal(pixels[0],128,'保留页面原画');
+  const read=variant=>readFinishedPages(f.root,'demo',f.directory,{page_id:created.page_id,variant}).then(r=>r.pages[0]);
+  assert.equal((await read('clean')).status,'ready');
+  saved.document.items[1].box.x=.15;
+  await saveCollage(f.directory,created.page_id,{document:saved.document,expected_sha256:saved.sha256});
+  assert.equal((await read('lettered')).status,'stale');assert.equal((await read('clean')).status,'ready','素材位置不影响无字');
+  await unlink(path.join(f.directory,'materials',f.material.asset.file));assert.equal((await read('clean')).status,'ready','缺失的装饰素材不影响无字');
+  delete record.clean_collage_media_sha256;await writeFile(recordFile,JSON.stringify(record));
+  const old=await read('clean');assert.equal(old.status,'stale');assert.ok(old.status_reasons.some(r=>r.includes('旧组图无字文件含素材')));
+});
+
 test('多语言素材默认共用，开启后严格选图，所有版本保护且共享几何',async t=>{
   const f=await setup(t),other=await importImageMaterial(f.directory,'demo',{title:'英文',content:(await sharp(f.bytes).negate({alpha:false}).png().toBuffer()).toString('base64')});
   f.document.assets.a.localizations={en:other.asset};

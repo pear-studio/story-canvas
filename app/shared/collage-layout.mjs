@@ -7,6 +7,11 @@ export const collageLimit = 12;
 export const emptyCollage = (canvas='3:4') => ({version:1,canvas,assets:{},background:null,items:[]});
 export const visibleCollageItems = document => document.items.filter(item=>item.enabled);
 export const collageSourceIds = document => [...new Set([...visibleCollageItems(document).map(item=>item.asset_id),...(document.background?.enabled?[document.background.asset_id]:[])])];
+// 无字成品只保留页面原画引用，去掉导入素材及其背景／排版。
+export function collageWithoutMaterials(document){
+  const assets=Object.fromEntries(Object.entries(document.assets).filter(([,asset])=>asset.page_id));
+  return {...document,assets,items:document.items.filter(item=>assets[item.asset_id]),background:document.background&&assets[document.background.asset_id]?document.background:null};
+}
 // 成品采用生图画幅预设的两倍尺寸；显式宽度用于预览，旧画幅保留原尺寸。
 export function collageSize(canvas,width=(canvasPresets.find(p=>p.value===canvas)?.width??1024)*2){const [w,h]=canvas.split(':').map(Number);return {width,height:Math.round(width*h/w)};}
 const exact=(v,keys)=>v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).every(k=>keys.includes(k));

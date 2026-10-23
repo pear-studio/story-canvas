@@ -15,6 +15,7 @@ import { heartDefaults } from "../shared/heart-lettering.mjs";
 export type ProjectSettings = {
   id: string;
   title: string;
+  work_title?: Partial<Record<'zh'|'en'|'ja',string>>;
   canvas: string | null;
   default_render_profile: string;
 };
@@ -66,14 +67,18 @@ export function ProjectSettingsView({ projectId, project, busy, onSave, director
   directory?: string;
 }) {
   const [titleDraft, setTitleDraft] = useState(project.title);
+  const [workTitle,setWorkTitle]=useState(project.work_title??{});
+  useEffect(()=>setWorkTitle(project.work_title??{}),[projectId,project.work_title?.zh,project.work_title?.en,project.work_title?.ja]);
   useEffect(() => setTitleDraft(project.title), [projectId, project.title]);
-  const dirty = titleDraft !== project.title;
+  const dirty = titleDraft !== project.title || JSON.stringify(workTitle)!==JSON.stringify(project.work_title??{});
   return <UtilityPage title="基本信息" description="项目名称与目录">
     <section className="settings-card" data-project-fact-dirty={dirty ? "true" : undefined}><div className="settings-grid">
       <label><span>项目名称</span><input value={titleDraft} disabled={busy} onChange={(event) => setTitleDraft(event.target.value)} /></label>
+      {(['zh','en','ja'] as const).map(locale=><label key={locale}><span>作品名称 · {{zh:'中文',en:'英文',ja:'日文'}[locale]}（可选）</span><input maxLength={160} value={workTitle[locale]??''} disabled={busy} onChange={event=>setWorkTitle({...workTitle,[locale]:event.target.value})}/></label>)}
+      <p>作品名称用于导出文件命名。缺少译名时采用中文作品名称，再回退项目名称；无字版采用中文名称。</p>
       <label className="settings-readonly"><span>项目 ID</span><input value={projectId} readOnly /></label>
       <label className="settings-readonly"><span>项目目录</span><input value={directory ?? "正在读取登记路径…"} readOnly /></label>
-    </div><footer><button className="button button--primary" type="button" disabled={busy || !dirty || !titleDraft.trim()} onClick={() => void onSave({ ...project, title: titleDraft })}>{busy ? "正在保存…" : "保存基础设置"}</button>{dirty && <span>有未保存修改</span>}</footer></section>
+    </div><footer><button className="button button--primary" type="button" disabled={busy || !dirty || !titleDraft.trim()} onClick={() => void onSave({ ...project, title: titleDraft,work_title:workTitle })}>{busy ? "正在保存…" : "保存基础设置"}</button>{dirty && <span>有未保存修改</span>}</footer></section>
     {directory && <section className="settings-card"><ProjectGitStatus id={projectId} path={directory} /></section>}
   </UtilityPage>;
 }

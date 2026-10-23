@@ -26,7 +26,7 @@ import {
   emptyMaterialMetadata,
   requireProjectDirectoryName,
 } from "./project-contracts.mjs";
-import { STORY_PROJECT_FORMAT } from "./project-manifest.mjs";
+import { STORY_PROJECT_FORMAT,validateWorkTitle } from "./project-manifest.mjs";
 import { defaultProfileAdapter } from './model-adapters.mjs';
 import { emptySettingPrompt, makeModelPromptDocument } from './model-prompts.mjs';
 import {
@@ -117,7 +117,8 @@ export function validateProjectCreationDocument(document) {
   checkExactKeys(document, ["metadata", "lettering_settings", "outline", "characters"], "creation document", errors);
   if (!isRecord(document.metadata)) errors.push("metadata 必须是对象");
   else {
-    checkExactKeys(document.metadata, ["title", "canvas", "default_render_profile"], "metadata", errors);
+    checkExactKeys(document.metadata, ["title", "work_title", "canvas", "default_render_profile"], "metadata", errors);
+    if(document.metadata.work_title!==undefined)errors.push(...validateWorkTitle(document.metadata.work_title));
     checkText(document.metadata.title, "metadata.title", errors);
     if (!canvasValues.has(document.metadata.canvas)) errors.push("metadata.canvas 无效");
     if (!renderProfileIdPattern.test(document.metadata.default_render_profile ?? "")) errors.push("metadata.default_render_profile 不是有效 ID");

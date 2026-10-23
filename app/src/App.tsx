@@ -1494,10 +1494,10 @@ export default function StoryWorkbench({ initialImagesHidden, imagePrivacyStorag
     if (!projectRequestGuard.current.isProjectCurrent(projectScope)) return;
     setUtilityBusy(true);
     try {
-      const result = await responseJson<{ project: Pick<ProjectWorkbenchView["project"], "id" | "title" | "canvas" | "default_render_profile"> }>(await mutateFacts(`/api/projects/${encodeURIComponent(projectId)}/project`, {
+      const result = await responseJson<{ project: Pick<ProjectWorkbenchView["project"], "id" | "title" | "work_title" | "canvas" | "default_render_profile"> }>(await mutateFacts(`/api/projects/${encodeURIComponent(projectId)}/project`, {
         method: "PUT",
         headers: { "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify({ title: next.title, canvas: next.canvas, default_render_profile: next.default_render_profile }),
+        body: JSON.stringify({ title: next.title, work_title:next.work_title??{}, canvas: next.canvas, default_render_profile: next.default_render_profile }),
       }));
       if (!projectRequestGuard.current.isProjectCurrent(projectScope)) return;
       setView((current) => current ? { ...current, project: { ...current.project, ...result.project } } : current);

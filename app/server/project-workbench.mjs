@@ -337,6 +337,7 @@ export async function readProjectWorkbenchView(projectRoot, projectId, requested
     project: {
       id: project.projectId,
       title: projectDocument.title ?? project.projectId,
+      ...(projectDocument.work_title?{work_title:projectDocument.work_title}:{}),
       canvas: projectDocument.canvas ?? null,
       default_render_profile: projectDocument.default_render_profile ?? null,
       lettering_settings: structuredClone(letteringSettings),

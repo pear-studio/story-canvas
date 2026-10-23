@@ -3,3 +3,4 @@ export function finishedReaderDocument(pages: ReaderPage[], title?: string,local
 export function finishedReaderHead(title?: string,locale?:string): string;
 export function finishedReaderFigure(src: string, number: number, width: number, height: number, mediaKind?: "image" | "video", originalSrc?: string,message?:string,stale?:boolean): string;
 export const finishedReaderTail: string;
+export function finishedReaderAnimation(src: string,number: number,width: number,height: number): string;

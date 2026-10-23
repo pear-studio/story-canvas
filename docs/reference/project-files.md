@@ -19,7 +19,7 @@
 
 | 文件或目录 | 唯一职责 |
 |---|---|
-| `project.json` | 标题、新页默认画幅与生成配置 |
+| `project.json` | 开发用项目简称、可选多语言作品名称、新页默认画幅与生成配置；字段见 `project.schema.json` |
 | `creative-agreement.json` | 用户确认的项目约定 |
 | `render-profile.override.json` | 本项目生成配置覆盖 |
 | `story/outline.json` | 故事、章节、seq 粗骨架，不含分页 |
@@ -33,7 +33,7 @@
 | `pages/<id>.rewrite.json`、`.text-sources.json` | 改写稿、可选语料出处；普通创作不要求维护出处映射 |
 | `pages/<id>.translations.json` | 可选英文、日文嵌字译文；格式见 `page-translations.schema.json`，读写用 `translation.*` |
 | `lettering/` | 项目文字样式与逐页文案布局 |
-| `finished/<id>.json`、`<id>.en.json`、`<id>.ja.json` | 中文、英文、日文当前成品记录；媒体在 `Outputs/finished/`；动态页共用中文记录 |
+| `finished/<id>.json`、`<id>.en.json`、`<id>.ja.json` | 中文、英文、日文当前成品记录；媒体在 `Outputs/finished/`；动态及组图页共用中文记录，无字版复用记录中的干净底图，不另建记录 |
 | `materials/` | 正式参考输入，只支持一层文件；`index.json` 只保存可选标题 |
 | `writing-corpus/`、`resources/loras/` | 本项目唯一持有的语料、LoRA 元数据和预览 |
 

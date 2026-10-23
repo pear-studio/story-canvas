@@ -210,7 +210,25 @@
       "pattern": "^Outputs/finished/"
     },
     "gif": {
-      "type": "object"
+      "type": "object",
+      "description": "GIF实际尺寸、编码帧数、时长与字节数；encoding记录自动降级结果，旧记录可省略。",
+      "properties": {
+        "encoding": {
+          "type": "object",
+          "required": ["policy", "max_bytes", "tier", "max_width", "target_fps", "colors", "original_bytes", "attempts"],
+          "properties": {
+            "policy": {"type": "string"},
+            "max_bytes": {"type": "integer", "minimum": 1},
+            "tier": {"type": "integer", "minimum": 0},
+            "max_width": {"type": "integer", "minimum": 1},
+            "target_fps": {"type": "number", "exclusiveMinimum": 0},
+            "colors": {"type": "integer", "minimum": 2, "maximum": 256},
+            "original_bytes": {"type": "integer", "minimum": 1},
+            "attempts": {"type": "array", "minItems": 1, "items": {"type": "object"}}
+          },
+          "additionalProperties": false
+        }
+      }
     },
     "warnings": {
       "type": "array",
@@ -224,6 +242,11 @@
     "collage_sha256": {
       "type": "string",
       "pattern": "^[a-f0-9]{64}$"
+    },
+    "clean_collage_media_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "去掉导入素材后组图原画来源的指纹"
     },
     "collage_media_sha256": {
       "type": "string",

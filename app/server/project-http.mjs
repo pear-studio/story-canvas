@@ -1,3 +1,4 @@
+import {normalizeWorkTitle} from './work-title.mjs';
 import { promptDocuments } from './reference-materials.mjs';
 import { projectLibrary, openProjectDirectory, manageRegisteredProject } from "./project-library.mjs";
 import { readProjectGit } from "./project-git.mjs";
@@ -37,7 +38,7 @@ import {
 
 const renderProfileIdPattern = /^[a-z0-9][a-z0-9-]*$/;
 const validCanvasRatios = new Set(["3:4", "1:1", "4:3", "2:3", "9:16"]);
-const editableProjectSettings = new Set(["title", "canvas", "default_render_profile"]);
+const editableProjectSettings = new Set(["title", "work_title", "canvas", "default_render_profile"]);
 
 export async function readWorkspaceProjects(projectRoot) {
   const entries = listRegisteredProjects(projectRoot, "story");
@@ -101,15 +102,17 @@ async function saveProjectSettings(projectRoot, projectId, value) {
   }
   const target = path.join(projectDirectory, "project.json");
   const current = await readJsonFile(target);
+  const workTitle=normalizeWorkTitle(value.work_title??current.work_title??{});
   const next = {
     ...(typeof current.$schema === "string" ? { $schema: current.$schema } : {}),
     format: current.format,
     title: value.title.trim(),
+    ...(Object.keys(workTitle).length?{work_title:workTitle}:{}),
     canvas: value.canvas,
     default_render_profile: value.default_render_profile,
   };
   await writeJsonFile(target, next);
-  return { ...next, id: safeProjectId };
+  return { ...next, work_title:workTitle, id: safeProjectId };
 }
 
 export async function handleProjectRequest({
@@ -254,8 +257,8 @@ export async function handleProjectRequest({
   const projectSettingsMatch = /^\/api\/projects\/([^/]+)\/project\/?$/.exec(decodedPath);
   if (request.method === "GET" && projectSettingsMatch) {
     sendOperation(200, await readFacts(projectSettingsMatch[1], async ({ projectDirectory }) => {
-      const { title, canvas, default_render_profile } = await readJsonFile(path.join(projectDirectory, 'project.json'));
-      return { title, canvas, default_render_profile };
+      const { title, work_title, canvas, default_render_profile } = await readJsonFile(path.join(projectDirectory, 'project.json'));
+      return { title, ...(work_title?{work_title}:{}), canvas, default_render_profile };
     }));
     return true;
   }

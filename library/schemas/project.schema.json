@@ -19,6 +19,16 @@
       "type": "string",
       "minLength": 1
     },
+    "work_title": {
+      "description": "可选作品名称；导出使用对应语言，缺省回退中文作品名、项目 title。",
+      "type": "object",
+      "properties": {
+        "zh": {"type":"string","minLength":1,"maxLength":160},
+        "en": {"type":"string","minLength":1,"maxLength":160},
+        "ja": {"type":"string","minLength":1,"maxLength":160}
+      },
+      "additionalProperties": false
+    },
     "canvas": {
       "enum": [
         "3:4",

@@ -1,0 +1,7 @@
+{
+  "version": "pixiv-static-v2",
+  "max_pages": 200,
+  "max_bytes": 195000000,
+  "image_max_bytes": 30000000,
+  "jpeg": [{"edge":2400,"quality":92},{"edge":2400,"quality":88},{"edge":2000,"quality":88}]
+}

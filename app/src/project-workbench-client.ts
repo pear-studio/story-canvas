@@ -140,7 +140,7 @@ export type ProjectWorkbenchView = {
   pages?: WorkbenchPage[];
   orphan_pages?: WorkbenchPage[];
   version: 6;
-  project: { id: string; title: string; canvas: string | null; default_render_profile: string | null; lettering_settings: LetteringSettings | null; lettering_settings_sha256: string | null };
+  project: { id: string; title: string; work_title?: Partial<Record<'zh'|'en'|'ja',string>>; canvas: string | null; default_render_profile: string | null; lettering_settings: LetteringSettings | null; lettering_settings_sha256: string | null };
   outline: {
     synopsis: string;
     synopsis_sha256: string;

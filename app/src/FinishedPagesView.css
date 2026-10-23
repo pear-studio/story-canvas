@@ -40,6 +40,15 @@ button.finished-image { border:0; padding:0; cursor:zoom-in; }
 .finished-options input[type=radio] { width:auto; margin:0; }
 .finished-options p { margin:0; color:var(--muted); font-size:var(--text-label); line-height:1.6; }
 .finished-options .finished-batch-options { flex-direction:column; }
+.finished-options .finished-export-modes { display:grid; gap:14px; }
+.finished-export-modes label { align-items:flex-start; }
+.finished-export-modes input { flex:none; margin-top:3px; }
+.finished-export-modes small { display:block; margin-top:3px; color:var(--muted); line-height:1.5; }
+.finished-edition-hint { flex-basis:100%; }
+.finished-export-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:12px; }
+.finished-export-actions > div { display:flex; flex-direction:column; align-items:center; gap:6px; }
+.finished-export-actions small { color:var(--muted); font-size:var(--text-label); }
+.finished-options code, .finished-options a { overflow-wrap:anywhere; }
 .finished-batch-list { padding:0; margin:0; list-style:none; }
 .finished-batch-list li { padding:9px 0; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:baseline; gap:12px; font-size:var(--text-label); }
 .finished-batch-list small { color:var(--muted); text-align:right; }

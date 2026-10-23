@@ -1,21 +1,34 @@
+import {collectFinishedExport,collectFinishedSelections,finishedSelectionLabel,prepareFinishedExport,exportFinishedLocal,requireExportMode} from './finished-export.mjs';
+import {sendFinishedExport} from './finished-export-download.mjs';
 import { requireLetteringLocale } from './page-translation-document.mjs';
-import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 
-import yazl from "yazl";
-import { readFile, stat } from "node:fs/promises";
-import { ApiError, readJsonBody } from "./http-support.mjs";
-import { ensureMediaVariant } from "./media-variants.mjs";
-import {prepareAnimationFiles} from './animation-output.mjs';
-import { resolveExistingProjectMedia } from "./render-media.mjs";
-import { finishedReaderHead, finishedReaderFigure, finishedReaderTail } from "../shared/finished-reader.mjs";
-import { deleteFinishedPage, listFinishedJobs, planFinishedBatch, prepareFinishedPage, readFinishedPages, readFinishedRecord, runFinishedBatch, runFinishedPage } from "./finished-pages.mjs";
+import { ApiError, readJsonBody, sendJson } from "./http-support.mjs";
+import {optimizeFinishedGif} from './finished-gif.mjs';
+import { deleteFinishedPage, listFinishedJobs, planFinishedBatch, prepareFinishedPage, readFinishedPages, readFinishedRecord, requireFinishedVariant, runFinishedBatch, runFinishedPage } from "./finished-pages.mjs";
 
 const activeBatches = new Set();
+// 只保留短期文件清单；媒体仍从磁盘流式读取，不缓存整包。
+const preparedExports = new Map();
 
 export async function handleFinishedRequest({ request, response, decodedPath, projectRoot, config, readFacts, mutateDerived, mutateTargetFacts, sendOperation }) {
-  const match = /^\/api\/projects\/([^/]+)\/finished(?:\/(output-batch|output|export|jobs))?\/?$/.exec(decodedPath);
+  const match = /^\/api\/projects\/([^/]+)\/finished(?:\/(output-batch|output|export-local|export|jobs|optimize-gif))?\/?$/.exec(decodedPath);
   if (!match) return false;
   const projectId = match[1];
+  if(request.method==='POST'&&match[2]==='optimize-gif') {
+    const value=await readJsonBody(request);
+    sendOperation(200,await optimizeFinishedGif({repositoryRoot:projectRoot,projectId,value,readFacts,mutateTargetFacts}));
+    return true;
+  }
+  if (request.method === 'GET' && match[2] === 'export') {
+    const ticket = new URL(request.url, 'http://local').searchParams.get('ticket');
+    const prepared = preparedExports.get(ticket);
+    if (!prepared || prepared.projectRoot !== projectRoot || prepared.projectId !== projectId) throw new ApiError(404, 'finished_export_expired');
+    preparedExports.delete(ticket);
+    clearTimeout(prepared.timer);
+    await sendFinishedExport(response, prepared);
+    return true;
+  }
   if (request.method === "DELETE" && !match[2]) {
     const value = await readJsonBody(request);
     sendOperation(200, await mutateTargetFacts(projectId, ({ projectDirectory }) => deleteFinishedPage(projectDirectory, value)));
@@ -27,7 +40,7 @@ export async function handleFinishedRequest({ request, response, decodedPath, pr
   }
   if (request.method === "GET" && !match[2]) {
     const params = new URL(request.url, "http://local").searchParams,page_id=params.get('page_id'),locale=requireLetteringLocale(params.get('locale')??'zh');
-    sendOperation(200, await readFacts(projectId, ({ projectDirectory }) => readFinishedPages(projectRoot, projectId, projectDirectory, { page_id,locale })));
+    sendOperation(200, await readFacts(projectId, ({ projectDirectory }) => readFinishedPages(projectRoot, projectId, projectDirectory, { page_id,locale,variant:requireFinishedVariant(params.get('variant')??'lettered'),mode:requireExportMode(params.get('mode')??'standard') })));
     return true;
   }
   if (request.method === "POST" && match[2] === "output-batch") {
@@ -59,89 +72,43 @@ export async function handleFinishedRequest({ request, response, decodedPath, pr
     sendOperation(202, result, { job: prepared.job });
     return true;
   }
-  if (request.method === "POST" && match[2] === "export") {
-    const value = await readJsonBody(request);
-    if (!["lettered", "clean", "both"].includes(value?.variant)) throw new ApiError(400, "invalid_finished_export");
-    const preview = value?.preview === true;
-    const kinds = value.variant === "both" ? ["lettered", "clean"] : [value.variant];
-    const result = await readFacts(projectId, async ({ projectDirectory }) => {
-      const listing = await readFinishedPages(projectRoot, projectId, projectDirectory,{locale:requireLetteringLocale(value?.locale)});
-      const pages = listing.pages.filter(page => !value.chapter_id || page.chapter_id === value.chapter_id);
-      if (!pages.length) throw new ApiError(409, "finished_export_empty");
-      const entries = [];
-      const missing=[];
-      for (const [offset, page] of pages.entries()) {
-        const index=(page.page_number??offset+1)-1;
-        if (!page.record?.lettered_url) {missing.push(`第 ${index+1} 页 · ${page.title} · ${page.status==='files_missing'?'成品文件缺失':'本语言尚未制作'}`);if(preview)for(const kind of kinds)entries.push({index,kind,message:missing.at(-1),width:768,height:1024});continue;}
-        const record = await readFinishedRecord(projectDirectory, page.page_id,page.locale);
-        const video = record.page_kind === 'video';
-        // 动态页没有嵌字／无字两个版本，混合导出只收录一次。
-        for (const kind of video ? [kinds[0]] : kinds) entries.push({ index, kind,stale:page.status==='stale', relative: record.outputs[kind],gif:record.outputs.gif,warnings:record.warnings??[], width: record.width, height: record.height, media_kind: video ? 'video' : 'image' });
-      }
-      if (!entries.length) throw new ApiError(409, "finished_export_empty");
-      return { projectDirectory, entries,missing };
-    });
-    const { projectDirectory, entries,missing } = result.value;
-    if (preview && kinds.length > 1) entries.sort((a, b) => kinds.indexOf(a.kind) - kinds.indexOf(b.kind) || a.index - b.index);
-    // 逐张解析并统计大小，随后边读边流式写出，不在内存里攒整包。
-    const files = [],warnings=[];
-    const controller=new AbortController();
-    const disconnected=()=>{if(!response.writableEnded)controller.abort();};
-    response.once('close',disconnected);
+
+  if(request.method==='POST'&&['export','export-local'].includes(match[2])) {
+    const value=await readJsonBody(request),local=match[2]==='export-local';
+    const controller=new AbortController(),streaming=value.progress===true&&(local||value.prepare===true);
+    const disconnected=()=>{if(!response.writableEnded)controller.abort();};response.once('close',disconnected);
+    const progress=event=>{if(streaming&&!response.destroyed)response.write(JSON.stringify({progress:event})+'\n');};
     try {
-    for (const entry of entries) {
-      controller.signal.throwIfAborted();
-      if(!entry.relative){files.push({...entry,size:0,target:null});continue;}
-      const media = await resolveExistingProjectMedia(projectDirectory, entry.relative);
-      if (!media) throw new ApiError(409, "finished_export_file_missing");
-      if(entry.media_kind==='video') {
-        const prefix=`动态页/${String(entry.index+1).padStart(3,'0')}`;
-        if(path.extname(media.target).toLowerCase()==='.mp4') {
-          // 旧成品 MP4 已应用设置，身份后处理；只派生缓存，不改写旧记录。
-          const pair=await prepareAnimationFiles(await readFile(media.target,{signal:controller.signal}),projectDirectory,undefined,controller.signal);
-          files.push({...entry,name:prefix+'.webp',target:pair.webpTarget,size:pair.webp.length});
-          if(!preview)files.push({...entry,name:prefix+'.gif',target:pair.gifTarget,size:pair.gif.length});
-          warnings.push(...pair.metadata.warnings.map(message=>`第 ${entry.index+1} 页 · ${message}`));
-        } else {
-          files.push({...entry,name:prefix+'.webp',target:media.target,size:(await stat(media.target)).size});
-          if(!preview){
-            const gif=entry.gif&&await resolveExistingProjectMedia(projectDirectory,entry.gif);
-            if(!gif)throw new ApiError(409,'finished_export_file_missing');
-            files.push({...entry,name:prefix+'.gif',target:gif.target,size:(await stat(gif.target)).size});
-          }
-          warnings.push(...entry.warnings.map(message=>`第 ${entry.index+1} 页 · ${message}`));
+      if(local){
+        if(streaming)response.writeHead(200,{'content-type':'application/x-ndjson; charset=utf-8','cache-control':'no-store'});
+        const result=await exportFinishedLocal({projectRoot,projectId,value,readFacts,signal:controller.signal,progress});
+        if(streaming)response.end(JSON.stringify({result})+'\n');else sendJson(response,200,result);
+      }else{
+        const selections=value.modes!==undefined||value.editions!==undefined
+          ?await collectFinishedSelections({projectRoot,projectId,value,readFacts,signal:controller.signal,progress:()=>{}})
+          :[(await readFacts(projectId,({projectDirectory})=>collectFinishedExport(projectRoot,projectId,projectDirectory,value))).value];
+        if(streaming)response.writeHead(200,{'content-type':'application/x-ndjson; charset=utf-8','cache-control':'no-store'});
+        const prepared=[];
+        for(const selection of selections)prepared.push(await prepareFinishedExport(selection,controller.signal,event=>progress({...event,message:finishedSelectionLabel(selection)+' · '+event.message})));
+        controller.signal.throwIfAborted();
+        const packs=prepared.flatMap(item=>item.packs).map(pack=>({...pack,disposition:'attachment; filename="'+projectId+'.'+(pack.preview?'html':'zip')+"\"; filename*=UTF-8''"+encodeURIComponent(pack.filename).replace(/['()*]/g,char=>'%'+char.charCodeAt(0).toString(16).toUpperCase())}));
+        if(value.prepare===true){
+          const artifacts=packs.map(pack=>{
+            const ticket=randomUUID(),timer=setTimeout(()=>preparedExports.delete(ticket),15*60_000);timer.unref();
+            preparedExports.set(ticket,{...pack,projectRoot,projectId,timer});
+            return {filename:pack.filename,download_url:'/api/projects/'+encodeURIComponent(projectId)+'/finished/export?ticket='+ticket};
+          });
+          const result={...artifacts[0],artifacts,warnings:prepared.flatMap(item=>item.warnings.map(w=>finishedSelectionLabel(item)+' · '+w)),volumes:prepared.flatMap(item=>item.volumes),groups:prepared.map(item=>({label:finishedSelectionLabel(item),volumes:item.volumes}))};
+          if(streaming)response.end(JSON.stringify({result})+'\n');else sendJson(response,200,result);
+        }else{
+          if(packs.length!==1)throw new ApiError(409,'finished_export_multiple_parts',['EH 已拆分多个 ZIP，请在网页准备下载，或使用 finished.export.local 保存所有分包']);
+          await sendFinishedExport(response,packs[0]);
         }
-        continue;
       }
-      const exported = preview
-        ? await ensureMediaVariant(projectDirectory, { target: media.target, info: await stat(media.target) }, entry.relative, 1024,undefined,controller.signal)
-        : media;
-      const folder = entry.media_kind === 'video' ? '动态页' : entry.kind === 'lettered' ? '嵌字版' : '无字版';
-      files.push({ ...entry,name: `${folder}/${String(entry.index + 1).padStart(3, "0")}${path.extname(exported.target)}`, target: exported.target, size: (await stat(exported.target)).size, width: entry.width, height: entry.height });
-    }
-    } finally {response.off('close',disconnected);}
-    if (preview) {
-      const head = finishedReaderHead(`${projectId}-${requireLetteringLocale(value.locale)}-预览`,requireLetteringLocale(value.locale));
-      const figure = (file, index, base64 = "") => finishedReaderFigure(file.target?`data:image/webp;base64,${base64}`:'', file.index + 1, file.width, file.height,'image',undefined,file.message,file.stale);
-      const total = Buffer.byteLength(head) + Buffer.byteLength(finishedReaderTail) + files.reduce((sum, file, index) => sum + Buffer.byteLength(figure(file, index)) + 4 * Math.ceil(file.size / 3), 0);
-      response.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-disposition": `attachment; filename="${projectId}-preview.html"`, "cache-control": "no-store", "x-export-total": String(total) });
-      response.write(head);
-      for (const [index, file] of files.entries()) {
-        if (response.destroyed) return true;
-        response.write(figure(file, index, file.target?(await readFile(file.target)).toString("base64"):''));
-      }
-      response.end(finishedReaderTail);
-      return true;
-    }
-    const total = files.reduce((sum, file) => sum + file.size, 0);
-    const zip = new yazl.ZipFile();
-    response.writeHead(200, { "content-type": "application/zip", "content-disposition": `attachment; filename="${projectId}-finished.zip"`, "cache-control": "no-store", "x-export-total": String(total) });
-    zip.outputStream.on("error", error => response.destroy(error));
-    zip.outputStream.pipe(response);
-    for (const file of files) zip.addFile(file.target, file.name, { compress: false });
-    if(warnings.length)zip.addBuffer(Buffer.from(warnings.join('\n')+'\n'),'发布提示.txt');
-    if(missing.length)zip.addBuffer(Buffer.from(`${requireLetteringLocale(value.locale)} 版缺页说明\n${missing.join('\n')}\n`),'缺页说明.txt');
-    zip.end();
+    }catch(error){
+      if(!streaming||!response.headersSent)throw error;
+      if(!response.destroyed)response.end(JSON.stringify({error:(error.details?.join?.('；')||error.message)+(error.exportDirectory?'；已完成的文件保留在 '+error.exportDirectory:'')})+'\n');
+    }finally{response.off('close',disconnected);}
     return true;
   }
   return false;
