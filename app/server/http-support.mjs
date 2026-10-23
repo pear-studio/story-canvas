@@ -17,6 +17,7 @@ import path from "node:path";
 
 import { resolveComfyUiUrls } from "./comfy-endpoint-selector.mjs";
 import { ensureMediaVariant } from "./media-variants.mjs";
+import {mediaCache} from './media-cache.mjs';
 import { ProjectContractError, requireProjectDirectoryName } from "./project-contracts.mjs";
 import { PROJECT_REVISION_HEADER } from "./project-operations.mjs";
 
@@ -295,6 +296,7 @@ export async function serveProjectMedia(response, projectRoot, projectId, relati
   const immutableOutput = /^Outputs\/(?:pages|finished|comparisons)\//.test(relativePath);
   if(videoPostprocess && (!variantWidth || !immutableOutput || media.contentType!=='video/mp4')) throw new ApiError(400,'invalid_video_postprocess_media');
   if (variantWidth && immutableOutput) {
+    const release=await mediaCache.protectResponse(response,projectDirectory);
     const controller=new AbortController();
     const disconnect=()=>controller.abort();
     response.once('close',disconnect);
@@ -302,8 +304,8 @@ export async function serveProjectMedia(response, projectRoot, projectId, relati
     try {
       media = await ensureMediaVariant(projectDirectory, media, relativePath, variantWidth, videoPostprocess,controller.signal);
     } catch (error) {
-      if(controller.signal.aborted)return;
-      if (media.contentType === 'video/mp4') throw new ApiError(503, 'video_preview_failed', {message:error.message});
+      if(controller.signal.aborted){release();return;}
+      if (media.contentType === 'video/mp4') {release();throw new ApiError(503, 'video_preview_failed', {message:error.message});}
       // 变体生成失败时回退原图
     } finally {response.off('close',disconnect);}
   }

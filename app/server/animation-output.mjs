@@ -10,17 +10,21 @@ import {createMediaVariantTasks} from './media-variant-tasks.mjs';
 import {normalizeVideoPostprocess} from '../shared/video-postprocess.mjs';
 import {webpPlaybackMetadata} from './webp-timing.mjs';
 import gifPolicy from '../shared/gif-policy.json' with {type:'json'};
+import {mediaCache} from './media-cache.mjs';
 export {gifPolicy};
 
 const appRoot=fileURLToPath(new URL('../',import.meta.url)),join=createMediaVariantTasks();
 
 // 同一冻结源和设置共用缓存；完成前不发布 metadata，缓存缺失可直接重建。
 export async function prepareGifFiles(bytes,directory,postprocess,signal,policy=gifPolicy) {
+  return mediaCache.use(directory,()=>prepareGifCache(bytes,directory,postprocess,signal,policy));
+}
+async function prepareGifCache(bytes,directory,postprocess,signal,policy) {
   const settings=normalizeVideoPostprocess(postprocess);
   const key=createHash('sha256').update(bytes).update(JSON.stringify(settings)).update(JSON.stringify(policy)).digest('hex');
   const cache=path.join(directory,'Saved','media-cache');
   const target={gif:path.join(cache,key+'.gif'),poster:path.join(cache,key+'.png'),metadata:path.join(cache,key+'.json')};
-  return join(target.metadata,async signal=>{
+  return join(target.metadata,signal=>mediaCache.use(directory,async()=>{
     await mkdir(cache,{recursive:true});
     const temporary=path.join(directory,'Saved','staging','animation-'+randomUUID());
     await mkdir(temporary,{recursive:true});
@@ -37,16 +41,22 @@ export async function prepareGifFiles(bytes,directory,postprocess,signal,policy=
         data=JSON.parse(await readFile(metadata,'utf8'));
         signal.throwIfAborted();
         await rename(gif,target.gif);await rename(poster,target.poster);await rename(metadata,target.metadata);
+        await mediaCache.record(directory,Object.values(target),{written:true});
+      } else {
+        await mediaCache.record(directory,Object.values(target));
       }
       return {gifTarget:target.gif,gif:await readFile(target.gif,{signal}),poster:await readFile(target.poster,{signal}),metadata:data};
     } finally {
       for(const file of [source,gif,poster,metadata])await unlink(file).catch(error=>{if(error.code!=='ENOENT')throw error;});
       await rmdir(temporary);
     }
-  },signal);
+  }),signal);
 }
 
 export async function prepareAnimationFiles(bytes,directory,postprocess,signal) {
+  return mediaCache.use(directory,()=>prepareAnimationCache(bytes,directory,postprocess,signal));
+}
+async function prepareAnimationCache(bytes,directory,postprocess,signal) {
   const gif=await prepareGifFiles(bytes,directory,postprocess,signal);
   const temporary=path.join(directory,'Saved','staging','webp-'+randomUUID());
   await mkdir(temporary,{recursive:true});

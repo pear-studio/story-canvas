@@ -9,6 +9,7 @@ import path from "node:path";
 
 import { listProjectRenderProfiles, readRenderProfileBundle } from "./global-resources.mjs";
 import { resolveMediaVariantWidth,ensureMediaVariant } from "./media-variants.mjs";
+import {mediaCache} from './media-cache.mjs';
 import {normalizeVideoPostprocess} from '../shared/video-postprocess.mjs';
 import {
   ApiError,
@@ -199,8 +200,12 @@ export async function handleProjectRequest({
     const {projectDirectory}=await requireProjectDirectory(projectRoot, materialFileMatch[1]);
     const material = await openMaterialFile(projectDirectory, requestUrl.searchParams.get("file"));
     const width=resolveMediaVariantWidth(requestUrl.searchParams.get('w'));
-    const media=width&&/\.(png|jpe?g|webp)$/i.test(material.file)?await ensureMediaVariant(projectDirectory,material,`materials/${material.file}`,width):material;
-    sendFile(response, media, { headers: { "x-content-type-options": "nosniff" } });
+    const variant=width&&/\.(png|jpe?g|webp)$/i.test(material.file);
+    const release=variant?await mediaCache.protectResponse(response,projectDirectory):()=>{};
+    try {
+      const media=variant?await ensureMediaVariant(projectDirectory,material,`materials/${material.file}`,width):material;
+      sendFile(response, media, { headers: { "x-content-type-options": "nosniff" } });
+    }catch(error){release();throw error;}
     return true;
   }
 

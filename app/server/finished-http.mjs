@@ -2,6 +2,7 @@ import {collectFinishedExport,collectFinishedSelections,finishedSelectionLabel,p
 import {sendFinishedExport} from './finished-export-download.mjs';
 import { requireLetteringLocale } from './page-translation-document.mjs';
 import { randomUUID } from 'node:crypto';
+import {mediaCache} from './media-cache.mjs';
 
 import { ApiError, readJsonBody, sendJson } from "./http-support.mjs";
 import {optimizeFinishedGif} from './finished-gif.mjs';
@@ -26,7 +27,8 @@ export async function handleFinishedRequest({ request, response, decodedPath, pr
     if (!prepared || prepared.projectRoot !== projectRoot || prepared.projectId !== projectId) throw new ApiError(404, 'finished_export_expired');
     preparedExports.delete(ticket);
     clearTimeout(prepared.timer);
-    await sendFinishedExport(response, prepared);
+    try {await sendFinishedExport(response, prepared);}
+    finally {prepared.release();}
     return true;
   }
   if (request.method === "DELETE" && !match[2]) {
@@ -78,6 +80,9 @@ export async function handleFinishedRequest({ request, response, decodedPath, pr
     const controller=new AbortController(),streaming=value.progress===true&&(local||value.prepare===true);
     const disconnected=()=>{if(!response.writableEnded)controller.abort();};response.once('close',disconnected);
     const progress=event=>{if(streaming&&!response.destroyed)response.write(JSON.stringify({progress:event})+'\n');};
+    let release;
+    const issued=[];
+    let published=false;
     try {
       if(local){
         if(streaming)response.writeHead(200,{'content-type':'application/x-ndjson; charset=utf-8','cache-control':'no-store'});
@@ -87,19 +92,24 @@ export async function handleFinishedRequest({ request, response, decodedPath, pr
         const selections=value.modes!==undefined||value.editions!==undefined
           ?await collectFinishedSelections({projectRoot,projectId,value,readFacts,signal:controller.signal,progress:()=>{}})
           :[(await readFacts(projectId,({projectDirectory})=>collectFinishedExport(projectRoot,projectId,projectDirectory,value))).value];
+        release=await mediaCache.acquire(selections[0].directory);
         if(streaming)response.writeHead(200,{'content-type':'application/x-ndjson; charset=utf-8','cache-control':'no-store'});
         const prepared=[];
         for(const selection of selections)prepared.push(await prepareFinishedExport(selection,controller.signal,event=>progress({...event,message:finishedSelectionLabel(selection)+' · '+event.message})));
         controller.signal.throwIfAborted();
         const packs=prepared.flatMap(item=>item.packs).map(pack=>({...pack,disposition:'attachment; filename="'+projectId+'.'+(pack.preview?'html':'zip')+"\"; filename*=UTF-8''"+encodeURIComponent(pack.filename).replace(/['()*]/g,char=>'%'+char.charCodeAt(0).toString(16).toUpperCase())}));
         if(value.prepare===true){
-          const artifacts=packs.map(pack=>{
-            const ticket=randomUUID(),timer=setTimeout(()=>preparedExports.delete(ticket),15*60_000);timer.unref();
-            preparedExports.set(ticket,{...pack,projectRoot,projectId,timer});
-            return {filename:pack.filename,download_url:'/api/projects/'+encodeURIComponent(projectId)+'/finished/export?ticket='+ticket};
-          });
+          const artifacts=[];
+          for(const pack of packs){
+            const release=await mediaCache.acquire(selections[0].directory);
+            const ticket=randomUUID(),timer=setTimeout(()=>{preparedExports.delete(ticket);release();},15*60_000);timer.unref();
+            preparedExports.set(ticket,{...pack,projectRoot,projectId,timer,release});issued.push(ticket);
+            artifacts.push({filename:pack.filename,download_url:'/api/projects/'+encodeURIComponent(projectId)+'/finished/export?ticket='+ticket});
+          }
           const result={...artifacts[0],artifacts,warnings:prepared.flatMap(item=>item.warnings.map(w=>finishedSelectionLabel(item)+' · '+w)),volumes:prepared.flatMap(item=>item.volumes),groups:prepared.map(item=>({label:finishedSelectionLabel(item),volumes:item.volumes}))};
+          controller.signal.throwIfAborted();
           if(streaming)response.end(JSON.stringify({result})+'\n');else sendJson(response,200,result);
+          published=true;
         }else{
           if(packs.length!==1)throw new ApiError(409,'finished_export_multiple_parts',['EH 已拆分多个 ZIP，请在网页准备下载，或使用 finished.export.local 保存所有分包']);
           await sendFinishedExport(response,packs[0]);
@@ -108,7 +118,11 @@ export async function handleFinishedRequest({ request, response, decodedPath, pr
     }catch(error){
       if(!streaming||!response.headersSent)throw error;
       if(!response.destroyed)response.end(JSON.stringify({error:(error.details?.join?.('；')||error.message)+(error.exportDirectory?'；已完成的文件保留在 '+error.exportDirectory:'')})+'\n');
-    }finally{response.off('close',disconnected);}
+    }finally{
+      response.off('close',disconnected);
+      if(!published)for(const ticket of issued){const prepared=preparedExports.get(ticket);if(prepared){clearTimeout(prepared.timer);preparedExports.delete(ticket);prepared.release();}}
+      release?.();
+    }
     return true;
   }
   return false;

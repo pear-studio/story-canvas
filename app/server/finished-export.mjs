@@ -8,6 +8,7 @@ import {exportWorkTitle,filenamePart} from './work-title.mjs';
 import {prepareExportMedia} from './finished-export-plan.mjs';
 import {writeFinishedExport} from './finished-export-download.mjs';
 import policy from '../shared/finished-export-policy.json' with {type:'json'};
+import {mediaCache} from './media-cache.mjs';
 
 export const exportModeLabels={standard:'高清',eh:'EH',pixiv:'Pixiv',preview:'网页'};
 const editionLabels={zh:'中文',en:'英文',ja:'日文',clean:'无字'};
@@ -52,6 +53,7 @@ export async function collectFinishedSelections({projectRoot,projectId,value,rea
 export const finishedSelectionLabel=selection=>exportModeLabels[selection.mode]+' · '+editionLabels[selection.edition];
 export async function exportFinishedLocal({projectRoot,projectId,value,readFacts,signal,progress}) {
   const selections=await collectFinishedSelections({projectRoot,projectId,value,readFacts,signal,progress});
+  return mediaCache.use(selections[0].directory,async()=>{
   const root=path.join(selections[0].directory,'Outputs','exports',new Date().toISOString().replace(/[:.]/g,'-')+'-'+randomUUID().slice(0,8));
   const artifacts=[];
   try {
@@ -68,4 +70,5 @@ export async function exportFinishedLocal({projectRoot,projectId,value,readFacts
     }
     return {directory:root,artifacts};
   } catch(error){error.exportDirectory=root;error.exported=artifacts;throw error;}
+  });
 }

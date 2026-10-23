@@ -3,6 +3,7 @@ import { createReadStream } from "node:fs";
 import { imageContentType, sendFile, sendJson } from "./http-support.mjs";
 import { ensureMediaVariant, resolveMediaVariantWidth } from "./media-variants.mjs";
 import { loraTrainingModule } from "./lora-training-module.mjs";
+import {mediaCache} from './media-cache.mjs';
 
 /**
  * LoRA HTTP Adapter。
@@ -44,6 +45,7 @@ export async function handleLoraTrainingRequest({
     const width = resolveMediaVariantWidth(new URL(request.url, "http://localhost").searchParams.get("w"));
     media.contentType = imageContentType(media.target);
     if (width) {
+      await mediaCache.protectResponse(response,projectDirectory);
       try { media = await ensureMediaVariant(projectDirectory, media, relativePath, width); }
       catch { /* 缩略图失败时仍可查看原图。 */ }
     }

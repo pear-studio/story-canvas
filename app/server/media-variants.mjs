@@ -9,6 +9,7 @@ import {randomUUID} from 'node:crypto';
 import {createMediaVariantTasks} from './media-variant-tasks.mjs';
 import {retimeWebp,webpPlaybackMetadata} from './webp-timing.mjs';
 import {trimWebp} from './webp-trim.mjs';
+import {mediaCache} from './media-cache.mjs';
 
 export const MEDIA_VARIANT_WIDTHS = [320, 1024];
 
@@ -73,7 +74,7 @@ async function generateVariant(projectDirectory, media, relativePath, width, tar
     }
   }
   // Buffer 输入避免 libvips 缓存持有原图句柄，阻止 Windows 删除候选目录。
-  const buffer = await sharp(await readFile(media.target), { animated: true })
+  const buffer = await sharp(media.sourceBytes??await readFile(media.target), { animated: true })
     .rotate()
     .resize({ width, withoutEnlargement: true })
     .webp({ quality: media.animated&&width===320 ? 65 : 82 })
@@ -84,28 +85,29 @@ async function generateVariant(projectDirectory, media, relativePath, width, tar
 }
 
 export async function ensureMediaVariant(projectDirectory, media, relativePath, width, postprocess, signal) {
+  return mediaCache.use(projectDirectory,()=>resolveMediaVariant(projectDirectory,media,relativePath,width,postprocess,signal));
+}
+
+async function resolveMediaVariant(projectDirectory, media, relativePath, width, postprocess, signal) {
   signal?.throwIfAborted();
   const started=performance.now();
   const edit=normalizeVideoPostprocess(postprocess),edited=hasVideoPostprocess(edit);
   if(edited&&path.extname(media.target).toLowerCase()!=='.mp4')throw new Error('后处理只支持 MP4 视频');
   const video=/\.mp4$/i.test(media.target);
-  let sourceHash;
-  if(video){
-    const fingerprint=`${media.target}:${media.info.size}:${media.info.mtimeMs}:${media.info.ctimeMs}`;
-    sourceHash=sourceHashes.get(fingerprint);
-    if(!sourceHash){
-      media={...media,sourceBytes:media.sourceBytes??await readFile(media.target,{signal})};
-      sourceHash=createHash('sha256').update(media.sourceBytes).digest('hex');
-      if(sourceHashes.size>=512)sourceHashes.delete(sourceHashes.keys().next().value);
-      sourceHashes.set(fingerprint,sourceHash);
-    }
+  const fingerprint=`${media.target}:${media.info.size}:${media.info.mtimeMs}:${media.info.ctimeMs}`;
+  let source=sourceHashes.get(fingerprint);
+  if(!source){
+    media={...media,sourceBytes:media.sourceBytes??await readFile(media.target,{signal})};
+    source={hash:createHash('sha256').update(media.sourceBytes).digest('hex'),animated:/\.webp$/i.test(media.target)&&(await sharp(media.sourceBytes).metadata()).pages>1};
+    if(sourceHashes.size>=512)sourceHashes.delete(sourceHashes.keys().next().value);
+    sourceHashes.set(fingerprint,source);
   }
-  else if(/\.webp$/i.test(media.target))media={...media,animated:(await sharp(await readFile(media.target)).metadata()).pages>1};
+  media={...media,animated:source.animated};
   if(video)width=width===320?320:'original';
   if(width==='original'&&!video)throw new Error('原尺寸动画档位只支持 MP4');
-  const animation = video ? 'animation-v3-q65-q80:' : media.animated ? 'animation-v2-q65:' : /\.webp$/i.test(relativePath)?'animation-v1:':'';
-  // 用源字节身份让冻结成品和候选共用缓存，路径变化不影响原片身份。
-  const identity=video?sourceHash:`${relativePath}:${media.info.size}:${media.info.mtimeMs}:${media.info.ctimeMs}`;
+  const animation = video ? 'animation-v3-q65-q80:' : media.animated ? 'animation-v2-q65-content:' : 'image-v2:';
+  // 图片和视频都按源字节复用，复制路径和重做相同内容不会增加变体。
+  const identity=source.hash;
   const key = createHash("sha1")
     .update(`${animation}${identity}:${width}${edited?':edit-v1:'+JSON.stringify(edit):''}`)
     .digest("hex");
@@ -113,6 +115,7 @@ export async function ensureMediaVariant(projectDirectory, media, relativePath, 
   try {
     const info = await stat(target);
     if (info.isFile()) {
+      await mediaCache.record(projectDirectory,[target]);
       if(path.extname(media.target).toLowerCase()==='.mp4')logVideoProcessing({event:'video_preview_cache',key,status:'hit',elapsed_ms:Math.round(performance.now()-started),source:relativePath,width,settings:edit});
       return { target, info, contentType: "image/webp" };
     }
@@ -121,18 +124,22 @@ export async function ensureMediaVariant(projectDirectory, media, relativePath, 
   }
   // 只有完整缓存缺失才需要源字节，裁剪和变速不再读取 MP4。
   if(video&&!edited&&!media.sourceBytes)media={...media,sourceBytes:await readFile(media.target,{signal})};
-  return joinVariant(target,signal=>generateVariant(projectDirectory, media, relativePath, width, target, edit,signal),signal);
+  return joinVariant(target,signal=>mediaCache.use(projectDirectory,async()=>{
+    const result=await generateVariant(projectDirectory, media, relativePath, width, target, edit,signal);
+    await mediaCache.record(projectDirectory,[target],{written:true});
+    return result;
+  }),signal);
 }
 
 // 图片入库时后台预热全部档位，首次访问直接命中磁盘缓存。
 // 失败不影响发布，首次访问仍会按需生成。
 export function warmMediaVariants(projectDirectory, relativePath) {
-  return (async () => {
+  return mediaCache.use(projectDirectory,async () => {
     const target = path.join(projectDirectory, ...relativePath.split("/"));
     const media = { target, info: await stat(target) };
     const animated=/\.mp4$/i.test(relativePath)||(/\.webp$/i.test(relativePath)&&(await sharp(await readFile(target)).metadata()).pages>1);
     for (const width of animated ? [320] : MEDIA_VARIANT_WIDTHS) {
       await ensureMediaVariant(projectDirectory, media, relativePath, width);
     }
-  })().catch(() => {});
+  }).catch(() => {});
 }

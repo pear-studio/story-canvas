@@ -10,6 +10,7 @@ import {ensureMediaVariant} from './media-variants.mjs';
 import {prepareExportAnimation,prepareEhAnimation} from './finished-export-animation.mjs';
 import exportPolicy from '../shared/finished-export-policy.json' with {type:'json'};
 import policy from '../shared/pixiv-export-policy.json' with {type:'json'};
+import {mediaCache} from './media-cache.mjs';
 export {policy as pixivPolicy};
 const join=createMediaVariantTasks();
 const fail=message=>{throw new ApiError(409,'finished_export_not_ready',[message]);};
@@ -61,11 +62,14 @@ export async function prepareExportMedia(directory,entries,{mode,preview,signal,
 }
 
 export async function preparePixivJpeg(directory,target,signal,maxBytes=policy.image_max_bytes) {
+  return mediaCache.use(directory,()=>preparePixivJpegCache(directory,target,signal,maxBytes));
+}
+async function preparePixivJpegCache(directory,target,signal,maxBytes) {
   const input=await readFile(target,{signal});
   const key=createHash('sha256').update(input).update(JSON.stringify({policy,maxBytes})).digest('hex');
   const cache=path.join(directory,'Saved','media-cache','pixiv'),output=path.join(cache,key+'.jpg');
-  return join(output,async signal=>{
-    try {const size=(await stat(output)).size;if(size>0&&size<maxBytes)return {target:output,size};}catch(error){if(error.code!=='ENOENT')throw error;}
+  return join(output,signal=>mediaCache.use(directory,async()=>{
+    try {const size=(await stat(output)).size;if(size>0&&size<maxBytes){await mediaCache.record(directory,[output]);return {target:output,size};}}catch(error){if(error.code!=='ENOENT')throw error;}
     await mkdir(cache,{recursive:true});
     for(const tier of policy.jpeg) {
       signal.throwIfAborted();
@@ -73,11 +77,11 @@ export async function preparePixivJpeg(directory,target,signal,maxBytes=policy.i
       try {
         const info=await sharp(input).rotate().resize({width:tier.edge,height:tier.edge,fit:'inside',withoutEnlargement:true}).flatten({background:'#ffffff'}).jpeg({quality:tier.quality,chromaSubsampling:'4:4:4',mozjpeg:true}).toFile(temp);
         signal.throwIfAborted();
-        if(info.size<maxBytes){await rename(temp,output);return {target:output,size:info.size};}
+        if(info.size<maxBytes){await rename(temp,output);await mediaCache.record(directory,[output],{written:true});return {target:output,size:info.size};}
       } finally {await unlink(temp).catch(error=>{if(error.code!=='ENOENT')throw error;});}
     }
     fail(`单张 JPEG 压缩后仍达到 ${maxBytes/1_000_000} MB，请调整该页`);
-  },signal);
+  }),signal);
 }
 
 // 在连续候选边界中求页数方差最小的切分，不按容量贪心塞满前卷。
