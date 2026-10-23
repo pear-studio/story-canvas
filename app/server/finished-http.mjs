@@ -3,6 +3,7 @@ import {sendFinishedExport} from './finished-export-download.mjs';
 import { requireLetteringLocale } from './page-translation-document.mjs';
 import { randomUUID } from 'node:crypto';
 import {mediaCache} from './media-cache.mjs';
+import {inspectFinishedCleanSharing,shareFinishedClean} from './finished-media.mjs';
 
 import { ApiError, readJsonBody, sendJson } from "./http-support.mjs";
 import {optimizeFinishedGif} from './finished-gif.mjs';
@@ -13,9 +14,14 @@ const activeBatches = new Set();
 const preparedExports = new Map();
 
 export async function handleFinishedRequest({ request, response, decodedPath, projectRoot, config, readFacts, mutateDerived, mutateTargetFacts, sendOperation }) {
-  const match = /^\/api\/projects\/([^/]+)\/finished(?:\/(output-batch|output|export-local|export|jobs|optimize-gif))?\/?$/.exec(decodedPath);
+  const match = /^\/api\/projects\/([^/]+)\/finished(?:\/(output-batch|output|export-local|export|jobs|optimize-gif|clean-sharing))?\/?$/.exec(decodedPath);
   if (!match) return false;
   const projectId = match[1];
+  if(match[2]==='clean-sharing'&&['GET','POST'].includes(request.method)){
+    const value=request.method==='GET'?{page_key:{page_id:new URL(request.url,'http://local').searchParams.get('page_id')}}:await readJsonBody(request);
+    const result=await (request.method==='GET'?readFacts:mutateTargetFacts)(projectId,({projectDirectory})=>(request.method==='GET'?inspectFinishedCleanSharing:shareFinishedClean)(projectDirectory,value));
+    sendOperation(200,result);return true;
+  }
   if(request.method==='POST'&&match[2]==='optimize-gif') {
     const value=await readJsonBody(request);
     sendOperation(200,await optimizeFinishedGif({repositoryRoot:projectRoot,projectId,value,readFacts,mutateTargetFacts}));

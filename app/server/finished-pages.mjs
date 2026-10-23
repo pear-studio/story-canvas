@@ -9,9 +9,10 @@ import {captureCollage,composeCollage,resolveCollageMedia,collageMediaFingerprin
 import {comicGeometry} from '../shared/comic-layout.mjs';
 import {hasVideoPostprocess,normalizeVideoPostprocess,videoPostprocessTiming} from '../shared/video-postprocess.mjs';
 import {prepareAnimationFiles} from './animation-output.mjs';
+import {sharedFinishedCleanPath,writeSharedFinishedClean,cleanupFinishedMedia,finishedRecordMedia} from './finished-media.mjs';
 
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, rmdir, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { replaceFileWithRetry } from "./file-replace.mjs";
 import path from "node:path";
 import sharp from "sharp";
@@ -194,13 +195,9 @@ export async function deleteFinishedPage(directory, value) {
   const record = await readFinishedRecord(directory, id,locale);
   if (!record || hashCanonicalJson(record) !== value.expected_sha256) fail("本页成品已变化，请刷新后再删除");
   await unlink(recordPath(directory, id,locale));
-  for (const relative of new Set([...Object.values(record.outputs),...[record.poster,record.source_backup].filter(Boolean)])) {
-    if (!relative.startsWith(`Outputs/finished/${id}/`)) continue;
-    const media = await resolveExistingProjectMedia(directory, relative);
-    if (media) { await unlink(media.target); await rmdir(path.dirname(media.target)).catch(() => {}); }
-  }
+  const cleanup=await cleanupFinishedMedia(directory,id,finishedRecordMedia(record));
   await unlink(jobPath(directory, id,locale)).catch(error => { if (error.code !== "ENOENT") throw error; });
-  return { deleted: true };
+  return { deleted: true, warnings:cleanup.warnings };
 }
 
 export async function upscaleFinishedImage(source, config, token) {
@@ -306,13 +303,18 @@ export async function prepareFinishedPage(repositoryRoot, projectId, directory, 
   return { job, snapshot, layerCapture,sourceBuffer, reuse: reuse?.target??null, expected: hashCanonicalJson(old), old };
 }
 
-export async function publishFinishedPage(repositoryRoot, projectId, directory, prepared, record) {
+export async function publishFinishedPage(repositoryRoot, projectId, directory, prepared, record, {cleanBuffer}={}) {
   const { page_id: id } = prepared.job;
   if (hashCanonicalJson(await readFinishedRecord(directory, id,prepared.job.locale)) !== prepared.expected) fail("本页成品已被其他操作更新，请重新读取");
   const view = await readProjectWorkbenchView(repositoryRoot, projectId, {kind:'directory'});
   const pages = [...view.outline.chapters.flatMap(chapter=>chapter.sequences.flatMap(sequence=>sequence.pages)), ...view.characters.flatMap(setting=>setting.pages), ...view.scenes.scenes.flatMap(setting=>setting.pages), ...view.orphan_pages];
   if (!pages.some(page => page.page_id === id)) fail("页面已删除，本次输出不再发布");
+  if(cleanBuffer){
+    if(record.outputs.clean!==sharedFinishedCleanPath(id,cleanBuffer))fail('共享底图引用与内容不匹配');
+    await writeSharedFinishedClean(directory,id,cleanBuffer);
+  }
   await writeJson(recordPath(directory, id,prepared.job.locale), record);
+  if(prepared.old)await cleanupFinishedMedia(directory,id,finishedRecordMedia(prepared.old));
 }
 
 async function inspectComicSources(directory,document){
@@ -386,27 +388,18 @@ export async function runFinishedPage({ repositoryRoot, projectId, directory, pr
     const dimensions = await sharp(lettered).metadata();
     if (dimensions.width !== width || dimensions.height !== height) fail("嵌字输出尺寸不匹配");
     const prefix = `Outputs/finished/${job.page_id}/${job.locale??'zh'}/${job.id}`;
-    outputs = { clean: `${prefix}/clean.png`, lettered: `${prefix}/lettered.png` };
+    outputs = { clean: sharedFinishedCleanPath(job.page_id,clean), lettered: `${prefix}/lettered.png` };
     await mkdir(path.join(directory, prefix), { recursive: true });
-    await writeFile(path.join(directory, outputs.clean), clean);
     await writeFile(path.join(directory, outputs.lettered), lettered);
     await update("publishing");
     const record = { $schema: "https://storyvisualizer.local/schemas/finished-page.schema.json", ...snapshot, created_at: new Date().toISOString(), width, height, outputs };
-    await mutateTargetFacts(projectId, () => publishFinishedPage(repositoryRoot, projectId, directory, prepared, record));
+    await mutateTargetFacts(projectId, () => publishFinishedPage(repositoryRoot, projectId, directory, prepared, record,{cleanBuffer:clean}));
     published = true;
     for (const relative of Object.values(outputs)) warmMediaVariants(directory, relative);
     await update("completed");
     }
   } catch (error) { await update("failed", error.message); }
-  // 只清理本次失败产物或已被成功替换的两个文件，不递归清理生成目录。
-  const obsolete = published ? prepared.old?.outputs : outputs;
-  const obsoletePoster=published?prepared.old?.poster:newPoster;
-  const obsoleteBackup=published?prepared.old?.source_backup:newBackup;
-  for (const relative of new Set([...Object.values(obsolete ?? {}),...[obsoletePoster,obsoleteBackup].filter(Boolean)])) {
-    if (!relative.startsWith(`Outputs/finished/${job.page_id}/`)) continue;
-    const media = await resolveExistingProjectMedia(directory, relative).catch(() => null);
-    if (media) { await unlink(media.target).catch(() => {}); await rmdir(path.dirname(media.target)).catch(() => {}); }
-  }
+  if(!published&&outputs)await mutateTargetFacts(projectId,()=>cleanupFinishedMedia(directory,job.page_id,[...Object.values(outputs),newPoster,newBackup])).catch(error=>console.warn('[story-canvas] 失败成品清理未完成',error.message));
   return job;
 }
 

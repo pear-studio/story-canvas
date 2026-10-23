@@ -160,6 +160,7 @@
       "properties": {
         "clean": {
           "type": "string",
+          "description": "干净底图。新静态成品保存为 Outputs/finished/<page_id>/clean/<SHA-256>.png，同页相同字节由各语言共用；旧独立路径仍可读取，显式归并使用 finished.clean.inspect/share。",
           "pattern": "^Outputs/finished/"
         },
         "lettered": {
