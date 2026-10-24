@@ -55,6 +55,32 @@ test('工作台独立语言草稿、保存、外语横排、缺译留空；Agent
   assert.ok(adjustedBox.x<heartItem.box.x && adjustedBox.x+adjustedBox.w<=1);
   assert.equal(heartItem.box.x,1-sourceInspection.diagnostics.objects[0].box.w-.06,'适配不改写原版位置');
   assert.deepEqual(adjusted.image,await renderFinishedImage(clean,translated,origin),'自动调整后的检查与输出像素一致');
+  const shortLines=[{id:'dialogue-623456789abc',mode:'speech',speaker:'npc',text:'多谢'},{id:'dialogue-723456789abc',mode:'speech',speaker:'npc',text:'我睡沙发也可以的'}];
+  const shortItems=[{dialogue_id:shortLines[0].id,box:{x:.091,y:.045,w:.4,h:.16}},{dialogue_id:shortLines[1].id,box:{x:.037,y:.117,w:.4,h:.16}}];
+  const shortSource={dialogue:shortLines,items:shortItems,settings:{...defaultLetteringSettings(),font_size:32},canvas:'3:4'},savedSource=JSON.stringify(shortSource);
+  const renderPage=await browser.newPage({viewport:{width:960,height:1280}});
+  await renderPage.goto(`${origin}/finished-render.html`);await renderPage.waitForFunction(()=>typeof window.renderFinishedLettering==='function');
+  async function inspectLayout(value){return renderPage.evaluate(async value=>{const diagnostics=await window.renderFinishedLettering(value,true);return {...diagnostics,texts:Array.from(document.querySelectorAll('.lettering-text')).map(node=>node.textContent)};},value);}
+  const chinese=await inspectLayout(shortSource);
+  assert.ok(Math.abs(chinese.objects[0].box.w-2.9*32/1024)<.001,'中文短句仍按正文收紧');
+  for(const [locale,texts] of [['en',['Thank you.','I can take the couch.']],['ja',['ありがとうございます','俺はソファでいいよ']]]){
+    const value={...shortSource,locale,source_dialogue:shortLines,dialogue:shortLines.map((line,index)=>({...line,text:texts[index]})),settings:{...shortSource.settings,font_family:'SVTranslation'}};
+    const result=await inspectLayout(value),first=result.objects[0].box,second=result.objects[1].box;
+    assert.equal(result.texts[0],texts[0],`${locale} 短句完整显示，不拆单词或挤成多行`);
+    assert.ok(first.h<=chinese.objects[0].box.h*1.1+.001,`${locale} 首句保持单行高度`);
+    assert.ok(first.y+first.h<second.y,`${locale} 首句不遮挡下一句`);
+    assert.ok(first.w>chinese.objects[0].box.w&&first.w<shortItems[0].box.w-.03,`${locale} 仅扩到必要宽度`);
+    assert.deepEqual(result.blockers,[]);assert.ok(result.objects.every(object=>!object.issues.includes('overlap')));
+    assert.deepEqual((await inspectLayout(shortSource)).objects,chinese.objects,'译文适配不改变中文几何');
+    const edge={...value,items:[{...shortItems[0],box:{...shortItems[0].box,x:.84,y:.75}}],dialogue:[value.dialogue[0]],source_dialogue:[shortLines[0]]};
+    const edgeResult=await inspectLayout(edge);
+    assert.deepEqual(edgeResult.blockers,[]);assert.ok(edgeResult.objects[0].box.x+edgeResult.objects[0].box.w<=1.001,'增宽受右边界约束');
+    const longText=locale==='en'?'Thank you for letting me stay here tonight. I will leave early tomorrow.':'今夜ここに泊めてくださってありがとうございます。明日の朝早く出発します';
+    const longResult=await inspectLayout({...value,items:[shortItems[0]],dialogue:[{...value.dialogue[0],text:longText}],source_dialogue:[shortLines[0]]});
+    assert.equal(longResult.texts[0].replace(/\s/g,''),longText.replace(/\s/g,''),'长译文不丢字');
+    assert.ok(longResult.objects[0].box.w<=shortItems[0].box.w+.001,'长译文不超出用户宽度');assert.deepEqual(longResult.blockers,[]);
+  }
+  assert.equal(JSON.stringify(shortSource),savedSource,'不改写保存的中文与布局');await renderPage.close();
   await page.goto(`${origin}/?project=demo&tab=finished`);await page.getByLabel('嵌字语言',{exact:true}).selectOption('ja');await page.getByText('缺译 3 · 原文变化 0',{exact:true}).waitFor();
   assert.deepEqual(errors,[]);
 });

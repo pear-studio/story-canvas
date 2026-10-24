@@ -39,11 +39,25 @@ export function resolveTranslatedLettering(line:WorkbenchDialogueDraft,source:Wo
   // 中文竖排转为横排时交换像素宽高，保持相近面积，避免译文挤成单字符列。
   if(preset.direction==='vertical'){const width=original.box.h*dimensions.height,height=original.box.w*dimensions.width;original.box.w=width/dimensions.width;original.box.h=height/dimensions.height;}
   const boundary=allowOutside?16:1;
-  const width=Math.min(original.box.w*1.1,Math.max(.001,boundary-item.box.x))*dimensions.width;
+  let width=Math.min(original.box.w*1.1,Math.max(.001,boundary-item.box.x))*dimensions.width;
+  const heightBudget=original.box.h*dimensions.height*1.1;
   let fontSize=style.font_size,lines:string[]=[],height=0;
-  for(const ratio of [1,.95,.9,.85]){fontSize=style.font_size*ratio;const font=fontSize*dimensions.width/1024;const inset=font*(preset.kind==='plain'?.18:.45);
-    lines=wrap(line.text,Math.max(font,width-2*inset),font,locale);height=lines.length*font*1.3+font*(preset.kind==='plain'?.36:.84);
-    if(height<=original.box.h*dimensions.height*1.1)break;
+  const layoutAt=(candidateWidth:number)=>{const font=fontSize*dimensions.width/1024,inset=font*(preset.kind==='plain'?.18:.45);
+    const wrapped=wrap(line.text,Math.max(font,candidateWidth-2*inset),font,locale);
+    return {lines:wrapped,height:wrapped.length*font*1.3+font*(preset.kind==='plain'?.36:.84)};
+  };
+  for(const ratio of [1,.95,.9,.85]){fontSize=style.font_size*ratio;({lines,height}=layoutAt(width));
+    if(height<=heightBudget)break;
+  }
+  // 短中文会自动收紧气泡；译文仍超高时，在已保存宽度内找能容纳正文的最小宽度。
+  const maximumWidth=Math.min(item.box.w,Math.max(.001,boundary-item.box.x))*dimensions.width;
+  if(height>heightBudget&&maximumWidth>width){
+    const expanded=layoutAt(maximumWidth),targetHeight=Math.max(heightBudget,expanded.height);
+    if(expanded.height<height){
+      let lower=width,upper=maximumWidth;
+      for(let step=0;step<16;step++){const middle=(lower+upper)/2;if(layoutAt(middle).height<=targetHeight)upper=middle;else lower=middle;}
+      width=upper;({lines,height}=layoutAt(width));
+    }
   }
   measure!.font=`650 ${fontSize*dimensions.width/1024}px ${translationFont}`;
   const actualWidth=Math.max(...lines.map(line=>measure!.measureText(line).width))+(fontSize*dimensions.width/1024)*(preset.kind==='plain'?.36:.9);
