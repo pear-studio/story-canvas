@@ -185,7 +185,7 @@ export async function readFinishedPages(repositoryRoot, projectId, directory, { 
         bytes: available ? (await stat(files[0].target)).size : null,
         lettered_url: available ? url("lettered") : null, clean_url: cleanAvailable ? url("clean") : null } : null });
   }
-  return { pages };
+  return { pages, chapters:view.outline.chapters.map(({id,title})=>({id,title})) };
 }
 
 export async function deleteFinishedPage(directory, value) {

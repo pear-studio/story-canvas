@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {readFile,writeFile,unlink,cp,truncate,readdir,stat} from 'node:fs/promises';
-import {exportFinishedLocal} from '../server/finished-export.mjs';
+import {exportFinishedLocal,createExportDirectory} from '../server/finished-export.mjs';
 import path from 'node:path';
 import sharp from 'sharp';
 import {fixture,key,json,candidateId} from './helpers/finished-fixture.mjs';
@@ -162,7 +162,7 @@ test('作品名称经项目接口保存、读取、回退与清空，改名不�
   const clear=await save({});assert.equal(clear.status,200);assert.equal((await(await fetch(url)).json()).value.work_title,undefined);
 });
 
-test('批量本机导出先检查四版，按用途保存所有文件且不改记录；重复导出新目录',async t=>{
+test('批量本机导出先检查四版，平铺保存所有文件且不改记录；重复导出新目录',async t=>{
   const f=await fixture(t);await make(f,key);
   const invoke=(modes,editions)=>exportFinishedLocal({projectRoot:f.root,projectId:'demo',value:{modes,editions},readFacts:f.operations.readFacts,signal:new AbortController().signal,progress:()=>{}});
   await assert.rejects(invoke(['standard','eh'],['zh','en']),e=>e.code==='finished_export_not_ready');
@@ -171,6 +171,9 @@ test('批量本机导出先检查四版，按用途保存所有文件且不改�
   const before=await readFile(path.join(f.directory,'finished/page-001.json'));
   const result=await invoke(['standard','eh','pixiv','preview'],['zh','en','ja','clean']);
   assert.equal(result.artifacts.length,16);
+  assert.match(path.basename(result.directory),/^全文-中文_英文_日文_无字-高清_EH_Pixiv_网页-\d{4}-\d{2}-\d{2}-\d{4}$/);
+  assert.equal((await readdir(result.directory)).length,16);
+  assert.ok(result.artifacts.every(a=>path.dirname(a.file)===result.directory));
   for(const artifact of result.artifacts){
     assert.equal((await stat(artifact.file)).size,artifact.bytes);
     const bytes=await readFile(artifact.file);
@@ -190,5 +193,42 @@ test('批量取消保留已完成文件，不留下当前.partial',async t=>{
   const controller=new AbortController();
   let savedDirectory;
   await assert.rejects(exportFinishedLocal({projectRoot:f.root,projectId:'demo',value:{modes:['standard','preview'],editions:['zh']},readFacts:f.operations.readFacts,signal:controller.signal,progress:event=>{if(event.message.startsWith('网页 ·'))controller.abort();}}),e=>{savedDirectory=e.exportDirectory;return e.name==='AbortError';});
-  const files=await readdir(path.join(savedDirectory,'高清'));assert.equal(files.length,1);assert.ok(files[0].endsWith('.zip'));
+  const files=await readdir(savedDirectory);assert.equal(files.length,1);assert.ok(files[0].endsWith('.zip'));
+});
+
+
+test('多章导出按作品顺序合并、仅检查所选章节并使用显示名称',async t=>{
+  const f=await fixture(t),outlineFile=path.join(f.directory,'story/outline.json');
+  const outline=JSON.parse(await readFile(outlineFile,'utf8'));
+  outline.chapters.push({id:'second',title:'第二章',summary:'测试',sequences:[{id:'seq-two',title:'第二段',summary:'测试'}]},{id:'third',title:'第三章',summary:'测试',sequences:[{id:'seq-three',title:'第三段',summary:'测试'}]});
+  await json(outlineFile,outline);
+  const second=await createPage(f.root,'demo',{owner_kind:'story',sequence_id:'seq-two'},{pageKind:'text'});
+  await createPage(f.root,'demo',{owner_kind:'story',sequence_id:'seq-three'},{pageKind:'text'});
+  await make(f,key);await make(f,second.page_key);
+  const send=await exporter(t,f),selection={modes:['standard','preview'],editions:['zh'],chapter_ids:['second','chapter'],prepare:true};
+  const response=await send(selection);assert.equal(response.status,200);
+  const result=await response.json();assert.equal(result.artifacts.length,2);
+  for(const artifact of result.artifacts){
+    assert.match(artifact.filename,/成品测试-第一章_第二章-中文-/);
+    const downloaded=await fetch(new URL(artifact.download_url,response.url)),bytes=Buffer.from(await downloaded.arrayBuffer());
+    if(artifact.filename.endsWith('.zip'))assert.deepEqual(zipNames(bytes),['001.png','002.png']);
+    else assert.deepEqual([...bytes.toString().matchAll(/data-page="(\d+)"/g)].map(m=>m[1]),['1','2']);
+  }
+  const full=await send({variant:'lettered'});assert.equal(full.status,409);await full.text();
+  for(const chapter_ids of [[],['unknown'],['chapter','unknown'],['chapter','chapter'],null]){
+    const invalid=await send({...selection,chapter_ids});assert.equal(invalid.status,400);await invalid.text();
+  }
+  const local=await exportFinishedLocal({projectRoot:f.root,projectId:'demo',value:{...selection,editions:['clean']},readFacts:f.operations.readFacts,signal:new AbortController().signal,progress:()=>{}});
+  assert.match(path.basename(local.directory),/^第一章_第二章-无字-高清_网页-/);
+  assert.deepEqual(zipNames(await readFile(local.artifacts[0].file)),['001.png'],'选择中的纯文字章可被无字版省略');
+  for(const operation of ['finished.export','finished.export.local']){
+    const help=await executeWorkbench({operation:'help',target:operation});assert.equal(help.parameters.properties.chapter_ids.type,'array');assert.equal(help.parameters.properties.chapter_id,undefined);
+  }
+});
+
+test('导出目录使用本地分钟时间，并发重名追加序号，不覆盖旧目录',async t=>{
+  const f=await fixture(t),selections=[{scopeName:'第一章_第二章',edition:'en',mode:'preview'},{scopeName:'第一章_第二章',edition:'zh',mode:'standard'}],date=new Date(2026,9,23,14,13,58);
+  const directories=await Promise.all([1,2,3].map(()=>createExportDirectory(f.directory,selections,date)));
+  const name='第一章_第二章-中文_英文-高清_网页-2026-10-23-1413';
+  assert.deepEqual(directories.map(d=>path.basename(d)).sort(),[name,name+'-2',name+'-3']);
 });

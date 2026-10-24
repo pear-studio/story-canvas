@@ -40,12 +40,12 @@ button.finished-image { border:0; padding:0; cursor:zoom-in; }
 .finished-options input[type=radio] { width:auto; margin:0; }
 .finished-options p { margin:0; color:var(--muted); font-size:var(--text-label); line-height:1.6; }
 .finished-options .finished-batch-options { flex-direction:column; }
-.finished-options .finished-export-modes { display:grid; gap:14px; }
-.finished-export-modes label { align-items:flex-start; }
-.finished-export-modes input { flex:none; margin-top:3px; }
-.finished-export-modes small { display:block; margin-top:3px; color:var(--muted); line-height:1.5; }
-.finished-edition-hint { flex-basis:100%; }
-.finished-export-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:12px; }
+.finished-options .finished-export-choices { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
+.finished-export-choices label { align-items:flex-start; padding:8px; border-radius:7px; background:var(--paper); min-width:0; overflow-wrap:anywhere; }
+.finished-export-choices input { flex:none; margin-top:3px; }
+.finished-export-choices small { display:block; margin-top:3px; color:var(--muted); line-height:1.5; }
+.finished-edition-hint { grid-column:1 / -1; }
+.finished-export-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
 .finished-export-actions > div { display:flex; flex-direction:column; align-items:center; gap:6px; }
 .finished-export-actions small { color:var(--muted); font-size:var(--text-label); }
 .finished-options code, .finished-options a { overflow-wrap:anywhere; }
@@ -65,6 +65,8 @@ html[data-image-privacy="peek"] .finished-reader-modal iframe { opacity:.2; }
 @media(max-width:1160px) { .current-workbench-page .finished-output-action { grid-column:1 / -1; grid-row:2; } }
 @media(max-width:600px) {
   .utility-page.finished-view { padding:18px 14px; }
+  .finished-options .finished-export-choices { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .finished-export-actions small { text-align:center; font-size:12px; }
   .finished-heading { flex-wrap:wrap; gap:10px; }
   .finished-scope { margin-left:auto; gap:4px; }
   .finished-scope label { font-size:0; gap:0; }

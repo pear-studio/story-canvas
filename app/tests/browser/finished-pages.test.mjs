@@ -21,6 +21,7 @@ import {createPage} from '../../server/page-facts.mjs';
 const testAppRoot=process.env.STORY_CANVAS_TEST_APP_ROOT??fileURLToPath(new URL('../../',import.meta.url));
 
 async function selectExports(dialog,modes,editions) {
+  await dialog.getByRole('checkbox',{name:'全文',exact:true}).check();
   for(const name of ['高清','EH','Pixiv','网页'])await dialog.getByRole('checkbox',{name,exact:true}).setChecked(modes.includes(name));
   for(const name of ['中文','英文','日文','无字'])await dialog.getByRole('checkbox',{name,exact:true}).setChecked(editions.includes(name));
 }
@@ -137,7 +138,9 @@ test('四版导出界面独立检查、手机可选择版本、实际下载无�
   await page.getByRole('button',{name:'导出',exact:true}).click();
   const dialog=page.getByRole('dialog',{name:'导出成品',exact:true});
   assert.equal(await dialog.getByLabel('保存方式').count(),0);
-  assert.equal(await dialog.getByRole('checkbox').count(),8);
+  assert.equal(await dialog.locator('input:checked').count(),0,'默认所有范围、用途和版本不勾选');
+  for(const name of ['浏览器下载','批量保存'])assert.equal(await dialog.getByRole('button',{name,exact:true}).isDisabled(),true);
+  await selectExports(dialog,['高清'],['中文']);
   await dialog.getByText('部分所选版本尚未就绪，请处理后再导出。').waitFor();
   for(const name of ['浏览器下载','批量保存'])assert.equal(await dialog.getByRole('button',{name,exact:true}).isDisabled(),true);
   await selectExports(dialog,['高清'],['无字']);
@@ -180,7 +183,7 @@ test('四版导出界面独立检查、手机可选择版本、实际下载无�
   await page.getByRole('button',{name:'复制目录',exact:true}).waitFor();
   const directory=await page.locator('.finished-options code').innerText();
   assert.ok(directory.startsWith(path.join(f.directory,'Outputs','exports')));
-  for(const [folder,extension] of [['高清','zip'],['网页','html']])assert.ok((await stat(path.join(directory,folder,`成品测试-全文-无字-${folder}.${extension}`))).size>0);
+  for(const [folder,extension] of [['高清','zip'],['网页','html']])assert.ok((await stat(path.join(directory,`成品测试-全文-无字-${folder}.${extension}`))).size>0);
   await page.goto(`http://127.0.0.1:${server.address().port}/?project=demo&tab=project-settings`);
   await page.getByLabel('作品名称 · 中文（可选）',{exact:true}).fill('完整作品名称');
   await page.getByLabel('作品名称 · 英文（可选）',{exact:true}).fill('Full Work Title');
@@ -440,4 +443,46 @@ test("浏览器成品导航、返回编辑与输出按钮可用", async t => {
   assert.equal(await page.locator(".finished-card").first().getByRole("heading").innerText(), "001");
   assert.equal(await page.locator(".finished-card").first().locator("img").count(), 0);
   assert.deepEqual(errors, []);
+});
+
+
+test('导出范围默认不选，多章合并且全文互斥，下载与本机保存共用范围',async t=>{
+  const f=await fixture(t),outlineFile=path.join(f.directory,'story/outline.json'),outline=JSON.parse(await readFile(outlineFile,'utf8'));
+  outline.chapters.push({id:'second',title:'第二章',summary:'测试',sequences:[{id:'seq-two',title:'第二段',summary:'测试'}]},{id:'third',title:'第三章',summary:'测试',sequences:[{id:'seq-three',title:'第三段',summary:'测试'}]});
+  await json(outlineFile,outline);
+  const second=await createPage(f.root,'demo',{owner_kind:'story',sequence_id:'seq-two'},{pageKind:'text'});
+  await createPage(f.root,'demo',{owner_kind:'story',sequence_id:'seq-three'},{pageKind:'text'});
+  await f.run(await f.prepare());await f.run(await prepareFinishedPage(f.root,'demo',f.directory,{page_key:second.page_key}));
+  const server=await createStoryCanvasServer({projectRoot:f.root,appRoot:testAppRoot,production:true,localConfig:{comfyui_urls:[]},hardwareStatusReader:async()=>({cpu:{available:false},memory:{available:false},gpu:{available:false},comfyui:{connected:false,status:'offline'}})});
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  const browser=await chromium.launch({headless:true,...(process.platform==='win32'?{channel:'msedge'}:{})});
+  t.after(async()=>{await browser.close();await new Promise(resolve=>server.close(resolve));});
+  const page=await browser.newPage({viewport:{width:1000,height:900}});
+  await page.goto(`http://127.0.0.1:${server.address().port}/?project=demo&tab=finished`);
+  await page.getByRole('button',{name:'导出',exact:true}).click();
+  const dialog=page.getByRole('dialog',{name:'导出成品',exact:true}),checkbox=name=>dialog.getByRole('checkbox',{name,exact:true});
+  assert.equal(await dialog.locator('input:checked').count(),0);
+  await checkbox('网页').check();await checkbox('中文').check();
+  assert.equal(await dialog.getByRole('button',{name:'浏览器下载',exact:true}).isDisabled(),true);
+  await checkbox('全文').check();await checkbox('第二章').check();assert.equal(await checkbox('全文').isChecked(),false);
+  await checkbox('第一章').check();
+  for(const width of [1000,390]){
+    await page.setViewportSize({width,height:900});
+    const grids=await dialog.locator('fieldset').evaluateAll(els=>els.map(el=>getComputedStyle(el).display));assert.deepEqual(grids,['grid','grid','grid']);
+    const bounds=await checkbox('第二章').boundingBox();assert.ok(bounds.x>=0&&bounds.x+bounds.width<=width);
+  }
+  const downloaded=page.waitForEvent('download');await dialog.getByRole('button',{name:'浏览器下载',exact:true}).click();
+  const download=await downloaded;assert.match(download.suggestedFilename(),/第一章_第二章-中文-网页.html$/);
+  const file=path.join(f.root,'combined.html');await download.saveAs(file);
+  assert.deepEqual([...(await readFile(file,'utf8')).matchAll(/data-page="(\d+)"/g)].map(m=>m[1]),['1','2']);
+  await page.getByRole('button',{name:'导出',exact:true}).click();
+  assert.equal(await checkbox('第二章').isChecked(),true);
+  await dialog.getByRole('button',{name:'批量保存',exact:true}).click();
+  await page.getByRole('button',{name:'复制目录',exact:true}).waitFor();
+  const directory=await page.locator('.finished-options code').innerText();assert.match(path.basename(directory),/^第一章_第二章-中文-网页-/);
+  assert.ok((await stat(path.join(directory,download.suggestedFilename()))).size>0);
+  await page.getByRole('button',{name:'导出',exact:true}).click();await checkbox('全文').check();
+  assert.equal(await checkbox('第一章').isChecked(),false);assert.equal(await checkbox('第二章').isChecked(),false);
+  await dialog.getByText('部分所选版本尚未就绪，请处理后再导出。').waitFor();
+  await checkbox('全文').uncheck();assert.equal(await dialog.getByRole('button',{name:'批量保存',exact:true}).isDisabled(),true);
 });

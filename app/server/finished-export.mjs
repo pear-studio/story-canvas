@@ -1,5 +1,4 @@
 import path from 'node:path';
-import {randomUUID} from 'node:crypto';
 import {readFile,mkdir} from 'node:fs/promises';
 import {ApiError} from './http-support.mjs';
 import {readFinishedPages,readFinishedRecord} from './finished-pages.mjs';
@@ -19,7 +18,11 @@ export async function collectFinishedExport(projectRoot,projectId,directory,valu
   if(value.preview){if(!['standard','preview'].includes(mode))throw new ApiError(400,'invalid_finished_export');mode='preview';}
   const locale=requireLetteringLocale(value.locale),variant=value.variant,edition=variant==='clean'?'clean':locale;
   const listing=await readFinishedPages(projectRoot,projectId,directory,{locale,variant,mode});
-  const pages=listing.pages.filter(p=>!value.chapter_id||p.chapter_id===value.chapter_id);
+  if(value.chapter_id!==undefined)throw new ApiError(400,'invalid_finished_export',['请使用 chapter_ids 选择章节']);
+  const chapterIds=value.chapter_ids===undefined?null:choices(value.chapter_ids,listing.chapters.map(c=>c.id));
+  const scope=chapterIds?listing.chapters.filter(c=>chapterIds.includes(c.id)).map(c=>c.title).join('_'):'全文';
+  const scopeName=filenamePart(scope.replace(/[\s+]+/g,'_'),64);
+  const pages=listing.pages.filter(p=>!chapterIds||chapterIds.includes(p.chapter_id));
   if(!pages.length)throw new ApiError(409,'finished_export_empty');
   const blocked=pages.filter(p=>p.status!=='ready');
   if(blocked.length)throw new ApiError(409,'finished_export_not_ready',blocked.map(p=>`${exportModeLabels[mode]} · ${editionLabels[edition]} · 第 ${p.page_number} 页 · ${p.title} · ${p.status_reasons.join('；')}`));
@@ -30,8 +33,8 @@ export async function collectFinishedExport(projectRoot,projectId,directory,valu
   }
   const project=JSON.parse(await readFile(path.join(directory,'project.json'),'utf8'));
   const title=exportWorkTitle(project,variant==='clean'?'zh':locale);
-  const stem=filenamePart(title)+'-'+filenamePart(value.chapter_id||'全文')+'-'+editionLabels[edition]+'-'+exportModeLabels[mode];
-  return {directory,entries,mode,edition,locale:variant==='clean'?'zh':locale,preview:mode==='preview',title,stem};
+  const stem=filenamePart(title)+'-'+scopeName+'-'+editionLabels[edition]+'-'+exportModeLabels[mode];
+  return {directory,entries,mode,edition,scopeName,locale:variant==='clean'?'zh':locale,preview:mode==='preview',title,stem};
 }
 export async function prepareFinishedExport(selection,signal,progress) {
   const media=await prepareExportMedia(selection.directory,selection.entries,{mode:selection.mode,signal,progress});
@@ -45,25 +48,37 @@ export async function collectFinishedSelections({projectRoot,projectId,value,rea
   const selections=[];
   for(const mode of modes)for(const edition of editions){
     signal.throwIfAborted();progress({message:`正在检查 ${exportModeLabels[mode]} · ${editionLabels[edition]}`});
-    const result=await readFacts(projectId,({projectDirectory})=>collectFinishedExport(projectRoot,projectId,projectDirectory,{mode,variant:edition==='clean'?'clean':'lettered',locale:edition==='clean'?'zh':edition,chapter_id:value.chapter_id}));
+    const result=await readFacts(projectId,({projectDirectory})=>collectFinishedExport(projectRoot,projectId,projectDirectory,{mode,variant:edition==='clean'?'clean':'lettered',locale:edition==='clean'?'zh':edition,chapter_ids:value.chapter_ids,chapter_id:value.chapter_id}));
     selections.push(result.value);
   }
   return selections;
 }
 export const finishedSelectionLabel=selection=>exportModeLabels[selection.mode]+' · '+editionLabels[selection.edition];
+export async function createExportDirectory(directory,selections,date=new Date()) {
+  const pad=n=>String(n).padStart(2,'0');
+  const time=`${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}`;
+  const editions=Object.keys(editionLabels).filter(e=>selections.some(s=>s.edition===e)).map(e=>editionLabels[e]).join('_');
+  const modes=Object.keys(exportModeLabels).filter(m=>selections.some(s=>s.mode===m)).map(m=>exportModeLabels[m]).join('_');
+  const parent=path.join(directory,'Outputs','exports'),name=[selections[0].scopeName,editions,modes,time].join('-');
+  await mkdir(parent,{recursive:true});
+  for(let index=1;;index++){
+    const target=path.join(parent,name+(index===1?'':'-'+index));
+    try {await mkdir(target);return target;}catch(error){if(error.code!=='EEXIST')throw error;}
+  }
+}
 export async function exportFinishedLocal({projectRoot,projectId,value,readFacts,signal,progress}) {
   const selections=await collectFinishedSelections({projectRoot,projectId,value,readFacts,signal,progress});
   return mediaCache.use(selections[0].directory,async()=>{
-  const root=path.join(selections[0].directory,'Outputs','exports',new Date().toISOString().replace(/[:.]/g,'-')+'-'+randomUUID().slice(0,8));
+  signal.throwIfAborted();
+  const root=await createExportDirectory(selections[0].directory,selections);
   const artifacts=[];
   try {
     for(const selection of selections){
       signal.throwIfAborted();
       const label=finishedSelectionLabel(selection);
       const prepared=await prepareFinishedExport(selection,signal,event=>progress({...event,message:label+' · '+event.message}));
-      const directory=path.join(root,exportModeLabels[selection.mode]);await mkdir(directory,{recursive:true});
       for(const pack of prepared.packs){
-        const file=path.join(directory,pack.filename);progress({message:`正在保存 ${pack.filename}`});
+        const file=path.join(root,pack.filename);progress({message:`正在保存 ${pack.filename}`});
         const bytes=await writeFinishedExport(file,pack,signal,selection.mode==='eh'?policy.eh.batch_max_bytes:Infinity);
         artifacts.push({file,filename:pack.filename,mode:selection.mode,edition:selection.edition,bytes,volumes:prepared.volumes,warnings:prepared.warnings});
       }

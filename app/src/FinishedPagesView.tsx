@@ -26,13 +26,14 @@ export function FinishedPagesView({locale="zh",onLocaleChange, projectId, onOpen
   const [chapter, setChapter] = useState("");
   const [exportListing, setExportListing] = useState<{identity:string;groups:{label:string;pages:FinishedPage[]}[];error?:string}|null>(null);
   const [exporting, setExporting] = useState(false);
-  const [batchModes,setBatchModes]=useState<FinishedExportMode[]>(['standard','eh','pixiv','preview']);
-  const [batchEditions,setBatchEditions]=useState<FinishedEdition[]>(['zh','en','ja','clean']);
+  const [batchModes,setBatchModes]=useState<FinishedExportMode[]>([]);
+  const [batchEditions,setBatchEditions]=useState<FinishedEdition[]>([]);
+  const [exportChapters,setExportChapters]=useState<string[]|null>([]);
   const [localResult,setLocalResult]=useState<FinishedLocalExportResult|null>(null);
   const [downloads,setDownloads]=useState<FinishedExportResult|null>(null);
   const [exportProgress,setExportProgress]=useState('');
   const exportController=useRef<AbortController|null>(null);
-  useEffect(()=>{setExporting(false);setLocalResult(null);setDownloads(null);return ()=>exportController.current?.abort();},[projectId]);
+  useEffect(()=>{setExporting(false);setLocalResult(null);setDownloads(null);setExportChapters([]);setBatchModes([]);setBatchEditions([]);return ()=>exportController.current?.abort();},[projectId]);
   const [refresh, setRefresh] = useState(0);
   const [preview, setPreview] = useState<{ id: string } | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -55,7 +56,7 @@ export function FinishedPagesView({locale="zh",onLocaleChange, projectId, onOpen
   }, [projectId, refresh, notify,locale]);
   const exportIdentity=JSON.stringify([projectId,batchModes,batchEditions]);
   useEffect(()=>{
-    if(panel!=='export')return;
+    if(panel!=='export'||!batchModes.length||!batchEditions.length)return;
     const controller=new AbortController();setExportListing(null);
     void Promise.all(batchModes.flatMap(mode=>batchEditions.map(async edition=>{
       const result=await loadFinishedPages(projectId,controller.signal,undefined,edition==='clean'?'zh':edition,edition==='clean'?'clean':'lettered',mode);
@@ -66,9 +67,9 @@ export function FinishedPagesView({locale="zh",onLocaleChange, projectId, onOpen
     return ()=>controller.abort();
   },[projectId,batchModes,batchEditions,exportIdentity,panel,refresh]);
   const exportReady=exportListing?.identity===exportIdentity?exportListing:null;
-  const exportGroups=exportReady?.groups.map(group=>({...group,pages:group.pages.filter(page=>!chapter||page.chapter_id===chapter)}))??[];
+  const exportGroups=exportReady?.groups.map(group=>({...group,pages:group.pages.filter(page=>exportChapters===null||exportChapters.includes(page.chapter_id))}))??[];
   const exportBlocked=exportGroups.flatMap(group=>group.pages.filter(page=>page.status!=='ready').map(page=>({label:group.label,page})));
-  const canExport=Boolean(exportReady&&!exportReady.error&&exportGroups.length&&exportGroups.every(group=>group.pages.length)&&!exportBlocked.length);
+  const canExport=Boolean((exportChapters===null||exportChapters.length>0)&&exportReady&&!exportReady.error&&exportGroups.length&&exportGroups.every(group=>group.pages.length)&&!exportBlocked.length);
   const filtered = pages.filter(page => !chapter || page.chapter_id === chapter);
   const chapters = [...new Map(pages.map(page => [page.chapter_id, page.chapter_title])).entries()];
   const missing = filtered.filter(page => page.status === "missing").length;
@@ -102,11 +103,11 @@ export function FinishedPagesView({locale="zh",onLocaleChange, projectId, onOpen
 
       setDownloads(null);setLocalResult(null);
       if(localExport){
-        const result=await exportFinishedLocal(projectId,batchModes,batchEditions,chapter,setExportProgress,controller.signal);
+        const result=await exportFinishedLocal(projectId,batchModes,batchEditions,exportChapters??undefined,setExportProgress,controller.signal);
         if(controller.signal.aborted)return;
         setLocalResult(result);notify({kind:'success',title:'批量导出完成',message:result.artifacts.length+' 个文件已保存到项目导出目录。'});
       }else{
-        const result = await exportFinishedPages(projectId,batchModes,batchEditions,chapter, async result => {
+        const result = await exportFinishedPages(projectId,batchModes,batchEditions,exportChapters??undefined, async result => {
           if(controller.signal.aborted)return false;
           const summaries=result.groups?.filter(group=>group.volumes.length).map(group=>group.label+'\n'+group.volumes.map((v,i)=>(v.kind==='animations'?'动画 GIF':v.kind==='batch'?'上传包 '+(i+1):'静态卷 '+(i+1))+' · '+v.pages+' 张 · '+(v.bytes/1_000_000).toFixed(2)+' MB').join('\n'))??[];
           return !summaries.length&&!result.warnings.length||await confirm({title:result.warnings.length?'发布提示':'导出清单',message:[...summaries,...result.warnings].join('\n\n'),confirmLabel:'开始下载'});
@@ -166,18 +167,19 @@ export function FinishedPagesView({locale="zh",onLocaleChange, projectId, onOpen
       <dt>成品文件缺失</dt><dd>有制作记录，但当前设备缺少对应成品文件。该状态优先于内容过时显示。</dd>
     </dl></Modal>}
 
-    {panel === "export" && <Modal title="导出成品" subtitle={chapter ? chapters.find(([id]) => id === chapter)?.[1] : "全文"} onClose={() => setPanel(null)} footer={<div className="finished-export-actions">
+    {panel === "export" && <Modal title="导出成品" onClose={() => setPanel(null)} footer={<div className="finished-export-actions">
       <div><small>多个文件分别下载</small><button className="button" disabled={!canExport} onClick={() => void download(false)}>浏览器下载</button></div>
       <div><small>统一保存到项目导出目录</small><button className="button button--primary" disabled={!canExport} onClick={() => void download(true)}>批量保存</button></div>
     </div>}>
       <div className="finished-options">
-        <fieldset className="finished-export-modes"><legend>导出用途</legend>{(Object.keys(finishedExportLabels) as FinishedExportMode[]).map(mode=><label key={mode}><input type="checkbox" aria-label={finishedExportLabels[mode]} checked={batchModes.includes(mode)} onChange={e=>setBatchModes(values=>e.target.checked?[...values,mode]:values.filter(v=>v!==mode))}/><span>{finishedExportLabels[mode]}<small>{exportDescriptions[mode]}</small></span></label>)}</fieldset>
-        <fieldset><legend>导出版本</legend><button className="button" onClick={()=>setBatchEditions(['zh','en','ja','clean'])}>选择全部四版本</button>{(Object.keys(finishedEditionLabels) as FinishedEdition[]).map(edition=><label key={edition}><input type="checkbox" checked={batchEditions.includes(edition)} onChange={e=>setBatchEditions(values=>e.target.checked?[...values,edition]:values.filter(v=>v!==edition))}/>{finishedEditionLabels[edition]}</label>)}
+        <fieldset className="finished-export-choices"><legend>导出范围</legend><label><input type="checkbox" checked={exportChapters===null} onChange={e=>setExportChapters(e.target.checked?null:[])}/>全文</label>{chapters.map(([id,title])=><label key={id}><input type="checkbox" checked={exportChapters?.includes(id)??false} onChange={e=>setExportChapters(values=>e.target.checked?[...(values??[]),id]:(values??[]).filter(value=>value!==id))}/>{title}</label>)}</fieldset>
+        <fieldset className="finished-export-choices"><legend>导出用途</legend>{(Object.keys(finishedExportLabels) as FinishedExportMode[]).map(mode=><label key={mode}><input type="checkbox" aria-label={finishedExportLabels[mode]} checked={batchModes.includes(mode)} onChange={e=>setBatchModes(values=>e.target.checked?[...values,mode]:values.filter(v=>v!==mode))}/><span>{finishedExportLabels[mode]}<small>{exportDescriptions[mode]}</small></span></label>)}</fieldset>
+        <fieldset className="finished-export-choices"><legend>导出版本</legend>{(Object.keys(finishedEditionLabels) as FinishedEdition[]).map(edition=><label key={edition}><input type="checkbox" checked={batchEditions.includes(edition)} onChange={e=>setBatchEditions(values=>e.target.checked?[...values,edition]:values.filter(v=>v!==edition))}/>{finishedEditionLabels[edition]}</label>)}
           {batchEditions.includes('clean')&&<p className="finished-edition-hint">无字版去掉嵌字和后加素材，省略文字页，保留原页码；画面本身的文字会保留。</p>}
         </fieldset>
-        {!batchModes.length||!batchEditions.length?<p>请选择至少一种用途和一个版本。</p>:!exportReady?<p role="status">正在检查所选版本…</p>:null}
+        {(exportChapters!==null&&!exportChapters.length)||!batchModes.length||!batchEditions.length?null:!exportReady?<p role="status">正在检查所选版本…</p>:null}
         {exportReady?.error&&<p role="alert">{exportReady.error}</p>}
-        {exportGroups.some(group=>!group.pages.length)&&<p>当前范围没有可导出的页面。</p>}
+        {(exportChapters===null||exportChapters.length>0)&&exportGroups.some(group=>!group.pages.length)&&<p>当前范围没有可导出的页面。</p>}
         {exportBlocked.length>0&&<><p role="alert">部分所选版本尚未就绪，请处理后再导出。</p><ul className="finished-batch-list">{exportBlocked.map(({label,page})=><li key={label+page.page_id}><button className="finished-page-link" onClick={()=>{setPanel(null);onOpenPage(page.page_key);}}>{label} · {number(page)} · {page.title}</button><small>{page.status_reasons?.join('；')??page.status}</small></li>)}</ul></>}
         {(exportReady?.error||exportBlocked.length>0)&&<button className="button" onClick={()=>setRefresh(value=>value+1)}>重新检查</button>}
       </div>

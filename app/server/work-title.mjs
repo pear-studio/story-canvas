@@ -15,9 +15,9 @@ export function exportWorkTitle(project,locale='zh') {
   return project.work_title?.[locale] || project.work_title?.zh || project.title;
 }
 
-export function filenamePart(value) {
+export function filenamePart(value,maxBytes=160) {
   const safe=String(value).normalize('NFC').replace(/[<>:"/\\|?*\x00-\x1f\x7f]/g,'_').replace(/[. ]+$/g,'').trim();
   let result='';
-  for(const char of safe){if(Buffer.byteLength(result+char)>160)break;result+=char;}
+  for(const char of safe){if(Buffer.byteLength(result+char)>maxBytes)break;result+=char;}
   return result||'作品';
 }

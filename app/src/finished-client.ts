@@ -28,8 +28,8 @@ export const finishedJobLabel = (status?: string) => ({ queued: "等待输出", 
 export const loadFinishedPages = async (id: string, signal?: AbortSignal, pageId?: string,locale:LetteringLocale='zh',variant:FinishedVariant='lettered',mode:FinishedExportMode='standard') => responseJson<{ pages: FinishedPage[] }>(await readFacts(`${base(id)}?locale=${locale}&variant=${variant}&mode=${mode}${pageId ? `&page_id=${encodeURIComponent(pageId)}` : ""}`, { signal, cache: "no-store" }));
 export const startFinishedPage = async (id: string, page_key: PageKey, candidate_id?: string,locale:LetteringLocale='zh') => responseJson<{ job: FinishedJob }>(await mutateDerived(`${base(id)}/output`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({locale, page_key, ...(candidate_id ? { candidate_id } : {}) }) }));
 export const startFinishedBatch = async (id: string, chapter_id: string, force = false,locale:LetteringLocale='zh') => responseJson<{ queued: number; skipped: { page_id: string; title: string; reason: string }[] }>(await mutateDerived(`${base(id)}/output-batch`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({locale, chapter_id: chapter_id || null, force }) }));
-export async function exportFinishedPages(id: string, modes:FinishedExportMode[],editions:FinishedEdition[],chapter_id: string, beforeDownload: (result:FinishedExportResult)=>Promise<boolean>,onProgress:(message:string)=>void,signal:AbortSignal) {
-  const response=await readFacts(`${base(id)}/export`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({modes,editions,chapter_id,prepare:true,progress:true }),signal });
+export async function exportFinishedPages(id: string, modes:FinishedExportMode[],editions:FinishedEdition[],chapter_ids: string[]|undefined, beforeDownload: (result:FinishedExportResult)=>Promise<boolean>,onProgress:(message:string)=>void,signal:AbortSignal) {
+  const response=await readFacts(`${base(id)}/export`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({modes,editions,chapter_ids,prepare:true,progress:true }),signal });
   const result=await readExportResponse<FinishedExportResult>(response,onProgress);
   signal?.throwIfAborted();
   if (!await beforeDownload(result)) return null;
@@ -37,8 +37,8 @@ export async function exportFinishedPages(id: string, modes:FinishedExportMode[]
   for(const file of result.artifacts??[result])startFinishedDownload(file);
   return result;
 }
-export async function exportFinishedLocal(id:string,modes:FinishedExportMode[],editions:FinishedEdition[],chapter_id:string,onProgress:(message:string)=>void,signal:AbortSignal) {
-  const response=await mutateDerived(`${base(id)}/export-local`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({modes,editions,chapter_id,progress:true}),signal});
+export async function exportFinishedLocal(id:string,modes:FinishedExportMode[],editions:FinishedEdition[],chapter_ids:string[]|undefined,onProgress:(message:string)=>void,signal:AbortSignal) {
+  const response=await mutateDerived(`${base(id)}/export-local`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({modes,editions,chapter_ids,progress:true}),signal});
   return readExportResponse<FinishedLocalExportResult>(response,onProgress);
 }
 async function readExportResponse<T>(response:Response,onProgress?:(message:string)=>void):Promise<T> {
