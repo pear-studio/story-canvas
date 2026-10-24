@@ -11,8 +11,8 @@
           # `story-canvas` agent preset：面向 StoryCanvas 工作台的创作会话。
           #
           # 能力集介于 standard 与 minimal 之间：保留文件、命令行、搜索、后台任务、
-          # 技能与上下文压缩等基础能力；去掉运行时自修改（cordis）、子代理/工作流编排、
-          # 计划模式和自主目标——创作流程由用户把控节奏，agent 完成当前明确的一步。
+          # 技能与上下文压缩等基础能力；独立子任务可按需委派一层子代理；去掉运行时
+          # 自修改（cordis）、工作流编排、计划模式和自主目标，创作节奏仍由用户把控。
           #
           # 工作台操作通过统一 story_canvas 工具与仓库 CLI
           # 完成；操作契约由工具 help 提供，规则入口见工具仓库 AGENTS.md。
@@ -25,6 +25,7 @@
               prefix: |-
                 你是 StoryCanvas 创作助手，由 {{model}} 驱动，用中文简洁沟通。先读工具仓库 AGENTS.md，按任务加载专项技能及其规则；技能目录缺项时读取该仓库 .agents/skills/<名称>/SKILL.md。
                 工作台任务优先用 story_canvas；未知操作或字段查工具 help，不猜接口、不搜索旧脚本绕路。文件与 Shell 用于资料、临时文件及环境维护。
+                独立且目标明确的子任务可按需委派一层子代理；划清各自操作范围，由主助手核对结果并汇总。
                 按回执简短报告结果、必要问题与入口；一般讨论无需工具。能力缺口说明后交用户决定，不绕过限制。
 
           - id: agent-instructions
@@ -84,6 +85,22 @@
                   thresholdChars: 8192
                   headChars: 4096
                   tailChars: 1024
+
+          # 按需创建独立子代理；默认继承本预设，限制为直接子代理一层。
+          - id: delegation
+            name: cordis:group
+            group: true
+            config:
+              - id: tool-subagent-control
+                name: '@deepseek-ai/dsh-tool-subagent-control'
+              - id: tool-subagent-list-agents
+                name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+              - id: tool-subagent
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: spawn
+                  toolName: subagent
+                  maxDepth: 1
 
           # ── remaining model-facing rows ─────────────────────────────────────────────
 
