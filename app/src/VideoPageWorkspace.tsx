@@ -1,5 +1,6 @@
 import {useEffect,useRef,useState} from 'react';
-import {loadPageMedia,startPageRender,deleteCandidate,loadCandidateDetail,type WorkbenchPage,type Candidate,type PagePrompt,type CandidateDetail} from './project-workbench-client';
+import {loadPageMedia,startPageRender,deleteCandidate,loadCandidateDetail,type WorkbenchPage,type Candidate,type CandidateDetail} from './project-workbench-client';
+import type {PagePromptDraft as PagePrompt} from './models/h3/types';
 import {readFacts,mutateTargetFacts} from './project-write-client';
 import {responseJson} from './api-response';
 import {referenceUrl} from './ReferenceLibrary';

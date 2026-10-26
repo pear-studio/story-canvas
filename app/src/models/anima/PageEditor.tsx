@@ -11,12 +11,12 @@ import {displayPromptDraft,persistPromptDraft,createPromptDraftFragment,matchesL
 import {CAMERA_DIRECTIONS,CAMERA_HEIGHTS,CAMERA_SHOTS,CAMERA_VIEWS,CAMERA_EFFECTS} from '../../../shared/camera-prompt.mjs';
 import {variantPrompt,resolvedSettingEntries} from '../../../shared/prompt-inheritance.mjs';
 import {characterSource,sceneSource} from '../../project-workbench-client';
-import {promptCategories,type PagePrompt,type CharacterPromptDocument} from './types';
+import {promptCategories,type PagePrompt,type PagePromptDraft,type CharacterPromptDocument} from './types';
 import type {ModelPageEditorProps} from '../types';
 
 const labels={population:'画面人数',person:'人物',setting:'场景',camera:'镜头',avoid:'避免'};
 // 沿用 64db906 的编辑器和引用行。仅把宿主草稿转换与模型编辑区域收进适配器。
-export function AnimaPageEditor({projectId,page,prompt,onChange,characters,scenes,references,onReferencesChange,disabled,header}:ModelPageEditorProps) {
+export function AnimaPageEditor({projectId,page,prompt,onChange,characters,scenes,references,onReferencesChange,disabled,header}:ModelPageEditorProps<PagePromptDraft,CharacterPromptDocument>) {
   const native={population:[],person:[],setting:[],camera:[],avoid:[],...prompt} as PagePrompt;
   const camera=native.camera_settings??{};
   const cameraSummary=[camera.direction&&CAMERA_DIRECTIONS[camera.direction],camera.height&&CAMERA_HEIGHTS[camera.height],camera.shot&&CAMERA_SHOTS[camera.shot],camera.view&&CAMERA_VIEWS[camera.view],...Object.entries(CAMERA_EFFECTS).filter(([key])=>camera[key as keyof typeof CAMERA_EFFECTS]).map(([,effect])=>effect.label)].filter(Boolean);

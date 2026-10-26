@@ -3,7 +3,8 @@ import {ReferenceLibrary,ReferenceSelection,type ReferenceEntry} from '../../Ref
 import {PromptTextArea} from '../../SourcePromptEditor';
 import {SceneReferenceEditor} from '../../SceneReferenceEditor';
 import {ReferenceRow,ReferenceLabel,ParticipantEditor} from '../../PromptReferences';
-import {characterSource,sceneSource,type PagePrompt} from '../../project-workbench-client';
+import {characterSource,sceneSource} from '../../project-workbench-client';
+import type {PagePromptDraft as PagePrompt,CharacterPromptDocument} from './types';
 import type {ModelPageEditorProps} from '../types';
 function selectedReferenceImages(entries: ReferenceEntry[], selection?: string[]) {
   return (selection ?? entries.slice(0, 1).map(e => e.id)).flatMap(id => entries.filter(e => e.id === id));
@@ -25,7 +26,7 @@ function ReferenceTextField({ label, currentText, override, disabled, onChange, 
 }
 
 
-export function QwenPageEditor({projectId,page,prompt:promptDraft,onChange,characters,scenes:allScenes,references:allReferences,onReferencesChange,disabled,qwenRewrite,dirty=false}:ModelPageEditorProps) {
+export function QwenPageEditor({projectId,page,prompt:promptDraft,onChange,characters,scenes:allScenes,references:allReferences,onReferencesChange,disabled,qwenRewrite,dirty=false}:ModelPageEditorProps<PagePrompt,CharacterPromptDocument>) {
  const standalone=promptDraft.composition==='standalone';
  const references=standalone?[]:allReferences,scenes=standalone?[]:allScenes;
  const pageIdentity=page.page_id;

@@ -122,7 +122,7 @@ test('生成预览区分无候选与不符候选，二级详情展示实际文�
  await page.route('**/workbench/story-candidate-refresh', route => route.fulfill({json:{pages:['empty','changed'].map(id=>({page_key:{page_id:id},status:'ready',signature:'new',matched:0,candidate_ids:id==='empty'?[]:['old'],all_candidate_ids:id==='empty'?[]:['old']}))}}));
  await page.route('**/workbench/page-render-inspection', route => route.fulfill({json:{inspection:current}}));
  await page.route('**/workbench/candidate-detail', route => route.fulfill({json:{detail:{seed:42,generation:{prompt:{positive:'steel wall',negative:'blur',sections:[{ kind: 'page', text: 'steel wall' }]}}}}}));
- await page.getByRole('button', {name:'生成候选',exact:true}).click();
+ await page.getByRole('button', {name:'批量生成',exact:true}).click();
  const preview=page.getByRole('dialog', {name:'生成候选',exact:true});
  await preview.getByRole('button', {name:'生成 2 张',exact:true}).waitFor();
  assert.match(await preview.innerText(), /尚无候选 1 页 · 已有候选但无相符结果 1 页/);

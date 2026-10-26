@@ -13,46 +13,18 @@ import {
 } from "./project-write-client";
 import type { LetteringItem, LetteringSettings } from "./lettering";
 import type { WorkbenchScope } from '../shared/workbench-scope.mjs';
+import type {PagePrompt,PromptModelId,GenerationModelId,SettingPrompt,SettingPrompts,PagePrompts} from './models/prompt-types';
+export type {PagePrompt,PromptModelId} from './models/prompt-types';
+export type {PageReferenceEntry} from './models/qwen/types';
 export type { WorkbenchScope } from '../shared/workbench-scope.mjs';
 
 export const characterSource = (id: string, variant: string) => `character:${id}:${variant}`;
 export const sceneSource = (id: string, variant: string) => `scene:${id}:${variant}`;
 
 export type SettingKind = 'character' | 'scene';
-export type PromptModelId = 'anima' | 'qwen';
 export type PromptSourceVersions = Record<string, string>;
 export type Scene = WorkbenchCharacter;
 export type PageOwner = { page_id: string; owner_kind: 'story' | 'character' | 'scene'; sequence_id?: string; character_id?: string; scene_id?: string; variant_id?: string };
-export type PageReferenceEntry = ReferenceEntry & { purpose?: string };
-export type PagePrompt = {
-  camera_settings?: import("../shared/camera-prompt.mjs").CameraSettings;
-  duration?:number;loop?:boolean;quality?:'preview'|'standard';steps?:number;
-  lora_overrides?: import("../shared/lora-inheritance.mjs").LoraOverrides;
-  loras?: Array<{filename:string;sha256:string;weight:number;trigger?:string;enabled?:boolean}>;
-  trigger_sources?: {style:string[];characters:Record<string,string[]>;scenes:Record<string,string[]>};
-  text?: string;
-  composition?: 'settings' | 'standalone';
-  population?: import('./models/anima/types').PromptFragment[];
-  person?: import('./models/anima/types').PromptFragment[];
-  setting?: import('./models/anima/types').PromptFragment[];
-  camera?: import('./models/anima/types').PromptFragment[];
-  avoid?: import('./models/anima/types').PromptFragment[];
-  inheritance?: Record<string, import('./models/anima/types').InheritedAdjustments>;
-  scene_id?: string;
-  scene_variant_id?: string;
-  text_overrides?: Record<string, string>;
-  reference_overrides?: Record<string, string[]>;
-  reference_images?: PageReferenceEntry[];
-};
-export type CharacterPromptVariant = {
-  text: string;
-  reference_images?: ReferenceEntry[];
-};
-export type CharacterPromptDocument = {
-  prompt_name: string;
-  /** 键为子设定 ID，与 visual.variants 一一对应；无保留 id。 */
-  variants: Record<string, CharacterPromptVariant>;
-};
 export type Candidate = {
   iteration?: { source_candidate_id: string; source_image_sha256: string };
   media_kind?:'video';video_url?:string;review_url?:string;video?:{width:number;height:number;frames:number;fps:number;duration_seconds:number;loop:boolean};
@@ -83,10 +55,10 @@ export type WorkbenchPage = {
   parent_page_id?: string;
   comic?: {document:import('../shared/comic-layout.mjs').ComicDocument;sha256:string;panels:WorkbenchPage[]};
   project_loras?: PagePrompt['loras'];
-  model_id: 'anima' | 'qwen' | 'h3';
-  render?: {version:1;model_id:'anima'|'qwen'|'h3';profile_id:string;canvas:string};
+  model_id: GenerationModelId;
+  render?: {version:1;model_id:GenerationModelId;profile_id:string;canvas:string};
   render_sha256?: string;
-  model_prompts?: {models?:Record<string,PagePrompt>};
+  model_prompts?: {models?:Partial<PagePrompts>};
   render_capabilities?: ProjectWorkbenchView['render_capabilities'];
   kind: "story" | "character" | "scene";
   owner?: PageOwner;
@@ -117,11 +89,11 @@ export type WorkbenchPage = {
   layout_sha256?: string;
   variant_id?: string | null;
 };
-export type WorkbenchCharacter<TPrompt = CharacterPromptDocument> = {
-  model_id: 'anima'|'qwen';
+export type WorkbenchCharacter<TPrompt = SettingPrompt> = {
+  model_id: PromptModelId;
   prompt_source_versions?: Partial<Record<PromptModelId, Record<string, string>>>;
   prompt_scope_versions?: Partial<Record<PromptModelId, {base: string; variants: Record<string, string>}>>;
-  model_prompts?: {models?: {anima?:import('./models/anima/types').CharacterPromptDocument;qwen?:CharacterPromptDocument}};
+  model_prompts?: {models?:Partial<SettingPrompts>};
   id: string;
   name: string;
   description?: string;
@@ -155,7 +127,7 @@ export type ProjectWorkbenchView = {
 };
 
 export type EditableWorkbenchPage = WorkbenchPage & Required<Pick<WorkbenchPage, 'prompt' | 'prompt_sha256' | 'content_sha256'>>;
-export type EditableWorkbenchCharacter<TPrompt = CharacterPromptDocument> = WorkbenchCharacter<TPrompt> & Required<Pick<WorkbenchCharacter<TPrompt>, 'prompt' | 'prompt_sha256' | 'profile_sha256' | 'visual_sha256' | 'description'>>;
+export type EditableWorkbenchCharacter<TPrompt = SettingPrompt> = WorkbenchCharacter<TPrompt> & Required<Pick<WorkbenchCharacter<TPrompt>, 'prompt' | 'prompt_sha256' | 'profile_sha256' | 'visual_sha256' | 'description'>>;
 export function isEditablePage(page: WorkbenchPage): page is EditableWorkbenchPage {
   return Boolean(page.prompt && page.prompt_sha256 && page.content_sha256);
 }

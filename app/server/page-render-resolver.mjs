@@ -1,10 +1,9 @@
-import {settingLoras} from '../shared/lora-inheritance.mjs';
 import { readReferenceImage } from "./reference-image.mjs";
 import { readPageIndex } from './pages-store.mjs';
 import { readPageRenderSettings, pageProjectSettings } from './page-render-settings.mjs';
 import {comicGenerationDimensions} from './comic-pages.mjs';
 import { modelPrompt } from './model-prompts.mjs';
-import { profileModelAdapter } from './model-adapters.mjs';
+import { modelAdapter, profileModelAdapter } from './model-adapters.mjs';
 import { resolveSceneConfiguration } from './scene-files.mjs';
 import { createHash } from "node:crypto";
 import { lstat, readFile, realpath } from "node:fs/promises";
@@ -24,7 +23,6 @@ import { compileEffectiveRenderProfile } from "./render-profile-compiler.mjs";
 import { freezeRenderRoutes } from "./render-plan-route.mjs";
 import { freezePageLorasForTask } from "./render-task-helpers.mjs";
 import {
-  STORY_PAGE_PROMPT_SCHEMA_ID,
   checkPagePromptInputOverrideReferences,
   promptInputOverrideCharacterIds,
   validateStoryPageNarrativeDocument,
@@ -71,22 +69,7 @@ function inspectionBlocker(code, message, details = []) {
 
 function normalizeInspectionPromptDraft(value, modelId) {
   const source = isRecord(value) ? value : {};
-  if (modelId === 'anima') {
-    const prompt={$schema:STORY_PAGE_PROMPT_SCHEMA_ID,...structuredClone(source)};
-    return {prompt,errors:validateStoryPagePromptDocument({$schema:STORY_PAGE_PROMPT_SCHEMA_ID,models:{anima:source}})};
-  }
-  const prompt = {
-    $schema: STORY_PAGE_PROMPT_SCHEMA_ID,
-    text: typeof source.text === "string" ? source.text : "",
-    ...(source.composition?{composition:source.composition}:{}),
-    ...(source.loras?{loras:structuredClone(source.loras)}:{}),
-    ...(source.lora_overrides?{lora_overrides:structuredClone(source.lora_overrides)}:{}),
-    ...(source.scene_id ? { scene_id: source.scene_id, scene_variant_id: source.scene_variant_id } : {}),
-    ...(isRecord(source.text_overrides) ? { text_overrides: structuredClone(source.text_overrides) } : {}),
-    ...(isRecord(source.reference_overrides) ? { reference_overrides: structuredClone(source.reference_overrides) } : {}),
-    ...(Array.isArray(source.reference_images) ? { reference_images: source.reference_images.filter(isRecord).map((entry) => structuredClone(entry)) } : {}),
-  };
-  return { prompt, errors: validateStoryPagePromptDocument({$schema:STORY_PAGE_PROMPT_SCHEMA_ID,models:{qwen:source}}) };
+  return modelAdapter(modelId).normalizePagePromptDraft(source);
 }
 
 async function readJsonFact(projectDirectory, relativePath, { optional = false } = {}) {
@@ -148,12 +131,9 @@ async function readCharacter(projectDirectory, characterIndex, reference, modelI
   const character = {
     id: characterId,
     name: profile.name,
-    prompt_name: promptDocument.prompt_name,
     configuration_id: reference.variant_id,
     configuration_path: `variants.${reference.variant_id}`,
-    text: configuration.text ?? "",
-    reference_images: structuredClone(configuration.reference_images ?? []),
-    ...(modelId === 'anima' ? { ...structuredClone(configuration), identity: structuredClone(promptDocument.identity), local_loras: structuredClone(configuration.loras ?? []), loras: settingLoras(promptDocument.identity, configuration) } : {}),
+    ...modelAdapter(modelId).resolveSetting(configuration, promptDocument),
   };
   return {
     character,
@@ -225,11 +205,11 @@ async function loadPageSnapshot(projectDirectory, pageId, exactPageKey, renderOv
     readJsonFact(projectDirectory, "characters/index.json"),
   ]);
   const content = assertDocument(contentSource, validateStoryPageNarrativeDocument);
-  if((content.page_kind==='video')!==(modelId==='h3'))fail('page_video_model_mismatch');
+  if((content.page_kind==='video')!==Boolean(modelAdapter(modelId).capabilities.video))fail('page_video_model_mismatch');
   const promptDocument = assertDocument(promptSource, validateStoryPagePromptDocument);
   const pagePrompt = modelPrompt(promptDocument, modelId);
   if (!pagePrompt) fail('page_model_input_missing', [modelId]);
-  const standalone = ['qwen','h3'].includes(modelId) && pagePrompt.composition === 'standalone';
+  const standalone = !modelAdapter(modelId).consumesSettings(pagePrompt);
   const characterIndex = assertDocument(characterIndexSource, validateCharacterIndexDocument);
   const references = content.characters;
   const sources = [...identity.sources, contentSource, promptSource, characterIndexSource];
@@ -300,7 +280,7 @@ function assertStoryProjectFormat(project) {
  * 不分别排序。返回 errors 而不抛出，调用方决定阻断或投影为 blocker。
  */
 export function planPageReferenceImages(snapshot) {
-  if (snapshot.model_id === 'anima') return { groups: [], page: { entries: [] }, sequence: [], errors: [] };
+  if (snapshot.model_id && !modelAdapter(snapshot.model_id).capabilities.references) return { groups: [], page: { entries: [] }, sequence: [], errors: [] };
   const errors = [];
   const overrides = isRecord(snapshot.page_prompt?.reference_overrides) ? snapshot.page_prompt.reference_overrides : {};
   const groups = [

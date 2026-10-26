@@ -91,6 +91,10 @@ GIF 降级结果保存在成品 `gif.encoding`，界面显示为正常压缩说�
 
 ## 模型接入
 
-服务端注册在 `model-adapters.mjs`，原生实现位于 `models/<model>/`；`model-prompts.mjs / prompt-scope.mjs` 管容器及范围保存。前端注册在 `app/src/models/registry.tsx`，编辑器只修改宿主草稿。
+服务端在 `model-adapters.mjs` 显式注册 `models/<model>/adapter.mjs`。适配器维护原生输入创建、草稿预览归一化、角色／场景设定解析、设定基础字段及依赖、编辑辅助、校验与编译；公共模块不把未知模型当作 Qwen。`model-prompts.mjs / prompt-scope.mjs` 管容器、引用及范围保存，继续共用事实锁和读据。
+
+前端在 `app/src/models/registry.tsx` 注册各模型的 `ui-adapter`；适配器组合专用页面、总览和设定编辑器，并维护原生初始化和校验。宿主负责草稿、保存、导航及共用操作，编辑器只修改宿主草稿。原生输入类型放在各模型目录，不增加持久化类型标记或通用表单生成器。
+
+专有能力按实际使用归属模型，不预先统一 Anima 词条、Qwen 参考图或未来模型的空间输入。纯框架整理保持项目格式、继承行为与生成默认值；冻结任务的 Prompt 契约身份单独维护，不根据注册表顺序重算。
 
 新增模型沿现有注册路径，不另建插件加载器；修改 workflow／recipe 同步 Schema、引用、编译和冻结测试。参考图、LoRA 或采样变化须核验真实冻结工作流及输出映射。模型专有知识见[Qwen](../reference/qwen.md)，字段语义查 prompt 操作 topics。

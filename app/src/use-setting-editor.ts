@@ -10,7 +10,7 @@ type Props<D> = {kind?:SettingKind; projectId:string; character:EditableWorkbenc
   onSaved:(value:Partial<EditableWorkbenchCharacter<D>>) => void; onSettingChange?:(id:string)=>void; onDirtyChange?:(dirty:boolean)=>void};
 
 export function useSettingEditor<P extends object, D extends object>(props: Props<D>, modelId: PromptModelId,
-  sourceScopes: Record<string,P>, persist: (value:P, base:boolean)=>object, normalize: (document:D)=>Record<string,P>) {
+  sourceScopes: Record<string,P>, persist: (value:P, base:boolean)=>object, normalize: (document:D)=>Record<string,P>, validateScope:(value:P|undefined,base:boolean)=>boolean=()=>true) {
   const {kind='character',projectId,character,busy,onSaved,onSettingChange,onDirtyChange} = props;
   const {notify} = useFeedback();
   const identity = `${projectId}:${kind}:${character.id}:${modelId}`;
@@ -42,7 +42,7 @@ export function useSettingEditor<P extends object, D extends object>(props: Prop
   const currentDirty = Boolean(selectedMeta?.dirty || selectedScope?.dirty);
   useEffect(()=>{onDirtyChange?.(dirty);},[dirty,onDirtyChange]);
   const valid = Boolean(selectedMeta?.draft.name.trim()) && (isProfile || (variantIdValid && !variantIdConflict))
-    && (modelId !== 'qwen' || !isProfile || Boolean((selectedScope?.draft as {prompt_name?:string})?.prompt_name?.trim()));
+    && validateScope(selectedScope?.draft,isProfile);
   const profileDraft = metadata.scopes.base.draft as CharacterProfileDraft;
   function setProfileDraft(update: (draft:CharacterProfileDraft)=>CharacterProfileDraft) {metadata.setDraft('base',current=>update(current as CharacterProfileDraft));}
   function updateSelectedVariant(update:(variant:{id:string;name:string})=>{id:string;name:string}) {

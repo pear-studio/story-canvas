@@ -1,50 +1,12 @@
-import { compileCurrentPagePrompt as compileAnima } from './models/anima/current-page-prompt.mjs';
-import { compileCurrentPagePrompt as compileQwen } from './models/qwen/prompt-compiler.mjs';
-import * as animaProfile from './models/anima/profile.mjs';
-import * as animaPage from './models/anima/story-files.mjs';
-import * as animaSetting from './models/anima/character-files.mjs';
-import * as qwenPrompt from './models/qwen/prompt-contract.mjs';
-
-import * as h3 from './models/h3/prompt.mjs';
+import {animaAdapter} from './models/anima/adapter.mjs';
+import {qwenAdapter} from './models/qwen/adapter.mjs';
+import {h3Adapter} from './models/h3/adapter.mjs';
 
 // 模型拥有 Prompt 和能力；候选/队列只消费编译结果。显式注册，不扫描或运行外部插件。
 const adapters = Object.freeze({
-  h3: Object.freeze({id:'h3',architecture:'minimax-h3',label:'MiniMax H3',defaultProfile:'minimax-h3',capabilities:Object.freeze({references:true,rewrite:false,video:true}),emptyPrompt:h3.emptyPrompt,compilePrompt:h3.compilePrompt,validatePagePrompt:h3.validatePrompt,preparePagePrompt:p=>structuredClone(p),validateSettingPrompt:()=>['H3 不使用角色设定输入'],prepareSettingPrompt:p=>p,validateProfilePrompt(v){if(typeof v?.text!=='string')throw Error('H3 prompt.text 必须是字符串');},async resolveProfilePrompt(_r,p){return {prompt:p.prompt,identity:{}};},async resolveEffectivePrompt(_r,b){return structuredClone(b.source_identity);},sourceIdentityFields:[],validateSourceIdentity(){}}),
-  anima: Object.freeze({
-    id: 'anima', architecture: 'anima', label: 'Anima Basic', defaultProfile: 'anima-base-v1',
-    capabilities: Object.freeze({ references: false, rewrite: false }),
-    emptyPrompt: () => ({ population: [], person: [], setting: [], camera: [], avoid: [] }),
-    compilePrompt: compileAnima,
-    validatePagePrompt: animaPage.validateStoryPagePromptDocument,
-    preparePagePrompt: animaPage.preparePromptForPersistence,
-    validateSettingPrompt: animaSetting.validateCharacterPromptDocument,
-    prepareSettingPrompt: animaSetting.prepareCharacterPromptForPersistence,
-    validateProfilePrompt: animaProfile.validateProfilePrompt,
-    resolveProfilePrompt: animaProfile.resolveProfilePrompt,
-    resolveEffectivePrompt: animaProfile.resolveEffectivePrompt,
-    sourceIdentityFields: ['prompt_policy','prompt_fragments'],
-    validateSourceIdentity: animaProfile.validateSourceIdentity,
-  }),
-  qwen: Object.freeze({
-    id: 'qwen', architecture: 'qwen-image-2-1', label: 'Qwen-Image-2.1', defaultProfile: 'qwen-image-2-1',
-    capabilities: Object.freeze({ references: true, rewrite: true }),
-    emptyPrompt: () => ({ text: '', composition: 'settings' }),
-    compilePrompt: compileQwen,
-    validatePagePrompt: qwenPrompt.validateStoryPagePromptDocument,
-    preparePagePrompt: prompt => structuredClone(prompt),
-    validateSettingPrompt: qwenPrompt.validateCharacterPromptDocument,
-    prepareSettingPrompt: prompt => structuredClone(prompt),
-    validateProfilePrompt(value) {
-      if (!value || typeof value !== 'object' || Array.isArray(value)
-        || Object.keys(value).some(key => key !== 'text') || typeof value.text !== 'string') {
-        throw new TypeError('Qwen prompt.text 必须是字符串，且不允许未知字段');
-      }
-    },
-    async resolveProfilePrompt(_root, profile) { return { prompt: structuredClone(profile.prompt), identity: {} }; },
-    async resolveEffectivePrompt(_root, bundle) { return structuredClone(bundle.source_identity); },
-    sourceIdentityFields: [],
-    validateSourceIdentity() {},
-  }),
+  h3:h3Adapter,
+  anima:animaAdapter,
+  qwen:qwenAdapter,
 });
 
 export function modelAdapter(id) {
@@ -64,3 +26,4 @@ export async function defaultProfileAdapter(repositoryRoot, profileId) {
   return profileModelAdapter((await readResolvedRenderProfile(repositoryRoot,profileId)).resolved_profile);
 }
 export const generationModels = Object.freeze(Object.values(adapters).map(({ id, architecture, label, capabilities }) => Object.freeze({ id, architecture, label, capabilities })));
+export const settingModelIds = Object.freeze(Object.values(adapters).filter(adapter=>adapter.settingBaseFields).map(adapter=>adapter.id));

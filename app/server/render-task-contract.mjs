@@ -186,6 +186,7 @@ function promptItemBindingFingerprint(item) {
 }
 
 export function currentPromptContractIdentity() {
+  // 冻结协议的既有身份；不能用注册表顺序重算，否则纯重构也会使已排队任务失效。
   return {
     version: 8,
     sha256: hashJson({

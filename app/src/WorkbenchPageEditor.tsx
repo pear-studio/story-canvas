@@ -729,7 +729,9 @@ export default function WorkbenchPageEditor({
   const [promptBaseline, setPromptBaseline] = useState(incomingPrompt);
   const [promptDraft, setPromptDraft] = useState(incomingPrompt);
   const [promptDiscardCount, setPromptDiscardCount] = useState(0);
-  const references = useReferencedSettings(projectId, page.page_id, directoryCharacters, directoryScenes, promptDraft.composition === 'standalone' ? [] : (contentDraft.characters ?? []).map(ref=>ref.character_id), promptDraft.composition === 'standalone' ? undefined : promptDraft.scene_id);
+  const standalone='composition' in promptDraft&&promptDraft.composition==='standalone';
+  const referencedSceneId='scene_id' in promptDraft?promptDraft.scene_id:undefined;
+  const references = useReferencedSettings(projectId, page.page_id, directoryCharacters, directoryScenes, standalone ? [] : (contentDraft.characters ?? []).map(ref=>ref.character_id), standalone ? undefined : referencedSceneId);
   const {characters, scenes} = references;
   const incomingSourceVersions = readPromptSourceVersions(page.model_id==='h3'?'qwen':page.model_id, characters, scenes);
   const sourceVersions = useRef(incomingSourceVersions);
@@ -885,9 +887,11 @@ export default function WorkbenchPageEditor({
 
   function changeCharacters(value: Array<{ character_id: string; variant_id: string }>) {
     setPromptDraft(current => {
+      const sceneId='scene_id' in current?current.scene_id:undefined;
+      const sceneVariantId='scene_variant_id' in current?current.scene_variant_id:undefined;
       const sources=(refs:typeof value)=>Object.fromEntries([
         ...refs.map(ref=>({key:characterSource(ref.character_id,ref.variant_id),setting:characters.find(item=>item.id===ref.character_id),variant:ref.variant_id})),
-        ...(current.scene_id?[{key:sceneSource(current.scene_id,current.scene_variant_id!),setting:scenes.find(item=>item.id===current.scene_id),variant:current.scene_variant_id!}]:[]),
+        ...(sceneId?[{key:sceneSource(sceneId,sceneVariantId!),setting:scenes.find(item=>item.id===sceneId),variant:sceneVariantId!}]:[]),
       ].map(({key,setting,variant})=>{
         const input=setting?.model_prompts?.models?.anima;
         return [key,{identity:input?.identity,variant:input?.variants[variant],...(!input?.variants[variant]?{missing:'prompt'}:{})}];

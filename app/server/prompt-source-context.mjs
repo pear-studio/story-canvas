@@ -2,6 +2,7 @@ import {factConflict} from './fact-conflict.mjs';
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { modelPrompt, promptModelEntries } from './model-prompts.mjs';
+import { modelAdapter } from './model-adapters.mjs';
 import { readPageContent, readPagePrompt } from './pages-store.mjs';
 import { readPageRenderSettings } from './page-render-settings.mjs';
 import { hashCanonicalJson } from './workflow-definition.mjs';
@@ -22,7 +23,7 @@ export function settingPromptSourceVersion({ projectId, kind, id, modelId, varia
   const configuration = input?.variants?.[variantId];
   return hashCanonicalJson({ protocol: schemaVersion, project_id: projectId, kind, id, model_id: modelId,
     variant_id: variantId, visual: variant ? { id: variant.id, name: variant.name ?? null } : null,
-    prompt: configuration ? { ...(modelId === 'anima' ? { identity: input.identity ?? null } : { prompt_name: input.prompt_name ?? null }), configuration } : null });
+    prompt: configuration ? { ...Object.fromEntries(modelAdapter(modelId).settingBaseFields.map(field => [field, input[field] ?? null])), configuration } : null });
 }
 
 export function settingPromptSourceVersions({ projectId, kind, id, document, visual }) {

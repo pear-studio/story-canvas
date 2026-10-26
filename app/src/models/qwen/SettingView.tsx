@@ -3,16 +3,16 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useSettingEditor } from '../../use-setting-editor';
 import { PromptTextArea } from '../../SourcePromptEditor';
 import { InlineTitleEditor, SectionHeader, WorkspaceHeader } from '../../WorkspaceHeader';
-import { type CharacterPromptVariant, type CharacterPromptDocument } from '../../project-workbench-client';
+import { type CharacterPromptVariant, type CharacterPromptDocument } from './types';
 
 type PromptScope = { prompt_name: string } | CharacterPromptVariant;
 
-export function QwenSettingView({ kind = 'character', projectId, character, initialSettingId, busy, onSaved, onSettingChange, onDirtyChange }: import('../types').ModelSettingEditorProps) {
+export function QwenSettingView({ kind = 'character', projectId, character, initialSettingId, busy, onSaved, onSettingChange, onDirtyChange }: import('../types').ModelSettingEditorProps<CharacterPromptDocument>) {
   const label = kind === 'scene' ? '场景' : '角色';
   const characterViewRef = useRef<HTMLElement>(null);
   const normalize = (document:CharacterPromptDocument):Record<string,PromptScope> => ({base:{prompt_name:document.prompt_name},...Object.fromEntries(Object.entries(document.variants).map(([id,value])=>[`variant:${id}`,structuredClone(value)]))});
   const sourceScopes = useMemo(()=>normalize(character.prompt),[character.id,character.prompt_sha256]);
-  const editor = useSettingEditor({kind,projectId,character,initialSettingId,busy,onSaved,onSettingChange,onDirtyChange},'qwen',sourceScopes,value=>value,normalize);
+  const editor = useSettingEditor({kind,projectId,character,initialSettingId,busy,onSaved,onSettingChange,onDirtyChange},'qwen',sourceScopes,value=>value,normalize,(value,base)=>!base||Boolean((value as {prompt_name?:string})?.prompt_name?.trim()));
   const {settingId,isProfile,scopeKey:selectedScopeKey,selectedScope,selectedVariant,variantIdDraft,variantIdDirty,variantIdValid,variantIdConflict,
     profileDraft,setProfileDraft,updateSelectedVariant,setVariantIdDraft,promptState,dirty,saving,notice,valid,saveCurrent} = editor;
   const savingSection = saving ? 'all' : null;

@@ -1,11 +1,30 @@
 import type {PageRewriteController} from './qwen/usePageRewrite';
-import type {ReactNode} from 'react';
+import type {ComponentType,ReactNode} from 'react';
 import type {EditableWorkbenchCharacter,PagePrompt,WorkbenchPage,WorkbenchCharacter} from '../project-workbench-client';
-export type ModelSettingEditorProps={kind?:'character'|'scene';projectId:string;character:EditableWorkbenchCharacter;initialSettingId:string;busy:boolean;onSaved:(replacement:Partial<WorkbenchCharacter>)=>void;onSettingChange?:(settingId:string)=>void;onDirtyChange?:(dirty:boolean)=>void};
-export type ModelPageEditorProps = {
-  projectId:string;page:WorkbenchPage;prompt:PagePrompt;onChange:(prompt:PagePrompt)=>void;
-  characters:WorkbenchCharacter[];scenes:WorkbenchCharacter[];
+import type {GenerationModelId,PromptModelId,SettingPrompt} from './prompt-types';
+export type ModelSettingEditorProps<TSetting=SettingPrompt>={kind?:'character'|'scene';projectId:string;character:EditableWorkbenchCharacter<TSetting>;initialSettingId:string;busy:boolean;onSaved:(replacement:Partial<WorkbenchCharacter<TSetting>>)=>void;onSettingChange?:(settingId:string)=>void;onDirtyChange?:(dirty:boolean)=>void};
+export type ModelPageEditorProps<TPrompt extends PagePrompt=PagePrompt,TSetting=SettingPrompt> = {
+  projectId:string;page:WorkbenchPage;prompt:TPrompt;onChange:(prompt:TPrompt)=>void;
+  characters:WorkbenchCharacter<TSetting>[];scenes:WorkbenchCharacter<TSetting>[];
   references:Array<{character_id:string;variant_id:string}>;
   onReferencesChange:(value:Array<{character_id:string;variant_id:string}>)=>void;
   header?:ReactNode;disabled:boolean;qwenRewrite?:PageRewriteController;dirty?:boolean;onOpenOverview?:()=>void;
 };
+export type ModelOverviewEditorProps<TPrompt extends PagePrompt=PagePrompt> = {
+  page:WorkbenchPage;prompt:TPrompt;onChange:(prompt:TPrompt)=>void;disabled:boolean;
+};
+export type SettingUiAdapter = {
+  label:string;
+  Editor:ComponentType<ModelSettingEditorProps>;
+  createPrompt:(name:string,variantIds:string[])=>SettingPrompt;
+};
+export type ModelUiAdapter = {
+  id:GenerationModelId;
+  label:string;
+  profileId:string;
+  PageEditor:ComponentType<ModelPageEditorProps>;
+  OverviewEditor:ComponentType<ModelOverviewEditorProps>;
+  pageFrame:{header:boolean;settingLoraFilenames?:(props:ModelPageEditorProps)=>string[]}|null;
+  setting?:SettingUiAdapter;
+};
+export type SettingModelUiAdapter = ModelUiAdapter & {id:PromptModelId;setting:SettingUiAdapter};
