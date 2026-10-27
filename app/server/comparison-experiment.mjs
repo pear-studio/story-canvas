@@ -8,7 +8,7 @@ const createdAtPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 const maxSeed = 2 ** 31 - 1;
 const scalarTypes = new Set(["string", "number", "boolean"]);
 
-export const COMPARISON_EXPERIMENT_VERSION = 1;
+export const COMPARISON_EXPERIMENT_VERSION = 2;
 export const COMPARISON_AXIS_TYPES = Object.freeze([
   "input",
   "lora_config",
@@ -119,7 +119,7 @@ function normalizeScalarValue(value, axisType, label) {
   return { value_id: valueId, label: labelText, value: payload };
 }
 
-function normalizeLoraConfigRegistry(registry) {
+function normalizeLoraConfigRegistry(registry, version) {
   assertExactKeys(registry, ["id", "label", "lora_ref", "application"], "registries.lora_configs 条目");
   const id = assertStableId(registry.id, "registries.lora_configs.id");
   const label = assertLabel(registry.label, "registries.lora_configs.label");
@@ -127,6 +127,14 @@ function normalizeLoraConfigRegistry(registry) {
     fail("invalid_comparison_registry", "registries.lora_configs.lora_ref 必须为 null 或稳定 ID");
   }
   if (registry.application === undefined) return { id, label, lora_ref: registry.lora_ref };
+  if(version===2){
+    assertExactKeys(registry.application,["mode","target_lora_sha256","trigger_policy"],"registries.lora_configs.application");
+    if(registry.application.mode!=="replace_lora"||!/^[a-f0-9]{64}$/.test(registry.application.target_lora_sha256??""))
+      fail("invalid_comparison_registry","替换 LoRA 必须使用 mode:replace_lora 和目标完整 SHA-256");
+    const triggerPolicy=registry.application.trigger_policy??"preserve";
+    if(!["preserve","replace"].includes(triggerPolicy))fail("invalid_comparison_registry","trigger_policy 必须为 preserve 或 replace");
+    return {id,label,lora_ref:registry.lora_ref,application:{mode:"replace_lora",target_lora_sha256:registry.application.target_lora_sha256,trigger_policy:triggerPolicy}};
+  }
   assertExactKeys(registry.application, ["mode", "target_character_id"], "registries.lora_configs.application");
   if (registry.application.mode !== "replace_character") {
     fail("invalid_comparison_registry", "registries.lora_configs.application.mode 只支持 replace_character");
@@ -140,21 +148,21 @@ function normalizeLoraConfigRegistry(registry) {
   };
 }
 
-function normalizeLoraRegistry(registry, index) {
+function normalizeLoraRegistry(registry, index, version) {
   try {
-    return normalizeFrozenComparisonLora(registry, `registries.loras[${index}]`);
+    return normalizeFrozenComparisonLora(registry, `registries.loras[${index}]`,{legacy:version===1});
   } catch (error) {
     fail("invalid_comparison_registry", error.message);
   }
 }
 
-function normalizeRegistries(registries, axes = null) {
+function normalizeRegistries(registries, axes = null, version = COMPARISON_EXPERIMENT_VERSION) {
   assertExactKeys(registries, ["loras", "lora_configs"], "registries");
   if (!Array.isArray(registries.loras) || !Array.isArray(registries.lora_configs)) {
     fail("invalid_comparison_registry", "registries.loras、lora_configs 必须是数组");
   }
-  const loras = registries.loras.map(normalizeLoraRegistry);
-  const loraConfigs = registries.lora_configs.map(normalizeLoraConfigRegistry);
+  const loras = registries.loras.map((entry,index)=>normalizeLoraRegistry(entry,index,version));
+  const loraConfigs = registries.lora_configs.map(entry=>normalizeLoraConfigRegistry(entry,version));
   const frozenLoraIds = new Set();
   for (const entry of loras) {
     if (frozenLoraIds.has(entry.id)) fail("duplicate_comparison_registry_entry", `loras 的 id 重复：${entry.id}`);
@@ -384,7 +392,7 @@ function collectComparisonExperimentErrors(value) {
   if (!isRecord(value)) return ["manifest 必须是 JSON 对象"];
   const allowed = new Set(["version", "kind", "id", "created_at", "status", "shared_seed", "axes", "registries", "cells", "canonical_sha256"]);
   for (const key of Object.keys(value)) if (!allowed.has(key)) add(`manifest 包含未知字段：${key}`);
-  if (value.version !== COMPARISON_EXPERIMENT_VERSION) add(`manifest.version 必须为 ${COMPARISON_EXPERIMENT_VERSION}`);
+  if (![1,COMPARISON_EXPERIMENT_VERSION].includes(value.version)) add(`manifest.version 必须为 1 或 ${COMPARISON_EXPERIMENT_VERSION}`);
   if (value.kind !== "comparison_experiment") add("manifest.kind 必须为 comparison_experiment");
   if (typeof value.id !== "string" || !idPattern.test(value.id)) add("manifest.id 无效");
   if (typeof value.created_at !== "string" || !createdAtPattern.test(value.created_at) || Number.isNaN(Date.parse(value.created_at))) add("manifest.created_at 无效");
@@ -396,7 +404,7 @@ function collectComparisonExperimentErrors(value) {
   catch (error) { add(error.message); }
 
   let registries = null;
-  try { registries = normalizeRegistries(value.registries, axes); }
+  try { registries = normalizeRegistries(value.registries, axes, value.version); }
   catch (error) { add(error.message); }
 
   if (axes && ((axes.some((axis) => axis.type === "seed") && value.shared_seed !== null)

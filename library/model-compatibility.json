@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "moss-sft-bf16-to-int8-convrot-v1",
+      "architecture_family": "moss-image",
+      "component": "dit",
+      "source": { "sha256": "f96738d8116d78b7316b57c663d8c98591ddafab7488f48e3099b7655e34ab6f", "size_bytes": 10164655808 },
+      "target": { "sha256": "b4d1475bc7eeffd7b809e82ea13a1fba1fb85c4e18365af3813722faa5c0fe4f", "size_bytes": 5413698958 },
+      "evidence": ["library/lora-training/moss-diffsynth.json", "Artifacts/moss-int8-20261026/lora-mapping-audit.json"],
+      "scope": "纯 DiT LoRA 的加载兼容；不承诺成图效果相同。单向关系，不传递到其他模型。"
+    }
+  ]
+}

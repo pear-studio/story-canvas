@@ -16,6 +16,11 @@ import { resolveComparisonReferenceWorkflow } from "../server/comparison-experim
 const repositoryRoot = path.resolve(import.meta.dirname, "../..");
 const sha = bytes => createHash("sha256").update(bytes).digest("hex");
 
+function useReferenceRoute(input) {
+  const route = input.render.profile.operations.candidates.routes.reference_image;
+  input.render.route = { operation: "candidates", input_source: "reference_image", workflow_id: route.workflow, recipe_source_id: route.recipe_source_id };
+}
+
 test("参考图导入、创建与启动均使用独立冻结图片", async t => {
   const root = await mkdtemp(path.join(tmpdir(), "story-canvas-comparison-reference-"));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -24,6 +29,7 @@ test("参考图导入、创建与启动均使用独立冻结图片", async t => 
   const input = await createBlankComparisonInput(repositoryRoot, "qwen-image-2-1");
   input.prompt.positive = "woman reading under a lamp";
   input.reference_images = [identity];
+  useReferenceRoute(input);
   input.reference_image_bytes = [{ identity, bytes }];
   const [staged] = await stageComparisonImports(root, [input]);
   assert.equal(staged.reference_image_bytes, undefined);
@@ -60,6 +66,7 @@ test("冻结参考图损坏会阻止启动", async t => {
   const input = await createBlankComparisonInput(repositoryRoot, "qwen-image-2-1");
   input.prompt.positive = "portrait";
   input.reference_images = [identity];
+  useReferenceRoute(input);
   input.reference_image_bytes = [{ identity, bytes }];
   const { inputs, images } = await materializeComparisonReferences(root, await stageComparisonImports(root, [input]));
   const manifest = createComparisonExperiment({ id: "reference-damage", axes: [{ type: "input", values: [{ value_id: "ref", label: "参考", value: input.id }] }] });

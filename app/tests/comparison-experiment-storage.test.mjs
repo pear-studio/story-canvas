@@ -1,5 +1,6 @@
 import { registerFixtureProjects } from "./project-registry-fixture.mjs";
 import { preflightComparisonExperiment } from "../server/comparison-preflight.mjs";
+import { createBlankComparisonInput } from "../server/comparison-inputs.mjs";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -33,7 +34,7 @@ const now = "2026-08-24T00:00:00.000Z";
 test("任务历史和图片清单不读取对比执行计划及逐格结果文件", async context => {
   const { root, projectRoot } = await fixture(context);
   const manifest = manifestWithCells();
-  const record = await createComparisonExperimentStorage({ projectRoot, manifest, preflight: preflightFor(manifest) });
+  const record = await createComparisonExperimentStorage({ projectRoot, manifest, preflight: await preflightFor(manifest) });
   const directory = path.join(projectRoot, "Saved", "comparison-results", manifest.id);
   const status = { ...record.status, status: "completed", completed_at: now, cells: record.status.cells.map(cell => ({ ...cell, status: "completed" })) };
   await writeFile(path.join(directory, "result.json"), JSON.stringify(status));
@@ -64,9 +65,12 @@ function manifestWithCells() {
   });
 }
 
-function preflightFor(manifest) {
-  return preflightComparisonExperiment({ manifest, inputs: [{ id: "sample", label: "输入", prompt: { positive: "landscape", negative: "" }, loras: [],
-    render: { canvas: "2:3", profile: { id: "test", architecture_family: "anima", prompt: { family: "anima" }, models: {}, operations: { candidates: { routes: { empty_latent: { workflow: "test", recipe: { cfg: 6 } } } } } }, workflows: { test: {} } } }] });
+async function preflightFor(manifest) {
+  const input = await createBlankComparisonInput(repositoryRoot, "anima-base-v1", "2:3");
+  input.id = "sample";
+  input.label = "输入";
+  input.prompt = { positive: "landscape", negative: "" };
+  return preflightComparisonExperiment({ manifest, inputs: [input] });
 }
 
 async function fixture(context) {
@@ -80,7 +84,7 @@ async function fixture(context) {
 async function createStored(context) {
   const target = await fixture(context);
   const manifest = manifestWithCells();
-  const preflight = preflightFor(manifest);
+  const preflight = await preflightFor(manifest);
   const record = await createComparisonExperimentStorage({ projectRoot: target.projectRoot, manifest, preflight, now });
   return { ...target, manifest, preflight, record };
 }

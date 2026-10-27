@@ -1008,14 +1008,21 @@ test('对比实验封装经真实后端完成输入、创建、查询、审阅�
   let root;
   const f=await fixture(t,async(c,response)=>{
     const request=Readable.from([c.rawBody]);request.method=c.method;request.url=c.url;request.headers=c.headers;
-    assert.ok(await handleComparisonRequest({request,response,decodedPath:c.url,projectRoot:root,config:{},activeComparisonProcesses:new Map()}));
+    assert.ok(await handleComparisonRequest({request,response,decodedPath:new URL(c.url,'http://localhost').pathname,projectRoot:root,config:{},activeComparisonProcesses:new Map()}));
   });root=f.root;await installModelResources(root);
   const call=(operation,args)=>f.tool.execute({operation,...(args?{args}:{})});
   const blank=await call('comparison.blank',{profile_id:'qwen-image-2-1',canvas:'1:1'});
   const input={...blank.value.input,prompt:{positive:'A blue square.',negative:''}};
+  const preview=await call('comparison.preview',{inputs:[input],axes:[{type:'seed',values:[{value_id:'one',label:'一',value:1}]}]});
+  assert.equal(preview.value.cells[0].prompt.positive,'A blue square.');
+  assert.ok(preview.value.cells[0].dimensions.width>0);
+  assert.equal((await call('comparison.list')).total,0,'预览不创建实验');
   await call('comparison.create',{id:'tool-acceptance',inputs:[input],axes:[{type:'seed',values:[{value_id:'one',label:'一',value:1}]}]});
   const listed=await call('comparison.list',{limit:1});assert.equal(listed.items[0].id,'tool-acceptance');
   const detail=await call('comparison.inspect',{experiment_id:'tool-acceptance'});assert.equal(detail.value.experiment.status.status,'queued');
+  const frozen=await call('comparison.inspect',{experiment_id:'tool-acceptance',include_inputs:true});
+  assert.equal(frozen.value.experiment.inputs[0].prompt.positive,'A blue square.');
+  assert.equal(frozen.value.experiment.preflight.version,3);
   const review=await call('comparison.review',{selections:[{experiment_id:'tool-acceptance'}]});assert.equal(review.value.rows.length,1);
   await call('comparison.delete',{experiment_id:'tool-acceptance'});
   assert.equal((await call('comparison.list')).total,0);

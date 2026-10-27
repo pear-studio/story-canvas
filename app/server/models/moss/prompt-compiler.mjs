@@ -3,13 +3,13 @@ import {resolvePageLoras} from '../../lora-config.mjs';
 import {validatePageKey} from '../../page-key.mjs';
 import {pagePromptAudit} from '../../prompt-audit.mjs';
 import {characterSource,sceneSource} from '../../prompt-contract.mjs';
-export function compilePrompt({pageId,pageKey,pagePrompt:prompt,profile,characters=[],scenes=[],participantIds=[],dimensions}){
+export function compilePrompt({pageId,pageKey,pagePrompt:prompt,profile,characters=[],scenes=[],participantIds=[],dimensions,loraResolution}){
   const errors=[...validatePageKey(pageKey)],missing=[],sections=[];
   const join=parts=>parts.filter(part=>part?.trim()).join('\n\n');
   const named=(setting,caption)=>caption&&setting.prompt_name?.trim()?`${setting.prompt_name.trim()}: ${caption}`:caption;
   const text=key=>mossText(prompt[key]);
   const active=new Set(participantIds),sources=new Set();
-  const loras=resolvePageLoras(prompt,pageId,profile,characters,scenes);errors.push(...loras.errors);
+  const loras=loraResolution??resolvePageLoras(prompt,pageId,profile,characters,scenes);errors.push(...loras.errors);
   const captionById=new Map();
   for(const id of participantIds){
     const c=characters.find(c=>c.id===id);if(!c){errors.push(`未知角色：${id}`);continue;}

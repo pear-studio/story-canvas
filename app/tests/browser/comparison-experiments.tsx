@@ -7,6 +7,7 @@ import type { GlobalModelResource } from "../../src/global-resource-catalog";
 import "../../src/styles.css";
 
 const models: GlobalModelResource[] = [
+  {id:'moss-style',name:'MOSS Style',kind:'lora',architecture_family:'moss-image',sha256:'b'.repeat(64),filename:'moss-style.safetensors',relative_path:'loras/moss-style.safetensors',status:'available',registered:true,repository_record:true,lora_metadata:{name_zh:'MOSS 测试画风',purpose:'画风',activation:{trigger_words:['veloria']}}},
   { id: "flat", name: "Anime Flat Style", kind: "lora", architecture_family: "anima", prompt_family: "anima", filename: "flat.safetensors", relative_path: "loras/flat.safetensors", status: "available", registered: true, repository_record: true, lora_metadata: { name_zh: "平涂动漫画风", summary_zh: "引入平涂动漫插画风格。", purpose: "画风", activation: { tags: ["upstream-style"], trigger_words: [] } } },
   { id: "muscle", name: "Muscle Slider", kind: "lora", architecture_family: "anima", prompt_family: "anima", filename: "muscle.safetensors", relative_path: "loras/muscle.safetensors", status: "available", registered: true, repository_record: true, lora_metadata: { name_zh: "肌肉感调节", summary_zh: "调节人物肌肉的发达程度。", purpose: "外观调节" } },
   { id: "raw", name: "checkpoint-400", kind: "lora", architecture_family: "other", filename: "raw.safetensors", relative_path: "loras/training/raw.safetensors", status: "available", registered: false },

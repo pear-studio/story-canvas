@@ -6,7 +6,8 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 
-import { freezeComparisonLoraSources, normalizeFrozenComparisonLora } from "../server/comparison-lora-identity.mjs";
+import { freezeComparisonLoraSources, normalizeFrozenComparisonLora, freezeComparisonInputLoras } from "../server/comparison-lora-identity.mjs";
+import { checkComparisonLoraCompatibility } from '../server/comparison-model-compatibility.mjs';
 import { readSafeTensorsMetadata } from "../server/safetensors-metadata.mjs";
 import { registerProject } from "../server/project-registry.mjs";
 import { planAssetTransfer, commitAssetTransfer } from "../server/project-assets.mjs";
@@ -19,9 +20,9 @@ async function temporaryProject(t) {
   registerFixtureProjects(root); return { root, modelsRoot };
 }
 
-async function writeSafeTensors(modelsRoot, relativePath, metadata, payload = Buffer.alloc(4)) {
+async function writeSafeTensors(modelsRoot, relativePath, metadata, payload = Buffer.alloc(4), tensorName = 'tensor') {
   const payloadBuffer = Buffer.isBuffer(payload) ? payload : Buffer.from(payload);
-  const header = Buffer.from(JSON.stringify({ tensor: { dtype: "F32", shape: [1], data_offsets: [0, payloadBuffer.length] }, __metadata__: metadata }), "utf8");
+  const header = Buffer.from(JSON.stringify({ [tensorName]: { dtype: "F32", shape: [1], data_offsets: [0, payloadBuffer.length] }, __metadata__: metadata }), "utf8");
   const length = Buffer.alloc(8);
   length.writeBigUInt64LE(BigInt(header.length));
   const bytes = Buffer.concat([length, header, payloadBuffer]);
@@ -105,6 +106,33 @@ test("正式 LoRA 通过真实 resource reader 后冻结 resource 身份并核�
   assert.deepEqual(frozen.base_models[0], { kind: "base_model", name: "Base", identity_status: "declared", relative_path: null, sha256: null, size_bytes: null, source: null });
   assert.deepEqual(frozen.activation, { trigger_words: ["formal_trigger"], tags: ["style"] });
   assert.deepEqual(frozen.metadata, { format: "pt", source: "formal" });
+  const [imported] = await freezeComparisonInputLoras({ repositoryRoot: root, config: { models_root: modelsRoot }, loras: [{
+    filename: fixture.relativePath.slice('loras/'.length), sha256: fixture.file.sha256, kind: 'style', owner: 'project', weight: 1,
+  }] });
+  assert.equal(imported.source_identity.resource_id, fixture.resourceId);
+  assert.equal(imported.source_identity.model_identity.declaration.source, 'resource');
+  assert.deepEqual(imported.trigger_words, ['formal_trigger']);
+});
+
+test('导入已解析触发词和显式空值保持不变，资源分类 tags 从不作为触发词', async t => {
+  const { root, modelsRoot } = await temporaryProject(t);
+  const fixture = await writeFormalResource(root, modelsRoot);
+  const base = { filename: fixture.relativePath.slice('loras/'.length), sha256: fixture.file.sha256, kind: 'character', owner: 'character-a', weight: 1 };
+  const explicitSource = { id: 'selected', kind: 'resource', resource_id: fixture.resourceId,
+    activation: { trigger_words: ['explicit_trigger'], tags: ['classification_only'] } };
+  const inputs = [
+    { ...base, trigger_words: ['page_trigger'] },
+    { ...base, trigger_words: [] },
+    { ...base, source_identity: explicitSource },
+    { ...base, source_identity: explicitSource, trigger_words: ['resolved_trigger'] },
+    { ...base, source_identity: explicitSource, trigger_words: [] },
+  ];
+  const original = structuredClone(inputs);
+  const frozen = await freezeComparisonInputLoras({ repositoryRoot: root, config: { models_root: modelsRoot }, loras: inputs });
+  assert.deepEqual(frozen.map(lora => lora.trigger_words), [['page_trigger'], [], ['explicit_trigger'], ['resolved_trigger'], []]);
+  assert.deepEqual(frozen[0].source_identity.activation.tags, ['style']);
+  assert.deepEqual(frozen[2].source_identity.activation.tags, ['classification_only']);
+  assert.deepEqual(inputs, original);
 });
 
 test("项目持有的 LoRA 可按原资源 ID 冻结到独立实验，所属项目删除后冻结输入不变", async t => {
@@ -232,4 +260,43 @@ test("models_root 自身是链接时不允许冻结", async (t) => {
     freezeComparisonLoraSources({ repositoryRoot: root, config: { models_root: linkedRoot }, sources: [] }),
     /models_root|符号链接/,
   );
+});
+
+const mossSha = 'f96738d8116d78b7316b57c663d8c98591ddafab7488f48e3099b7655e34ab6f';
+const mossInput = { render: { profile: { architecture_family: 'moss-image', models: { dit: {
+  sha256: 'b4d1475bc7eeffd7b809e82ea13a1fba1fb85c4e18365af3813722faa5c0fe4f', size_bytes: 5413698958,
+} } } } };
+test('MOSS runner metadata 明确冻结为来源声明，raw 与导入 LoRA 使用同一兼容检查', async t => {
+  const { root, modelsRoot } = await temporaryProject(t);
+  const relativePath = 'loras/moss.safetensors';
+  const metadata = { family: 'moss-image', base_models: JSON.stringify([{ relative_path: 'diffusion_models/sft.safetensors', sha256: mossSha }]) };
+  const file = await writeSafeTensors(modelsRoot, relativePath, metadata, Buffer.alloc(4), 'diffusion_model.layers.0.proj.q.lora_A.weight');
+  const [frozen] = await freezeComparisonLoraSources({ repositoryRoot: root, config: { models_root: modelsRoot }, sources: [{ id: 'moss', kind: 'raw', relative_path: relativePath }] });
+  assert.equal(frozen.model_identity.declaration.source, 'metadata');
+  assert.equal(frozen.model_identity.declaration.status, 'declared');
+  assert.equal(frozen.model_identity.target_audit.component, 'dit');
+  assert.equal(frozen.activation, undefined);
+  assert.equal(checkComparisonLoraCompatibility(frozen, mossInput).matches[0].method, 'declared_conversion');
+  const [inputLora] = await freezeComparisonInputLoras({ repositoryRoot: root, config: { models_root: modelsRoot }, loras: [{ filename: 'moss.safetensors', sha256: file.sha256, kind: 'character', owner: 'character-a', weight: 0.7 }] });
+  assert.equal(inputLora.kind, 'character'); assert.equal(inputLora.owner, 'character-a');
+  assert.equal(inputLora.source_identity.model_identity.declaration.source, 'metadata');
+  assert.equal(checkComparisonLoraCompatibility(inputLora, mossInput).matches[0].method, 'declared_conversion');
+  await assert.rejects(freezeComparisonInputLoras({ repositoryRoot: root, config: { models_root: modelsRoot }, loras: [{ ...inputLora, sha256: 'f'.repeat(64) }] }), /实际文件身份/);
+  assert.throws(() => normalizeFrozenComparisonLora(frozen, 'legacy', { legacy: true }), /未知字段/);
+});
+test('显式 identity/activation 可补未知来源，但不能提交兼容关系或用 metadata 伪装未知目标', async t => {
+  const { root, modelsRoot } = await temporaryProject(t);
+  const relativePath = 'loras/explicit.safetensors';
+  await writeSafeTensors(modelsRoot, relativePath, {}, Buffer.alloc(4), 'diffusion_model.layers.0.proj.q.lora_A.weight');
+  const identity = { architecture_family: 'moss-image', adapted_components: ['dit'], base_models: [{ kind: 'dit', name: 'SFT', identity_status: 'declared', relative_path: null, sha256: mossSha, size_bytes: null, source: null }] };
+  const source = { id: 'explicit', kind: 'raw', relative_path: relativePath, identity, activation: { trigger_words: [], tags: [] } };
+  const [frozen] = await freezeComparisonLoraSources({ repositoryRoot: root, config: { models_root: modelsRoot }, sources: [source] });
+  assert.deepEqual(frozen.activation, { trigger_words: [], tags: [] });
+  assert.equal(frozen.model_identity.declaration.source, 'explicit');
+  assert.equal(checkComparisonLoraCompatibility(frozen, mossInput).matches[0].method, 'declared_conversion');
+  await assert.rejects(freezeComparisonLoraSources({ repositoryRoot: root, config: { models_root: modelsRoot }, sources: [{ ...source, compatibility: 'any' }] }), /未知字段/);
+  await writeSafeTensors(modelsRoot, relativePath, {}, Buffer.alloc(4), 'diffusion_model.text_encoder.lora_A.weight');
+  const [unknown] = await freezeComparisonLoraSources({ repositoryRoot: root, config: { models_root: modelsRoot }, sources: [source] });
+  assert.equal(unknown.model_identity.target_audit.component, 'unknown');
+  assert.throws(() => checkComparisonLoraCompatibility(unknown, mossInput), /适配目标/);
 });

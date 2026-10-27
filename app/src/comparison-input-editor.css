@@ -7,6 +7,15 @@
 .comparison-input-card textarea { width: 100%; min-height: 90px; resize: vertical; }
 .comparison-input-card > button { margin-right: 8px; }
 .comparison-input-card .free-lora-row > span { min-width: 0; overflow-wrap: anywhere; }
+.comparison-moss-editor, .comparison-moss-settings, .comparison-moss-setting { display: grid; gap: 12px; min-width: 0; }
+.comparison-moss-setting { padding: 12px; border: 1px solid var(--line); border-radius: 8px; }
+.comparison-moss-setting label { display: grid; gap: 6px; }
+.comparison-moss-setting small, .comparison-page-options small { color: var(--muted); overflow-wrap: anywhere; }
+.comparison-execution-details { margin: 8px 0; padding: 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; min-width: 0; }
+.comparison-execution-details summary { cursor: pointer; overflow-wrap: anywhere; }
+.comparison-execution-details small { display: block; color: var(--muted); overflow-wrap: anywhere; }
+.comparison-execution-details pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; max-height: 320px; overflow: auto; }
+.comparison-input-preview { min-width: 0; }
 .comparison-experiments-page .comparison-experiment-list > article { grid-template-columns: auto minmax(0, 1fr) auto auto auto; }
 @media (max-width: 720px) {
   .comparison-experiments-page .comparison-experiment-list > article { grid-template-columns: auto minmax(0, 1fr); }

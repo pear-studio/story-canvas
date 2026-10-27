@@ -6,6 +6,7 @@ import path from "node:path";
 import { resolveLocalComfyTarget } from "./comfy-runtime.mjs";
 import { primaryComfyUiUrl } from "./comfy-endpoint-selector.mjs";
 import { prepareComparisonExperimentExecution } from "./comparison-execution-plan.mjs";
+import { previewComparisonCells } from "./comparison-cell.mjs";
 import { createComparisonExperiment } from "./comparison-experiment.mjs";
 import {
   createComparisonExperimentStorage,
@@ -21,7 +22,7 @@ import {
 } from "./comparison-experiment-runtime.mjs";
 import { generationReference, readGenerationQueue } from "./generation-queue.mjs";
 import { submitGenerationTask, controlGenerationTask } from "./generation-lifecycle.mjs";
-import { freezeComparisonLoraSources } from "./comparison-lora-identity.mjs";
+import { freezeComparisonLoraSources, freezeComparisonInputLoras } from "./comparison-lora-identity.mjs";
 import { preflightComparisonExperiment } from "./comparison-preflight.mjs";
 import { stageComparisonImports, materializeComparisonReferences } from "./comparison-reference-images.mjs";
 import {
@@ -33,9 +34,15 @@ import {
 
 export function publicComparisonRecord(record) {
   const status = record?.status?.status === "incomplete" ? "failed" : record?.status?.status;
+  const hasExecution = Boolean(record.execution || record.has_execution);
+  const legacyBlocked = record.manifest.version !== 2 && !hasExecution;
   return {
     id: record.id,
     manifest: record.manifest,
+    has_execution: hasExecution,
+    can_start: !legacyBlocked && status === "queued" && !record.status.started_at,
+    can_retry: !legacyBlocked && (["failed", "completed"].includes(status) || (["queued", "running"].includes(status) && Boolean(record.status.started_at))),
+    block_reason: legacyBlocked ? "旧实验尚未冻结执行计划，请重新导入输入并创建实验。已有结果仍可查看。" : null,
     status: {
       ...record.status,
       status,
@@ -64,6 +71,33 @@ export async function handleComparisonRequest({
     const result = await readFacts(body.project_id, async ({ projectDirectory }) => Promise.all(body.page_keys.map(pageKey => importComparisonPage({ repositoryRoot: projectRoot, projectDirectory, projectId: body.project_id, pageKey, localConfig: config, includeReferenceBytes: true }))));
     return stageComparisonImports(projectRoot, result.value);
   };
+  const prepareRequest = async value => {
+    if (!value?.id || (value.axes !== undefined && !Array.isArray(value.axes))) throw new ApiError(422, "invalid_comparison_experiment");
+    if (value.page_import !== undefined && value.inputs !== undefined) throw new ApiError(422, "comparison_input_source_conflict", ["page_import 与 inputs 只能选择一种"]);
+    const imported = value.page_import === undefined ? value.inputs : await importPages(value.page_import);
+    if (!Array.isArray(imported) || !imported.length) throw new ApiError(422, "comparison_inputs_required");
+    const materialized = await materializeComparisonReferences(projectRoot, imported);
+    const inputs = [];
+    for (const input of materialized.inputs) inputs.push({ ...input, loras: await freezeComparisonInputLoras({ repositoryRoot: projectRoot, config, loras: input.loras }) });
+    const axes = value.axes ?? [];
+    const resolvedAxes = axes.some(axis => axis?.type === "input") ? axes : [
+      { type: "input", values: inputs.map(input => ({ value_id: input.id, label: input.label, value: input.id })) }, ...axes,
+    ];
+    let registries = value.registries;
+    if (Array.isArray(value.lora_sources)) {
+      const loras = await freezeComparisonLoraSources({ repositoryRoot: projectRoot, config, sources: value.lora_sources });
+      const application = value.lora_application === undefined ? {} : { application: value.lora_application };
+      const replacing = value.lora_application?.mode === "replace_lora";
+      registries = { loras, lora_configs: [
+        ...(value.include_lora_baseline !== false ? [{ id: "baseline", label: replacing ? "移除指定 LoRA" : "原输入 LoRA", lora_ref: null, ...application }] : []),
+        ...loras.map(lora => ({ id: lora.id, label: lora.name ?? path.basename(lora.relative_path, path.extname(lora.relative_path)), lora_ref: lora.id, ...application })),
+      ] };
+    }
+    const manifest = createComparisonExperiment({ id: value.id, axes: resolvedAxes, registries });
+    const preflight = preflightComparisonExperiment({ manifest, inputs });
+    const cells = previewComparisonCells({ manifest, inputs: preflight.inputs });
+    return { manifest, preflight, cells, images: materialized.images };
+  };
   if (request.method === "GET" && decodedPath === "/api/comparison-experiments/input-options") {
     const files = await readdir(path.join(projectRoot, "library", "render-profiles"));
     sendJson(response, 200, { profiles: files.filter(file => file.endsWith(".json")).map(file => file.slice(0, -5)) });
@@ -73,7 +107,8 @@ export async function handleComparisonRequest({
     const body = await readJsonBody(request);
     const [entry] = await freezeComparisonLoraSources({ repositoryRoot: projectRoot, config, sources: [body.source] });
     sendJson(response, 200, { lora: { filename: entry.relative_path.slice("loras/".length), relative_path: entry.relative_path,
-      sha256: entry.sha256, size_bytes: entry.size_bytes, weight: 1, kind: "comparison", owner: entry.id } });
+      sha256: entry.sha256, size_bytes: entry.size_bytes, weight: 1, kind: "comparison", owner: entry.id, source_identity: entry,
+      ...(entry.activation ? { trigger_words: entry.activation.trigger_words } : {}) } });
     return true;
   }
   if (request.method === "POST" && decodedPath === "/api/comparison-experiments/import") {
@@ -142,48 +177,22 @@ export async function handleComparisonRequest({
   }
 
   const collectionMatch = /^\/api\/comparison-experiments\/?$/.exec(decodedPath);
+  if (request.method === "POST" && decodedPath === "/api/comparison-experiments/preview") {
+    const value = await readJsonBody(request);
+    const { preflight, cells } = await prepareRequest({ ...value, id: value?.id ?? "preview" });
+    sendJson(response, 200, { preflight, cells });
+    return true;
+  }
   if (request.method === "GET" && collectionMatch) {
     sendJson(response, 200, { experiments: (await listComparisonExperimentViews(projectRoot)).map(publicComparisonRecord) });
     return true;
   }
   if (request.method === "POST" && collectionMatch) {
     const value = await readJsonBody(request);
-    if (!value?.id || (value.axes !== undefined && !Array.isArray(value.axes))) throw new ApiError(422, "invalid_comparison_experiment");
-    if (value.page_import !== undefined && value.inputs !== undefined) throw new ApiError(422, "comparison_input_source_conflict", ["page_import 与 inputs 只能选择一种"]);
     const result = await withComparisonOperation(projectRoot, async () => {
-      const projectDirectory = projectRoot;
-      const imported = value.page_import === undefined ? value.inputs : await importPages(value.page_import);
-      if (!Array.isArray(imported) || !imported.length) throw new ApiError(422, "comparison_inputs_required");
-      const { inputs, images } = await materializeComparisonReferences(projectRoot, imported);
-      const axes = value.axes ?? [];
-      const resolvedAxes = axes.some(axis => axis?.type === "input") ? axes : [
-        { type: "input", values: inputs.map(input => ({ value_id: input.id, label: input.label, value: input.id })) },
-        ...axes,
-      ];
-      let registries = value.registries;
-      if (Array.isArray(value.lora_sources)) {
-        const loras = await freezeComparisonLoraSources({ repositoryRoot: projectRoot, config, sources: value.lora_sources });
-        const application = value.lora_application === undefined ? {} : { application: value.lora_application };
-        const includeBaseline = value.include_lora_baseline !== false;
-        registries = {
-          loras,
-          lora_configs: [
-            ...(includeBaseline ? [{ id: "baseline", label: "基线", lora_ref: null }] : []),
-            ...loras.map((lora) => ({
-              id: lora.id,
-              label: lora.name ?? path.basename(lora.relative_path, path.extname(lora.relative_path)),
-              lora_ref: lora.id,
-              ...application,
-            })),
-          ],
-        };
-      }
-      const manifest = createComparisonExperiment({ id: value.id, axes: resolvedAxes, registries });
-      const preflight = await preflightComparisonExperiment({
-        manifest, inputs,
-      });
+      const { manifest, preflight, images } = await prepareRequest(value);
       return createComparisonExperimentStorage({
-        projectRoot: projectDirectory,
+        projectRoot,
         manifest,
         preflight,
         referenceImages: images,
@@ -203,6 +212,7 @@ export async function handleComparisonRequest({
     const result = await withComparisonOperation(projectRoot, async () => {
       const projectDirectory = projectRoot;
       let record = await readComparisonExperimentStorage(projectDirectory, experimentId);
+      if (record.manifest.version !== 2 && !record.execution) throw new ApiError(422, "comparison_legacy_requires_reimport", ["旧实验尚未冻结执行计划，请重新导入输入并创建实验"]);
       const activeKey = `${path.resolve(projectDirectory)}:${experimentId}`;
       if (activeComparisonProcesses.has(activeKey)) throw new ApiError(409, "comparison_experiment_already_running");
       const queue = await readGenerationQueue(projectRoot);
@@ -257,14 +267,22 @@ export async function handleComparisonRequest({
 
   const detailMatch = /^\/api\/comparison-experiments\/([^/]+)\/?$/.exec(decodedPath);
   if (request.method === "GET" && detailMatch) {
-    const record = await readComparisonExperimentView(projectRoot, detailMatch[1]);
+    const query = new URL(request.url ?? decodedPath, "http://localhost").searchParams;
+    const includeInputs = query.get("include_inputs") === "true";
+    const includeExecution = query.get("include_execution") === "true";
+    const record = includeInputs || includeExecution ? await readComparisonExperimentStorage(projectRoot, detailMatch[1]) : await readComparisonExperimentView(projectRoot, detailMatch[1]);
     const queue = await readGenerationQueue(projectRoot);
     const activeKey = `${path.resolve(projectRoot)}:${record.id}`;
     const inQueue = queue.items.some(item => item.project_id === null && item.task_id === record.id && item.purpose === "comparison");
-    const retryAvailable = !activeComparisonProcesses.has(activeKey) && !inQueue
+    const retryAvailable = publicComparisonRecord(record).can_retry && !activeComparisonProcesses.has(activeKey) && !inQueue
       && (["incomplete", "failed"].includes(record.status.status)
         || (["queued", "running"].includes(record.status.status) && Boolean(record.status.started_at)));
-    sendJson(response, 200, { experiment: { ...publicComparisonRecord(record), retry_available: retryAvailable } });
+    sendJson(response, 200, { experiment: { ...publicComparisonRecord(record), retry_available: retryAvailable,
+      ...(includeInputs ? { inputs: record.preflight.inputs, preflight: { version: record.preflight.version, canonical_sha256: record.preflight.canonical_sha256,
+        cells: record.preflight.cells, compatibility: record.preflight.compatibility } } : {}),
+      ...(includeExecution ? { execution: record.execution ? { version: record.execution.version, canonical_sha256: record.execution.canonical_sha256,
+        cells: record.execution.cells.map(cell => ({ id: cell.id, input_id: cell.input_id, seed: cell.seed, cfg: cell.cfg,
+          prompt: cell.prompt, loras: cell.loras, dimensions: record.preflight.cells.find(item => item.id === cell.id)?.dimensions })) } : null } : {}) } });
     return true;
   }
 

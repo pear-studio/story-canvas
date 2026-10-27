@@ -1,7 +1,6 @@
 
 import {
   assertComparisonExperimentManifest,
-  resolveComparisonCellSelection,
 } from "./comparison-experiment.mjs";
 import {
   assertComparisonPreflightPlan,
@@ -17,7 +16,7 @@ import {
   assertComparisonExecutionPlan,
   COMPARISON_EXECUTION_PLAN_VERSION,
 } from "./comparison-execution-contract.mjs";
-import { buildWorkflow, resolveRenderRecipe } from "./render-task-contract.mjs";
+import {buildComparisonCell} from "./comparison-cell.mjs";
 import { hashCanonicalJson } from "./workflow-definition.mjs";
 import { referenceImageFilename } from "./reference-image.mjs";
 import { readFile } from "node:fs/promises";
@@ -34,152 +33,16 @@ export class ComparisonExecutionPreparationError extends Error {
   }
 }
 
-function clone(value) { return structuredClone(value); }
 function fail(code, message, details = []) { throw new ComparisonExecutionPreparationError(code, message, details); }
 
-function outputNodeId(definition) {
-  const binding = definition?.manifest?.bindings?.filename_prefix;
-  const match = typeof binding === "string" ? /^(\d+)\.inputs\.filename_prefix$/.exec(binding) : null;
-  if (!match) fail("comparison_execution_workflow_changed", `${definition?.id ?? "工作流"} 缺少可冻结的输出节点绑定`);
-  return match[1];
-}
-
-function comfyLoraName(relativePath) {
-  if (typeof relativePath !== "string" || !relativePath.startsWith("loras/")) fail("comparison_execution_lora_path", `LoRA 路径不是 models_root/loras 相对路径：${relativePath}`);
-  const name = relativePath.slice("loras/".length);
-  if (!name || name.includes("\\") || name.split("/").some((part) => !part || part === "." || part === "..")) fail("comparison_execution_lora_path", `LoRA ComfyUI 名称无效：${relativePath}`);
-  return name;
-}
-
-
-function loraForWorkflow(entry, weight, { kind = "comparison", owner = entry.id } = {}) {
-  return {
-    kind,
-    owner,
-    source_id: entry.id,
-    relative_path: entry.relative_path,
-    filename: comfyLoraName(entry.relative_path),
-    sha256: entry.sha256,
-    size_bytes: entry.size_bytes,
-    weight,
-  };
-}
-
-function promptForSelection(input, selection) {
-  const original = input.prompt.positive;
-  if (!selection.test_lora || selection.application?.mode !== "replace_character") return { positive_prompt: original, prompt_parts: { positive: [{ text: input.prompt.positive }], negative: [{ text: input.prompt.negative }] } };
-  const target = selection.application.target_character_id;
-  const triggers = input.loras.filter(lora => lora.kind === "character" && lora.owner === target).flatMap(lora => lora.trigger_words ?? []).map(text => text.trim()).filter(Boolean);
-  // 只移除完整触发词，保留自由文本的其他字符和段落，包括触发词内部的逗号。
-  const patternFor = text => new RegExp(`(^|[,\\n][ \\t]*)${text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=[ \\t]*(?:[,\\n]|$))`, "gim");
-  let positive = original;
-  for (const trigger of triggers.sort((a, b) => b.length - a.length)) positive = positive.replace(patternFor(trigger), "$1");
-  if (selection.test_lora.kind === "resource") for (const trigger of selection.test_lora.activation.trigger_words) {
-    if (!patternFor(trigger).test(positive)) positive += `${positive.includes("\n") ? "\n" : ", "}${trigger}`;
-  }
-  return { positive_prompt: positive, prompt_parts: { positive: [{ text: positive }], negative: [{ text: input.prompt.negative }] } };
-}
-
-function applyCharacterLoraWeight(baseLoras, selection) {
-  if (selection.character_lora_weight === null) return baseLoras;
-  const targets = baseLoras.filter((lora) => lora.kind === "character");
-  if (targets.length !== 1) {
-    fail("comparison_character_lora_weight_target_ambiguous", "character_lora_weight 轴要求页面恰好包含一个角色 LoRA");
-  }
-  const target = targets[0];
-  return baseLoras.map((lora) => lora === target ? { ...lora, weight: selection.character_lora_weight } : lora);
-}
-
-function sourceEntries(manifest) {
-  return manifest.registries.loras.map(entry => ({ id: entry.id, kind: "raw", relative_path: entry.relative_path }));
-}
-
-async function recheckLoraRegistry({ repositoryRoot, localConfig, manifest }) {
-  if (!manifest.registries.loras.length) return;
-  const actual = await freezeComparisonLoraSources({ repositoryRoot, config: localConfig, sources: sourceEntries(manifest) });
-  if (actual.some((entry, index) => entry.sha256 !== manifest.registries.loras[index].sha256 || entry.size_bytes !== manifest.registries.loras[index].size_bytes)) {
+async function recheckLoraFiles({ repositoryRoot, localConfig, manifest, inputs }) {
+  const entries=[...manifest.registries.loras,...inputs.flatMap(input=>input.loras)];
+  if(!entries.length)return;
+  const sources=entries.map((entry,index)=>({id:`check-${index}`,kind:'raw',relative_path:entry.relative_path??`loras/${entry.filename}`}));
+  const actual=await freezeComparisonLoraSources({repositoryRoot,config:localConfig,sources});
+  if (actual.some((entry, index) => entry.sha256 !== entries[index].sha256 || entry.size_bytes !== entries[index].size_bytes)) {
     fail("comparison_lora_changed", "Start 前复核发现比较 LoRA 文件或正式资源身份已变化");
   }
-}
-
-function buildCell({ experimentId, manifest, input, sourceCell }) {
-  const { profile, canvas, workflows } = input.render;
-  const route = profile.operations.candidates.routes[input.reference_images?.length ? "reference_image" : "empty_latent"];
-  const selection = resolveComparisonCellSelection(manifest, sourceCell);
-  const cfg = selection.cfg ?? route.recipe.cfg;
-  const definition = workflows[route.workflow];
-  const testEntry = selection.test_lora;
-  const baseLoras = applyCharacterLoraWeight(clone(input.loras), selection);
-  const replacingCharacter = Boolean(testEntry && selection.application?.mode === "replace_character");
-  const testLora = testEntry
-    ? loraForWorkflow(testEntry, selection.test_lora_weight, replacingCharacter
-      ? { kind: "character", owner: selection.application.target_character_id }
-      : undefined)
-    : null;
-  const loras = replacingCharacter
-    ? [...baseLoras.filter((lora) => !(lora.kind === "character" && lora.owner === selection.application.target_character_id)), ...(testLora ? [testLora] : [])]
-    : [...baseLoras, ...(testLora ? [testLora] : [])];
-  const prompt = promptForSelection(input, selection);
-  const recipeParameters = clone(route.recipe);
-  recipeParameters.cfg = cfg;
-  const recipe = resolveRenderRecipe(recipeParameters, canvas);
-  const item = {
-    id: `comparison.${sourceCell.id}`,
-    task: `comparison-${experimentId}`,
-    input_id: input.id,
-    output_prefix: `StoryCanvas/comparisons/${experimentId}/${sourceCell.id}`,
-    seed: sourceCell.effective_seed,
-    positive_prompt: prompt.positive_prompt,
-    negative_prompt: input.prompt.negative,
-    prompt_parts: prompt.prompt_parts,
-    loras: clone(loras),
-    reference_images: clone(input.reference_images ?? []),
-  };
-  const workflow = buildWorkflow(definition, profile, recipe, item);
-  const output = {
-    node_id: outputNodeId(definition),
-    image_index: 0,
-    cell_id: sourceCell.id,
-    relative_path: `results/${sourceCell.id}/image.png`,
-  };
-  const extraData = {
-    extra_pnginfo: {
-      storyvisualizer: {
-        version: 1,
-        kind: "comparison",
-        experiment_id: experimentId,
-        cell_id: sourceCell.id,
-        ordinal: sourceCell.ordinal,
-        input_id: input.id,
-        axis_values: clone(sourceCell.axis_values),
-        seed: sourceCell.effective_seed,
-        cfg,
-        outputs: [clone(output)],
-      },
-    },
-  };
-  const unit = {
-    id: sourceCell.id,
-    ordinal: sourceCell.ordinal,
-    axis_values: clone(sourceCell.axis_values),
-    input_id: input.id,
-    seed: sourceCell.effective_seed,
-    cfg,
-    prompt: {
-      positive: prompt.positive_prompt,
-      negative: input.prompt.negative,
-      parts: clone(prompt.prompt_parts),
-    },
-    loras,
-    reference_images: clone(input.reference_images ?? []),
-    workflow: {
-      source_id: definition.id,
-      api: workflow,
-    },
-    extra_data: extraData,
-    outputs: [output],
-  };
-  return unit;
 }
 
 /**
@@ -193,6 +56,7 @@ export async function prepareComparisonExperimentExecution({ repositoryRoot, pro
     if (stored.execution !== null) fail("comparison_execution_exists", "比较实验已经存在 execution plan");
     const manifest = assertComparisonExperimentManifest(stored.manifest);
     const storedPreflight = assertComparisonPreflightPlan(stored.preflight);
+    if(manifest.version!==2||storedPreflight.version!==3)fail('comparison_legacy_requires_reimport','旧版实验未冻结执行计划，请重新导入创建；不会自动升级旧输入');
     for (const input of storedPreflight.inputs) for (const reference of input.reference_images ?? []) {
       referenceImageFilename(reference);
       let bytes;
@@ -200,10 +64,10 @@ export async function prepareComparisonExperimentExecution({ repositoryRoot, pro
       catch (error) { if (error.code === "ENOENT") fail("comparison_reference_missing", "冻结参考图已丢失，请重新创建实验"); throw error; }
       if (createHash("sha256").update(bytes).digest("hex") !== reference.sha256) fail("comparison_reference_changed", "冻结参考图内容已变化，请重新创建实验");
     }
-    await recheckLoraRegistry({ repositoryRoot, localConfig, manifest });
+    await recheckLoraFiles({ repositoryRoot, localConfig, manifest, inputs:storedPreflight.inputs });
     const cells = storedPreflight.cells.map((cell, index) => {
       const input = storedPreflight.inputs.find(input => input.id === cell.input_id);
-      return buildCell({ experimentId: manifest.id, manifest, input, sourceCell: manifest.cells[index] });
+      return buildComparisonCell({ experimentId: manifest.id, manifest, input, sourceCell: manifest.cells[index] }).cell;
     });
     const plan = {
       version: COMPARISON_EXECUTION_PLAN_VERSION,

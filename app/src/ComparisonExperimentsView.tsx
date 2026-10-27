@@ -4,7 +4,7 @@ import { comparisonAxisLabel } from "./comparison-grid";
 import { useFeedback } from "./feedback";
 import ZoomableImageLightbox from "./ImageLightbox";
 import { Modal } from "./Modal";
-import { ComparisonInputEditor, type ComparisonInput } from "./ComparisonInputEditor";
+import { ComparisonInputEditor,comparisonInputFamily, type ComparisonInput } from "./ComparisonInputEditor";
 import { ResourcePicker, ResourceDetailsButton, resourceStatusLabel } from "./ResourceCatalog";
 import { loraResourceItem, loraMatchesProfile, type GlobalModelResource } from "./global-resource-catalog";
 
@@ -21,12 +21,15 @@ type AxisValue = { value_id: string; label: string; value?: string | number };
 type ComparisonAxis = { type: string; values: AxisValue[] };
 type ComparisonManifestCell = { id: string; ordinal: number; axis_values: Record<string, string>; effective_seed?: number };
 type ComparisonStatusCell = { id: string; ordinal: number; status?: string; result?: { image?: { relative_path?: string } } | null; error?: { message?: string } | null };
+type ComparisonExecutionCell={id:string;input_id?:string;ordinal?:number;cfg?:number;dimensions?:{width:number;height:number};prompt:{positive:string;negative:string};loras:Array<{filename:string;weight:number;sha256?:string}>};
+type ComparisonPreview={preflight:unknown;cells:ComparisonExecutionCell[]};
 type ComparisonRecord = {
   id: string;
   manifest: { id: string; axes: ComparisonAxis[]; cells: ComparisonManifestCell[]; shared_seed: number | null; created_at: string };
   status: { status: "queued" | "running" | "completed" | "failed" | "cancelled" | "incomplete"; cells: ComparisonStatusCell[]; updated_at: string; started_at?: string | null };
-  execution?: unknown;
+  execution?: {cells?:ComparisonExecutionCell[]};
   retry_available?: boolean;
+  can_start?:boolean;can_retry?:boolean;block_reason?:string|null;has_execution?:boolean;
 };
 
 type ComparisonGridState = {
@@ -51,6 +54,10 @@ function parseNumberList(text: string, label: string) {
   return values;
 }
 
+function ExecutionCellDetails({cell,label='实际生成输入'}:{cell:ComparisonExecutionCell;label?:string}) {
+  return <details className="comparison-execution-details"><summary>{label}{cell.dimensions?` · ${cell.dimensions.width}×${cell.dimensions.height}`:''}{cell.cfg===undefined?'':` · CFG ${cell.cfg}`}</summary><div><b>实际 LoRA</b>{cell.loras.length?<ul>{cell.loras.map((lora,index)=><li key={index}>{lora.filename} · {lora.weight}{lora.sha256&&<small>SHA：{lora.sha256}</small>}</li>)}</ul>:<p>无 LoRA</p>}<b>正向 Prompt</b><pre>{cell.prompt.positive}</pre><b>负向 Prompt</b><pre>{cell.prompt.negative||'（空）'}</pre></div></details>;
+}
+
 function axisValues(type: string, values: Array<string | number>, labels = values.map(String)): ComparisonAxis {
   return {
     type,
@@ -65,7 +72,7 @@ function axisValues(type: string, values: Array<string | number>, labels = value
 function mergeRecord(records: ComparisonRecord[], next: ComparisonRecord) {
   const index = records.findIndex((record) => record.id === next.id);
   if (index < 0) return [next, ...records];
-  return records.map((record, current) => current === index ? next : record);
+  return records.map((record, current) => current === index ? {...record,...next} : record);
 }
 
 function progress(record: ComparisonRecord) {
@@ -172,8 +179,13 @@ export default function ComparisonExperimentsView({ resources, runtimeTasks = { 
   const [retrying, setRetrying] = useState(false);
   const [formError, setFormError] = useState("");
   const [selectedLoraIds, setSelectedLoraIds] = useState<string[]>([]);
-  const [loraApplicationMode, setLoraApplicationMode] = useState<"append" | "replace_character">("append");
-  const [loraTargetCharacterId, setLoraTargetCharacterId] = useState("");
+  const [loraApplicationMode, setLoraApplicationMode] = useState<"append" | "replace_lora">("append");
+  const [loraTargetSha, setLoraTargetSha] = useState("");
+  const [triggerPolicy,setTriggerPolicy]=useState<'preserve'|'replace'>('preserve');
+  const [inputPreview,setInputPreview]=useState<{signature:string;value:ComparisonPreview}|null>(null);
+  const [previewing,setPreviewing]=useState(false);
+  const previewRequest=useRef<AbortController|null>(null),startingRef=useRef(false),mounted=useRef(true);
+  const createdDraft=useRef<{signature:string;id:string;confirmed:boolean}|null>(null);
   const [loraPickerIds, setLoraPickerIds] = useState<string[] | null>(null);
   const [weightText, setWeightText] = useState("0.8");
   const [characterWeightText, setCharacterWeightText] = useState("");
@@ -199,15 +211,17 @@ export default function ComparisonExperimentsView({ resources, runtimeTasks = { 
     setSelectedLoraIds(current => current.filter(id => compatibleIds.has(id)));
     setLoraPickerIds(current => current === null ? null : current.filter(id => compatibleIds.has(id)));
   }, [compatibleLoraOptions]);
-  const commonCharacters = useMemo(() => {
+  const commonTargets = useMemo(() => {
     if (!inputs.length) return [];
-    return [...new Set(inputs[0].loras.filter(lora => lora.kind === "character").map(lora => lora.owner).filter((id): id is string => Boolean(id)))].filter(id => inputs.every(input => input.loras.some(lora => lora.kind === "character" && lora.owner === id))).map(id => ({ id, name: id }));
+    return inputs[0].loras.filter(lora=>inputs.every(input=>input.loras.filter(entry=>entry.sha256===lora.sha256).length===1));
   }, [inputs]);
   useEffect(() => {
-    setLoraTargetCharacterId((current) => commonCharacters.some((character) => character.id === current)
-      ? current
-      : commonCharacters[0]?.id ?? "");
-  }, [commonCharacters]);
+    setLoraTargetSha(current=>commonTargets.some(lora=>lora.sha256===current)?current:commonTargets[0]?.sha256??'');
+  }, [commonTargets]);
+  const draftSignature=JSON.stringify({inputs,selectedLoraIds,loraApplicationMode,loraTargetSha,triggerPolicy,weightText,characterWeightText,includeLoraBaseline,seedText,cfgText});
+  const currentDraftSignature=useRef(draftSignature);currentDraftSignature.current=draftSignature;
+  useEffect(()=>{previewRequest.current?.abort();previewRequest.current=null;setInputPreview(null);setPreviewing(false);setFormError('');},[draftSignature]);
+  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;previewRequest.current?.abort();};},[]);
 
   const loadExperiments = useCallback(async (quiet = false) => {
     const epoch = readEpoch.current;
@@ -215,7 +229,7 @@ export default function ComparisonExperimentsView({ resources, runtimeTasks = { 
     else setRefreshing(true);
     try {
       const result = await responseJson<{ experiments: ComparisonRecord[] }>(await fetch(base, { headers: { accept: "application/json" } }));
-      if (epoch === readEpoch.current) setExperiments(result.experiments ?? []);
+      if (epoch === readEpoch.current) setExperiments(current=>(result.experiments??[]).map(next=>({...current.find(record=>record.id===next.id),...next})));
     } catch (error) {
       notify({ kind: "error", message: `读取对比实验失败：${error instanceof Error ? error.message : String(error)}` });
     } finally {
@@ -228,7 +242,7 @@ export default function ComparisonExperimentsView({ resources, runtimeTasks = { 
     const epoch = readEpoch.current;
     if (select) { setImagePreview(null); setSelectedId(id); }
     try {
-      const result = await responseJson<{ experiment: ComparisonRecord }>(await fetch(`${base}/${encodeURIComponent(id)}`, { headers: { accept: "application/json" } }));
+      const result = await responseJson<{ experiment: ComparisonRecord }>(await fetch(`${base}/${encodeURIComponent(id)}?include_execution=true`, { headers: { accept: "application/json" } }));
       if (epoch === readEpoch.current) setExperiments((current) => mergeRecord(current, result.experiment));
     } catch (error) {
       notify({ kind: "error", message: `读取对比实验详情失败：${error instanceof Error ? error.message : String(error)}` });
@@ -284,7 +298,9 @@ export default function ComparisonExperimentsView({ resources, runtimeTasks = { 
     setInputs([]);
     setSelectedLoraIds([]);
     setLoraApplicationMode("append");
-    setLoraTargetCharacterId("");
+    setLoraTargetSha("");
+    setTriggerPolicy('preserve');
+    createdDraft.current=null;
     setLoraPickerIds(null);
     setWeightText("0.8");
     setCharacterWeightText("");
@@ -294,27 +310,26 @@ export default function ComparisonExperimentsView({ resources, runtimeTasks = { 
     setFormError("");
   }
 
-  async function createAndStart() {
-    setFormError("");
-    if (!inputs.length) { setFormError("请至少添加一个测试输入"); return; }
+  function requestBody(id:string) {
+    if (!inputs.length) throw Error("请至少添加一个测试输入");
+    if(new Set(inputs.map(comparisonInputFamily)).size!==1)throw Error('一个实验只能使用同一模型家族。');
     if (selectedLoraIds.some(id => !compatibleLoraOptions.some(model => model.id === id))) {
-      setFormError("所选 LoRA 与当前测试输入的生成配置不匹配，请重新选择"); return;
+      throw Error("所选 LoRA 与当前测试输入的生成配置不匹配，请重新选择");
     }
-    if (selectedLoraIds.length && loraApplicationMode === "replace_character" && !commonCharacters.some((character) => character.id === loraTargetCharacterId)) {
-      setFormError("替换角色模式要求测试输入共同包含一个角色");
-      return;
+    if (selectedLoraIds.length && loraApplicationMode === "replace_lora" && !commonTargets.some(lora=>lora.sha256===loraTargetSha)) {
+      throw Error('替换目标必须在每个输入中按 SHA 唯一匹配；请检查目标 LoRA 是否缺失或重复。');
     }
-    try {
       const weights = selectedLoraIds.length ? parseNumberList(weightText, "LoRA 权重") : [];
       if (selectedLoraIds.length && !weights.length) throw new Error("选择 LoRA 后请填写至少一个权重");
       const characterWeights = parseNumberList(characterWeightText, "角色 LoRA 权重");
       const seeds = parseNumberList(seedText, "Seed");
       const cfgs = parseNumberList(cfgText, "CFG");
       const selectedLoras = loraOptions.filter((model) => selectedLoraIds.includes(model.id));
+      for(const model of selectedLoras)if(model.sha256&&inputs.some(input=>input.loras.some(lora=>lora.sha256===model.sha256&&(loraApplicationMode==='append'||lora.sha256!==loraTargetSha))))throw Error(`${model.name} 已在输入保留的 LoRA 中，不能重复追加同一文件。`);
       const axes: ComparisonAxis[] = [axisValues("input", inputs.map(input => input.id), inputs.map(input => input.label))];
       if (selectedLoras.length) {
         axes.push({ type: "lora_config", values: [
-          ...(includeLoraBaseline ? [{ value_id: "baseline", label: "基线", value: "baseline" }] : []),
+          ...(includeLoraBaseline ? [{ value_id: "baseline", label: loraApplicationMode==='replace_lora'?'移除该 LoRA':'原输入 LoRA', value: "baseline" }] : []),
           ...selectedLoras.map((model) => ({ value_id: model.id, label: model.name, value: model.id })),
         ] });
         if (characterWeights.length) axes.push(axisValues("character_lora_weight", characterWeights));
@@ -322,39 +337,72 @@ export default function ComparisonExperimentsView({ resources, runtimeTasks = { 
       }
       if (seeds.length) axes.push(axisValues("seed", seeds));
       if (cfgs.length) axes.push(axisValues("cfg", cfgs));
-      setStarting(true);
-      const id = `comparison-${Date.now().toString(36)}`;
       const loraSources = selectedLoras.map((model) => model.repository_record || model.local_record
         ? { id: model.id, kind: "resource", resource_id: model.id }
         : { id: model.id, kind: "raw", relative_path: model.relative_path });
-      const created = await responseJson<{ experiment: ComparisonRecord }>(await fetch(base, {
-        method: "POST",
-        headers: { "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify({
-          id,
+      return {id,
           axes, inputs,
           ...(loraSources.length ? { lora_sources: loraSources } : {}),
           ...(loraSources.length ? { include_lora_baseline: includeLoraBaseline } : {}),
-          ...(loraSources.length && loraApplicationMode === "replace_character"
-            ? { lora_application: { mode: "replace_character", target_character_id: loraTargetCharacterId } }
+          ...(loraSources.length && loraApplicationMode === "replace_lora"
+            ? { lora_application: { mode: "replace_lora", target_lora_sha256:loraTargetSha,trigger_policy:triggerPolicy } }
             : {}),
-        }),
-      }));
-      setExperiments((current) => mergeRecord(current, created.experiment));
-      setSelectedId(id);
+      };
+  }
+  async function previewDraft() {
+    if(previewRequest.current||startingRef.current)return;
+    setFormError('');
+    const signature=draftSignature,request=new AbortController();previewRequest.current=request;
+    try {
+      const body=requestBody('preview');setPreviewing(true);
+      const value=await responseJson<ComparisonPreview>(await fetch(`${base}/preview`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body),signal:request.signal}));
+      if(mounted.current&&!request.signal.aborted&&currentDraftSignature.current===signature)setInputPreview({signature,value});
+    } catch(error){if(mounted.current&&!request.signal.aborted&&currentDraftSignature.current===signature)setFormError(error instanceof Error?error.message:String(error));}
+    finally{if(mounted.current&&previewRequest.current===request){setPreviewing(false);previewRequest.current=null;}}
+  }
+  async function createAndStart() {
+    if(startingRef.current)return;
+    startingRef.current=true;setStarting(true);setFormError('');previewRequest.current?.abort();
+    const signature=draftSignature;
+    try {
+      let pending=createdDraft.current?.signature===signature?createdDraft.current:null;
+      // 创建响应丢失时先查同一 ID，避免服务端已保存却再次新建。
+      if(pending&&!pending.confirmed){
+        const response=await fetch(`${base}/${encodeURIComponent(pending.id)}?include_execution=true`,{headers:{accept:'application/json'}});
+        if(response.status!==404){
+          const recovered=await responseJson<{experiment:ComparisonRecord}>(response);pending.confirmed=true;
+          if(!mounted.current)return;
+          setExperiments(current=>mergeRecord(current,recovered.experiment));setSelectedId(pending.id);
+        }
+      }
+      if(!pending?.confirmed){
+        const body=requestBody(pending?.id??`comparison-${crypto.randomUUID()}`);
+        const value=await responseJson<ComparisonPreview>(await fetch(`${base}/preview`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}));
+        if(!mounted.current)return;
+        if(currentDraftSignature.current!==signature)throw Error('草稿在预检期间发生变化，请重新预览并开始。');
+        setInputPreview({signature,value});
+        pending={signature,id:body.id,confirmed:false};createdDraft.current=pending;
+        const created=await responseJson<{experiment:ComparisonRecord}>(await fetch(base,{method:'POST',headers:{'content-type':'application/json',accept:'application/json'},body:JSON.stringify(body)}));
+        pending.confirmed=true;
+        if(!mounted.current)return;
+        setExperiments(current=>mergeRecord(current,created.experiment));setSelectedId(pending.id);
+      }
+      const id=pending.id;
       const started = await responseJson<{ experiment: ComparisonRecord }>(await fetch(`${base}/${encodeURIComponent(id)}/start`, { method: "POST", headers: { accept: "application/json" } }));
+      createdDraft.current=null;
+      if(!mounted.current)return;
       const running = { ...started.experiment, status: { ...started.experiment.status, status: "running" as const } };
       setExperiments((current) => mergeRecord(current, running));
       setSelectedId(id);
     } catch (error) {
-      setFormError(error instanceof Error ? error.message : String(error));
+      if(mounted.current)setFormError(error instanceof Error ? error.message : String(error));
     } finally {
-      setStarting(false);
+      startingRef.current=false;if(mounted.current)setStarting(false);
     }
   }
 
   async function retrySelected() {
-    if (!selected || retrying) return;
+    if (!selected || retrying || selected.can_retry===false) return;
     setRetrying(true);
     try {
       const result = await responseJson<{ experiment: ComparisonRecord }>(await fetch(`${base}/${encodeURIComponent(selected.id)}/retry`, { method: "POST", headers: { accept: "application/json" } }));
@@ -452,7 +500,7 @@ export default function ComparisonExperimentsView({ resources, runtimeTasks = { 
     catch (error) { notify({ kind: "error", message: String(error) }); }
   }
   async function startSelected() {
-    if (!selected) return;
+    if (!selected || starting || selected.can_start===false) return;
     setStarting(true);
     try { await responseJson(await fetch(`${base}/${encodeURIComponent(selected.id)}/start`, { method: "POST" })); await loadDetail(selected.id); }
     catch (error) { notify({ kind: "error", message: String(error) }); } finally { setStarting(false); }
@@ -464,18 +512,26 @@ export default function ComparisonExperimentsView({ resources, runtimeTasks = { 
       <section hidden={!showCreate} className="settings-card comparison-experiment-form">
         <header><div><h3>新建实验</h3><p>先选择比较轴，确认生成数量后开始。</p></div><button type="button" className="button" disabled={starting} onClick={resetDraft}>清空重置</button></header>
         <ComparisonInputEditor key={draftVersion} value={inputs} onChange={value => { if (draftEpoch.current === draftVersion) setInputs(value); }} disabled={starting} models={loraOptions} />
-        <fieldset><legend>LoRA 配置（可选）</legend><div className="comparison-page-picker comparison-lora-picker">
+        <fieldset disabled={starting}><legend>LoRA 配置（可选）</legend><div className="comparison-page-picker comparison-lora-picker">
           <div className="comparison-page-picker__header"><div className="comparison-page-picker__count"><b>已选择 {selectedLoraSet.size} 个 LoRA</b><span>{selectedLoraSet.size ? "选中的 LoRA 会加入比较轴" : "先添加测试输入，再选择匹配的 LoRA"}</span></div><div className="comparison-page-picker__actions"><button type="button" className="button button--quiet" disabled={!selectedLoraSet.size} onClick={() => setSelectedLoraIds([])}>清空</button><button type="button" className="button" disabled={!inputs.length} onClick={() => setLoraPickerIds([...selectedLoraIds])}>选择 LoRA</button></div></div>
           <div className="comparison-selected-loras">{loraItems.filter(item => selectedLoraSet.has(item.id)).map(item => <article key={item.id}><div><b>{item.name}</b><small>{item.purpose} · {item.summary || item.originalName || item.relativePath}</small></div><ResourceDetailsButton item={item} /><button type="button" className="button button--quiet" aria-label={"移除 " + item.name} onClick={() => setSelectedLoraIds(ids => ids.filter(id => id !== item.id))}>移除</button></article>)}</div>
           {loraPickerIds !== null && <Modal size="workspace" title="选择 LoRA" subtitle="仅显示与全部测试输入架构匹配的已登记 LoRA。" onClose={() => setLoraPickerIds(null)} ariaLabel="选择 LoRA"
             footer={<><button type="button" className="button" onClick={() => setLoraPickerIds(null)}>取消</button><button type="button" className="button button--primary" onClick={() => { setSelectedLoraIds(loraPickerIds); setLoraPickerIds(null); }}>确认选择（{loraPickerIds.length}）</button></>}>
             <div className="lora-picker-body"><ResourcePicker items={compatibleLoraItems} selection={{ ids: loraPickerIds, onChange: setLoraPickerIds }} /></div>
           </Modal>}
-        </div><div className="comparison-form-grid"><label><span>LoRA 应用方式</span><select value={loraApplicationMode} disabled={!selectedLoraSet.size} onChange={(event) => setLoraApplicationMode(event.target.value as "append" | "replace_character")}><option value="append">额外叠加</option><option value="replace_character">替换角色</option></select><small>替换模式一次替换一个角色，其他角色和画风 LoRA 保持不变。</small></label>{loraApplicationMode === "replace_character" && selectedLoraSet.size > 0 && <label><span>目标角色</span><select value={loraTargetCharacterId} disabled={!commonCharacters.length} onChange={(event) => setLoraTargetCharacterId(event.target.value)}>{commonCharacters.map((character) => <option key={character.id} value={character.id}>{character.name}</option>)}</select><small>{commonCharacters.length ? "仅显示所有已选输入共同包含的角色。" : "已选输入没有共同角色，无法开始替换实验。"}</small></label>}<label><span>测试 LoRA 权重</span><input value={weightText} disabled={!selectedLoraSet.size} onChange={(event) => setWeightText(event.target.value)} placeholder="例如 0.6, 0.8, 1" /><small>只控制当前追加或替换的测试 LoRA。</small></label><label><span>角色 LoRA 权重</span><input value={characterWeightText} disabled={!selectedLoraSet.size} onChange={(event) => setCharacterWeightText(event.target.value)} placeholder="留空沿用输入角色权重" /><small>填写后要求每个测试输入恰好包含一个角色 LoRA。</small></label><label className="comparison-checkbox-field"><span>无测试 LoRA 基线</span><span className="comparison-checkbox-control"><input type="checkbox" checked={includeLoraBaseline} disabled={!selectedLoraSet.size} onChange={(event) => setIncludeLoraBaseline(event.target.checked)} /><b>{includeLoraBaseline ? "包含基线" : "不包含基线"}</b></span><small>关闭后只展开已选择的 LoRA，不生成无风格基线。</small></label><label><span>Seed</span><input value={seedText} onChange={(event) => setSeedText(event.target.value)} placeholder="留空使用整组共享随机 Seed" /><small>填写逗号分隔值才创建 Seed 轴。</small></label><label><span>CFG</span><input value={cfgText} onChange={(event) => setCfgText(event.target.value)} placeholder="留空沿用输入 CFG" /><small>填写逗号分隔值才创建 CFG 轴。</small></label></div></fieldset>
+        </div><div className="comparison-form-grid">
+          <label><span>LoRA 应用方式</span><select value={loraApplicationMode} disabled={!selectedLoraSet.size} onChange={event=>setLoraApplicationMode(event.target.value as 'append'|'replace_lora')}><option value="append">额外叠加</option><option value="replace_lora">替换指定 LoRA</option></select><small>{loraApplicationMode==='append'?'保持原 Prompt，保留输入 LoRA 并叠加测试权重。':'只替换选中目标，其他 LoRA 保持不变。'}</small></label>
+          {loraApplicationMode==='replace_lora'&&selectedLoraSet.size>0&&<><label><span>目标 LoRA</span><select aria-label="目标 LoRA" value={loraTargetSha} disabled={!commonTargets.length} onChange={event=>setLoraTargetSha(event.target.value)}>{commonTargets.map(lora=><option key={lora.sha256} value={lora.sha256}>{lora.filename} · {lora.sha256.slice(0,12)}</option>)}</select><small>{commonTargets.length?'每个输入均按 SHA 唯一匹配该文件。':'没有所有输入共同且唯一的目标；请检查缺失或重复 LoRA。'}</small></label><label><span>触发词策略</span><select aria-label="触发词策略" value={triggerPolicy} onChange={event=>setTriggerPolicy(event.target.value as 'preserve'|'replace')}><option value="preserve">保持原 Prompt</option><option value="replace">同步目标触发词</option></select><small>{triggerPolicy==='preserve'?'只改变 LoRA 挂载与权重。':'同步触发词也会改变 Prompt；归属不明或新触发词未知时预检阻止。'}</small></label></>}
+          <label><span>测试 LoRA 权重</span><input value={weightText} disabled={!selectedLoraSet.size} onChange={event=>setWeightText(event.target.value)} placeholder="例如 0.6, 0.8, 1"/><small>只控制当前追加或替换的测试 LoRA。</small></label>
+          <label><span>角色 LoRA 权重</span><input value={characterWeightText} disabled={!selectedLoraSet.size} onChange={event=>setCharacterWeightText(event.target.value)} placeholder="留空沿用输入角色权重"/><small>填写后要求每个测试输入恰好包含一个角色 LoRA。</small></label>
+          <label className="comparison-checkbox-field"><span>比较基线</span><span className="comparison-checkbox-control"><input aria-label="包含比较基线" type="checkbox" checked={includeLoraBaseline} disabled={!selectedLoraSet.size} onChange={event=>setIncludeLoraBaseline(event.target.checked)}/><b>{loraApplicationMode==='replace_lora'?'移除该 LoRA':'原输入 LoRA'}</b></span><small>{loraApplicationMode==='replace_lora'?'基线只移除目标，保留其他 LoRA，并遵循所选触发词策略。':'基线保留输入原有 LoRA，不加载本轮测试 LoRA。'}</small></label>
+          <label><span>Seed</span><input value={seedText} onChange={event=>setSeedText(event.target.value)} placeholder="留空使用整组共享随机 Seed"/><small>填写逗号分隔值才创建 Seed 轴。</small></label><label><span>CFG</span><input value={cfgText} onChange={event=>setCfgText(event.target.value)} placeholder="留空沿用输入 CFG"/><small>填写逗号分隔值才创建 CFG 轴。</small></label>
+        </div></fieldset>
         <div className="comparison-experiment-summary"><div><span>当前组合</span><b>{previewAxes.join(" · ")}</b></div><div><span>预计生成</span><b>{cellCountPreview} 张</b></div></div>
         {formError && <p className="comparison-form-error" role="alert">{formError}</p>}
         {missingSelectedLoras.length > 0 && <p className="comparison-form-error" role="alert">所选 LoRA 暂不可用：{missingSelectedLoras.map((model) => `${model.name}（${resourceStatusLabel(model.status)}）`).join("、")}，恢复可用后才能开始。</p>}
-        <footer className="comparison-form-actions"><button type="button" className="button button--primary" disabled={starting || !inputs.length || missingSelectedLoras.length > 0 || (selectedLoraSet.size > 0 && loraApplicationMode === "replace_character" && (!commonCharacters.length || !loraTargetCharacterId))} onClick={() => void createAndStart()}>{starting ? "准备并开始…" : "开始实验"}</button></footer>
+        <footer className="comparison-form-actions"><button type="button" className="button" disabled={starting||previewing||!inputs.length} onClick={()=>void previewDraft()}>{previewing?'正在预检…':'预览最终输入'}</button><button type="button" className="button button--primary" disabled={starting || !inputs.length || missingSelectedLoras.length > 0 || (selectedLoraSet.size > 0 && loraApplicationMode === "replace_lora" && (!commonTargets.length || !loraTargetSha))} onClick={() => void createAndStart()}>{starting ? "准备并开始…" : "开始实验"}</button></footer>
+        {inputPreview?.signature===draftSignature&&<section className="comparison-input-preview" aria-label="最终输入预览"><h4>预检通过 · {inputPreview.value.cells.length} 个生成项</h4><p>以下是当前草稿的实际输入；修改草稿后需要重新预览。</p>{inputPreview.value.cells.map((cell,index)=><ExecutionCellDetails key={cell.id} cell={cell} label={`第 ${index+1} 项 · ${inputs.find(input=>input.id===cell.input_id)?.label??cell.input_id??cell.id}`}/>)}</section>}
       </section>
       <section className="settings-card comparison-experiment-list">
         <header><div><h3>已有实验 <small>{experiments.length}</small></h3><p>{loading ? "正在读取…" : "按创建时间从新到旧排列，打开结果查看对比。"}</p></div></header>
@@ -493,13 +549,14 @@ export default function ComparisonExperimentsView({ resources, runtimeTasks = { 
         </article>; })}
       </section>
       {selected && selectedGrid && <Modal size="workspace" title={selected.id} subtitle={`${statusLabels[selected.status.status]} · ${progress(selected).done} / ${progress(selected).total} 张`} onClose={() => setSelectedId("")} dismissible={!imagePreview} className="comparison-detail-modal" ariaLabel={`对比实验详情：${selected.id}`}><div className="comparison-experiment-detail" ref={detailRef} tabIndex={-1} onChange={event => { if (event.target instanceof HTMLSelectElement) detailRef.current?.focus({ preventScroll: true }); }}>
-        {(selected.retry_available ?? ["failed", "incomplete"].includes(selected.status.status)) && <div><button type="button" className="button button--primary" disabled={retrying} onClick={() => void retrySelected()}>{retrying ? "准备补跑…" : "补跑未完成项"}</button><p>沿用本实验输入，保留已完成图片。</p></div>}
+        {(selected.retry_available ?? ["failed", "incomplete"].includes(selected.status.status)) && <div><button type="button" className="button button--primary" disabled={retrying||selected.can_retry===false} onClick={() => void retrySelected()}>{retrying ? "准备补跑…" : "补跑未完成项"}</button><p>沿用本实验输入，保留已完成图片。</p></div>}
+        {selected.block_reason&&<p role="status" className="comparison-form-error">{selected.block_reason}</p>}
         <nav className="comparison-experiment-pager" aria-label="切换实验">
           <span>{selectedExperimentIndex + 1 || "—"} / {visibleExperiments.length} 个实验 · 最新在前</span>
           <button type="button" className="button" disabled={selectedExperimentIndex <= 0} onClick={() => void loadDetail(visibleExperiments[selectedExperimentIndex - 1].id)}>上一个实验</button>
           <button type="button" className="button" disabled={selectedExperimentIndex < 0 || selectedExperimentIndex >= visibleExperiments.length - 1} onClick={() => void loadDetail(visibleExperiments[selectedExperimentIndex + 1].id)}>下一个实验</button>
         </nav>
-        <div className="comparison-form-actions">{selected.status.status === "queued" && !selected.status.started_at && <button type="button" className="button" disabled={starting} onClick={() => void startSelected()}>开始已保存实验</button>}{currentRuntimeTasks.some(task => task.id === selected.id) && <button type="button" className="button" onClick={() => void stopSelected()}>停止实验</button>}<button type="button" className="button" disabled={deleting || currentRuntimeTasks.some(task => task.id === selected.id)} onClick={() => void deleteExperiments([selected.id])}>删除实验</button></div><dl className="comparison-axis-overview" aria-label="实验条件">
+        <div className="comparison-form-actions">{selected.status.status === "queued" && !selected.status.started_at && <button type="button" className="button" disabled={starting||selected.can_start===false} onClick={() => void startSelected()}>开始已保存实验</button>}{currentRuntimeTasks.some(task => task.id === selected.id) && <button type="button" className="button" onClick={() => void stopSelected()}>停止实验</button>}<button type="button" className="button" disabled={deleting || currentRuntimeTasks.some(task => task.id === selected.id)} onClick={() => void deleteExperiments([selected.id])}>删除实验</button></div><dl className="comparison-axis-overview" aria-label="实验条件">
           {selected.manifest.axes.map(axis => <div key={`${selected.id}-${axis.type}`} className={axis.values.length === 1 ? "is-fixed" : ""}>
             <dt>{comparisonAxisLabel(axis.type)} <b>{axis.values.length === 1 ? "固定" : `x${axis.values.length}`}</b></dt>
             <dd>{axis.values.map(value => <span key={value.value_id}>{value.label}</span>)}</dd>
@@ -542,6 +599,7 @@ export default function ComparisonExperimentsView({ resources, runtimeTasks = { 
                 {cell && <small>{pageLabel}</small>}
                 <span>{status === "completed" ? "已完成" : status === "running" ? "生成中" : status === "incomplete" || status === "failed" ? "失败" : status === "cancelled" ? "已取消" : "待生成"}</span>
                 {cell?.error?.message && <p className="comparison-form-error">{cell.error.message}</p>}
+                {cell&&selected.execution?.cells?.find(item=>item.id===cell.id)&&<ExecutionCellDetails cell={selected.execution.cells.find(item=>item.id===cell.id)!}/>}
                 {status === "completed" && cell && <ComparisonGridImage src={imageSrc} label={imageLabel} onOpen={() => setImagePreview({ src: imageSrc, alt: imageLabel, footer: imageLabel })} />}
               </article>;
             })}

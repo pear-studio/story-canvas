@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { assertComparisonExperimentManifest } from "./comparison-experiment.mjs";
@@ -280,7 +280,9 @@ async function readViewRecord(projectRoot, id) {
   // 浏览器投影只读取 manifest 和轻量状态；执行入口仍通过 readRecord
   // 完整校验 preflight 与 execution 身份。
   const status = assertStatus(source, manifest);
-  return clone({ id, manifest, status });
+  const hasExecution = await stat(path.join(directory, "execution.json"))
+    .then(info => info.isFile()).catch(error => { if (error.code === "ENOENT") return false; throw error; });
+  return clone({ id, manifest, status, has_execution: hasExecution });
 }
 
 export async function readComparisonExperimentView(projectRoot, experimentId) {

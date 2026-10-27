@@ -55,11 +55,15 @@ function assertOutput(output, cellId, label) {
   }
 }
 
-function assertCell(cell, source, input, index) {
+function assertCell(cell, source, input, index, preflightCell = null) {
   const label = `cells[${index}]`;
   keys(cell, cellFields, label);
   if (cell.id !== source.id || cell.ordinal !== source.ordinal) {
     fail("comparison_execution_cells_changed", `${label} 与 manifest cell 不一致`);
+  }
+  if(preflightCell&&(!input||cell.input_id!==preflightCell.input_id||cell.seed!==source.effective_seed
+    ||cell.cfg!==preflightCell.cfg||hashCanonicalJson(cell.axis_values)!==hashCanonicalJson(source.axis_values))){
+    fail('comparison_execution_cells_changed',`${label} 的输入、seed、CFG 或比较轴与预检不一致`);
   }
   if (!Array.isArray(cell.outputs) || cell.outputs.length !== 1) {
     fail("invalid_comparison_execution_plan", `${label} 缺少 outputs`);
@@ -97,7 +101,7 @@ function validateInternal(plan, { manifest, preflight } = {}) {
   if (plan.cells.length !== verifiedManifest.cells.length || plan.cells.length !== verifiedPreflight.cells.length) {
     fail("comparison_execution_cells_changed", "执行计划 cell 数量不一致");
   }
-  plan.cells.forEach((cell, index) => assertCell(cell, verifiedManifest.cells[index], verifiedPreflight.inputs.find(input => input.id === cell.input_id), index));
+  plan.cells.forEach((cell, index) => assertCell(cell, verifiedManifest.cells[index], verifiedPreflight.inputs.find(input => input.id === cell.input_id), index, verifiedPreflight.version===3?verifiedPreflight.cells[index]:null));
   if (plan.canonical_sha256 !== hashCanonicalJson(planIdentity(plan))) {
     fail("comparison_execution_plan_tampered", "执行计划 canonical_sha256 无效");
   }

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { handleComparisonRequest, publicComparisonRecord } from "../server/comparison-http.mjs";
 
@@ -7,7 +8,7 @@ test("对比实验 HTTP 投影只返回网格所需事实并隐藏冻结执行�
   const projected = publicComparisonRecord({
     id: "demo",
     directory: "Saved/comparison-results/demo",
-    manifest: { id: "demo", axes: [], cells: [] },
+    manifest: { version: 2, id: "demo", axes: [], cells: [] },
     preflight: { large: "preflight" },
     execution: { large: "execution" },
     status: {
@@ -18,12 +19,27 @@ test("对比实验 HTTP 投影只返回网格所需事实并隐藏冻结执行�
 
   assert.deepEqual(projected, {
     id: "demo",
-    manifest: { id: "demo", axes: [], cells: [] },
+    manifest: { version: 2, id: "demo", axes: [], cells: [] },
+    has_execution: true,
+    can_start: false,
+    can_retry: true,
+    block_reason: null,
     status: {
       status: "failed",
       cells: [{ id: "cell-a", status: "failed" }],
     },
   });
+});
+
+test("未冻结执行的旧实验仅能查看；已有旧 execution 保留重试入口", () => {
+  const record = { id: "legacy", manifest: { version: 1 }, status: { status: "queued", cells: [] } };
+  const blocked = publicComparisonRecord(record);
+  assert.equal(blocked.can_start, false);
+  assert.equal(blocked.can_retry, false);
+  assert.match(blocked.block_reason, /重新导入/);
+  const frozen = publicComparisonRecord({ ...record, has_execution: true, status: { status: "failed", cells: [] } });
+  assert.equal(frozen.can_retry, true);
+  assert.equal(frozen.block_reason, null);
 });
 
 test("远程 ComfyUI 不能启动只支持本机模型身份的对比实验", async () => {
@@ -45,15 +61,18 @@ test("远程 ComfyUI 不能启动只支持本机模型身份的对比实验", as
 
 test("全局实验取消与批量清理不读取项目，活动任务不能删除，删除同时移除关联拼图", async t => {
   const { mkdtemp, mkdir, writeFile, rm, access } = await import("node:fs/promises");
-  const { tmpdir } = await import("node:os");
   const path = await import("node:path");
+  const { createBlankComparisonInput } = await import("../server/comparison-inputs.mjs");
   const { createComparisonExperiment } = await import("../server/comparison-experiment.mjs");
   const { preflightComparisonExperiment } = await import("../server/comparison-preflight.mjs");
   const { createComparisonExperimentStorage } = await import("../server/comparison-experiment-storage.mjs");
   const { handleRuntimeRequest } = await import("../server/runtime-http.mjs");
-  const root = await mkdtemp(path.join(tmpdir(), "global-comparison-http-"));
+  const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
+  const testRoot = path.join(repositoryRoot, "Saved", "Tests");
+  await mkdir(testRoot, { recursive: true });
+  const root = await mkdtemp(path.join(testRoot, "global-comparison-http-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const input = { id: "sample", label: "测试", prompt: { positive: "landscape", negative: "" }, loras: [], render: { canvas: "2:3", profile: { id: "test", architecture_family: "anima", prompt: { family: "anima" }, models: {}, operations: { candidates: { routes: { empty_latent: { workflow: "test", recipe: { cfg: 6 } } } } } }, workflows: { test: {} } } };
+  const input = { ...await createBlankComparisonInput(repositoryRoot, "anima-base-v1", "2:3"), id: "sample", label: "测试", prompt: { positive: "landscape", negative: "" } };
   for (const id of ["first", "second"]) {
     const manifest = createComparisonExperiment({ id, axes: [{ type: "input", values: [{ value_id: "sample", label: "测试", value: "sample" }] }] });
     await createComparisonExperimentStorage({ projectRoot: root, manifest, preflight: preflightComparisonExperiment({ manifest, inputs: [input] }) });

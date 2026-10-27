@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "kind": "comparison_experiment",
+  "id": "first",
+  "created_at": "2026-08-24T00:00:00.000Z",
+  "status": "queued",
+  "shared_seed": null,
+  "axes": [
+    {
+      "type": "input",
+      "values": [
+        {
+          "value_id": "page",
+          "label": "<测试 & 页面>",
+          "value": "sample"
+        }
+      ]
+    },
+    {
+      "type": "seed",
+      "values": [
+        {
+          "value_id": "1",
+          "label": "1",
+          "value": 1
+        },
+        {
+          "value_id": "2",
+          "label": "2",
+          "value": 2
+        }
+      ]
+    }
+  ],
+  "registries": {
+    "loras": [],
+    "lora_configs": []
+  },
+  "cells": [
+    {
+      "id": "cell-a7562f3748aa92a222c83638b18d174634fb9b1d9c41780957ce5bc7a4e0d113",
+      "ordinal": 0,
+      "axis_values": {
+        "input": "page",
+        "seed": "1"
+      },
+      "effective_seed": 1,
+      "status": "queued"
+    },
+    {
+      "id": "cell-75f83669f99e24fd532345c82a5b654078e7e7bdd4a26a5d6f6b5a1964fd1033",
+      "ordinal": 1,
+      "axis_values": {
+        "input": "page",
+        "seed": "2"
+      },
+      "effective_seed": 2,
+      "status": "queued"
+    }
+  ],
+  "canonical_sha256": "b5d2b4974c981cff13c7b8850d3fe8ae677a77a72b22dca1c71f90b9ce311223"
+}

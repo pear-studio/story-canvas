@@ -14,7 +14,10 @@ async function fixture(t) {
   t.after(() => rm(root, { recursive: true, force: true }));
   const manifests = [];
   for (const id of ['first', 'second']) {
-    const manifest = createComparisonExperiment({ id, axes: [
+    // 第一份固定为改造前 v1 历史，第二份使用当前创建契约；历史不随新默认版本升级。
+    const manifest = id === 'first'
+      ? JSON.parse(await readFile(new URL('./fixtures/comparison-review-v1.json', import.meta.url), 'utf8'))
+      : createComparisonExperiment({ id, axes: [
       { type: 'input', values: [{ value_id: 'page', label: '<测试 & 页面>', value: 'sample' }] },
       { type: 'seed', values: [1, 2].map(value => ({ value_id: String(value), label: String(value), value })) },
     ] });
@@ -31,6 +34,9 @@ async function fixture(t) {
 
 test('结果读取跨实验保持显式顺序，过滤轴值并保留失败项，与网页状态一致', async t => {
   const { root, manifests } = await fixture(t);
+  assert.deepEqual(manifests.map(manifest => manifest.version), [1, 2]);
+  const legacyPath = path.join(root, 'Saved/comparison-results/first/manifest.json');
+  const legacyBytes = await readFile(legacyPath);
   const review = await collectComparisonResults(root, { selections: [
     { experiment_id: 'second', cell_ids: [...manifests[1].cells].reverse().map(cell => cell.id) },
     { experiment_id: 'first', axis_values: { seed: '1' } },
@@ -42,6 +48,7 @@ test('结果读取跨实验保持显式顺序，过滤轴值并保留失败项�
   assert.equal(review.rows[1].image.absolute_file, path.join(root, 'Saved/comparison-results/second/results', manifests[1].cells[0].id, 'image.png'));
   assert.equal(review.rows[2].experiment_id, 'first');
   assert.equal(review.rows[0].inputs, undefined);
+  assert.deepEqual(await readFile(legacyPath), legacyBytes, '读取旧历史不能改写 manifest');
   for (const selection of [{ experiment_id: 'first', axis_values: { seed: 'missing' } }, { experiment_id: 'first', cell_ids: ['missing'] }, { experiment_id: 'first', cell_ids: [] }]) {
     await assert.rejects(collectComparisonResults(root, { selections: [selection] }), { code: 'invalid_comparison_review' });
   }

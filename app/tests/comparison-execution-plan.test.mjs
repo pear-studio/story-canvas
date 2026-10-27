@@ -548,3 +548,14 @@ for (const failures of [1, 2]) test(`最终成果已保存后队列释放失败 
     await completeGenerationTask(target.root, reference, { leaseToken: queue.active.lease_token });
   }
 });
+test('执行前仍复核冻结生成模型，文件变化不会提交到 ComfyUI', async context => {
+  const target = await fixture(context);
+  const manifest = createComparisonExperiment({id:'changed-base', axes:[{type:'input',values:[{value_id:'sample',label:'样本',value:'sample'}]}]});
+  const preflight = await preflightComparisonExperiment({repositoryRoot:target.root,projectRoot:target.projectRoot,localConfig:{models_root:'models'},manifest});
+  await createComparisonExperimentStorage({projectRoot:target.root,manifest,preflight});
+  await prepareComparisonExperimentExecution({repositoryRoot:target.root,projectRoot:target.root,localConfig:{models_root:'models'},experimentId:manifest.id});
+  await writeFile(path.join(target.root,'models','diffusion_models','base.safetensors'),'changed checkpoint');
+  let submitted=false;
+  await assert.rejects(runComparisonExperiment({projectRoot:target.root,experimentId:manifest.id,modelsRoot:path.join(target.root,'models'),adapter:{submit:async()=>{submitted=true;}}}),/冻结模型不可用或身份已变化/);
+  assert.equal(submitted,false);
+});

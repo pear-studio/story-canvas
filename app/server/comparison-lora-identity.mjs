@@ -141,10 +141,24 @@ async function freezeFile({ modelsRoot, relativePath }) {
   let metadata;
   let sha256;
   let handleAfter;
+  let tensorNames;
   try {
     const handleBefore = await handle.stat();
     if (!sameFileSnapshot(before, handleBefore)) fail("comparison_lora_file_changed", "LoRA 文件在打开期间发生变化");
     metadata = await readSafeTensorsMetadataFromHandle(handle, { strict: true, fileInfo: handleBefore });
+    const prefix = Buffer.alloc(8);
+    const prefixRead = await handle.read(prefix, 0, 8, 0);
+    const headerLength = Number(prefix.readBigUInt64LE());
+    if (prefixRead.bytesRead !== 8 || !Number.isSafeInteger(headerLength) || headerLength < 2
+      || headerLength > SAFE_TENSORS_METADATA_LIMITS.max_header_bytes) fail('comparison_lora_file_changed', '读取 LoRA header 时文件变化');
+    const encoded = Buffer.alloc(headerLength);
+    let offset = 0;
+    while (offset < encoded.length) {
+      const read = await handle.read(encoded, offset, encoded.length - offset, 8 + offset);
+      if (!read.bytesRead) fail('comparison_lora_file_changed', '读取 LoRA header 时文件变化');
+      offset += read.bytesRead;
+    }
+    tensorNames = Object.keys(JSON.parse(encoded.toString('utf8'))).filter(key => key !== '__metadata__');
     sha256 = await hashStableHandle(handle, handleBefore.size);
     handleAfter = await handle.stat();
     if (!sameFileSnapshot(handleBefore, handleAfter)) fail("comparison_lora_file_changed", "LoRA 文件在冻结读取期间发生变化");
@@ -160,7 +174,58 @@ async function freezeFile({ modelsRoot, relativePath }) {
   if (!sameFileSnapshot(before, checked.info) || handleAfter.size !== checked.info.size) {
     fail("comparison_lora_file_changed", "LoRA 文件在冻结读取期间发生变化");
   }
-  return { relative_path: relativePath, sha256, size_bytes: checked.info.size, metadata };
+  return { relative_path: relativePath, sha256, size_bytes: checked.info.size, metadata, tensorNames };
+}
+
+function normalizeIdentityDeclaration(value, label) {
+  assertExactKeys(value, ['architecture_family', 'base_models', 'adapted_components'], label);
+  if (!allowedArchitectureFamilies.has(value.architecture_family)) fail('invalid_comparison_lora_identity', `${label}.architecture_family 无效`);
+  if (!Array.isArray(value.adapted_components) || value.adapted_components.length !== 1 || value.adapted_components[0] !== 'dit') {
+    fail('invalid_comparison_lora_identity', `${label}.adapted_components 当前仅支持 ['dit']`);
+  }
+  return { architecture_family: value.architecture_family, base_models: normalizeBaseModels(value.base_models, `${label}.base_models`), adapted_components: ['dit'] };
+}
+
+function auditTargets(names, family) {
+  // 检查权重命名空间，不据此推断训练模型。未知格式明确交给预检拒绝。
+  const dit = name => {
+    if (!/^(?:diffusion_model\.|lora_unet_|transformer\.|unet\.)/.test(name)
+      || !/(?:lora_[AB](?:\.default)?\.weight|lora_(?:up|down)\.weight|\.alpha)$/.test(name)) return false;
+    if (family !== 'moss-image') return !/(?:text_encoder|lora_te|vae)/.test(name);
+    return /^diffusion_model\.(?:layers\.(?:[0-9]|[1-3][0-9]|4[01])\.proj\.(?:q|k|v|o|qkv|ffn_up_gate|ffn_down)|text_embedder\.blocks\.[01]\.(?:qkv|proj|ffn_gate|ffn_up|ffn_down))\./.test(name);
+  };
+  return { component: names.length && names.every(dit) ? 'dit' : 'unknown', tensor_count: names.length,
+    method: 'safetensors_tensor_names_v1' };
+}
+
+function metadataDeclaration(metadata) {
+  if (!metadata.family || !metadata.base_models) return null;
+  let models;
+  try { models = JSON.parse(metadata.base_models); } catch { fail('invalid_comparison_lora_identity', 'LoRA metadata.base_models 不是合法 JSON'); }
+  if (!Array.isArray(models)) fail('invalid_comparison_lora_identity', 'LoRA metadata.base_models 必须是数组');
+  return normalizeIdentityDeclaration({ architecture_family: metadata.family, adapted_components: ['dit'], base_models: models.map(model => ({
+    kind: model.kind ?? 'dit', name: model.name ?? 'metadata 声明的 DiT', identity_status: 'declared',
+    relative_path: model.relative_path ?? null, sha256: model.sha256 ?? null, size_bytes: model.size_bytes ?? null, source: model.source ?? null,
+  })) }, 'metadata identity');
+}
+
+function modelIdentity({ declaration, source, names, resourceId }) {
+  if (!declaration) return undefined;
+  return { ...declaration, target_audit: auditTargets(names, declaration.architecture_family), declaration: { source, ...(resourceId ? { resource_id: resourceId } : {}),
+    status: 'declared', note: '来源身份是声明；文件 SHA 和适配目标 header 已核验，不代表训练出处或效果已验证。' } };
+}
+
+function normalizeModelIdentity(value, label) {
+  assertExactKeys(value, ['architecture_family', 'base_models', 'adapted_components', 'target_audit', 'declaration'], label);
+  const { target_audit, declaration, ...identity } = value;
+  const normalized = normalizeIdentityDeclaration(identity, label);
+  assertExactKeys(target_audit, ['component', 'tensor_count', 'method'], `${label}.target_audit`);
+  if (!['dit', 'unknown'].includes(target_audit.component) || !Number.isSafeInteger(target_audit.tensor_count) || target_audit.tensor_count < 1
+    || target_audit.method !== 'safetensors_tensor_names_v1') fail('invalid_comparison_lora_identity', `${label}.target_audit 无效`);
+  assertExactKeys(declaration, ['source', 'resource_id', 'status', 'note'], `${label}.declaration`);
+  if (!['resource', 'explicit', 'metadata'].includes(declaration.source) || declaration.status !== 'declared' || typeof declaration.note !== 'string'
+    || (declaration.resource_id !== undefined && !resourceIdPattern.test(declaration.resource_id))) fail('invalid_comparison_lora_identity', `${label}.declaration 无效`);
+  return { ...normalized, target_audit: clone(target_audit), declaration: clone(declaration) };
 }
 
 function assertMetadata(value, label) {
@@ -234,10 +299,10 @@ function normalizeArchitecture(value, label) {
  * 校验/规范 manifest 中的 loras registry 条目。该函数也用于 validator，
  * 因而不会保留调用方传入的可变对象引用。
  */
-export function normalizeFrozenComparisonLora(value, label = "registries.loras 条目") {
+export function normalizeFrozenComparisonLora(value, label = "registries.loras 条目", { legacy = false } = {}) {
   if (!isRecord(value)) fail("invalid_comparison_lora_identity", `${label} 必须是对象`);
   if (value.kind === "raw") {
-    assertExactKeys(value, ["id", "kind", "relative_path", "sha256", "size_bytes", "metadata"], label);
+    assertExactKeys(value, ["id", "kind", "relative_path", "sha256", "size_bytes", "metadata", ...(!legacy ? ['model_identity', 'activation'] : [])], label);
     return {
       id: assertStableId(value.id, `${label}.id`),
       kind: "raw",
@@ -245,10 +310,12 @@ export function normalizeFrozenComparisonLora(value, label = "registries.loras �
       sha256: typeof value.sha256 === "string" && sha256Pattern.test(value.sha256) ? value.sha256 : (() => { fail("invalid_comparison_lora_identity", `${label}.sha256 无效`); })(),
       size_bytes: Number.isSafeInteger(value.size_bytes) && value.size_bytes >= 0 ? value.size_bytes : (() => { fail("invalid_comparison_lora_identity", `${label}.size_bytes 无效`); })(),
       metadata: assertMetadata(value.metadata, `${label}.metadata`),
+      ...(value.model_identity !== undefined ? { model_identity: normalizeModelIdentity(value.model_identity, `${label}.model_identity`) } : {}),
+      ...(value.activation !== undefined ? { activation: normalizeActivation(value.activation, `${label}.activation`) } : {}),
     };
   }
   if (value.kind === "resource") {
-    assertExactKeys(value, ["id", "kind", "resource_id", "name", "architecture", "base_models", "activation", "relative_path", "sha256", "size_bytes", "metadata"], label);
+    assertExactKeys(value, ["id", "kind", "resource_id", "name", "architecture", "base_models", "activation", "relative_path", "sha256", "size_bytes", "metadata", ...(!legacy ? ['model_identity'] : [])], label);
     if (typeof value.resource_id !== "string" || !resourceIdPattern.test(value.resource_id)) fail("invalid_comparison_lora_identity", `${label}.resource_id 无效`);
     if (typeof value.name !== "string" || !value.name.trim() || value.name.length > 10_000) fail("invalid_comparison_lora_identity", `${label}.name 无效`);
     return {
@@ -263,20 +330,25 @@ export function normalizeFrozenComparisonLora(value, label = "registries.loras �
       sha256: typeof value.sha256 === "string" && sha256Pattern.test(value.sha256) ? value.sha256 : (() => { fail("invalid_comparison_lora_identity", `${label}.sha256 无效`); })(),
       size_bytes: Number.isSafeInteger(value.size_bytes) && value.size_bytes >= 0 ? value.size_bytes : (() => { fail("invalid_comparison_lora_identity", `${label}.size_bytes 无效`); })(),
       metadata: assertMetadata(value.metadata, `${label}.metadata`),
+      ...(value.model_identity !== undefined ? { model_identity: normalizeModelIdentity(value.model_identity, `${label}.model_identity`) } : {}),
     };
   }
   fail("invalid_comparison_lora_identity", `${label}.kind 必须是 raw 或 resource`);
 }
 
-function freezeRawSource(source, modelsRoot) {
-  assertExactKeys(source, ["id", "kind", "relative_path"], "comparison.sources 条目");
+async function freezeRawSource(source, modelsRoot) {
+  assertExactKeys(source, ["id", "kind", "relative_path", 'identity', 'activation'], "comparison.sources 条目");
   const id = assertStableId(source.id, "comparison.sources.id");
   const relativePath = assertSafeRelativePath(source.relative_path, "comparison.sources.relative_path");
-  return freezeFile({ modelsRoot, relativePath }).then((file) => ({ id, kind: "raw", ...file }));
+  const { tensorNames, ...file } = await freezeFile({ modelsRoot, relativePath });
+  const declaration = source.identity === undefined ? metadataDeclaration(file.metadata) : normalizeIdentityDeclaration(source.identity, 'source.identity');
+  const identity = modelIdentity({ declaration, source: source.identity === undefined ? 'metadata' : 'explicit', names: tensorNames });
+  return { id, kind: 'raw', ...file, ...(identity ? { model_identity: identity } : {}),
+    ...(source.activation === undefined ? {} : { activation: normalizeActivation(source.activation, 'source.activation') }) };
 }
 
 async function freezeResourceSource(source, repositoryRoot, config, modelsRoot) {
-  assertExactKeys(source, ["id", "kind", "resource_id"], "comparison.sources 条目");
+  assertExactKeys(source, ["id", "kind", "resource_id", 'identity', 'activation'], "comparison.sources 条目");
   const id = assertStableId(source.id, "comparison.sources.id");
   if (typeof source.resource_id !== "string" || !resourceIdPattern.test(source.resource_id)) fail("invalid_comparison_lora_identity", "comparison.sources.resource_id 无效");
   let resolved;
@@ -288,9 +360,15 @@ async function freezeResourceSource(source, repositoryRoot, config, modelsRoot) 
   if (resolved.status !== "available") fail("comparison_lora_resource_unavailable", `正式 LoRA 资源不可用：${source.resource_id}`);
   const resource = resolved.resource;
   const relativePath = assertSafeRelativePath(resource.file.relative_path, `resource ${source.resource_id}.file.relative_path`);
-  const file = await freezeFile({ modelsRoot, relativePath });
+  const { tensorNames, ...file } = await freezeFile({ modelsRoot, relativePath });
   if (file.sha256 !== resource.file.sha256 || file.size_bytes !== resource.file.size_bytes) {
     fail("comparison_lora_resource_identity_mismatch", `正式 LoRA 资源文件身份与 resource.json 不一致：${source.resource_id}`);
+  }
+  const declaration = normalizeIdentityDeclaration(source.identity ?? { architecture_family: resource.architecture.family,
+    base_models: resource.base_models, adapted_components: ['dit'] }, 'resource identity');
+  if (declaration.architecture_family !== resource.architecture.family || resource.base_models.some(model => model.sha256
+    && !declaration.base_models.some(candidate => candidate.kind === model.kind && candidate.sha256 === model.sha256))) {
+    fail('invalid_comparison_lora_identity', '显式声明不能覆盖正式资源已知的模型家族或底座 SHA');
   }
   return {
     id,
@@ -299,7 +377,8 @@ async function freezeResourceSource(source, repositoryRoot, config, modelsRoot) 
     name: resource.name,
     architecture: normalizeArchitecture(resource.architecture, `resource ${source.resource_id}.architecture`),
     base_models: normalizeBaseModels(resource.base_models, `resource ${source.resource_id}.base_models`),
-    activation: normalizeActivation(resource.activation, `resource ${source.resource_id}.activation`),
+    activation: normalizeActivation(source.activation ?? resource.activation, `resource ${source.resource_id}.activation`),
+    model_identity: modelIdentity({ declaration, source: source.identity === undefined ? 'resource' : 'explicit', names: tensorNames, resourceId: resource.id }),
     ...file,
   };
 }
@@ -330,4 +409,36 @@ export async function freezeComparisonLoraSources({ repositoryRoot, config, loca
         : fail("invalid_comparison_lora_identity", "comparison.sources.kind 必须是 raw 或 resource"));
   }
   return clone(frozen);
+}
+
+// 导入的 LoRA 保留角色/画风 owner 等业务字段；完整来源身份单独冻结。
+export async function freezeComparisonInputLoras({ repositoryRoot, config, localConfig, loras = [] }) {
+  const result = [];
+  for (const [index, lora] of loras.entries()) {
+    let previous = lora.source_identity;
+    if (!previous && sha256Pattern.test(lora.sha256 ?? '')) {
+      const resourceId = `lora-${lora.sha256.slice(0, 16)}`;
+      try {
+        await readLocalLoraResource(repositoryRoot, config ?? localConfig ?? {}, resourceId);
+        previous = { id: `input-lora-${index}`, kind: 'resource', resource_id: resourceId };
+      } catch (error) {
+        if (error.code !== 'lora_resource_not_found') throw error;
+      }
+    }
+    const suppliedIdentity = previous?.identity ?? (previous?.model_identity?.declaration?.source === 'explicit' ? { architecture_family: previous.model_identity.architecture_family,
+      base_models: previous.model_identity.base_models, adapted_components: previous.model_identity.adapted_components } : null);
+    const source = previous?.kind === 'resource'
+      ? { id: previous.id ?? `input-lora-${index}`, kind: 'resource', resource_id: previous.resource_id,
+        ...(suppliedIdentity ? { identity: suppliedIdentity } : {}), ...(previous.activation ? { activation: previous.activation } : {}) }
+      : { id: previous?.id ?? `input-lora-${index}`, kind: 'raw', relative_path: `loras/${lora.filename}`,
+        ...(suppliedIdentity ? { identity: suppliedIdentity } : {}),
+        ...(previous?.activation ? { activation: previous.activation } : {}) };
+    const [frozen] = await freezeComparisonLoraSources({ repositoryRoot, config, localConfig, sources: [source] });
+    if (frozen.sha256 !== lora.sha256 || (lora.size_bytes !== undefined && lora.size_bytes !== frozen.size_bytes)
+      || frozen.relative_path !== `loras/${lora.filename}`) fail('comparison_lora_file_changed', '输入 LoRA 与实际文件身份不一致');
+    result.push({ ...clone(lora), size_bytes: frozen.size_bytes, source_identity: frozen,
+      ...(!Object.hasOwn(lora, 'trigger_words') && frozen.activation
+        ? { trigger_words: [...frozen.activation.trigger_words] } : {}) });
+  }
+  return result;
 }

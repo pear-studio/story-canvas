@@ -30,6 +30,7 @@ import { hashCanonicalJson } from "../server/workflow-definition.mjs";
 import { defaultSceneFacts, SCENE_INDEX_SCHEMA_ID } from "../server/scene-files.mjs";
 import { compileAndPersistWorkbenchRenderTask } from "../server/page-render.mjs";
 import { inspectPageRender } from "../server/page-render-inspection.mjs";
+import {comparisonModelIdentity,comparisonFrozenLora} from './helpers/comparison-identity.mjs';
 
 const sourceRepositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const storyPageKey = { page_id: "page-001" };
@@ -112,9 +113,9 @@ async function createFixture(context, { references = false } = {}) {
   registerFixtureProjects(root); return { root, projectRoot, profile, modelSha256 };
 }
 
-function loraRegistry() {
+function loraRegistry(input) {
   return {
-    loras: [{ id: "raw-test", kind: "raw", relative_path: "loras/test.safetensors", sha256: "a".repeat(64), size_bytes: 1, metadata: {} }],
+    loras: [comparisonFrozenLora(input,{id:'raw-test',relativePath:'loras/test.safetensors'})],
     lora_configs: [{ id: "baseline", label: "基线", lora_ref: null }, { id: "test", label: "测试 LoRA", lora_ref: "raw-test" }],
   };
 }
@@ -139,7 +140,7 @@ test("页面参考图随对比输入导入并选择参考图工作流", async co
   assert.equal(preflightComparisonExperiment({ manifest, inputs: [clean] }).cells.length, 1);
 });
 
-test("正式 LoRA 兼容性只按模型架构判断，不使用旧 Prompt 家族标签", async () => {
+test("正式 LoRA 检查精确底座身份，不使用旧 Prompt 家族标签且不放过身份不足", async () => {
   const input = await createBlankComparisonInput(sourceRepositoryRoot, "qwen-image-2-1");
   input.prompt.positive = "anime portrait";
   const resource = {
@@ -149,7 +150,7 @@ test("正式 LoRA 兼容性只按模型架构判断，不使用旧 Prompt 家族
     activation: { trigger_words: [], tags: [] }, relative_path: "loras/test.safetensors", sha256: "a".repeat(64), size_bytes: 1, metadata: {},
   };
   const manifestFor = (family) => createComparisonExperiment({ id: "formal-compatibility", registries: {
-    loras: [{ ...resource, architecture: { ...resource.architecture, family } }],
+    loras: [{ ...resource, architecture: { ...resource.architecture, family },model_identity:comparisonModelIdentity(input,{family}) }],
     lora_configs: [{ id: "test", label: "测试 LoRA", lora_ref: resource.id }],
   }, axes: [
     { type: "input", values: [{ value_id: input.id, label: "测试", value: input.id }] },
@@ -158,13 +159,17 @@ test("正式 LoRA 兼容性只按模型架构判断，不使用旧 Prompt 家族
   ] });
   assert.equal(preflightComparisonExperiment({ manifest: manifestFor("qwen-image-2-1"), inputs: [input] }).cells.length, 1);
   assert.throws(() => preflightComparisonExperiment({ manifest: manifestFor("anima"), inputs: [input] }), /模型家族不一致/);
+  const unknown=manifestFor('qwen-image-2-1');
+  delete unknown.registries.loras[0].model_identity;
+  const unknownManifest=createComparisonExperiment({id:unknown.id,axes:unknown.axes,registries:unknown.registries});
+  assert.throws(()=>preflightComparisonExperiment({manifest:unknownManifest,inputs:[input]}),/身份不足/);
 });
 
 test("Qwen 文生图与参考图工作流均能接入 ModelOnly LoRA", async () => {
   const { buildWorkflow, resolveRenderRecipe } = await import("../server/render-task-contract.mjs");
   const input = await createBlankComparisonInput(sourceRepositoryRoot, "qwen-image-2-1");
   input.prompt.positive = "anime portrait";
-  const manifest = createComparisonExperiment({ id: "lora-support", registries: loraRegistry(), axes: [
+  const manifest = createComparisonExperiment({ id: "lora-support", registries: loraRegistry(input), axes: [
     { type: "input", values: [{ value_id: input.id, label: "测试", value: input.id }] },
     { type: "lora_config", values: [{ value_id: "baseline", label: "基线", value: "baseline" }, { value_id: "raw", label: "裸 LoRA", value: "test" }] },
     { type: "lora_weight", values: [{ value_id: "weight", label: "0.7", value: 0.7 }] },
@@ -176,7 +181,7 @@ test("Qwen 文生图与参考图工作流均能接入 ModelOnly LoRA", async () 
   assert.equal(preflightComparisonExperiment({ manifest, inputs: [input] }).cells.length, 2);
   const workflow = buildWorkflow(definition, input.render.profile, resolveRenderRecipe(route.recipe, input.render.canvas), item);
   assert.ok(Object.values(workflow).some(node => node.class_type === "LoraLoaderModelOnly" && node.inputs.lora_name === "test.safetensors"));
-  input.loras = item.loras;
+  input.loras = item.loras.map(lora=>({...lora,size_bytes:1,source_identity:comparisonFrozenLora(input,{relativePath:'loras/test.safetensors'})}));
   const baseline = createComparisonExperiment({ id: "input-lora", axes: [{ type: "input", values: [{ value_id: input.id, label: "测试", value: input.id }] }] });
   assert.equal(preflightComparisonExperiment({ manifest: baseline, inputs: [input] }).cells.length, 1);
   const referenceRoute = input.render.profile.operations.candidates.routes.reference_image;
