@@ -40,7 +40,7 @@
   ],
   "entry": "examples/moss_image/model_training/train.py",
   "dependency_lock": "app/python/moss-diffsynth.lock",
-  "model_manifest": "library/lora-training/moss-image-base-models.json",
+  "model_manifest": "library/lora-training/moss-image-sft-models.json",
   "runtime": {
     "python": "3.11.14",
     "torch": "2.13.0+cu130",
@@ -49,8 +49,33 @@
     "peft": "0.21.0",
     "accelerate": "1.15.0"
   },
-  "integration": "standalone",
-  "notes": "独立 MOSS 环境；工作台现有训练调度仍只支持 Anima 与 Qwen。本清单不改变 Veloria 当前设置。",
+  "integration": "workbench",
+  "notes": "工作台使用独立 MOSS 环境、SFT BF16 和显式 Caption 集。sft_workbench_verification 记录本次工作台验证；verification 保留 2026-10-25 Base 独立烟测的历史证据。",
+  "sft_conversion_verification": {
+    "date": "2026-10-27",
+    "sha256": "f96738d8116d78b7316b57c663d8c98591ddafab7488f48e3099b7655e34ab6f",
+    "source_keys": 379,
+    "diffsynth_keys": 463,
+    "split_qkv_layers": 42,
+    "strict_cpu_load": true,
+    "diffsynth_model_hash": "b2e1de16b1415bb811bcfc428d7991a7",
+    "gpu_optimizer_steps": 1
+  },
+  "sft_workbench_verification": {
+    "date": "2026-10-27",
+    "gpu": "NVIDIA GeForce RTX 4090",
+    "synthetic_input": true,
+    "resolution": [512, 512],
+    "lora_rank": 32,
+    "optimizer_steps": 1,
+    "loss": 0.030939973890781403,
+    "loss_and_weights_finite": true,
+    "checkpoint_sha256": "c698f01ad4680d799b47e1c31512fefc502910b8770444b8ab4b2b1017a49b56",
+    "comfy_loaded_tensors": 524,
+    "comfy_accepted_adapters": 262,
+    "comfy_shape_mismatches": 0,
+    "comfy_validation": "原生 loader、ModelPatcher 与 meta 张量运算；未生图"
+  },
   "verification": {
     "date": "2026-10-25",
     "gpu": "NVIDIA GeForce RTX 4090",
@@ -80,6 +105,6 @@
   "limitations": [
     "文本编码器使用 Transformers 的 PyTorch 兼容实现，未安装可选 causal_conv1d/flash-linear-attention 加速内核。",
     "验证使用合成测试输入，不代表 Veloria 数据审计、正式训练或成图质量已通过。",
-    "未验证优化器更新、训练 checkpoint 导出、续训及 ComfyUI LoRA 权重映射。"
+    "工作台 SFT 路线已验证一步 GPU 训练与 Comfy 原生权重加载；未做本次训练产物的成图质量评估，不提供精确续训。"
   ]
 }

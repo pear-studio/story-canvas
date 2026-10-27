@@ -80,6 +80,33 @@ function completeManifest() {
   };
 }
 
+test('v6 MOSS 冻结 SFT 与 Caption 集；拒绝精确续训或未命名集', async()=>{
+  const manifest=completeManifest();
+  manifest.version=6;manifest.caption_set_id='caption-set-666666666666';manifest.family='moss-image';manifest.prompt_family='moss';
+  manifest.trainer.root=path.resolve('C:/trainer/moss');manifest.trainer.runner.name='moss-image-lora-runner';
+  manifest.models=manifest.models.filter((model,index)=>index!==1).map(model=>({...model,kind:model.kind==='processor'?'tokenizer':model.kind}));
+  const recipe=JSON.parse(await readFile(new URL('../../library/lora-training/recipes/moss-image-sft-lora-v1.json',import.meta.url),'utf8'));
+  manifest.semantic_config=recipe.semantic_config;
+  manifest.recipe.id=recipe.id;
+  const schema=JSON.parse(await readFile(new URL('../../library/schemas/lora-training-run-manifest.schema.json',import.meta.url),'utf8'));
+  const ajv=new Ajv2020({strict:true,formats:{'date-time':true}}),validate=ajv.compile(schema);
+  assert.deepEqual(validateLoraTrainingRunManifest(manifest),[]);
+  assert.equal(validate(manifest),true,JSON.stringify(validate.errors));
+  const missing=structuredClone(manifest);delete missing.caption_set_id;
+  assert.ok(validateLoraTrainingRunManifest(missing).some(message=>message.includes('caption_set_id')));assert.equal(validate(missing),false);
+  const resume=structuredClone(manifest);resume.resume={parent_run_id:'run-111111111111',source_snapshot_id:'step-000001',source_sha256:'a'.repeat(64),start_step:1};
+  assert.ok(validateLoraTrainingRunManifest(resume).some(message=>message.includes('精确续训')));assert.equal(validate(resume),false);
+  const wrong=structuredClone(manifest);wrong.models.at(-1).kind='processor';
+  assert.ok(validateLoraTrainingRunManifest(wrong).some(message=>message.includes('tokenizer')));assert.equal(validate(wrong),false);
+});
+
+test('v6 Qwen 保留显式 Caption 集；历史 v5 不要求重新选择集',()=>{
+  const old=completeManifest();assert.deepEqual(validateLoraTrainingRunManifest(old),[]);
+  const current={...old,version:6,caption_set_id:'caption-set-666666666666'};
+  assert.deepEqual(validateLoraTrainingRunManifest(current),[]);
+  current.caption_set_id='';assert.ok(validateLoraTrainingRunManifest(current).length>0);
+});
+
 test("完整 v5 manifest 通过全部内部契约校验", () => {
   assert.deepEqual(validateLoraTrainingRunManifest(completeManifest()), []);
 });
@@ -163,8 +190,8 @@ test("frozen manifest Schema 与 runtime validator 保持 Qwen 契约一致", as
   }
   assert.deepEqual(Object.keys(schema.$defs.recipe_overrides.properties).sort(), ["gradient_accumulation_steps", "learning_rate", "network_dim"]);
   assert.equal(schema.$defs.recipe_overrides.additionalProperties, false);
-  assert.deepEqual(schema.$defs.model.properties.kind.enum, ["dit", "text_encoder", "vae", "processor"]);
-  assert.deepEqual(schema.properties.family.enum, ["anima", "qwen-image-2-1"]);
+  assert.deepEqual(schema.$defs.model.properties.kind.enum, ["dit", "text_encoder", "vae", "processor", "tokenizer"]);
+  assert.deepEqual(schema.properties.family.enum, ["anima", "qwen-image-2-1", "moss-image"]);
   assertManifest(completeManifest(), true, "合法 Qwen manifest");
   const withNote = completeManifest();
   withNote.run.note = "追加到 4000\n与上一轮对比";
@@ -192,9 +219,9 @@ test("仓库 Qwen 方案自身是合法的语义配置来源", async () => {
   assert.equal(new Set(recipe.semantic_config.lora_target_modules).size, 224);
   assert.ok(recipe.semantic_config.lora_target_modules.includes("transformer_blocks.31.img_mlp.gate_layer"));
   const settingsSchema = JSON.parse(await readFile(new URL("../../library/schemas/lora-training-settings.schema.json", import.meta.url), "utf8"));
-  assert.equal(settingsSchema.properties.version.const, 5);
-  assert.deepEqual(settingsSchema.properties.target.properties.family.enum, ["anima", "qwen-image-2-1"]);
-  assert.deepEqual(settingsSchema.properties.run_defaults.required, ["max_train_steps", "save_every_n_steps", "seed"]);
+  assert.equal(settingsSchema.$defs.current_settings.properties.version.const, 6);
+  assert.deepEqual(settingsSchema.$defs.model_settings.properties.target.properties.family.enum, ["anima", "qwen-image-2-1", "moss-image"]);
+  assert.deepEqual(settingsSchema.$defs.model_settings.properties.run_defaults.required, ["max_train_steps", "save_every_n_steps", "seed"]);
 });
 
 test("Anima 冻结配置与 Schema 一致，允许 batch 调整但不允许混用或续训", async () => {

@@ -13,15 +13,17 @@ import LoraCropEditor, { type LoraCropRect } from "./LoraCropEditor";
 import { loraRunControls } from "./lora-run-controls";
 import { activePromptDictionarySuggestion, canSearchPromptDictionary, mergePromptDictionarySuggestions } from "./prompt-fragment-input";
 import { WorkspaceHeader } from "./WorkspaceHeader";
+import {TrainingCaptionSets,type CaptionSet} from "./TrainingCaptionSets";
 import { LoraLossChart } from "./LoraLossChart";
 import type { LossPoint } from "../shared/lora-loss.mjs";
 
 type ModelIdentity = { relative_path: string; sha256?: string; source?: string };
 type UsageDefaults = { clip_skip: number | null; sampler: string; scheduler: string; steps: number; cfg: number };
-type TrainingFamily = "anima" | "qwen-image-2-1";
+type TrainingFamily = "anima" | "qwen-image-2-1" | "moss-image";
+const trainingModelLabels:Record<TrainingFamily,string>={anima:"Anima","qwen-image-2-1":"Qwen-Image-2.1","moss-image":"MOSS"};
 type TrainingTarget = { family: TrainingFamily; base: { dit: ModelIdentity; text_encoder: ModelIdentity; vae: ModelIdentity; processor?: ModelIdentity }; prompt_family: string; usage_defaults: UsageDefaults };
 type TrainingDataset = {
-  version: 5;
+  version: 5 | 6;
   name: string;
   description: string;
   activation_terms: string[];
@@ -44,13 +46,14 @@ type CaptioningItem = {
   confirmed: boolean;
 };
 type CaptioningDetail = { version: 1; latest: { updated_at: string; tagger: { id: string; version: string } | null } | null; summary: { total: number; with_base: number; confirmed: number; unconfirmed: number }; items: CaptioningItem[] };
-type DatasetDetail = { id: string; dataset: TrainingDataset; items: DatasetItem[]; captioning: CaptioningDetail };
-export type LoraDatasetSummary = { id: string; name?: string; activation_terms?: string[]; item_count?: number; enabled_item_count?: number; effective_item_count?: number; error?: string };
+type DatasetDetail = { id: string; dataset: TrainingDataset; items: DatasetItem[]; captioning: CaptioningDetail | null; caption_sets:CaptionSet[];caption_set_id:string|null;read_only?:boolean;migration_required?:boolean };
+export type LoraDatasetSummary = { id: string; name?: string; activation_terms?: string[]; item_count?: number; enabled_item_count?: number; effective_item_count?: number; error?: string;read_only?:boolean;migration_required?:boolean };
 
 type TrainingTask = {
-  version: 5;
+  version: 5 | 6;
   name: string;
   dataset_id: string;
+  caption_set_id:string;
   target: TrainingTarget;
   training_recipe: { id: string; overrides: Partial<Record<RecipeOverrideKey, number>> };
   run_defaults: Record<Exclude<RunSettingKey, "gradient_accumulation_steps">, number>;
@@ -61,8 +64,9 @@ type RunResumePointer = { snapshot_id: string; step: number | null; sha256: stri
 type RunPerformance = { wall_seconds?: number; phase_seconds?: Record<string, number>; seconds_per_update?: number | null; samples_seen?: number; runner?: unknown };
 // v5 run 的预算在 manifest.run，v4（Anima）历史 run 在 manifest.config；legacy 项可能只有部分字段。
 type Run = { id: string; created_at?: string; legacy?: boolean; legacy_note?: string; resumable?: boolean; manifest: { task_id: string; family?: TrainingFamily; task_name?: string; dataset_name?: string; created_at?: string; run_settings?: { note?: string }; run?: { max_train_steps?: number; save_every_n_steps?: number; seed?: number; note?: string }; config?: { max_train_steps?: number; resolution?: number; learning_rate?: number; network_dim?: number }; semantic_config?: Partial<SemanticConfig>; resume?: { parent_run_id: string; source_snapshot_id: string; start_step: number } | null } | null; status: { status: string; phase?: string | null; completed_at?: string | null; interrupted_at?: string | null; step: number; loss: number | null; lr?: number | null; samples_seen?: number; cache_progress?: { done: number; total: number } | null; loss_history?: LossPoint[]; eta_seconds: number | null; error: string | null; checkpoints: Checkpoint[]; resume?: RunResumePointer | null; performance?: RunPerformance | null; log_tail?: string }; disk_bytes: number };
-type TaskDetail = { id: string; task: TrainingTask; dataset: DatasetReference; runs: Run[] };
-type TaskSummary = { id: string; name?: string; family?: string; dataset?: DatasetReference; error?: string; runs?: Array<{ id: string; status: string; step: number; created_at: string; resumable?: boolean; legacy?: boolean; legacy_note?: string; disk_bytes: number }> };
+type TaskDetail = { id: string; task: TrainingTask; dataset: DatasetReference; runs: Run[];family?:TrainingFamily;families?:TrainingFamily[];read_only?:boolean;migration_required?:boolean };
+type TaskRead = Omit<TaskDetail,"task"> & {task:TrainingTask|null};
+type TaskSummary = { id: string; name?: string; family?: string;families?:TrainingFamily[];read_only?:boolean; dataset?: DatasetReference; error?: string; runs?: Array<{ id: string; status: string; step: number; created_at: string; resumable?: boolean; legacy?: boolean; legacy_note?: string; disk_bytes: number }> };
 type Environment = { available: boolean; runtime: null | { gpu: string; vram_bytes: number; python: string; torch: string; cuda: string }; checks: Array<{ id: string; ok: boolean; message: string }>; reference_models?: Array<{ family: string; kind: string; relative_path: string; exists: boolean; matches: boolean; sha256: string | null; size: number | null }>; optional_capabilities?: { quality?: { ready: boolean; message: string }; upscaler?: { id: string; ready: boolean; path: string | null; relative_path: string | null; message: string; expected_sha256: string | null; sha256: string | null; size_bytes: number | null; output_scales?: number[] } }; captioning: { configured: boolean; ready: boolean; id: string | null; version: string | null; message: string; manifest?: { id: string; name: string } | null; files?: Array<{ id: string; path: string | null; exists: boolean; matches: boolean; sha256: string | null; expected_sha256: string | null }> } };
 type TrainingRecipe = { id: string; version?: number; name: string; description: string; family: TrainingFamily; semantic_config: SemanticConfig; default_target: TrainingTarget };
 type RunSettingKey = "max_train_steps" | "save_every_n_steps" | "seed" | "gradient_accumulation_steps";
@@ -190,7 +194,7 @@ function requestLoraEnvironment(family: TrainingFamily, force = false) {
     if (pending) return pending;
   }
   const params = new URLSearchParams();
-  if (family === "anima") params.set("family", family);
+  params.set("family", family);
   if (force) params.set("refresh", "1");
   const query = params.size ? `?${params}` : "";
   const promise = api<Environment>(`/api/lora-training/environment${query}`).finally(() => {
@@ -415,7 +419,7 @@ type CaptionStatus = { key: "confirmed" | "unconfirmed" | "unlabeled"; label: st
 function captionStatusForItem(item: Pick<DatasetItem, "caption">, projection?: CaptioningItem | null): CaptionStatus {
   if (projection?.state === "confirmed") return { key: "confirmed", label: "已确认", detail: "当前图片与 Caption 已按最新哈希确认" };
   if (projection?.state === "unconfirmed") return { key: "unconfirmed", label: "待确认", detail: "图片或 Caption 已变化，需要重新确认" };
-  return { key: "unlabeled", label: "未打标", detail: item.caption.trim() ? "已有 Caption，但尚未完成自动打标确认" : "尚未生成基础 Prompt 或 Caption" };
+  return { key: "unlabeled", label: "未打标", detail: item.caption.trim() ? "已有 Caption，尚未确认" : "尚未填写 Caption" };
 }
 
 function datasetMediaUrl(item: Pick<DatasetItem, "media_url" | "image_version" | "original_media_url" | "original_image_version">, source: "current" | "original" = "current") {
@@ -657,7 +661,13 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
     setTaskDetailState(value);
   }
   const [taskDirty, setTaskDirty] = useState(false);
-  const trainingFamily = taskDetail?.task.target.family ?? "qwen-image-2-1";
+  const [trainingFamily,setTrainingFamily]=useState<TrainingFamily>("qwen-image-2-1");
+  const [taskMissing,setTaskMissing]=useState(false);
+  const [taskReadOnly,setTaskReadOnly]=useState(false);
+  const [initialCaptionSetId,setInitialCaptionSetId]=useState("");
+  const captionSets=datasetDetail?.caption_sets??[];
+  const activeCaptionSet=captionSets.find(set=>set.id===datasetDetail?.caption_set_id);
+  const proseCaption=activeCaptionSet?.format==="prose";
   const [environment, setEnvironment] = useState<Environment | null>(() => readLoraEnvironmentCache());
   const [environmentLoading, setEnvironmentLoading] = useState(() => !readLoraEnvironmentCache());
   const [environmentError, setEnvironmentError] = useState("");
@@ -693,6 +703,9 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
   const datasetLoadRequestRef = useRef(0);
   const taskLoadRequestRef = useRef(0);
   const environmentLoadRequestRef = useRef(0);
+  const operationRequestRef=useRef(0);
+  const selectionRef=useRef({datasetId:selectedDatasetId,family:trainingFamily,section});
+  selectionRef.current={datasetId:selectedDatasetId,family:trainingFamily,section};
 
   useEffect(() => {
     if (datasetId && datasetId !== selectedDatasetId) {
@@ -709,10 +722,13 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
   useEffect(() => { onDirtyChange?.(datasetDirty || captionDirty || taskDirty); }, [datasetDirty, captionDirty, taskDirty]);
 
   async function perform<T>(name: string, operation: () => Promise<T>) {
+    const operationId=++operationRequestRef.current;
+    const selection=selectionRef.current;
+    const isCurrent=()=>selection.datasetId===selectionRef.current.datasetId&&selection.family===selectionRef.current.family&&selection.section===selectionRef.current.section;
     setBusy(name);
     try {
       const result = await operation();
-      return result;
+      return isCurrent()?result:undefined;
     } catch (error) {
       const message = readableError(error) || "请求失败";
       if (name.startsWith("postprocess-")) setPostprocessError(message);
@@ -729,6 +745,7 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
       const collection = await readFactsApi<{ datasets: LoraDatasetSummary[] }>(`${base}/datasets`);
       setDatasets(collection.datasets);
       onDatasetsChange?.(collection.datasets);
+      if(selectionRef.current.datasetId!==selectedDatasetId)return selectionRef.current.datasetId;
       const available = collection.datasets.filter((item) => !item.error);
       const next = [preferred, selectedDatasetId].find((id) => id && available.some((item) => item.id === id)) || available[0]?.id || "";
       if (next) writeLoraDatasetSelection(next);
@@ -742,16 +759,23 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
       if (showLoading) setDatasetsLoading(false);
     }
   };
-  const loadDataset = async (id = selectedDatasetId) => {
+  const loadDataset = async (id = selectedDatasetId, captionSetId = id===datasetDetail?.id ? datasetDetail.caption_set_id : null, preserveSharedDraft = false) => {
+    if(selectedDatasetId&&id!==selectedDatasetId&&selectionRef.current.datasetId!==id)return;
     const requestId = ++datasetLoadRequestRef.current;
     if (!id) { setDatasetDetail(null); setDatasetLoading(false); return; }
     setDatasetLoading(true);
     setDatasetDetail((current) => current?.id === id ? current : null);
     try {
-      const value = await readFactsApi<DatasetDetail>(`${base}/datasets/${encodeURIComponent(id)}`);
+      const endpoint=`${base}/datasets/${encodeURIComponent(id)}`;
+      let value=await readFactsApi<DatasetDetail>(endpoint+(captionSetId?`?caption_set_id=${encodeURIComponent(captionSetId)}`:""));
+      if(requestId!==datasetLoadRequestRef.current)return;
+      if(!value.read_only&&!value.caption_set_id&&value.caption_sets?.length){
+        value=await readFactsApi<DatasetDetail>(`${endpoint}?caption_set_id=${encodeURIComponent(value.caption_sets[0].id)}`);
+      }
       if (requestId !== datasetLoadRequestRef.current) return;
-      setDatasetDetail(value);
-      setDatasetDirty(false);
+      datasetSource.current = value;
+      setDatasetDetailState(current => preserveSharedDraft && datasetDirty && current?.id === id ? { ...value, dataset: current.dataset } : value);
+      if (!preserveSharedDraft) setDatasetDirty(false);
       setCaptionDirty(false);
       setCaptionItemId((current) => value.items.some((item) => item.id === current) ? current : value.items[0]?.id ?? "");
     } finally {
@@ -762,21 +786,30 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
     const collection = await readFactsApi<{ tasks: TaskSummary[] }>(`${base}/tasks`);
     setTasks(collection.tasks);
     onTaskCountsChange?.(collection.tasks.length, collection.tasks.reduce((sum, task) => sum + (task.runs?.length ?? 0), 0));
+    if(selectionRef.current.datasetId!==selectedDatasetId)return selectionRef.current.datasetId;
     const next = preferred || selectedDatasetId || collection.tasks.find((item) => !item.error)?.id || "";
+    if(next!==selectedTaskId){const summary=collection.tasks.find(item=>item.id===next);const remembered=sessionStorage.getItem(`story-canvas:training-family:${next}`);setTrainingFamily((remembered&&remembered in trainingModelLabels?remembered:summary?.families?.[0]??summary?.family??"qwen-image-2-1") as TrainingFamily);}
     setSelectedTaskId(next);
     return next;
   };
-  const loadTask = async (id = selectedTaskId, reloadSettings = true) => {
+  const loadTask = async (id = selectedTaskId, reloadSettings = true, family=trainingFamily) => {
+    if(id&&selectionRef.current.datasetId!==id)return;
     const requestId = ++taskLoadRequestRef.current;
     setTaskLoadError("");
     if (!id) { setTaskDetail(null); setRunSettings(null); setTaskLoading(false); return; }
     setTaskLoading(true);
     try {
-    const [value, settings] = await Promise.all([readFactsApi<TaskDetail>(`${base}/tasks/${encodeURIComponent(id)}`), reloadSettings ? readFactsApi<RunSettingsDetail>(`${base}/tasks/${encodeURIComponent(id)}/run-settings`) : Promise.resolve(null)]);
-    if (requestId !== taskLoadRequestRef.current) return;
-    setTaskDetail(value);
-    syncRunSummary(value);
-    if (settings) setRunSettings(settings);
+    const query=`?family=${encodeURIComponent(family)}`;
+    const value=await readFactsApi<TaskRead>(`${base}/tasks/${encodeURIComponent(id)}${query}`);
+    if(requestId!==taskLoadRequestRef.current)return;
+    setTaskReadOnly(Boolean(value.read_only));
+    setTaskMissing(!value.task);
+    if(!value.task){setTaskDetail(null);setRunSettings(null);setTaskDirty(false);setPreflight(null);return;}
+    const settings=reloadSettings&&!value.read_only?await readFactsApi<RunSettingsDetail>(`${base}/tasks/${encodeURIComponent(id)}/run-settings${query}`):null;
+    if(requestId!==taskLoadRequestRef.current)return;
+    setTaskDetail(value as TaskDetail);
+    syncRunSummary(value as TaskDetail);
+    if(settings)setRunSettings(settings);else if(value.read_only)setRunSettings(null);
     setTaskDirty(false);
     setPreflight(null);
     } catch (error) {
@@ -868,13 +901,13 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
     };
   }, [showActivationGuide]);
   useDismissableLayer({ open: Boolean(datasetContextMenu), ref: datasetMenuRef, onClose: () => setDatasetContextMenu(null), closeOnScroll: true });
-  useEffect(() => { if (section !== "runs") void loadTask(selectedTaskId).catch((error) => notify({ kind: "error", message: error.message })); }, [selectedTaskId, section, notify]);
+  useEffect(() => { if (section !== "runs") void loadTask(selectedTaskId).catch((error) => notify({ kind: "error", message: error.message })); }, [selectedTaskId, trainingFamily, section, notify]);
   const acceptRuns = (value: Run[]) => {
     setRuns(value);
     setSelectedRunId(current => value.some(run => run.id === current) ? current : value[0]?.id ?? "");
     setRunsLoading(false);
   };
-  const loadRuns = async () => acceptRuns(allRuns ? (await api<{ runs: Run[] }>(`${base}/runs`)).runs : selectedDatasetId ? (await api<{ runs: Run[] }>(`${base}/tasks/${selectedDatasetId}`)).runs : []);
+  const loadRuns = async () => acceptRuns(allRuns ? (await api<{ runs: Run[] }>(`${base}/runs`)).runs : selectedDatasetId ? (await api<{ runs: Run[] }>(`${base}/tasks/${selectedDatasetId}?family=${encodeURIComponent(trainingFamily)}`)).runs : []);
   useEffect(() => {
     if (section !== "runs") return;
     setRuns([]); setSelectedRunId(""); setRunsLoading(true);
@@ -882,7 +915,7 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
     let timer: number;
     const poll = async () => {
       try {
-        const value = allRuns ? await api<{ runs: Run[] }>(`${base}/runs`) : selectedDatasetId ? await api<{ runs: Run[] }>(`${base}/tasks/${selectedDatasetId}`) : { runs: [] };
+        const value = allRuns ? await api<{ runs: Run[] }>(`${base}/runs`) : selectedDatasetId ? await api<{ runs: Run[] }>(`${base}/tasks/${selectedDatasetId}?family=${encodeURIComponent(trainingFamily)}`) : { runs: [] };
         if (!stopped) acceptRuns(value.runs);
       } catch (error) {
         if (!stopped) { setRunsLoading(false); notify({ kind: "error", message: error instanceof Error ? error.message : String(error) }); }
@@ -891,7 +924,7 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
     };
     void poll();
     return () => { stopped = true; window.clearTimeout(timer); };
-  }, [section, selectedDatasetId, allRuns]);
+  }, [section, selectedDatasetId, allRuns, trainingFamily]);
   useEffect(() => {
     const active = taskDetail?.runs.some((run) => ["starting", "running", "stopping"].includes(run.status.status));
     if (section === "runs" || !active || !selectedTaskId) return;
@@ -900,7 +933,7 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
     const poll = async () => {
       try {
         // 轮询仅接纳运行记录；不更换草稿、保存版本或用户填写的运行参数。
-        const value = await api<TaskDetail>(`${base}/tasks/${encodeURIComponent(selectedTaskId)}`);
+        const value = await api<TaskDetail>(`${base}/tasks/${encodeURIComponent(selectedTaskId)}?family=${encodeURIComponent(trainingFamily)}`);
         if (!stopped) {
           setTaskDetail((current) => current?.id === value.id ? { ...current, runs: value.runs } : current);
           syncRunSummary(value);
@@ -910,7 +943,7 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
     };
     timer = window.setTimeout(poll, 2500);
     return () => { stopped = true; window.clearTimeout(timer); };
-  }, [section, selectedTaskId, taskDetail?.runs.some((run) => ["starting", "running", "stopping"].includes(run.status.status))]);
+  }, [section, selectedTaskId, trainingFamily, taskDetail?.runs.some((run) => ["starting", "running", "stopping"].includes(run.status.status))]);
 
   const mutateDataset = (update: (dataset: TrainingDataset) => TrainingDataset) => {
     setDatasetDetail((current) => current ? { ...current, dataset: update(structuredClone(current.dataset)) } : current);
@@ -931,12 +964,12 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
     setSelectedDatasetId(created.id);
     onDatasetSelected?.(created.id);
     await loadDatasets(created.id);
-    setDatasetDetail(created);
+    await loadDataset(created.id);
   };
   const saveDataset = async () => {
     if (!datasetDetail) return;
     const saved = await perform("save-dataset", () => mutateFactsApi<DatasetDetail>(`${base}/datasets/${datasetDetail.id}`, { method: "PUT", body: JSON.stringify(datasetDetail.dataset) }));
-    if (saved) { setDatasetDetail(saved); setDatasetDirty(false); await loadDatasets(saved.id); await loadTasks(); }
+    if (saved) { await loadDataset(saved.id,datasetDetail.caption_set_id); setDatasetDirty(false); await loadDatasets(saved.id); await loadTasks(); }
   };
   const selectTask = async (id: string) => {
     if (id === selectedTaskId) return;
@@ -957,7 +990,7 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
     form.set("group_id", group.id);
     for (const file of files) form.append("files", file);
     const updated = await perform("upload", () => mutateFactsApi<DatasetDetail>(`${base}/datasets/${datasetDetail.id}/assets`, { method: "POST", body: form }));
-    if (updated) { if (updated.items.some(item => item.preparation_error)) notify({ kind: "warning", message: "素材已保存，但部分图片处理失败；卡片显示原因，可点击重试。" }); setDatasetDetail(updated); await loadDatasets(updated.id); await loadTasks(); }
+    if (updated) { if (updated.items.some(item => item.preparation_error)) notify({ kind: "warning", message: "素材已保存，但部分图片处理失败；卡片显示原因，可点击重试。" }); await loadDataset(updated.id,datasetDetail.caption_set_id); await loadDatasets(updated.id); await loadTasks(); }
     if (uploadRef.current) uploadRef.current.value = "";
   };
   const createCrop = async (draft = cropDraft, overwrite = true) => {
@@ -970,7 +1003,7 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
     setPostprocessError("");
     if (postprocessPreview?.key === requestKey) {
       const updated = await perform("postprocess-apply", () => mutateFactsApi<DatasetDetail>(`${base}/datasets/${datasetDetail.id}/postprocess/apply`, { method: "POST", body: JSON.stringify({ ...request, preview_id: postprocessPreview.previewId }) }));
-      if (updated) { if (updated.items.some(item => item.preparation_error)) notify({ kind: "warning", message: "素材已保存，但部分图片处理失败；卡片显示原因，可点击重试。" }); setDatasetDetail(updated); setCropDraft(null); setPostprocessPreview(null); await loadDatasets(updated.id); await loadTasks(); }
+      if (updated) { if (updated.items.some(item => item.preparation_error)) notify({ kind: "warning", message: "素材已保存，但部分图片处理失败；卡片显示原因，可点击重试。" }); await loadDataset(updated.id,datasetDetail.caption_set_id); setCropDraft(null); setPostprocessPreview(null); await loadDatasets(updated.id); await loadTasks(); }
       return;
     }
     const preview = await perform("postprocess-preview", () => deriveFactsApi<{ preview_id: string; fingerprint: string; output_sha256: string; width: number; height: number }>(`${base}/datasets/${datasetDetail.id}/postprocess/preview`, { method: "POST", body: JSON.stringify(request) }));
@@ -981,7 +1014,7 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
     if (!datasetDetail || !cropDraft) return;
     if (datasetDirty || captionDirty) { notify({ kind: "warning", message: "当前有未保存的 Caption 或数据集修改，请先保存后再恢复原图" }); return; }
     const updated = await perform("postprocess-restore", () => mutateFactsApi<DatasetDetail>(`${base}/datasets/${datasetDetail.id}/postprocess/restore`, { method: "POST", body: JSON.stringify({ item_id: cropDraft.itemId }) }));
-    if (updated) { if (updated.items.some(item => item.preparation_error)) notify({ kind: "warning", message: "素材已保存，但部分图片处理失败；卡片显示原因，可点击重试。" }); setDatasetDetail(updated); setCropDraft(null); setPostprocessPreview(null); await loadDatasets(updated.id); await loadTasks(); }
+    if (updated) { if (updated.items.some(item => item.preparation_error)) notify({ kind: "warning", message: "素材已保存，但部分图片处理失败；卡片显示原因，可点击重试。" }); await loadDataset(updated.id,datasetDetail.caption_set_id); setCropDraft(null); setPostprocessPreview(null); await loadDatasets(updated.id); await loadTasks(); }
   };
   const openPostprocess = (item: DatasetItem) => {
     const width = item.original_image_width ?? item.image_width ?? 1;
@@ -1005,15 +1038,15 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
     if (!datasetDetail || !item) return;
     setDatasetContextMenu(null);
     const updated = await perform("copy-item", () => mutateFactsApi<DatasetDetail>(`${base}/datasets/${datasetDetail.id}/copies`, { method: "POST", body: JSON.stringify({ source_item_id: item.id, group_id: item.group_id }) }));
-    if (updated) { if (updated.items.some(item => item.preparation_error)) notify({ kind: "warning", message: "素材已保存，但部分图片处理失败；卡片显示原因，可点击重试。" }); setDatasetDetail(updated); await loadDatasets(updated.id); await loadTasks(); }
+    if (updated) { if (updated.items.some(item => item.preparation_error)) notify({ kind: "warning", message: "素材已保存，但部分图片处理失败；卡片显示原因，可点击重试。" }); await loadDataset(updated.id,datasetDetail.caption_set_id); await loadDatasets(updated.id); await loadTasks(); }
   };
   const mergedDatasetItems = useMemo(() => mergeDatasetItems(datasetDetail?.items ?? [], datasetDetail?.dataset.items ?? []), [datasetDetail?.items, datasetDetail?.dataset.items]);
   const captionItem = mergedDatasetItems.find((item) => item.id === captionItemId) ?? null;
-  const captioningItem = datasetDetail?.captioning.items.find((entry) => entry.item_id === captionItemId) ?? null;
-  const captionDictionaryPrompts = useMemo(() => [...new Set([
+  const captioningItem = datasetDetail?.captioning?.items.find((entry) => entry.item_id === captionItemId) ?? null;
+  const captionDictionaryPrompts = useMemo(() => proseCaption?[]:[...new Set([
     ...captionPieces(captionItem?.caption ?? ""),
     ...captionPieces(captioningItem?.base_prompt ?? ""),
-  ].map((value) => value.trim()).filter(Boolean))], [captionItem?.caption, captioningItem?.base_prompt]);
+  ].map((value) => value.trim()).filter(Boolean))], [captionItem?.caption, captioningItem?.base_prompt,proseCaption]);
   useEffect(() => {
     if (!captionDictionaryPrompts.length) {
       setCaptionDictionary(new Map());
@@ -1088,12 +1121,12 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
     if (captionItemId === itemId) setCaptionItemId("");
   };
   const runCaptioning = async (mode: "missing" | "single", itemId?: string) => {
-    if (!datasetDetail) return;
+    if (!datasetDetail || datasetDetail.read_only || !datasetDetail.caption_set_id || proseCaption) return;
     const target = mode === "single" ? datasetDetail.items.find((item) => item.id === itemId) : null;
     if (mode === "single" && !target) return;
     const overwritesCaption = Boolean(target?.caption.trim());
     if (mode === "single" && overwritesCaption && !await confirm({ kind: "warning", title: "覆盖当前 Caption", message: "重新打标此图会覆盖当前 Caption 及其逐图确认，并丢弃旧基础 Prompt。确认继续吗？", danger: true })) return;
-    const result = await perform(`caption-run:${mode}`, () => mutateFactsApi<{ run_id: string; processed: number; updated: number }>(`${base}/datasets/${datasetDetail.id}/caption-runs`, { method: "POST", body: JSON.stringify({ mode, ...(mode === "single" ? { item_id: itemId, confirm_overwrite: overwritesCaption } : {}) }) }));
+    const result = await perform(`caption-run:${mode}`, () => mutateFactsApi<{ run_id: string; processed: number; updated: number }>(`${base}/datasets/${datasetDetail.id}/caption-runs`, { method: "POST", body: JSON.stringify({ mode,caption_set_id:datasetDetail.caption_set_id, ...(mode === "single" ? { item_id: itemId, confirm_overwrite: overwritesCaption } : {}) }) }));
     if (!result) return;
     await loadDataset(datasetDetail.id);
   };
@@ -1104,7 +1137,7 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
     try {
       const result = await mutateFactsApi<PrepareResult>(`${base}/datasets/${datasetDetail.id}/postprocess/prepare`, { method: "POST", body: JSON.stringify({ item_ids: datasetDetail.items.filter(item => !item.preparation || item.preparation_error).map(item => item.id) }) });
       if (requestId !== datasetLoadRequestRef.current) return;
-      setDatasetDetail(result.dataset);
+      await loadDataset(result.dataset.id,datasetDetail.caption_set_id);
       if (result.failed.length) notify({ kind: "warning", message: `部分图片自动准备失败，保留原状态。${result.failed[0].asset_id}：${result.failed[0].error.details?.join("；") || result.failed[0].error.code}。处理原因后点击重试。` });
       await loadTasks();
     } catch (error) {
@@ -1114,23 +1147,23 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
     }
   };
   const saveCaption = async () => {
-    if (!datasetDetail || !captionItem) return;
-    const saved = await perform("caption", () => mutateFactsApi<{ saved: boolean; item_id: string; caption: string }>(`${base}/datasets/${datasetDetail.id}/captions/${captionItem.id}`, { method: "PUT", body: JSON.stringify({ caption: captionItem.caption }) }));
+    if (!datasetDetail || datasetDetail.read_only || !datasetDetail.caption_set_id || !captionItem) return;
+    const saved = await perform("caption", () => mutateFactsApi<{ saved: boolean; item_id: string; caption: string }>(`${base}/datasets/${datasetDetail.id}/captions/${captionItem.id}`, { method: "PUT", body: JSON.stringify({ caption: captionItem.caption,caption_set_id:datasetDetail.caption_set_id }) }));
     if (saved) { setCaptionDirty(false); await loadDataset(datasetDetail.id); }
   };
   const confirmCaption = async () => {
-    if (!datasetDetail || !captionItem || captionDirty || !captionItem.caption.trim()) return;
-    const confirmed = await perform("caption-confirm", () => mutateFactsApi<{ saved: boolean; confirmed: boolean }>(`${base}/datasets/${datasetDetail.id}/captioning/items/${captionItem.id}`, { method: "PUT", body: JSON.stringify({ prompt: captionItem.caption, confirm: true }) }));
+    if (!datasetDetail || datasetDetail.read_only || !datasetDetail.caption_set_id || !captionItem || captionDirty || !captionItem.caption.trim()) return;
+    const confirmed = await perform("caption-confirm", () => mutateFactsApi<{ saved: boolean; confirmed: boolean }>(`${base}/datasets/${datasetDetail.id}/captioning/items/${captionItem.id}`, { method: "PUT", body: JSON.stringify({ prompt: captionItem.caption, confirm: true,caption_set_id:datasetDetail.caption_set_id }) }));
     if (confirmed) { await loadDataset(datasetDetail.id); }
   };
   const runPreflight = async () => {
     if (!taskDetail || !runSettings) return;
-    const result = await perform("preflight", () => readFactsApi<Preflight>(`${base}/tasks/${taskDetail.id}/preflight`, { method: "POST", body: JSON.stringify({ run_settings: { note: runNote } }) }));
+    const result = await perform("preflight", () => readFactsApi<Preflight>(`${base}/tasks/${taskDetail.id}/preflight`, { method: "POST", body: JSON.stringify({ family:trainingFamily,run_settings: { note: runNote } }) }));
     if (result) setPreflight(result);
   };
   const startTraining = async () => {
     if (!taskDetail || !runSettings) return;
-    const started = await perform("start", () => deriveFactsApi(`${base}/tasks/${taskDetail.id}/runs`, { method: "POST", body: JSON.stringify({ run_settings: { note: runNote } }) }));
+    const started = await perform("start", () => deriveFactsApi(`${base}/tasks/${taskDetail.id}/runs`, { method: "POST", body: JSON.stringify({ family:trainingFamily,run_settings: { note: runNote } }) }));
     if (started) { onSectionChange("runs"); await refreshTask(taskDetail.id); }
   };
 
@@ -1155,7 +1188,9 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
     ? "正在检查训练器、CUDA、底座模型和打标器文件；首次检查可能需要几十秒。"
     : environmentProblems.length
       ? environmentProblems.join("；")
-      : environmentError || "无法读取训练环境状态";
+      : environment?.available
+        ? "当前模型的训练环境检查通过。"
+        : environmentError || "无法读取训练环境状态";
   const setOverride = (key: RecipeOverrideKey, raw: string, kind: "integer" | "number" = "integer") => mutateTask((task) => {
     const overrides = { ...task.training_recipe.overrides };
     overrides[key] = kind === "integer" ? Math.trunc(Number(raw)) : Number(raw);
@@ -1179,11 +1214,36 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
     if (!await confirm({ kind: "warning", title: "应用参数预设", message: `${changes.join("；") || "训练参数与该预设一致"}。总更新步数、保存间隔与随机种子保持当前值；应用后仍需保存配置。`, confirmLabel: "应用到草稿" })) return;
     mutateTask(task => ({ ...task, training_recipe: { id, overrides: Object.fromEntries(recipeParameterDefinitions.map(({ key }) => [key, recipe.semantic_config[key]])) } }));
   };
-  const selectTrainingFamily = (family: TrainingFamily) => {
-    if (family === trainingFamily) return;
-    const recipe = recipes.find(item => item.family === family);
-    if (!recipe?.default_target) return;
-    mutateTask(task => ({ ...task, target: structuredClone(recipe.default_target), training_recipe: { id: recipe.id, overrides: Object.fromEntries(recipeParametersForFamily(family).map(({ key }) => [key, recipe.semantic_config[key]])) } }));
+  const selectTrainingFamily=async(family:TrainingFamily)=>{
+    if(family===trainingFamily)return;
+    if(taskDirty&&!await confirm({kind:"warning",title:"切换训练模型",message:"当前模型配置尚未保存，切换会放弃这些修改。",confirmLabel:"放弃并切换",danger:true}))return;
+    taskLoadRequestRef.current+=1;setTaskDetail(null);setTaskDirty(false);setRunSettings(null);setPreflight(null);setRunNote("");setTaskMissing(false);sessionStorage.setItem(`story-canvas:training-family:${selectedTaskId}`,family);setTrainingFamily(family);
+  };
+  const selectCaptionSet=async(id:string)=>{
+    if(id===datasetDetail?.caption_set_id)return;
+    if(captionDirty&&!await confirm({kind:"warning",title:"切换打标集",message:"当前 Caption 尚未保存，切换会放弃这些文本修改。",confirmLabel:"放弃并切换",danger:true}))return;
+    await perform("load-caption-set",()=>loadDataset(selectedDatasetId,id,true));
+  };
+  const selectCaptionItem = async (id: string) => {
+    if (id === captionItemId) return;
+    if (captionDirty) {
+      if (!await confirm({ kind: "warning", title: "切换素材", message: "当前 Caption 尚未保存，切换会放弃这些修改。", confirmLabel: "放弃并切换", danger: true })) return;
+      const savedItems = datasetSource.current?.items ?? [];
+      setDatasetDetail(current => current ? { ...current, items: current.items.map(item => ({ ...item, caption: savedItems.find(saved => saved.id === item.id)?.caption ?? item.caption })) } : current);
+      setCaptionDirty(false);
+    }
+    setCaptionItemId(id);
+  };
+  const saveCaptionSet=async(value:{name:string;format:'tags'|'prose';source_id?:string},renameId?:string)=>{
+    if(!datasetDetail||datasetDetail.read_only||datasetDirty||captionDirty||cropDraft)return false;
+    const result=await perform("save-caption-set",()=>mutateFactsApi<DatasetDetail>(`${base}/datasets/${datasetDetail.id}/caption-sets${renameId?'/'+encodeURIComponent(renameId):''}`,{method:renameId?'PUT':'POST',body:JSON.stringify(renameId?{name:value.name}:value)}));
+    if(!result)return false;
+    await loadDataset(datasetDetail.id,result.caption_set_id??renameId??null);return true;
+  };
+  const initializeModel=async()=>{
+    if(!selectedTaskId||!captionSets.some(set=>set.id===initialCaptionSetId))return;
+    const result=await perform("create-model",()=>mutateFactsApi<TaskDetail>(`${base}/tasks/${selectedTaskId}/models`,{method:'POST',body:JSON.stringify({family:trainingFamily,caption_set_id:initialCaptionSetId})}));
+    if(result){await loadTasks(selectedTaskId);await loadTask(selectedTaskId);}
   };
   const currentParameters: Record<string, unknown> = { ...taskDetail?.task.training_recipe.overrides, ...taskDetail?.task.run_defaults };
   const parameterChanges = runSettings?.last_run ? [...recipeParameterDefinitions, ...RUN_PARAMETER_DEFINITIONS].map(({ key, label }) => {
@@ -1213,14 +1273,14 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
   const submitResume = async () => {
     if (!resumeDraft || !resumeTargetValid) return;
     const run = resumeDraft.run;
-    if (run.manifest?.family === "anima") return;
+    if (run.manifest?.family !== "qwen-image-2-1") return;
     const pointer = run.status.resume;
     const taskId = run.manifest?.task_id;
     if (!pointer || !taskId) return;
     setBusy("resume");
     try {
       // 续训要求 If-Match：先读取任务事实的最新版本，再提交。
-      await readFactsApi(`${base}/tasks/${encodeURIComponent(taskId)}`);
+      await readFactsApi(`${base}/tasks/${encodeURIComponent(taskId)}?family=${encodeURIComponent(run.manifest?.family??"qwen-image-2-1")}`);
       const response = await client.write(`${base}/tasks/${encodeURIComponent(taskId)}/runs/${run.id}/resume`, { method: "POST", headers: { accept: "application/json", "content-type": "application/json" }, body: JSON.stringify({ max_train_steps: resumeTarget, ...(resumeDraft.note.trim() ? { note: resumeDraft.note.trim() } : {}), source_snapshot_id: pointer.snapshot_id, source_sha256: pointer.sha256 }) });
       const value = await response.json().catch(() => ({}));
       if (response.status === 409 && value?.error === "lora_training_resume_source_stale") {
@@ -1252,14 +1312,13 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
   return <section className="utility-page lora-training-page" data-project-write-section={section === "runs" ? "derived" : "facts"} data-project-fact-dirty={factDraftDirty ? "true" : undefined}>
     {!allRuns && <nav className="lora-actions" aria-label="训练项目内容"><button className="button" aria-current={section === "datasets" ? "page" : undefined} onClick={() => onSectionChange("datasets")}>素材与 Caption</button><button className="button" disabled={!selectedDatasetId} aria-current={section === "tasks" ? "page" : undefined} onClick={() => onSectionChange("tasks")}>训练设置</button><button className="button" aria-current={section === "runs" ? "page" : undefined} onClick={() => onSectionChange("runs")}>训练记录</button></nav>}
     {section === "datasets" && <>
-      <WorkspaceHeader actions={refreshAction} title={datasetDetail?.dataset.name || selectedDatasetSummary?.name || "训练项目"} meta={datasetDetail ? `已确认 ${datasetDetail.captioning.summary.confirmed}/${datasetDetail.captioning.summary.total} · 待确认 ${datasetDetail.captioning.summary.unconfirmed}` : undefined} />
+      <WorkspaceHeader actions={refreshAction} title={datasetDetail?.dataset.name || selectedDatasetSummary?.name || "训练项目"} />
       {showCreateDataset && <form className="lora-create-card" onSubmit={(event) => void createDataset(event)}><header><div><h3>新建训练项目</h3><p>创建后再加入图片和 Caption。</p></div></header><div className="lora-form-grid"><label><span>名称</span><input autoFocus required value={newDataset.name} onChange={(event) => setNewDataset({ name: event.target.value })} /></label></div><footer><button type="button" className="button" onClick={() => setShowCreateDataset(false)}>取消</button><button className="button button--primary" disabled={Boolean(busy) || !newDataset.name.trim()}>创建训练项目</button></footer></form>}
       <div className="lora-training-layout lora-training-layout--dataset">
-        {!datasetDetail ? datasetsLoading || datasetLoading ? <LoraDatasetLoading name={selectedDatasetSummary?.name} /> : <EmptyState title="暂无数据集" detail="新建训练项目后即可准备素材。" /> : <div className="lora-dataset-workspace" inert={["prepare-images", "upload", "postprocess-apply", "postprocess-restore"].includes(busy)}>
+        {!datasetDetail ? datasetsLoading || datasetLoading ? <LoraDatasetLoading name={selectedDatasetSummary?.name} /> : <EmptyState title="暂无数据集" detail="新建训练项目后即可准备素材。" /> : datasetDetail.read_only ? <div className="lora-panel"><p className="training-legacy-summary">旧版数据集 · 只读保留，迁移后可编辑。素材和历史训练保持原状。</p><div className="training-legacy-materials">{datasetDetail.items.map(item=><button key={item.id} aria-pressed={captionItemId===item.id} onClick={()=>void selectCaptionItem(item.id)}><img src={mediaVariantUrl(datasetMediaUrl(item),320)} alt="训练素材"/><span>{item.asset_id}{item.enabled?"":" · 已停用"}</span></button>)}</div>{captionItem&&<label className="training-caption-prose">Caption<textarea aria-label="旧版 Caption" readOnly value={captionItem.caption}/></label>}</div> : <div className="lora-dataset-workspace" inert={datasetLoading||["prepare-images", "upload", "postprocess-apply", "postprocess-restore"].includes(busy)}>
           <section className="lora-panel lora-panel--overview"><header><div><h3>项目信息</h3><p>{datasetDetail.id}</p></div></header><div className="lora-form-grid"><label><span>名称</span><input value={datasetDetail.dataset.name} onChange={(event) => mutateDataset((dataset) => ({ ...dataset, name: event.target.value }))} /></label><label className="is-wide"><span>说明</span><textarea value={datasetDetail.dataset.description} onChange={(event) => mutateDataset((dataset) => ({ ...dataset, description: event.target.value }))} /></label></div><div className="lora-activation-editor"><header><div><h4>激活标签 <small>可选</small></h4><p>用于在生成时调用训练概念；按顺序保存为字符串列表。</p></div><button type="button" className="button" aria-haspopup="dialog" aria-expanded={showActivationGuide} onClick={() => void toggleActivationGuide()}>激活标签说明</button></header><div className="lora-activation-terms">{datasetDetail.dataset.activation_terms.map((term, index) => <div key={index}><label><span>标签</span><input value={term} placeholder="简短、可读、低冲突" onChange={(event) => mutateDataset((dataset) => ({ ...dataset, activation_terms: dataset.activation_terms.map((entry, entryIndex) => entryIndex === index ? event.target.value : entry) }))} /></label><button className="icon-button" title="删除激活标签" onClick={() => mutateDataset((dataset) => ({ ...dataset, activation_terms: dataset.activation_terms.filter((_, entryIndex) => entryIndex !== index) }))}>×</button></div>)}</div><button className="button" onClick={() => mutateDataset((dataset) => ({ ...dataset, activation_terms: [...dataset.activation_terms, ""] }))}>新增激活标签</button></div></section>
           <div className="lora-material-workspace">
             <section className="lora-panel"><header><div><h3>素材与分组</h3><p>实际训练集 {effectiveItemCount} 张 · 素材共 {mergedDatasetItems.length} 张{lowResolutionTrainingItems.length > 0 && <span className="lora-material-warning" title={`训练预检：${lowResolutionTrainingItems.length} 张实际训练图片短边低于 ${TRAINING_MIN_SHORT_SIDE} 像素`}> · {lowResolutionTrainingItems.length} 张短边低于 {TRAINING_MIN_SHORT_SIDE}</span>}{environment && environment.optional_capabilities?.upscaler?.ready !== true && <span className="lora-material-warning"> · 图片超分不可用：{environment.optional_capabilities?.upscaler?.message ?? "模型未就绪"}</span>}</p></div><div className="lora-actions"><input ref={uploadRef} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={(event) => void upload(event.target.files)} /><button className="button" onClick={() => uploadRef.current?.click()} disabled={Boolean(busy)}>上传图片</button></div></header>
-              <div className="lora-captioning-actions"><div><strong>基础 Prompt</strong><span>默认只处理缺失 Caption；需要覆盖时请在当前图片的 Caption 面板中单独重新打标。</span>{!environment ? <small>正在检查打标器配置…</small> : !captioningAvailable ? <small>{environment.captioning.message || (environment.captioning.configured ? "打标器文件未就绪" : "尚未配置打标器")}</small> : null}</div><div className="lora-actions"><button className="button" disabled={Boolean(busy) || captionDirty || !captioningAvailable} title={!environment ? "正在检查打标器配置" : captioningAvailable ? undefined : environment.captioning.message} onClick={() => void runCaptioning("missing")}>为无标签图片生成基础 Prompt</button></div></div>
               <p className="lora-auto-preparation" role="status">{["prepare-images", "upload", "postprocess-apply", "postprocess-restore"].includes(busy) ? "正在处理图片：缩放、评分及必要的超分，请稍候…" : "导入和应用裁剪时处理为 1024 训练图；原图保留。"}</p>
               {datasetDetail.items.some(item => !item.preparation || item.preparation_error) && <button className="button" disabled={Boolean(busy) || datasetDirty || captionDirty || Boolean(cropDraft)} onClick={() => void prepareImages()}>重试未完成图片</button>}
               <div className="lora-groups">{datasetDetail.dataset.groups.map((group) => <div className={`lora-group-row${group.enabled ? "" : " is-disabled"}`} key={group.id}><label className="lora-group-enabled"><input type="checkbox" checked={group.enabled} onChange={(event) => mutateDataset((dataset) => ({ ...dataset, groups: dataset.groups.map((entry) => entry.id === group.id ? { ...entry, enabled: event.target.checked } : entry) }))} /><span>启用</span></label><input className="lora-group-name" aria-label="分组名称" value={group.name} onChange={(event) => mutateDataset((dataset) => ({ ...dataset, groups: dataset.groups.map((entry) => entry.id === group.id ? { ...entry, name: event.target.value } : entry) }))} /><span className="lora-group-count">{datasetDetail.dataset.items.filter((item) => item.group_id === group.id).length} 张</span><label className="lora-group-repeats"><span>重复</span><input type="number" min="1" value={group.repeats} onChange={(event) => mutateDataset((dataset) => ({ ...dataset, groups: dataset.groups.map((entry) => entry.id === group.id ? { ...entry, repeats: Number(event.target.value) } : entry) }))} /></label><button className="icon-button" title="删除空分组" disabled={datasetDetail.dataset.items.some((item) => item.group_id === group.id) || datasetDetail.dataset.groups.length <= 1} onClick={() => mutateDataset((dataset) => ({ ...dataset, groups: dataset.groups.filter((entry) => entry.id !== group.id) }))}>×</button></div>)}<button className="button" onClick={() => mutateDataset((dataset) => ({ ...dataset, groups: [...dataset.groups, { id: browserId("group"), name: "新分组", enabled: true, repeats: 1 }] }))}>新增分组</button></div>
@@ -1271,7 +1330,7 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
                         <div className="lora-image-grid">
                           {items.map((item) => {
                       const lowResolution = hasLowResolution(item.image_width, item.image_height);
-                      const captionStatus = captionStatusForItem(item, datasetDetail.captioning.items.find((entry) => entry.item_id === item.id));
+                      const captionStatus = captionStatusForItem(item, datasetDetail.captioning?.items.find((entry) => entry.item_id === item.id));
                       const postprocessStatus = postprocessLabel(item);
                       return (
                         <article
@@ -1317,14 +1376,18 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
                 ) : <div className="lora-empty"><b>暂无图片</b><span>上传图片后即可开始整理。</span></div>}
              </section>
           <section className="lora-panel lora-caption-dock" aria-label="Caption 编辑">
-            <header><div><h3>{captionItem?.asset_id ?? "Caption"}</h3><p>{captionItem ? `${datasetDetail.items.findIndex((item) => item.id === captionItem.id) + 1} / ${datasetDetail.items.length}` : "选择图片"}</p></div><div className="lora-caption-dock-actions">{captionDirty && <span className="lora-state is-warning">未保存</span>}{captionItem && <button className="button" disabled={Boolean(busy) || captionDirty || !captioningAvailable} title="只重新打标当前图片；覆盖已有 Caption 前会请求确认" onClick={() => void runCaptioning("single", captionItem.id)}>重新打标此图</button>}{captionItem && <button className="button button--primary" disabled={Boolean(busy) || !captionDirty} onClick={() => void saveCaption()}>保存 Caption</button>}{captionItem && captioningItem && captioningItem.state !== "confirmed" && <button className="button" disabled={Boolean(busy) || captionDirty || !captionItem.caption.trim()} onClick={() => void confirmCaption()}>确认当前 Caption</button>}</div></header>
+            <header><h3>Caption</h3></header>
+            <TrainingCaptionSets sets={captionSets} selectedId={datasetDetail.caption_set_id} disabled={Boolean(busy)||datasetLoading} dirty={datasetDirty||captionDirty||Boolean(cropDraft)} onSelect={id=>void selectCaptionSet(id)} onSave={saveCaptionSet}/>
+            {datasetDetail.captioning && <p className="training-caption-summary">已确认 {datasetDetail.captioning.summary.confirmed}/{datasetDetail.captioning.summary.total} · 待确认 {datasetDetail.captioning.summary.unconfirmed}</p>}
+            <header><div><h3>{captionItem?.asset_id ?? "Caption"}</h3><p>{captionItem ? `${datasetDetail.items.findIndex((item) => item.id === captionItem.id) + 1} / ${datasetDetail.items.length}` : "选择图片"}</p></div><div className="lora-caption-dock-actions">{captionDirty && <span className="lora-state is-warning">未保存</span>}{captionItem && !proseCaption && activeCaptionSet && <button className="button" disabled={Boolean(busy) || captionDirty || !captioningAvailable} title="只重新打标当前图片；覆盖已有 Caption 前会请求确认" onClick={() => void runCaptioning("single", captionItem.id)}>重新打标此图</button>}{captionItem && <button className="button button--primary" disabled={Boolean(busy) || !captionDirty || !activeCaptionSet} onClick={() => void saveCaption()}>保存 Caption</button>}{captionItem && captioningItem && captioningItem.state !== "confirmed" && <button className="button" disabled={Boolean(busy) || captionDirty || !captionItem.caption.trim() || !activeCaptionSet} onClick={() => void confirmCaption()}>确认当前 Caption</button>}</div></header>
             {captionItem ? <div className="lora-caption-editor"><button type="button" className="lora-caption-preview" onClick={() => setImagePreview({ src: datasetMediaUrl(captionItem), alt: `训练素材 · ${captionItem.asset_id}`, footer: `${captionItem.preparation ? "训练图 · 已准备" : "当前素材 · 尚未完成训练图准备"} · ${captionItem.asset_id} · ${resolution(captionItem.image_width, captionItem.image_height)} · ${bytes(captionItem.image_bytes)}` })} title="全屏查看训练素材"><img src={datasetMediaUrl(captionItem)} alt="当前素材" /></button><div>
-              <section className="lora-caption-current" aria-label="当前 Caption 标签"><header><span>当前 Caption</span><small>点击标签删除；标签仍以英文 Danbooru 文本保存</small></header><div className="lora-caption-tag-list">{captionPieces(captionItem.caption).map((tag, index) => <CaptionTagChip key={`${tag}-${index}`} value={tag} match={captionMatchFor(tag)} rawTag={rawCaptionTag(captioningItem?.raw_tags, tag)} onClick={() => removeCaptionPart(index)} actionLabel="点击删除" />)}{!captionPieces(captionItem.caption).length && <p className="lora-caption-tag-empty">当前没有 Caption 标签，请从下方添加。</p>}</div><CaptionTagPicker existingTags={captionPieces(captionItem.caption)} onAdd={addCaptionPart} disabled={Boolean(busy)} />{captionDictionaryState === "loading" && <small className="lora-caption-dictionary-state">正在读取标签翻译…</small>}{captionDictionaryState === "unavailable" && <small className="lora-caption-dictionary-state is-warning">词库不可用，仍可以添加手动标签。</small>}{captionDictionaryState === "error" && <small className="lora-caption-dictionary-state is-warning">标签翻译读取失败，仍可以继续编辑。</small>}</section>
-              <details className="lora-caption-raw-editor"><summary>直接编辑 Caption 文本</summary><textarea value={captionItem.caption} onChange={(event) => setCaptionText(event.target.value)} /></details>
-              {captioningItem && <div className={`lora-caption-confirmation is-${captioningItem.state}`}><strong>{captioningItem.state === "confirmed" ? "已确认" : captioningItem.state === "unconfirmed" ? "待确认" : "未打标"}</strong><span>{captioningItem.state === "confirmed" ? "当前图片与 Caption 的哈希已绑定。" : captioningItem.state === "unconfirmed" ? "图片或 Caption 已变化，请先保存 Caption，再确认当前 Caption。" : "请先生成基础 Prompt，或先保存 Caption，再确认当前 Caption。"}</span></div>}
-              {captioningItem && captioningItem.base_prompt !== null ? <details className="lora-caption-base"><summary>基础 Prompt（{captionerName}）</summary><div className="lora-caption-tag-list is-read-only">{captionPieces(captioningItem.base_prompt).map((tag, index) => <CaptionTagChip key={`${tag}-${index}`} value={tag} match={captionMatchFor(tag)} rawTag={rawCaptionTag(captioningItem.raw_tags, tag)} />)}</div><code>{captioningItem.base_prompt}</code></details> : <p className="lora-caption-empty-note">尚未生成基础 Prompt。</p>}
-              <p>当前 Caption 写入素材目录固定的 <code>caption.txt</code>；基础 Prompt 由打标器生成，作为只读基准。</p>
+              {proseCaption?<label className="training-caption-prose">Caption<textarea aria-label="自然语言 Caption" value={captionItem.caption} disabled={Boolean(busy)} onChange={event=>setCaptionText(event.target.value)} /></label>:<><section className="lora-caption-current" aria-label="当前 Caption 标签"><header><span>当前 Caption</span><small>点击标签删除；标签仍以英文 Danbooru 文本保存</small></header><div className="lora-caption-tag-list">{captionPieces(captionItem.caption).map((tag, index) => <CaptionTagChip key={`${tag}-${index}`} value={tag} match={captionMatchFor(tag)} rawTag={rawCaptionTag(captioningItem?.raw_tags, tag)} onClick={() => removeCaptionPart(index)} actionLabel="点击删除" />)}{!captionPieces(captionItem.caption).length && <p className="lora-caption-tag-empty">当前没有 Caption 标签，请从下方添加。</p>}</div><CaptionTagPicker existingTags={captionPieces(captionItem.caption)} onAdd={addCaptionPart} disabled={Boolean(busy)} />{captionDictionaryState === "loading" && <small className="lora-caption-dictionary-state">正在读取标签翻译…</small>}{captionDictionaryState === "unavailable" && <small className="lora-caption-dictionary-state is-warning">词库不可用，仍可以添加手动标签。</small>}{captionDictionaryState === "error" && <small className="lora-caption-dictionary-state is-warning">标签翻译读取失败，仍可以继续编辑。</small>}</section>
+              <details className="lora-caption-raw-editor"><summary>直接编辑 Caption 文本</summary><textarea value={captionItem.caption} onChange={(event) => setCaptionText(event.target.value)} /></details></>}
+              {captioningItem && <div className={`lora-caption-confirmation is-${captioningItem.state}`}><strong>{captioningItem.state === "confirmed" ? "已确认" : captioningItem.state === "unconfirmed" ? "待确认" : "未打标"}</strong><span>{captioningItem.state === "confirmed" ? "当前打标集已确认；图片或文本变化后需要重新确认。" : captioningItem.state === "unconfirmed" ? "图片或 Caption 已变化，请先保存 Caption，再确认当前 Caption。" : "请先保存 Caption，再确认当前 Caption。"}</span></div>}
+              {!proseCaption && captioningItem && captioningItem.base_prompt !== null ? <details className="lora-caption-base"><summary>基础 Prompt（{captionerName}）</summary><div className="lora-caption-tag-list is-read-only">{captionPieces(captioningItem.base_prompt).map((tag, index) => <CaptionTagChip key={`${tag}-${index}`} value={tag} match={captionMatchFor(tag)} rawTag={rawCaptionTag(captioningItem.raw_tags, tag)} />)}</div><code>{captioningItem.base_prompt}</code></details> : !proseCaption ? <p className="lora-caption-empty-note">尚未生成基础 Prompt。</p> : null}
+              <p>修改只影响当前打标集；训练使用对应模型设置中选定的打标集。</p>
             </div></div> : <div className="lora-empty"><span>点击素材图片后，在这里编辑 Caption。</span></div>}
+              {!proseCaption&&activeCaptionSet&&<div className="lora-captioning-actions"><div><strong>基础 Prompt</strong><span>默认只处理缺失 Caption；需要覆盖时请在当前图片的 Caption 面板中单独重新打标。</span>{!environment ? <small>正在检查打标器配置…</small> : !captioningAvailable ? <small>{environment.captioning.message || (environment.captioning.configured ? "打标器文件未就绪" : "尚未配置打标器")}</small> : null}</div><div className="lora-actions"><button className="button" disabled={Boolean(busy) || captionDirty || !captioningAvailable} title={!environment ? "正在检查打标器配置" : captioningAvailable ? undefined : environment.captioning.message} onClick={() => void runCaptioning("missing")}>为无标签图片生成基础 Prompt</button></div></div>}
           </section>
           </div>
           {datasetDirty && <button type="button" className="button button--primary lora-dataset-savebar" disabled={Boolean(busy)} onClick={() => void saveDataset()}>保存数据集修改</button>}
@@ -1334,9 +1397,10 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
 
     {section === "tasks" && <>
       <WorkspaceHeader title={`${taskDetail?.task.name ?? "训练项目"} · 训练设置`} actions={<div className="lora-toolbar-actions">{refreshAction}<div className={`training-environment training-environment--inline ${environmentState}`} title={environmentStatusTitle}><i /><div><b>{environmentStatusText}</b>{environment?.runtime && <span>{environment.runtime.gpu} · {Math.round(environment.runtime.vram_bytes / 1024 ** 3)} GB</span>}{!environmentLoading && !environment?.available && environmentProblems.length > 0 && <span>{environmentProblems[0]}</span>}</div></div><button className="button" disabled={environmentLoading || Boolean(busy)} title="跳过缓存，重新检查训练器、GPU、底座模型和打标器" onClick={() => void loadEnvironment(true)}>重新检查环境</button></div>} />
+      <div className="training-model-selection"><label>训练模型<select aria-label="训练模型" value={trainingFamily} disabled={Boolean(busy)||taskLoading||taskReadOnly} onChange={event=>void selectTrainingFamily(event.target.value as TrainingFamily)}>{Object.entries(trainingModelLabels).map(([id,label])=><option value={id} key={id}>{label}</option>)}</select></label></div>
       <div className="lora-training-layout lora-training-layout--dataset">
-        {taskLoading || (selectedTaskId && taskDetail?.id !== selectedTaskId && !taskLoadError) ? <div className="lora-panel" role="status" aria-busy="true">正在加载训练设置…</div> : taskLoadError ? <div className="lora-panel" role="alert"><p>方案加载失败：{taskLoadError}</p><button className="button" onClick={() => void loadTask().catch(() => undefined)}>重试</button></div> : !taskDetail ? <EmptyState title={datasets.length ? "暂无训练设置" : "请先建立数据集"} detail={datasets.length ? "请先选择训练项目。" : "创建项目时自动建立训练配置。"} /> : <div className="lora-task-workspace" key={taskDetail.id}>
-          <section className="lora-panel lora-panel--overview"><header><div><h3>训练设置</h3><p>可复用的训练配置</p></div><div className="lora-actions"><span className={`lora-state ${taskDirty ? "is-warning" : "is-ready"}`}>{taskDirty ? "未保存" : "已保存"}</span><button className="button button--primary" disabled={!taskDirty || !accumulationValid || Boolean(busy)} onClick={() => void saveTask()}>保存配置</button></div></header><p>{taskDetail.task.name} · 当前项目的训练配置</p><label><span>训练模型</span><select aria-label="训练模型" value={trainingFamily} disabled={Boolean(busy)} onChange={event => selectTrainingFamily(event.target.value as TrainingFamily)}><option value="anima" disabled={!recipes.some(recipe => recipe.family === "anima" && recipe.default_target)}>Anima</option><option value="qwen-image-2-1">Qwen-Image-2.1</option></select></label><details className="lora-model-detail"><summary>底座模型 · {trainingFamily === "anima" ? "Anima" : "Qwen-Image-2.1"}</summary><p>{currentModel}</p><small>切换模型使用对应默认底座与配方，复用当前素材；保存后生效。</small><p>方案 ID · {taskDetail.id}</p></details>
+        {taskLoading || (selectedTaskId && taskDetail?.id !== selectedTaskId && !taskLoadError && !taskMissing) ? <div className="lora-panel" role="status" aria-busy="true">正在加载训练设置…</div> : taskLoadError ? <div className="lora-panel" role="alert"><p>方案加载失败：{taskLoadError}</p><button className="button" onClick={() => void loadTask().catch(() => undefined)}>重试</button></div> : taskReadOnly ? <div className="lora-panel training-legacy-summary">旧版训练配置 · 只读保留，迁移后可编辑。历史训练可在“训练记录”查看。</div> : taskMissing ? <section className="lora-panel"><h3>{trainingModelLabels[trainingFamily]} 尚未配置</h3><label>使用打标集<select aria-label="初始化使用打标集" value={initialCaptionSetId} onChange={event=>setInitialCaptionSetId(event.target.value)}><option value="">选择打标集</option>{captionSets.map(set=><option value={set.id} key={set.id}>{set.name}</option>)}</select></label><button className="button" disabled={Boolean(busy)||!captionSets.some(set=>set.id===initialCaptionSetId)||!recipes.some(recipe=>recipe.family===trainingFamily)} onClick={()=>void initializeModel()}>建立模型配置</button></section> : !taskDetail ? <EmptyState title={datasets.length ? "暂无训练设置" : "请先建立数据集"} detail={datasets.length ? "请先选择训练项目。" : "创建项目时自动建立训练配置。"} /> : <div className="lora-task-workspace" key={taskDetail.id}>
+          <section className="lora-panel lora-panel--overview"><header><div><h3>训练设置</h3><p>可复用的训练配置</p></div><div className="lora-actions"><span className={`lora-state ${taskDirty ? "is-warning" : "is-ready"}`}>{taskDirty ? "未保存" : "已保存"}</span><button className="button button--primary" disabled={!taskDirty || !accumulationValid || Boolean(busy)} onClick={() => void saveTask()}>保存配置</button></div></header><p>{taskDetail.task.name} · 当前项目的训练配置</p><label><span>使用打标集</span><select aria-label="训练使用打标集" value={taskDetail.task.caption_set_id??""} disabled={Boolean(busy)} onChange={event=>mutateTask(task=>({...task,caption_set_id:event.target.value}))}><option value="" disabled>选择打标集</option>{captionSets.map(set=><option value={set.id} key={set.id}>{set.name}</option>)}</select></label><details className="lora-model-detail"><summary>底座模型 · {trainingModelLabels[trainingFamily]}</summary><p>{currentModel}</p><small>各模型独立保存底座、打标集和参数；素材筛选与图片处理共用。</small><p>方案 ID · {taskDetail.id}</p></details>
             <p>实际训练集 {taskEffectiveItemCount} 张 · 以下配置统一保存，后续训练沿用。</p>
             <h4 className="lora-section-title">训练设置</h4>
             <div className="lora-parameter-grid">{RUN_PARAMETER_DEFINITIONS.filter(item => item.key !== "save_every_n_steps").map(runField)}{RECIPE_PARAMETER_DEFINITIONS.filter(item => item.key === "learning_rate").map(recipeField)}</div>
@@ -1355,7 +1419,7 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
     {section === "runs" && <>
       <WorkspaceHeader actions={refreshAction} title={allRuns ? "全部训练记录" : "训练记录"} />
       <div className={`lora-training-layout ${runs.length ? "" : "is-empty"}`}>
-        {runs.length > 0 && <aside className="lora-task-list"><header><h3>运行记录</h3><span>{runs.length}</span></header><div>{runs.map(run => <button key={run.id} className={run.id === currentRun?.id ? "is-active" : ""} onClick={() => setSelectedRunId(run.id)}><b>{run.manifest?.task_name ?? run.id}</b><span>{new Date(run.status.completed_at ?? run.status.interrupted_at ?? run.created_at ?? run.manifest?.created_at ?? "").toLocaleString()}</span><small>{run.legacy ? "历史记录" : statusText(run.status.status)}{run.status.status === "running" && runPhaseText(run.status) ? ` · ${runPhaseText(run.status)}` : ""} · {run.status.step}/{runTarget(run) ?? "—"} step{run.manifest?.family !== "anima" && run.resumable && run.status.resume?.step != null ? ` · 可从第 ${run.status.resume.step} 步恢复` : ""}</small></button>)}</div></aside>}
+        {runs.length > 0 && <aside className="lora-task-list"><header><h3>运行记录</h3><span>{runs.length}</span></header><div>{runs.map(run => <button key={run.id} className={run.id === currentRun?.id ? "is-active" : ""} onClick={() => setSelectedRunId(run.id)}><b>{run.manifest?.task_name ?? run.id}</b><span>{new Date(run.status.completed_at ?? run.status.interrupted_at ?? run.created_at ?? run.manifest?.created_at ?? "").toLocaleString()}</span><small>{run.legacy ? "历史记录" : statusText(run.status.status)}{run.status.status === "running" && runPhaseText(run.status) ? ` · ${runPhaseText(run.status)}` : ""} · {run.manifest?.family ? trainingModelLabels[run.manifest.family] : ""} · {run.status.step}/{runTarget(run) ?? "—"} step{run.manifest?.family === "qwen-image-2-1" && run.resumable && run.status.resume?.step != null ? ` · 可从第 ${run.status.resume.step} 步恢复` : ""}</small></button>)}</div></aside>}
         {!currentRun ? <EmptyState title={runsLoading ? "正在读取训练记录" : "暂无训练记录"} detail="每次启动训练独立记录，最近运行优先显示。" /> : <div className="lora-task-workspace"><section className="lora-panel"><header><div><h3>{currentRun.manifest?.task_name ?? currentRun.id}</h3><p>{[currentRun.manifest?.dataset_name, currentRun.id].filter(Boolean).join(" · ")}</p>{!currentRun.legacy && <p>Rank {currentRun.manifest?.semantic_config?.network_dim ?? currentRun.manifest?.config?.network_dim ?? "—"} · 学习率 {currentRun.manifest?.semantic_config?.learning_rate ?? currentRun.manifest?.config?.learning_rate ?? "—"}</p>}</div></header>
           {currentRun.legacy && <p className="lora-preflight-hint">{currentRun.legacy_note ?? "历史记录，不支持精确续训。"}</p>}
           {!currentRun.legacy && currentRun.manifest?.family === "anima" && <p className="lora-preflight-hint">Anima 保留 checkpoint，当前不支持精确续训。</p>}
@@ -1366,12 +1430,12 @@ export default function LoraTrainingView({ section, allRuns = false, datasetId, 
             const resumePointer = currentRun.status.resume ?? null;
             const performance = currentRun.status.performance ?? null;
             return <article className="lora-run-card"><header><div><b>{statusText(currentRun.status.status)}{["starting", "running", "stopping"].includes(currentRun.status.status) && runPhaseText(currentRun.status) ? ` · ${runPhaseText(currentRun.status)}` : ""}</b><span>{new Date(currentRun.created_at ?? currentRun.manifest?.created_at ?? "").toLocaleString()}</span></div><div className="lora-actions">
-              {!currentRun.legacy && currentRun.manifest?.family !== "anima" && currentRun.resumable && resumePointer && <button className="button" disabled={Boolean(busy)} title="沿用父 run 冻结的数据集、模型与训练参数，从最新完整恢复状态继续" onClick={() => setResumeDraft({ run: currentRun, target: "", note: "" })}>继续训练</button>}
+              {!currentRun.legacy && currentRun.manifest?.family === "qwen-image-2-1" && currentRun.resumable && resumePointer && <button className="button" disabled={Boolean(busy)} title="沿用父 run 冻结的数据集、模型与训练参数，从最新完整恢复状态继续" onClick={() => setResumeDraft({ run: currentRun, target: "", note: "" })}>继续训练</button>}
               {controls.showStop && currentRun.manifest?.task_id && <button className="button button--danger" disabled={Boolean(busy)} onClick={() => void runAction(fetch, "stop", `${base}/tasks/${currentRun.manifest!.task_id}/runs/${currentRun.id}/stop`, "POST")}>停止训练</button>}
               {controls.showDelete && currentRun.manifest?.task_id && <button className="button button--danger" disabled={Boolean(busy)} onClick={() => void deleteRun(currentRun)}>删除记录</button>}
             </div></header>
               <div className="run-metrics"><span><b>{currentRun.status.step}</b> / {runTarget(currentRun) ?? "—"} step</span><span>loss <b>{currentRun.status.loss?.toFixed(4) ?? "—"}</b></span><span>当前 LR <b>{typeof currentRun.status.lr === "number" ? currentRun.status.lr.toExponential(2) : "—"}</b></span><span>已处理 <b>{currentRun.status.samples_seen ?? "—"}</b> 张次</span><span>预计剩余 <b>{duration(currentRun.status.eta_seconds)}</b></span><span>记录磁盘占用 <b>{bytes(currentRun.disk_bytes)}</b></span></div>
-              {!currentRun.legacy && currentRun.manifest?.family !== "anima" && currentRun.resumable && resumePointer && <p className="lora-preflight-hint">可从第 {resumePointer.step ?? "—"} 步的完整恢复状态继续训练。</p>}
+              {!currentRun.legacy && currentRun.manifest?.family === "qwen-image-2-1" && currentRun.resumable && resumePointer && <p className="lora-preflight-hint">可从第 {resumePointer.step ?? "—"} 步的完整恢复状态继续训练。</p>}
               {performance && <p className="lora-preflight-hint">总耗时 {secondsText(performance.wall_seconds)}{performance.phase_seconds?.cache != null && ` · 缓存 ${secondsText(performance.phase_seconds.cache)}`}{performance.phase_seconds?.train != null && ` · 训练 ${secondsText(performance.phase_seconds.train)}`}{performance.seconds_per_update != null && ` · 每更新 ${secondsText(performance.seconds_per_update)}`} · 处理 {performance.samples_seen ?? currentRun.status.samples_seen ?? "—"} 张次</p>}
               <LoraLossChart key={currentRun.id} history={currentRun.status.loss_history} log={currentRun.status.log_tail ?? ""} active={controls.showStop} />
               {currentRun.status.error && <p className="run-error">{currentRun.status.error}</p>}

@@ -280,7 +280,7 @@ def main(argv=None):
     events = None
     try:
         manifest = json.loads(pathlib.Path(args.manifest).read_text(encoding="utf-8"))
-        if manifest.get("version") != 5 or manifest.get("family") != "anima":
+        if manifest.get("version") not in (5, 6) or manifest.get("family") != "anima":
             raise RunnerError("需要 Anima manifest v5")
         events = Events(manifest["paths"]["events_file"])
         (run_cache if args.phase == "cache" else run_train)(manifest, events)

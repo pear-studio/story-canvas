@@ -49,7 +49,19 @@
 
 ## 训练项目事实
 
-一个项目持有一份素材集合和唯一当前 `settings.json`：`project.json` 管素材组织，`assets/` 管图片与 Caption，`captioning/` 管审核事实。启动时冻结输入形成 run，后续编辑不改旧 run。当前训练路线见 [LoRA 训练](lora-training.md)。
+一个训练项目共用素材筛选、分组、裁剪和图像处理，多套打标集独立于模型；每个模型只有一套当前配置，明确引用打标集。
+
+| 文件或目录 | 职责 |
+|---|---|
+| `project.json`、`assets/` | v6 共用素材组织、原图、处理图及图像元数据 |
+| `captions/index.json` | 打标集 ID、名称和标签／自然语言格式 |
+| `captions/<集ID>/texts/` | 按素材 ID 保存的最终 Caption，训练器不暗中追加或改写文本 |
+| `captions/<集ID>/latest.json`、`audit.json` | 本集打标来源、文本确认与实际看图审计 |
+| `settings.json` | 按模型 family 索引的唯一当前配置、打标集引用和运行默认值 |
+
+启动时冻结图片、Caption、所选打标集身份和模型配置形成 run，后续编辑不改旧 run。当前训练路线见 [LoRA 训练](lora-training.md)。
+
+v5 旧项目只读保留，须经 `training.migration.inspect/apply` 显式迁移后再编辑；读取不触发迁移。迁移保持素材 ID、启停、图像及旧 run，原 Caption 成为独立打标集；仅当前图片和文本哈希一致的确认继续有效。原事实备份保存在项目 `Training/migrations/`，不可只备份可清理的 Saved。参数与版本冲突规则查对应工具 help。
 
 ## 单一资料归属
 

@@ -10,8 +10,8 @@ import sharp from "sharp";
 import { preparationDecision, trainingImageTarget } from "../server/lora-image-preparation-contract.mjs";
 import { prepareTrainingImage } from "../server/lora-image-preparation.mjs";
 import { prepareLoraTrainingDataset, restoreLoraTrainingOriginal, previewLoraTrainingPostprocess, applyLoraTrainingPostprocess } from "../server/lora-training-media.mjs";
-import {  importLoraTrainingAssets, updateLoraTrainingDataset, readLoraTrainingDataset, createLoraTrainingTask } from "../server/lora-training-facts.mjs";
-import { preflightLoraTraining } from "../server/lora-training-plan.mjs";
+import {  importLoraTrainingAssets, updateLoraTrainingDataset, readLoraTrainingDataset, createLoraTrainingTask } from "./training-project-fixture.mjs";
+import { preflightLoraTraining } from "./training-project-fixture.mjs";
 
 const png = (width, height, color = "#4678ab") => sharp({ create: { width, height, channels: 3, background: color } }).png().toBuffer();
 const model = { ready: true, sha256: "b".repeat(64) };

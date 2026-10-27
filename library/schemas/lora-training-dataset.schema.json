@@ -4,7 +4,7 @@
   "type": "object",
   "required": ["version", "name", "description", "activation_terms", "groups", "items"],
   "properties": {
-    "version": { "const": 5 },
+    "version": { "enum": [5, 6], "description": "v6 为共享素材；v5 只读，修改前须显式迁移。" },
     "name": { "type": "string", "minLength": 1 },
     "description": { "type": "string" },
     "activation_terms": {

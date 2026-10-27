@@ -922,6 +922,41 @@ test('完整能力只有一份，限制按 Agent 生效且执行前拦截，撤�
   assert.deepEqual(f.requests.at(-1).body,{page_key:{page_id:'page-001'}});
 });
 
+test('训练操作显式传递打标集和模型身份，缺少身份在发送前拒绝', async t=>{
+ const f=await fixture(t,(_req,res)=>{res.setHeader('etag','next');res.end(JSON.stringify({ok:true}));});
+ const dataset_id='dataset-123456abcdef',caption_set_id='caption-set-123456abcdef',task_id=dataset_id,family='moss-image',etag='r1';
+ const call=(operation,args)=>f.tool.execute({operation,args});
+ for(const [operation,args] of [
+   ['training.caption.save',{dataset_id,item_id:'item-123456abcdef',caption:'A quiet room.',etag}],
+   ['training.task.read',{task_id}],['training.preflight',{task_id,run_settings:{}}],
+   ['training.run.start',{task_id,run_settings:{},etag}],
+ ]) await assert.rejects(call(operation,args),e=>JSON.parse(e.message).error==='invalid_arguments');
+ assert.equal(f.requests.length,0);
+ await call('training.dataset.read',{dataset_id,caption_set_id});
+ assert.equal(f.requests.at(-1).url,`/api/lora-training/datasets/${dataset_id}?caption_set_id=${caption_set_id}`);
+ await call('training.caption.save',{dataset_id,caption_set_id,item_id:'item-123456abcdef',caption:'A quiet room.',etag});
+ assert.deepEqual(f.requests.at(-1).body,{caption_set_id,caption:'A quiet room.'});
+ await call('training.caption.set.copy',{dataset_id,source_id:caption_set_id,name:'对照',format:'prose',etag});
+ assert.deepEqual(f.requests.at(-1).body,{source_id:caption_set_id,name:'对照',format:'prose'});
+ const entries=[{item_id:'item-123456abcdef',image_sha256:'a'.repeat(64),caption:'A quiet room.\n'}];
+ await call('training.caption.set.import',{dataset_id,caption_set_id,entries,etag});
+ assert.deepEqual(f.requests.at(-1).body,{entries});
+ assert.equal(f.requests.at(-1).url,`/api/lora-training/datasets/${dataset_id}/caption-sets/${caption_set_id}/import`);
+ await call('training.task.read',{task_id,family});
+ assert.equal(f.requests.at(-1).url,`/api/lora-training/tasks/${task_id}?family=${family}`);
+ await call('training.task.model.create',{task_id,family,caption_set_id,etag});
+ assert.deepEqual(f.requests.at(-1).body,{family,caption_set_id});
+ await call('training.preflight',{task_id,family,run_settings:{seed:42}});
+ assert.deepEqual(f.requests.at(-1).body,{family,run_settings:{seed:42}});
+ await call('training.run.start',{task_id,family,run_settings:{seed:42},etag});
+ assert.deepEqual(f.requests.at(-1).body,{family,run_settings:{seed:42}});
+ await call('training.audit.save',{dataset_id,caption_set_id,image_sha256:['a'.repeat(64)],etag});
+ assert.deepEqual(f.requests.at(-1).body,{caption_set_id,image_sha256:['a'.repeat(64)]});
+ await call('training.migration.apply',{dataset_id,expected_fingerprint:'b'.repeat(64),etag});
+ assert.equal(f.requests.at(-1).headers['if-match'],etag);
+ assert.deepEqual(f.requests.at(-1).body,{expected_fingerprint:'b'.repeat(64)});
+});
+
 test('训练封装经真实后端完成创建、导入、Caption、裁剪与恢复，不隐式加载模型', async t=>{
   const {Readable}=await import('node:stream');
   const {handleLoraTrainingRequest}=await import('../server/lora-training-http.mjs');
@@ -943,21 +978,22 @@ test('训练封装经真实后端完成创建、导入、Caption、裁剪与恢�
   const created=await call('training.dataset.create',{name:'中性测试',etag:list.etag});
   const id=created.value.id;
   const initial=await call('training.dataset.read',{dataset_id:id});
+  const caption_set_id=initial.value.caption_sets[0].id;
   const file=path.join(root,'sample.png');await sharp({create:{width:64,height:64,channels:3,background:'blue'}}).png().toFile(file);
   const imported=await call('training.asset.import',{dataset_id:id,group_id:initial.value.dataset.groups[0].id,files:[file],etag:initial.etag});
   const item=imported.value.items[0];
   assert.equal(item.preparation_error,undefined);
   assert.equal(item.preparation,undefined);
-  await assert.rejects(call('training.caption.save',{dataset_id:id,item_id:item.id,caption:'blue square',etag:initial.etag}),e=>JSON.parse(e.message).status===409);
-  const saved=await call('training.caption.save',{dataset_id:id,item_id:item.id,caption:'blue square',etag:imported.etag});
+  await assert.rejects(call('training.caption.save',{dataset_id:id,caption_set_id,item_id:item.id,caption:'blue square',etag:initial.etag}),e=>JSON.parse(e.message).status===409);
+  const saved=await call('training.caption.save',{dataset_id:id,caption_set_id,item_id:item.id,caption:'blue square',etag:imported.etag});
   const crop={x:0,y:0,width:32,height:32};
   const preview=await call('training.image.crop',{dataset_id:id,item_id:item.id,crop,etag:saved.etag});
   const applied=await call('training.image.apply',{dataset_id:id,item_id:item.id,crop,upscale:false,preview_id:preview.value.preview_id,etag:preview.etag});
   assert.equal(applied.value.items[0].preparation_error,undefined);
   const restored=await call('training.image.restore',{dataset_id:id,item_id:item.id,etag:applied.etag});
-  assert.equal(restored.value.items[0].caption,'blue square');
+  assert.equal((await call('training.dataset.read',{dataset_id:id,caption_set_id})).value.items[0].caption,'blue square');
   assert.equal(restored.value.items[0].preparation_error,undefined);
-  const task=await call('training.task.read',{task_id:id});
+  const task=await call('training.task.read',{task_id:id,family:'qwen-image-2-1'});
   assert.ok(task.value.task);
   const dataset=await call('training.dataset.read',{dataset_id:id});
   await call('training.dataset.save',{dataset_id:id,document:{...dataset.value.dataset,name:'更新名称'},etag:dataset.etag});

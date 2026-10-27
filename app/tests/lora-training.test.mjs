@@ -1,7 +1,7 @@
 import { generatedRunRoot, runRoot } from "../server/lora-training-support.mjs";
 import { registerProject } from "../server/project-registry.mjs";
 import { datasetRoot, taskRoot } from "../server/lora-training-support.mjs";
-import { createLoraTrainingDataset } from "./training-project-fixture.mjs";
+import { createLoraTrainingDataset, testCaptionPaths } from "./training-project-fixture.mjs";
 import { registerFixtureProjects } from "./project-registry-fixture.mjs";
 import { snapshotRun, resolveTrainerCommit, listLoraTrainingRecipes } from "../server/lora-training-plan.mjs";
 import { defaultLoraTrainingTarget } from "../server/lora-training-facts.mjs";
@@ -49,7 +49,7 @@ import {
   updateLoraTrainingTask,
   validateLoraTrainingDataset,
   validateLoraTrainingTask,
-} from "../server/lora-training.mjs";
+} from "./training-project-fixture.mjs";
 import {
   listLocalLoraResources,
   openLoraResourceMedia,
@@ -97,15 +97,15 @@ test("Anima 复用当前素材、冻结动态数量和独立预算，参数可�
   const task = { ...originalTask.task, target: recipe.default_target, training_recipe: { id: recipe.id, overrides: { network_dim: 32, learning_rate: .00002, gradient_accumulation_steps: 2, micro_batch_size: 2, blocks_to_swap: 0 } }, run_defaults: { max_train_steps: 800, save_every_n_steps: 100, seed: 42 } };
   await updateLoraTrainingTask(root, project, created.id, task);
   assert.deepEqual((await readLoraTrainingDataset(project, created.id)).items.map(item => item.asset_id), imported.items.map(item => item.asset_id));
-  const values = await readLoraTrainingRunSettings(root, project, created.id, {});
+  const values = await readLoraTrainingRunSettings(root, project, created.id, {}, { family: "anima" });
   assert.equal(values.semantic_config.network_alpha, 32);
   assert.equal(values.semantic_config.micro_batch_size * values.semantic_config.gradient_accumulation_steps, 4);
   const settingsSchema = JSON.parse(await readFile(new URL("../../library/schemas/lora-training-settings.schema.json", import.meta.url), "utf8"));
   const { default: Ajv2020 } = await import("ajv/dist/2020.js");
   const validate = new Ajv2020({ strict: true }).compile(settingsSchema);
   const { name: _name, dataset_id: _dataset, ...settings } = task;
-  assert.equal(validate(settings), true, JSON.stringify(validate.errors));
-  const preflight = await preflightLoraTraining(root, project, created.id, {}, { skipEnvironment: true });
+  assert.equal(validate({ version: 6, models: { anima: settings } }), true, JSON.stringify(validate.errors));
+  const preflight = await preflightLoraTraining(root, project, created.id, {}, { skipEnvironment: true, family: "anima" });
   Object.assign(preflight, { environment: { trainer_root: root, python: "python", commit: "c".repeat(40), runtime: { python: "3.10", torch: "2.6", gpu: "test", vram_bytes: 24 * 1024 ** 3 } }, models: ["dit", "text_encoder", "vae"].map((kind, index) => ({ kind, identity: { relative_path: `models/${kind}.safetensors`, source: null }, sha256: String(index + 1).repeat(64), size: 100 })) });
   const first = await snapshotRun(root, project, created.id, { models_root: path.join(root, "models") }, preflight);
   assert.equal(first.manifest.items.length, 2);
@@ -116,7 +116,9 @@ test("Anima 复用当前素材、冻结动态数量和独立预算，参数可�
   const dataset = structuredClone(detail.dataset);
   dataset.items[1].enabled = false;
   await updateLoraTrainingDataset(project, created.id, dataset);
-  const second = await snapshotRun(root, project, created.id, { models_root: path.join(root, "models") }, preflight);
+  const secondPreflight = await preflightLoraTraining(root, project, created.id, {}, { skipEnvironment: true, family: "anima" });
+  Object.assign(secondPreflight, { environment: preflight.environment, models: preflight.models });
+  const second = await snapshotRun(root, project, created.id, { models_root: path.join(root, "models") }, secondPreflight);
   assert.equal(second.manifest.items.length, 1);
   assert.equal(second.manifest.run.max_train_steps, 800);
   assert.equal(first.manifest.items.length, 2);
@@ -129,7 +131,7 @@ test("Anima 复用当前素材、冻结动态数量和独立预算，参数可�
   const swapped = structuredClone(task);
   [swapped.target.base.dit, swapped.target.base.vae] = [swapped.target.base.vae, swapped.target.base.dit];
   await updateLoraTrainingTask(root, project, created.id, swapped);
-  const blocked = await preflightLoraTraining(root, project, created.id, { models_root: path.join(root, "models") }, { skipEnvironment: true });
+  const blocked = await preflightLoraTraining(root, project, created.id, { models_root: path.join(root, "models") }, { skipEnvironment: true, family: "anima" });
   assert.equal(blocked.ready, false);
   assert.deepEqual(blocked.blockers.filter(entry => entry.code === "model_kind_unmapped").map(entry => entry.model), ["dit", "vae"]);
 });
@@ -174,7 +176,7 @@ test("训练项目使用 Qwen-Image-2.1，素材与当前设置共享项目身�
   assert.equal(Object.hasOwn(createdTask.task.target.base.dit, "sha256"), false);
   assert.equal(createdTask.task.target.prompt_family, "qwen");
   assert.equal(createdTask.task.target.usage_defaults.clip_skip, null);
-  assert.equal(createdDataset.dataset.version, 5);
+  assert.equal(createdDataset.dataset.version, 6);
   assert.equal(createdDataset.dataset.description, "制服训练素材");
   assert.deepEqual(createdDataset.dataset.activation_terms, ["test_uniform"]);
   const groupId = createdDataset.dataset.groups[0].id;
@@ -201,7 +203,7 @@ test("训练项目使用 Qwen-Image-2.1，素材与当前设置共享项目身�
   assert.equal(assetMeta.original.file, "original.png");
   assert.equal(assetMeta.current.file, "original.png");
   assert.equal(assetMeta.processing, null);
-  assert.equal(await readFile(path.join(datasetRoot(project, createdDataset.id), "assets", item.asset_id, "caption.txt"), "utf8"), "test_uniform, standing\n");
+  assert.equal(await readFile(path.join((await testCaptionPaths(project, createdDataset.id)).texts, `${item.asset_id}.txt`), "utf8"), "test_uniform, standing");
   assert.equal(taskText.includes('"items"'), false);
   assert.equal(taskText.includes('"concept"'), false);
   await saveLoraTrainingCaption(project, createdDataset.id, item.id, "test_uniform, walking");
@@ -287,7 +289,7 @@ test("单图重新打标覆盖当前 Caption 必须显式确认且不触碰其�
   const result = await runLoraCaptioning(root, project, created.id, "single", captioner, { item_id: target.id, confirm_overwrite: true });
   assert.equal(result.updated, 1);
   const dataset = await readLoraTrainingDataset(project, created.id);
-  assert.equal(dataset.items.find((item) => item.id === target.id).caption, "new caption");
+  assert.equal(dataset.items.find((item) => item.id === target.id).caption, "new caption\n");
   assert.equal(dataset.items.find((item) => item.id === untouched.id).caption, "keep caption");
   const captioning = await readLoraCaptioning(project, created.id);
   assert.equal(captioning.items.find((item) => item.item_id === target.id).state, "unconfirmed");
@@ -311,7 +313,7 @@ test("删除数据集图片时同步清理最新基础 Prompt 记录", async (co
   next.items = next.items.filter((item) => item.id !== imported.items[1].id);
   await updateLoraTrainingDataset(project, created.id, next);
 
-  const latestPath = path.join(datasetRoot(project, created.id), "captioning", "latest.json");
+  const latestPath = (await testCaptionPaths(project, created.id)).latest;
   const latest = JSON.parse(await readFile(latestPath, "utf8"));
   assert.deepEqual(Object.keys(latest.items), [imported.items[0].id]);
 });
@@ -471,7 +473,7 @@ test("方案统一保存全部参数，不从历史记录隐式覆盖，预检�
   const { root, project } = await fixture(context);
   const dataset = await createLoraTrainingDataset(project, { name: "角色素材" });
   const task = await createLoraTrainingTask(root, project, { name: "角色训练", dataset_id: dataset.id });
-  assert.equal(task.task.version, 5);
+  assert.equal(task.task.version, 6);
   assert.deepEqual(task.task.training_recipe.overrides, { network_dim: 32, learning_rate: 0.0001, gradient_accumulation_steps: 1 });
 
   const settings = await readLoraTrainingRunSettings(root, project, task.id, {}, { skipEnvironment: true });
@@ -520,12 +522,16 @@ test("方案统一保存全部参数，不从历史记录隐式覆盖，预检�
   ]);
   const withLastRun = await readLoraTrainingRunSettings(root, project, task.id, {}, { skipEnvironment: true });
   assert.equal(withLastRun.values.max_train_steps, 2000);
-  assert.equal(withLastRun.last_run.config.max_train_steps, 1800);
+  assert.equal(withLastRun.last_run, null, "Qwen 方案不借用 Anima 历史参数");
   assert.equal(withLastRun.values.note, undefined);
+  await createLoraTrainingTask(root, project, { dataset_id: dataset.id, target: { family: "anima" } });
+  const animaSettings = await readLoraTrainingRunSettings(root, project, task.id, {}, { family: "anima", skipEnvironment: true });
+  assert.equal(animaSettings.last_run.id, runId);
+  assert.equal(animaSettings.last_run.config.max_train_steps, 1800, "Anima 方案仍能读取自己的冻结历史");
   const otherTask = await createLoraTrainingTask(root, project, { name: "独立方案", dataset_id: dataset.id });
   const otherSettings = await readLoraTrainingRunSettings(root, project, otherTask.id, {}, { skipEnvironment: true });
   assert.equal(otherTask.id, task.id);
-  assert.equal(otherSettings.last_run.id, runId);
+  assert.equal(otherSettings.last_run, null);
   const listedTasks = (await listLoraTrainingTasks(project)).tasks;
   assert.equal(listedTasks[0].id, task.id);
   assert.equal(listedTasks[0].runs[0].legacy, true, "v4 Anima 历史 run 只读展示并明确标记");
@@ -542,7 +548,7 @@ test("方案统一保存全部参数，不从历史记录隐式覆盖，预检�
   assert.equal(reloaded.values.max_train_steps, 3000);
   assert.equal(reloaded.values.seed, 7);
   assert.equal(reloaded.values.gradient_accumulation_steps, 4);
-  assert.equal(reloaded.last_run.config.max_train_steps, 1800);
+  assert.equal(reloaded.last_run, null);
   await assert.rejects(updateLoraTrainingTask(root, project, task.id, { ...edited, run_defaults: { ...edited.run_defaults, micro_batch_size: 3 } }), { code: "invalid_lora_training_task" });
   await assert.rejects(updateLoraTrainingTask(root, project, task.id, { ...edited, run_defaults: { ...edited.run_defaults, note: "不应保存" } }), { code: "invalid_lora_training_task" });
   await assert.rejects(updateLoraTrainingTask(root, project, task.id, { ...edited, target: { ...edited.target, base: { ...edited.target.base, dit: { relative_path: "diffusion_models/qwen-image-2.1/", sha256: "1".repeat(64) } } } }), { code: "invalid_lora_training_task" });
@@ -646,7 +652,7 @@ test("图片后处理保留不可变原图并可恢复", async (context) => {
   assert.equal(Object.hasOwn(storedDataset.items[0], "file"), false);
   assert.equal(processed.items[0].original_image_version, originalHash);
   assert.equal((await sharp(originalPath).metadata()).width, 640);
-  const captioningDirectory = path.join(datasetDirectory, "captioning");
+  const captioningDirectory = (await testCaptionPaths(project, created.id)).root;
   await mkdir(captioningDirectory, { recursive: true });
   await writeFile(path.join(captioningDirectory, "latest.json"), JSON.stringify({ version: 1, updated_at: new Date().toISOString(), tagger: { id: "old", version: "1" }, items: { [original.id]: { base_prompt: null, image_sha256: originalHash, caption_sha256: original.caption_sha256, raw_tags: [], confirmation: null } } }));
   const captioner = { lora_training: { captioning: { id: "fixture", version: "1", command: process.execPath, args: ["-e", "const fs=require('fs'); const x=JSON.parse(fs.readFileSync(process.env.LORA_CAPTION_INPUT,'utf8')); process.stdout.write(JSON.stringify({items:x.items.map(i=>({item_id:i.item_id,prompt:'fresh prompt',raw_tags:[]}))}));"] } } };
@@ -690,7 +696,7 @@ test("Caption 独立审计只按有效图片哈希记录并保留离开集合的
   const hashes = imported.items.map((item) => item.image_version);
   let audit = await readLoraCaptionAudit(project, created.id);
   assert.deepEqual(audit.summary, { total: 2, audited: 0, pending: 2, blocked: 0 });
-  audit = await recordLoraCaptionAudit(project, created.id, { image_sha256: hashes, prompt_family: "anima" });
+  audit = await recordLoraCaptionAudit(project, created.id, { image_sha256: hashes });
   assert.deepEqual(audit.summary, { total: 2, audited: 2, pending: 0, blocked: 0 });
 
   await saveLoraTrainingCaption(project, created.id, imported.items[0].id, "ellen_joe, standing, outdoors");
@@ -895,7 +901,7 @@ test("复制素材同时复制当前图片对应的基础 Prompt", async (contex
   const created = await createLoraTrainingDataset(project, { name: "复制打标结果" });
   const imported = await importLoraTrainingAssets(project, created.id, { group_id: created.dataset.groups[0].id, files: [{ filename: "population.png", buffer: await imageBuffer(), caption: "ellen joe" }] });
   const source = imported.items[0];
-  const captioningDirectory = path.join(datasetRoot(project, created.id), "captioning");
+  const captioningDirectory = (await testCaptionPaths(project, created.id)).root;
   await mkdir(captioningDirectory, { recursive: true });
   await writeFile(path.join(captioningDirectory, "latest.json"), JSON.stringify({ version: 1, updated_at: new Date().toISOString(), tagger: { id: "test", version: "1" }, items: { [source.id]: { base_prompt: "ellen joe", image_sha256: source.image_version, caption_sha256: source.caption_sha256, raw_tags: [{ name: "ellen_joe", score: 0.99 }], confirmation: null } } }));
   const copied = await copyLoraTrainingItem(project, created.id, { source_item_id: source.id });
@@ -920,7 +926,7 @@ test("数据集拒绝跨 asset 的 meta 指针", async (context) => {
 
 test("数据集拒绝多个训练项共享同一 asset", async () => {
   const dataset = {
-    version: 5,
+    version: 6,
     name: "唯一素材",
     description: "",
     activation_terms: [],
@@ -1090,7 +1096,7 @@ test("训练冻结保留独立图片Caption副本，终态结果不依赖runtime
   const frozen = await snapshotRun(root, project, task.id, { models_root: path.join(root, "models") }, preflight);
   const archive = generatedRunRoot(project, task.id, frozen.runId);
   const item = frozen.manifest.items[0];
-  assert.equal(frozen.manifest.version, 5);
+  assert.equal(frozen.manifest.version, 6);
   assert.equal(frozen.manifest.family, "qwen-image-2-1");
   assert.deepEqual(frozen.manifest.sampling.weights, [{ item_id: item.item_id, weight: 1 }]);
   assert.equal(frozen.manifest.resume, null);

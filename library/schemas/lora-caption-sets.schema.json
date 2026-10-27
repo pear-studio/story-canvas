@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://storyvisualizer.local/schemas/lora-caption-sets.schema.json",
+  "title": "训练项目独立打标集目录",
+  "description": "captions/index.json；ID 在项目内唯一，引用不随名称修改。文本和确认按集分离，格式只决定编辑方式。",
+  "type": "object",
+  "required": ["version", "sets"],
+  "properties": {
+    "version": { "const": 1 },
+    "sets": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "format"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^caption-set-[a-f0-9]{12}$" },
+          "name": { "type": "string", "pattern": "\\S" },
+          "format": { "enum": ["tags", "prose"] }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

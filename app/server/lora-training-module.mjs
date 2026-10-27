@@ -16,7 +16,7 @@ export function createLoraTrainingCoordination({ isActive, freeze, freezeResume,
       if (admission || isActive()) throw new LoraTrainingError(409, "lora_training_active");
       admission = true;
       try {
-        const snapshot = await freeze(projectRoot, projectDirectory, taskId, config, { runSettings: options.runSettings });
+        const snapshot = await freeze(projectRoot, projectDirectory, taskId, config, { runSettings: options.runSettings, family: options.family });
         const run = await startManifest(projectDirectory, snapshot.manifest, { projectId: options.projectId, mutateDerived: options.mutateDerived });
         return { run, manifest: snapshot.manifest };
       } finally {
@@ -57,6 +57,10 @@ export const loraTrainingModule = Object.freeze({
   runtime,
   media,
   coordination,
+  migration: Object.freeze({
+    inspect: async (...args) => (await import("./lora-training-migration.mjs")).inspectLoraTrainingMigration(...args),
+    apply: async (...args) => (await import("./lora-training-migration.mjs")).applyLoraTrainingMigration(...args),
+  }),
   errors: Object.freeze({
     LoraTrainingError,
   }),

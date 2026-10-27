@@ -24,6 +24,8 @@ export async function handleLoraTrainingRequest({
 }) {
   if (!decodedPath.startsWith("/api/lora-training/")) return false;
   const projectDirectory = resolvedProjectRoot;
+  const query = new URL(request.url, "http://localhost").searchParams;
+  const captionOptions = () => ({ caption_set_id: query.get("caption_set_id") ?? undefined });
   if (request.method === "GET" && decodedPath === "/api/lora-training/runs") {
     sendJson(response, 200, await loraTrainingModule.runtime.list(projectDirectory));
     return true;
@@ -83,7 +85,7 @@ export async function handleLoraTrainingRequest({
   const loraRunsMatch = /^\/api\/lora-training\/tasks\/([^/]+)\/runs\/?$/.exec(decodedPath);
   if (request.method === "POST" && loraRunsMatch) {
     const value = await readJsonBody(request);
-    const result = await deriveFromFacts(({ projectDirectory }) => loraTrainingModule.coordination.startRun(resolvedProjectRoot, projectDirectory, loraRunsMatch[1], config, { runSettings: value.run_settings }));
+    const result = await deriveFromFacts(({ projectDirectory }) => loraTrainingModule.coordination.startRun(resolvedProjectRoot, projectDirectory, loraRunsMatch[1], config, { runSettings: value.run_settings, family: value.family }));
     sendOperation(202, result);
     return true;
   }
@@ -91,13 +93,19 @@ export async function handleLoraTrainingRequest({
   const prepareMatch = /^\/api\/lora-training\/datasets\/([^/]+)\/postprocess\/prepare\/?$/.exec(decodedPath);
   if (request.method === "POST" && prepareMatch) {
     const value = await readOptionalJsonBody(request);
-    const result = await mutateFacts(({ projectDirectory }) => loraTrainingModule.media.postprocess.prepare(resolvedProjectRoot, projectDirectory, prepareMatch[1], config, { itemIds: Array.isArray(value?.item_ids) ? value.item_ids : undefined }));
+    const result = await mutateFacts(async ({ projectDirectory }) => {
+      await loraTrainingModule.facts.datasets.assertWritable(projectDirectory, prepareMatch[1]);
+      return loraTrainingModule.media.postprocess.prepare(resolvedProjectRoot, projectDirectory, prepareMatch[1], config, { itemIds: Array.isArray(value?.item_ids) ? value.item_ids : undefined });
+    });
     sendOperation(200, result);
     return true;
   }
   if (request.method === "POST" && loraPostprocessPreviewMatch) {
     const value = await readJsonBody(request);
-    const result = await deriveFromFacts(({ projectDirectory }) => loraTrainingModule.media.postprocess.preview(resolvedProjectRoot, projectDirectory, loraPostprocessPreviewMatch[1], value, config));
+    const result = await deriveFromFacts(async ({ projectDirectory }) => {
+      await loraTrainingModule.facts.datasets.assertWritable(projectDirectory, loraPostprocessPreviewMatch[1]);
+      return loraTrainingModule.media.postprocess.preview(resolvedProjectRoot, projectDirectory, loraPostprocessPreviewMatch[1], value, config);
+    });
     sendOperation(200, result);
     return true;
   }
@@ -112,6 +120,7 @@ export async function handleLoraTrainingRequest({
   if (request.method === "POST" && loraPostprocessApplyMatch) {
     const value = await readOptionalJsonBody(request);
     const result = await mutateFacts(async ({ projectDirectory }) => {
+      await loraTrainingModule.facts.datasets.assertWritable(projectDirectory, loraPostprocessApplyMatch[1]);
       const detail = loraPostprocessApplyMatch[2] === "apply"
         ? await loraTrainingModule.media.postprocess.apply(resolvedProjectRoot, projectDirectory, loraPostprocessApplyMatch[1], value, config)
         : await loraTrainingModule.media.postprocess.restore(projectDirectory, loraPostprocessApplyMatch[1], value?.item_id);
@@ -122,7 +131,10 @@ export async function handleLoraTrainingRequest({
   }
   const loraBulkUpscaleMatch = /^\/api\/lora-training\/datasets\/([^/]+)\/postprocess\/bulk-upscale\/?$/.exec(decodedPath);
   if (request.method === "POST" && loraBulkUpscaleMatch) {
-    const result = await mutateFacts(({ projectDirectory }) => loraTrainingModule.media.postprocess.bulkUpscale(resolvedProjectRoot, projectDirectory, loraBulkUpscaleMatch[1], config));
+    const result = await mutateFacts(async ({ projectDirectory }) => {
+      await loraTrainingModule.facts.datasets.assertWritable(projectDirectory, loraBulkUpscaleMatch[1]);
+      return loraTrainingModule.media.postprocess.bulkUpscale(resolvedProjectRoot, projectDirectory, loraBulkUpscaleMatch[1], config);
+    });
     sendOperation(200, result);
     return true;
   }
@@ -148,19 +160,19 @@ export async function handleLoraTrainingRequest({
   const loraCaptionRunsMatch = /^\/api\/lora-training\/datasets\/([^/]+)\/caption-runs\/?$/.exec(decodedPath);
   if (request.method === "POST" && loraCaptionRunsMatch) {
     const value = await readOptionalJsonBody(request);
-    const result = await mutateFacts(({ projectDirectory }) => loraTrainingModule.facts.captions.run({ projectRoot: resolvedProjectRoot, projectDirectory, datasetId: loraCaptionRunsMatch[1], mode: value?.mode ?? "missing", itemId: value?.item_id ?? null, config, confirmOverwrite: value?.confirm_overwrite === true }));
+    const result = await mutateFacts(({ projectDirectory }) => loraTrainingModule.facts.captions.run({ projectRoot: resolvedProjectRoot, projectDirectory, datasetId: loraCaptionRunsMatch[1], mode: value?.mode ?? "missing", itemId: value?.item_id ?? null, config, confirmOverwrite: value?.confirm_overwrite === true, captionSetId: value?.caption_set_id }));
     sendOperation(200, result);
     return true;
   }
   const loraCaptionRunMatch = /^\/api\/lora-training\/datasets\/([^/]+)\/caption-runs\/([^/]+)\/?$/.exec(decodedPath);
   if (request.method === "GET" && loraCaptionRunMatch) {
-    const result = await readFacts(({ projectDirectory }) => loraTrainingModule.facts.captions.readRun(projectDirectory, loraCaptionRunMatch[1], loraCaptionRunMatch[2]));
+    const result = await readFacts(({ projectDirectory }) => loraTrainingModule.facts.captions.readRun(projectDirectory, loraCaptionRunMatch[1], loraCaptionRunMatch[2], captionOptions()));
     sendOperation(200, result);
     return true;
   }
   const loraCaptionAuditMatch = /^\/api\/lora-training\/datasets\/([^/]+)\/caption-audit\/?$/.exec(decodedPath);
   if (request.method === "GET" && loraCaptionAuditMatch) {
-    const result = await readFacts(({ projectDirectory }) => loraTrainingModule.facts.captions.audit.read(projectDirectory, loraCaptionAuditMatch[1]));
+    const result = await readFacts(({ projectDirectory }) => loraTrainingModule.facts.captions.audit.read(projectDirectory, loraCaptionAuditMatch[1], captionOptions()));
     sendOperation(200, result);
     return true;
   }
@@ -172,27 +184,59 @@ export async function handleLoraTrainingRequest({
   }
   const loraCaptioningMatch = /^\/api\/lora-training\/datasets\/([^/]+)\/captioning\/?$/.exec(decodedPath);
   if (request.method === "GET" && loraCaptioningMatch) {
-    const result = await readFacts(({ projectDirectory }) => loraTrainingModule.facts.captions.read(projectDirectory, loraCaptioningMatch[1]));
+    const result = await readFacts(({ projectDirectory }) => loraTrainingModule.facts.captions.read(projectDirectory, loraCaptioningMatch[1], captionOptions()));
     sendOperation(200, result);
     return true;
   }
   const loraCaptioningItemMatch = /^\/api\/lora-training\/datasets\/([^/]+)\/captioning\/items\/([^/]+)\/?$/.exec(decodedPath);
   if (request.method === "PUT" && loraCaptioningItemMatch) {
     const value = await readJsonBody(request);
-    const result = await mutateFacts(({ projectDirectory }) => loraTrainingModule.facts.captions.confirm(projectDirectory, loraCaptioningItemMatch[1], loraCaptioningItemMatch[2], value?.prompt, { confirm: value?.confirm === true }));
+    const result = await mutateFacts(({ projectDirectory }) => loraTrainingModule.facts.captions.confirm(projectDirectory, loraCaptioningItemMatch[1], loraCaptioningItemMatch[2], value?.prompt, { confirm: value?.confirm === true, caption_set_id: value?.caption_set_id }));
     sendOperation(200, result);
     return true;
   }
   const loraCaptionMatch = /^\/api\/lora-training\/datasets\/([^/]+)\/captions\/([^/]+)\/?$/.exec(decodedPath);
   if (request.method === "PUT" && loraCaptionMatch) {
     const value = await readJsonBody(request);
-    const result = await mutateFacts(({ projectDirectory }) => loraTrainingModule.facts.captions.save(projectDirectory, loraCaptionMatch[1], loraCaptionMatch[2], value?.caption));
+    const result = await mutateFacts(({ projectDirectory }) => loraTrainingModule.facts.captions.save(projectDirectory, loraCaptionMatch[1], loraCaptionMatch[2], value?.caption, { caption_set_id: value?.caption_set_id }));
     sendOperation(200, result);
+    return true;
+  }
+  const migrationMatch = /^\/api\/lora-training\/datasets\/([^/]+)\/migration\/?$/.exec(decodedPath);
+  if (migrationMatch && request.method === "GET") {
+    sendOperation(200, await readFacts(({projectDirectory}) => loraTrainingModule.migration.inspect(projectDirectory, migrationMatch[1])));
+    return true;
+  }
+  if (migrationMatch && request.method === "POST") {
+    const value = await readJsonBody(request);
+    sendOperation(200, await mutateFacts(({projectDirectory}) => loraTrainingModule.migration.apply(projectDirectory, migrationMatch[1], {expected_fingerprint: value.expected_fingerprint})));
+    return true;
+  }
+  const captionSetsMatch = /^\/api\/lora-training\/datasets\/([^/]+)\/caption-sets\/?$/.exec(decodedPath);
+  if (captionSetsMatch && request.method === "GET") {
+    sendOperation(200, await readFacts(({projectDirectory}) => loraTrainingModule.facts.captionSets.list(projectDirectory, captionSetsMatch[1])));
+    return true;
+  }
+  if (captionSetsMatch && request.method === "POST") {
+    const value = await readJsonBody(request);
+    sendOperation(201, await mutateFacts(({projectDirectory}) => loraTrainingModule.facts.captionSets.create(projectDirectory, captionSetsMatch[1], value)));
+    return true;
+  }
+  const captionSetImportMatch = /^\/api\/lora-training\/datasets\/([^/]+)\/caption-sets\/([^/]+)\/import\/?$/.exec(decodedPath);
+  if (captionSetImportMatch && request.method === "POST") {
+    const value = await readJsonBody(request);
+    sendOperation(200, await mutateFacts(({projectDirectory}) => loraTrainingModule.facts.captionSets.import(projectDirectory, captionSetImportMatch[1], captionSetImportMatch[2], value)));
+    return true;
+  }
+  const captionSetMatch = /^\/api\/lora-training\/datasets\/([^/]+)\/caption-sets\/([^/]+)\/?$/.exec(decodedPath);
+  if (captionSetMatch && request.method === "PUT") {
+    const value = await readJsonBody(request);
+    sendOperation(200, await mutateFacts(({projectDirectory}) => loraTrainingModule.facts.captionSets.update(projectDirectory, captionSetMatch[1], captionSetMatch[2], value)));
     return true;
   }
   const loraDatasetMatch = /^\/api\/lora-training\/datasets\/([^/]+)\/?$/.exec(decodedPath);
   if (request.method === "GET" && loraDatasetMatch) {
-    const result = await readFacts(({ projectDirectory }) => loraTrainingModule.facts.datasets.read(projectDirectory, loraDatasetMatch[1]));
+    const result = await readFacts(({ projectDirectory }) => loraTrainingModule.facts.datasets.read(projectDirectory, loraDatasetMatch[1], captionOptions()));
     sendOperation(200, result);
     return true;
   }
@@ -217,19 +261,25 @@ export async function handleLoraTrainingRequest({
   const loraTaskPreflightMatch = /^\/api\/lora-training\/tasks\/([^/]+)\/preflight\/?$/.exec(decodedPath);
   if (request.method === "POST" && loraTaskPreflightMatch) {
     const value = await readJsonBody(request);
-    const result = await readFacts(({ projectDirectory }) => loraTrainingModule.plan.preflight(resolvedProjectRoot, projectDirectory, loraTaskPreflightMatch[1], config, { runSettings: value.run_settings }));
+    const result = await readFacts(({ projectDirectory }) => loraTrainingModule.plan.preflight(resolvedProjectRoot, projectDirectory, loraTaskPreflightMatch[1], config, { runSettings: value.run_settings, family: value.family }));
     sendOperation(200, result);
     return true;
   }
   const loraTaskRunSettingsMatch = /^\/api\/lora-training\/tasks\/([^/]+)\/run-settings\/?$/.exec(decodedPath);
   if (request.method === "GET" && loraTaskRunSettingsMatch) {
-    const result = await readFacts(({ projectDirectory }) => loraTrainingModule.plan.runSettings.read(resolvedProjectRoot, projectDirectory, loraTaskRunSettingsMatch[1], config));
+    const result = await readFacts(({ projectDirectory }) => loraTrainingModule.plan.runSettings.read(resolvedProjectRoot, projectDirectory, loraTaskRunSettingsMatch[1], config, { family: query.get("family") ?? undefined }));
     sendOperation(200, result);
+    return true;
+  }
+  const taskModelMatch = /^\/api\/lora-training\/tasks\/([^/]+)\/models\/?$/.exec(decodedPath);
+  if (taskModelMatch && request.method === "POST") {
+    const value = await readJsonBody(request);
+    sendOperation(201, await mutateFacts(({projectDirectory}) => loraTrainingModule.facts.tasks.create(resolvedProjectRoot, projectDirectory, {dataset_id:taskModelMatch[1], target:{family:value.family}, caption_set_id:value.caption_set_id})));
     return true;
   }
   const loraTaskMatch = /^\/api\/lora-training\/tasks\/([^/]+)\/?$/.exec(decodedPath);
   if (request.method === "GET" && loraTaskMatch) {
-    const result = await readFacts(({ projectDirectory }) => loraTrainingModule.facts.tasks.read(projectDirectory, loraTaskMatch[1]));
+    const result = await readFacts(({ projectDirectory }) => loraTrainingModule.facts.tasks.read(projectDirectory, loraTaskMatch[1], { family: query.get("family") ?? undefined }));
     sendOperation(200, result);
     return true;
   }

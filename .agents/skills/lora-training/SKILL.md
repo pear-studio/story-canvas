@@ -1,13 +1,13 @@
 ---
 name: lora-training
-description: 为 StoryCanvas 准备 LoRA 素材与 Caption，配置、预检、诊断和分析训练；明确授权后发起训练。支持 Anima 和 Qwen 新训练。
+description: 为 StoryCanvas 准备 LoRA 素材与 Caption，配置、预检、诊断和分析训练；明确授权后发起训练。支持 Anima、Qwen 和 MOSS 新训练。
 ---
 
 # LoRA 训练
 
 先读[训练知识](../../../docs/reference/lora-training.md)；决定触发词时读取 `training.activation-guide`，网上补图用 `lora-material-sourcing`。
 
-1. 读取训练目标、当前设置和有效素材。仅委托导入、裁剪或分组时，不自动增加打标或训练。
+1. 明确模型 family 与打标集 ID，读取训练目标、该模型当前设置和共用有效素材。仅委托导入、裁剪或分组时，不自动增加打标或训练。
 2. 使用训练数据／图像工具处理素材；按需要显式准备图像，实际看图和 Caption 后确认或登记审计。
 3. 保存底座、配方和预算，读取运行参数并预检；环境缺失按[环境搭建](../../../docs/reference/setup.md)诊断。
 4. 训练必须有用户授权并通过预检；沿用已授权轮数、预算和停止条件，不因失败无限重跑。

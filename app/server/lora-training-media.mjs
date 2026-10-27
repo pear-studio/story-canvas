@@ -5,7 +5,7 @@ import sharp from "sharp";
 import { resolveLocalComfyTarget } from "./comfy-runtime.mjs";
 import { primaryComfyUiUrl } from "./comfy-endpoint-selector.mjs";
 import * as support from "./lora-training-support.mjs";
-import { invalidateLoraCaptioningItem, readLoraTrainingDataset, requireDataset } from "./lora-training-facts.mjs";
+import { invalidateLoraCaptioningItem, readLoraTrainingDataset, requireWritableDataset as requireDataset } from "./lora-training-facts.mjs";
 import { comfyQueueStatus, readUpscaleModelStatus } from "./lora-training-plan.mjs";
 import { historyImages, waitComfyHistory } from "./lora-training-runtime.mjs";
 import { createMusiqSession, readMusiqStatus } from "./lora-image-quality.mjs";
@@ -127,6 +127,7 @@ function loraBulkUpscaleError(error) {
 }
 
 export async function bulkUpscaleLoraTrainingDataset(projectRoot, projectDirectory, datasetId, config = {}) {
+  await requireDataset(projectDirectory,datasetId);
   const initial = await readLoraTrainingDataset(projectDirectory, datasetId);
   const plan = planLoraBulkUpscale(initial.items);
   if (!plan.planned.length) return { processed: 0, attempted: 0, skipped: plan.skipped, failed: [], scales: { 2: 0, 4: 0 }, dataset: initial };
@@ -154,6 +155,7 @@ export async function bulkUpscaleLoraTrainingDataset(projectRoot, projectDirecto
 }
 
 export async function prepareLoraTrainingDataset(projectRoot, projectDirectory, datasetId, config = {}, dependencies = {}) {
+  await requireDataset(projectDirectory,datasetId);
   const initial = await readLoraTrainingDataset(projectDirectory, datasetId);
   const groups = new Set(initial.dataset.groups.filter(group => group.enabled).map(group => group.id));
   const items = initial.items.filter(item => dependencies.itemIds ? dependencies.itemIds.includes(item.id) : item.enabled && groups.has(item.group_id));

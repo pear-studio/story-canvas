@@ -1,0 +1,24 @@
+.training-caption-sets{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:0}
+.training-caption-sets label{display:flex;align-items:center;gap:8px}
+.training-caption-sets select{max-width:260px;min-width:150px}
+.training-caption-sets small{color:var(--muted);margin-right:auto}
+.lora-caption-dock .training-caption-sets label{flex:1 1 100%;min-width:0}
+.lora-caption-dock .training-caption-sets select{flex:1;min-width:0;max-width:100%}
+.lora-caption-dock .training-caption-sets .button{padding:5px 8px;font-size:12px}
+.training-caption-summary{margin:8px 0 14px;color:var(--muted);font-size:12px}
+.lora-caption-dock .lora-captioning-actions{flex-direction:column;align-items:stretch}
+.lora-caption-dock .lora-captioning-actions>div:first-child,.lora-caption-dock .lora-captioning-actions>.lora-actions{flex:0 1 auto}
+.lora-caption-dock .lora-captioning-actions .button{white-space:normal}
+.training-caption-set-form{display:grid;gap:14px}
+.training-caption-set-form label{display:grid;gap:6px}
+.training-caption-set-form footer{display:flex;justify-content:flex-end;gap:8px}
+.training-caption-set-form input,.training-caption-set-form select,.training-caption-sets select{font:inherit;color:var(--ink);border:1px solid var(--line);background:var(--paper);padding:7px 9px;border-radius:6px}
+.training-caption-prose{display:grid;gap:8px}
+.training-caption-prose textarea{width:100%;min-height:200px;font:inherit;line-height:1.65;padding:10px;border:1px solid var(--line);border-radius:6px;resize:vertical}
+.training-legacy-summary{color:var(--muted);padding:12px 0}
+.training-model-selection{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin:0}
+.training-model-selection label{display:flex;align-items:center;gap:8px}
+.training-legacy-materials{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}
+.training-legacy-materials button{padding:8px;background:var(--paper);border:1px solid var(--line);border-radius:8px;color:var(--ink)}
+.training-legacy-materials img{width:100%;height:150px;object-fit:contain}
+.training-legacy-materials button[aria-pressed=true]{border-color:var(--green)}

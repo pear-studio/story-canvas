@@ -11,11 +11,11 @@ import sharp from "sharp";
 import { createLoraTrainingOperations } from "../server/lora-training-operations.mjs";
 import { handleLoraTrainingRequest } from "../server/lora-training-http.mjs";
 import { readJsonBody, readOptionalJsonBody, sendJson } from "../server/http-support.mjs";
-import { createLoraTrainingDataset, createLoraTrainingTask, importLoraTrainingAssets } from "../server/lora-training-facts.mjs";
-import { preflightLoraTraining, snapshotRun, freezeLoraTrainingResumeRun, prepareLoraTrainingGpu } from "../server/lora-training-plan.mjs";
+import { createLoraTrainingDataset, createLoraTrainingTask, importLoraTrainingAssets } from "./training-project-fixture.mjs";
+import { snapshotRun, freezeLoraTrainingResumeRun, prepareLoraTrainingGpu } from "../server/lora-training-plan.mjs";
 import { updateRunStatus } from "../server/lora-training-runtime.mjs";
-import { readLoraTrainingRunSettings } from "../server/lora-training-plan.mjs";
-import { generatedRunRoot } from "../server/lora-training-support.mjs";
+import { preflightLoraTraining, readLoraTrainingRunSettings } from "./training-project-fixture.mjs";
+import { datasetRoot, generatedRunRoot } from "../server/lora-training-support.mjs";
 import { registerFixtureProjects } from "./project-registry-fixture.mjs";
 
 async function fixture(t) {
@@ -129,7 +129,7 @@ test("续训冻结沿用父 run 全部冻结语义并归档自身输入", async 
     source_sha256: pointer.sha256,
   }, { environment: fakeEnvironment(parent.manifest) });
   const manifest = resumed.manifest;
-  assert.equal(manifest.version, 5);
+  assert.equal(manifest.version, 6);
   assert.notEqual(manifest.id, parent.runId);
   assert.deepEqual(manifest.resume, { parent_run_id: parent.runId, source_snapshot_id: "step-000500", source_sha256: pointer.sha256, start_step: 500 });
   assert.equal(manifest.run.max_train_steps, 1000);
@@ -145,6 +145,26 @@ test("续训冻结沿用父 run 全部冻结语义并归档自身输入", async 
   assert.ok(await readFile(path.join(manifest.paths.resume_dir, pointer.snapshot_id, "optimizer.pt")), "新 run 自包含恢复包");
   const parentManifestAfter = JSON.parse(await readFile(path.join(generatedRunRoot(root, task.id, parent.runId), "manifest.json"), "utf8"));
   assert.equal(parentManifestAfter.run.max_train_steps, parent.manifest.run.max_train_steps, "不改写父 run manifest");
+});
+
+test("冻结 v5 Qwen 历史无需当前方案即可自包含续训", async (t) => {
+  const { root } = await fixture(t);
+  const { task, parent, pointer, modelsRoot } = await completedParentRun(root);
+  // 仅构造历史冻结清单；新项目始终按 v6 创建，不能作为旧结构写入入口。
+  const historical = structuredClone(parent.manifest);
+  historical.version = 5;
+  delete historical.caption_set_id;
+  const manifestPath = path.join(generatedRunRoot(root, task.id, parent.runId), "manifest.json");
+  await writeFile(manifestPath, JSON.stringify(historical));
+  await rm(path.join(datasetRoot(root, task.id), "settings.json"));
+  const resumed = await freezeLoraTrainingResumeRun(root, root, task.id, parent.runId, { models_root: modelsRoot }, {
+    max_train_steps: 1000, source_snapshot_id: pointer.snapshot_id, source_sha256: pointer.sha256,
+  }, { environment: fakeEnvironment(historical) });
+  assert.equal(resumed.manifest.version, 5);
+  assert.deepEqual(resumed.manifest.items, historical.items);
+  assert.equal(resumed.manifest.resume.parent_run_id, parent.runId);
+  assert.equal(Object.hasOwn(resumed.manifest, "caption_set_id"), false);
+  assert.deepEqual(JSON.parse(await readFile(manifestPath, "utf8")), historical);
 });
 
 test("续训拒绝陈旧来源、不更大目标与 v4 历史 run", async (t) => {
@@ -187,7 +207,8 @@ test("续训端点在串行队列内校验来源，陈旧来源返回 409", asyn
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(async () => { await new Promise((resolve) => server.close(resolve)); });
   const origin = `http://127.0.0.1:${server.address().port}`;
-  const current = await fetch(`${origin}/api/lora-training/tasks/${task.id}`);
+  const current = await fetch(`${origin}/api/lora-training/tasks/${task.id}?family=qwen-image-2-1`);
+  assert.equal(current.status, 200);
   const revision = current.headers.get("etag");
   const resume = (body) => fetch(`${origin}/api/lora-training/tasks/${task.id}/runs/${parent.runId}/resume`, { method: "POST", headers: { "content-type": "application/json", "if-match": revision }, body: JSON.stringify(body) });
 

@@ -1,87 +1,16 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://storyvisualizer.local/schemas/lora-training-settings.schema.json",
-  "type": "object",
-  "required": [
-    "version",
-    "target",
-    "training_recipe",
-    "run_defaults"
-  ],
-  "properties": {
-    "version": {
-      "const": 5
+  "title": "训练项目模型设置",
+  "description": "v6 每个模型保存一套当前训练配置，引用项目内独立打标集；v5 仅供历史读取与显式迁移。",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/current_settings"
     },
-    "target": {
-      "type": "object",
-      "required": [
-        "family",
-        "prompt_family",
-        "usage_defaults",
-        "base"
-      ],
-      "properties": {
-        "family": {
-          "enum": [
-            "anima",
-            "qwen-image-2-1"
-          ]
-        },
-        "prompt_family": {
-          "type": "string",
-          "minLength": 1
-        },
-        "usage_defaults": {
-          "$ref": "#/$defs/usage_defaults"
-        },
-        "base": {
-          "type": "object"
-        }
-      },
-      "additionalProperties": false
-    },
-    "training_recipe": {
-      "type": "object",
-      "required": [
-        "id",
-        "overrides"
-      ],
-      "properties": {
-        "id": {
-          "type": "string",
-          "minLength": 1
-        },
-        "overrides": {
-          "type": "object"
-        }
-      },
-      "additionalProperties": false
-    },
-    "run_defaults": {
-      "type": "object",
-      "required": [
-        "max_train_steps",
-        "save_every_n_steps",
-        "seed"
-      ],
-      "properties": {
-        "max_train_steps": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "save_every_n_steps": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "seed": {
-          "type": "integer",
-          "minimum": 1
-        }
-      },
-      "additionalProperties": false
+    {
+      "$ref": "#/$defs/legacy_settings"
     }
-  },
-  "additionalProperties": false,
+  ],
   "$defs": {
     "usage_defaults": {
       "type": "object",
@@ -251,93 +180,497 @@
         }
       },
       "additionalProperties": false
-    }
-  },
-  "title": "训练项目当前设置",
-  "allOf": [
-    {
-      "if": {
-        "properties": {
-          "target": {
-            "properties": {
-              "family": {
-                "const": "anima"
-              }
-            },
-            "required": [
-              "family"
-            ],
-            "type": "object"
-          }
-        },
-        "required": [
-          "target"
-        ],
-        "type": "object"
-      },
-      "then": {
-        "properties": {
-          "target": {
-            "properties": {
-              "base": {
-                "$ref": "#/$defs/anima_base"
-              }
-            },
-            "type": "object"
-          },
-          "training_recipe": {
-            "properties": {
-              "overrides": {
-                "$ref": "#/$defs/anima_recipe_overrides"
-              }
-            },
-            "type": "object"
-          }
-        },
-        "type": "object"
-      }
     },
-    {
-      "if": {
-        "properties": {
-          "target": {
+    "moss_base": {
+      "type": "object",
+      "required": [
+        "dit",
+        "text_encoder",
+        "vae",
+        "tokenizer"
+      ],
+      "properties": {
+        "dit": {
+          "$ref": "#/$defs/base_file"
+        },
+        "text_encoder": {
+          "$ref": "#/$defs/base_dir"
+        },
+        "vae": {
+          "$ref": "#/$defs/base_file"
+        },
+        "tokenizer": {
+          "$ref": "#/$defs/base_dir"
+        }
+      },
+      "additionalProperties": false
+    },
+    "legacy_settings": {
+      "type": "object",
+      "required": [
+        "version",
+        "target",
+        "training_recipe",
+        "run_defaults"
+      ],
+      "properties": {
+        "version": {
+          "const": 5
+        },
+        "target": {
+          "type": "object",
+          "required": [
+            "family",
+            "prompt_family",
+            "usage_defaults",
+            "base"
+          ],
+          "properties": {
+            "family": {
+              "enum": [
+                "anima",
+                "qwen-image-2-1"
+              ]
+            },
+            "prompt_family": {
+              "type": "string",
+              "minLength": 1
+            },
+            "usage_defaults": {
+              "$ref": "#/$defs/usage_defaults"
+            },
+            "base": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "training_recipe": {
+          "type": "object",
+          "required": [
+            "id",
+            "overrides"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "overrides": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "run_defaults": {
+          "type": "object",
+          "required": [
+            "max_train_steps",
+            "save_every_n_steps",
+            "seed"
+          ],
+          "properties": {
+            "max_train_steps": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "save_every_n_steps": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "seed": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
             "properties": {
-              "family": {
-                "const": "qwen-image-2-1"
+              "target": {
+                "properties": {
+                  "family": {
+                    "const": "anima"
+                  }
+                },
+                "required": [
+                  "family"
+                ],
+                "type": "object"
               }
             },
             "required": [
-              "family"
+              "target"
             ],
             "type": "object"
-          }
-        },
-        "required": [
-          "target"
-        ],
-        "type": "object"
-      },
-      "then": {
-        "properties": {
-          "target": {
+          },
+          "then": {
             "properties": {
-              "base": {
-                "$ref": "#/$defs/qwen_base"
+              "target": {
+                "properties": {
+                  "base": {
+                    "$ref": "#/$defs/anima_base"
+                  }
+                },
+                "type": "object"
+              },
+              "training_recipe": {
+                "properties": {
+                  "overrides": {
+                    "$ref": "#/$defs/anima_recipe_overrides"
+                  }
+                },
+                "type": "object"
               }
             },
+            "type": "object"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "target": {
+                "properties": {
+                  "family": {
+                    "const": "qwen-image-2-1"
+                  }
+                },
+                "required": [
+                  "family"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "target"
+            ],
             "type": "object"
           },
-          "training_recipe": {
+          "then": {
             "properties": {
-              "overrides": {
-                "$ref": "#/$defs/recipe_overrides"
+              "target": {
+                "properties": {
+                  "base": {
+                    "$ref": "#/$defs/qwen_base"
+                  }
+                },
+                "type": "object"
+              },
+              "training_recipe": {
+                "properties": {
+                  "overrides": {
+                    "$ref": "#/$defs/recipe_overrides"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        }
+      ],
+      "description": "只读兼容的旧版设置；修改前须显式迁移。"
+    },
+    "model_settings": {
+      "type": "object",
+      "required": [
+        "version",
+        "target",
+        "caption_set_id",
+        "training_recipe",
+        "run_defaults"
+      ],
+      "properties": {
+        "version": {
+          "const": 6
+        },
+        "target": {
+          "type": "object",
+          "required": [
+            "family",
+            "prompt_family",
+            "usage_defaults",
+            "base"
+          ],
+          "properties": {
+            "family": {
+              "enum": [
+                "anima",
+                "qwen-image-2-1",
+                "moss-image"
+              ]
+            },
+            "prompt_family": {
+              "type": "string",
+              "minLength": 1
+            },
+            "usage_defaults": {
+              "$ref": "#/$defs/usage_defaults"
+            },
+            "base": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "training_recipe": {
+          "type": "object",
+          "required": [
+            "id",
+            "overrides"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "overrides": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "run_defaults": {
+          "type": "object",
+          "required": [
+            "max_train_steps",
+            "save_every_n_steps",
+            "seed"
+          ],
+          "properties": {
+            "max_train_steps": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "save_every_n_steps": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "seed": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "caption_set_id": {
+          "type": "string",
+          "pattern": "^caption-set-[a-f0-9]{12}$"
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "target": {
+                "properties": {
+                  "family": {
+                    "const": "anima"
+                  }
+                },
+                "required": [
+                  "family"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "target"
+            ],
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "target": {
+                "properties": {
+                  "base": {
+                    "$ref": "#/$defs/anima_base"
+                  }
+                },
+                "type": "object"
+              },
+              "training_recipe": {
+                "properties": {
+                  "overrides": {
+                    "$ref": "#/$defs/anima_recipe_overrides"
+                  }
+                },
+                "type": "object"
               }
             },
             "type": "object"
           }
         },
-        "type": "object"
-      }
+        {
+          "if": {
+            "properties": {
+              "target": {
+                "properties": {
+                  "family": {
+                    "const": "qwen-image-2-1"
+                  }
+                },
+                "required": [
+                  "family"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "target"
+            ],
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "target": {
+                "properties": {
+                  "base": {
+                    "$ref": "#/$defs/qwen_base"
+                  }
+                },
+                "type": "object"
+              },
+              "training_recipe": {
+                "properties": {
+                  "overrides": {
+                    "$ref": "#/$defs/recipe_overrides"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "type": "object",
+          "if": {
+            "type": "object",
+            "required": [
+              "target"
+            ],
+            "properties": {
+              "target": {
+                "type": "object",
+                "required": [
+                  "family"
+                ],
+                "properties": {
+                  "family": {
+                    "const": "moss-image"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "target": {
+                "type": "object",
+                "properties": {
+                  "base": {
+                    "$ref": "#/$defs/moss_base"
+                  }
+                }
+              },
+              "training_recipe": {
+                "type": "object",
+                "properties": {
+                  "overrides": {
+                    "$ref": "#/$defs/recipe_overrides"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "current_settings": {
+      "type": "object",
+      "required": [
+        "version",
+        "models"
+      ],
+      "properties": {
+        "version": {
+          "const": 6
+        },
+        "models": {
+          "type": "object",
+          "properties": {
+            "anima": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/model_settings"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "target": {
+                      "type": "object",
+                      "properties": {
+                        "family": {
+                          "const": "anima"
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "qwen-image-2-1": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/model_settings"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "target": {
+                      "type": "object",
+                      "properties": {
+                        "family": {
+                          "const": "qwen-image-2-1"
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "moss-image": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/model_settings"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "target": {
+                      "type": "object",
+                      "properties": {
+                        "family": {
+                          "const": "moss-image"
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
-  ]
+  }
 }

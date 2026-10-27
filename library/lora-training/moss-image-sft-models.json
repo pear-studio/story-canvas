@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "model_id": "openmoss/MOSS-Image-SFT",
+  "repository": "https://huggingface.co/Comfy-Org/MOSS-Image",
+  "format": "comfy-bf16-qkv-fused",
+  "conversion": "moss-image-lora-runner 将 42 层 proj.qkv.weight 沿输出维等分为 q/k/v；原文件只读。共享编码器、VAE、tokenizer 沿用固定 Base 组件身份。",
+  "files": [
+    {
+      "kind": "dit",
+      "relative_path": "diffusion_models/moss_image_sft_bf16.safetensors",
+      "source": "https://huggingface.co/Comfy-Org/MOSS-Image/resolve/24147db865fcdc207270f844777587223fed8d6e/diffusion_models/moss_image_sft_bf16.safetensors",
+      "size": 10164655808,
+      "sha256": "f96738d8116d78b7316b57c663d8c98591ddafab7488f48e3099b7655e34ab6f"
+    },
+    {
+      "source": "text_encoder/config.json",
+      "relative_path": "text_encoders/moss-image-base/config.json",
+      "size": 2813,
+      "sha256": "b31ee18a242bcfcccbe740f825f6b1d3ae231b0655eeecb5de3e98d504b7d68c",
+      "revision": "8ac75a28ada9e14746721b61a886b4d407a038ba",
+      "url": "https://modelscope.cn/models/openmoss/MOSS-Image-Base/resolve/8ac75a28ada9e14746721b61a886b4d407a038ba/text_encoder/config.json"
+    },
+    {
+      "source": "text_encoder/model-00001-of-00004.safetensors",
+      "relative_path": "text_encoders/moss-image-base/model-00001-of-00004.safetensors",
+      "size": 4973910744,
+      "sha256": "abfaa3d3a8612508c85ee8f6da9c734b862f10298b903765c4ad384177c32b0b",
+      "revision": "073568f967747a187e032450f9f07b37d2b7f2bb",
+      "url": "https://modelscope.cn/models/openmoss/MOSS-Image-Base/resolve/073568f967747a187e032450f9f07b37d2b7f2bb/text_encoder/model-00001-of-00004.safetensors"
+    },
+    {
+      "source": "text_encoder/model-00002-of-00004.safetensors",
+      "relative_path": "text_encoders/moss-image-base/model-00002-of-00004.safetensors",
+      "size": 4988364288,
+      "sha256": "9112637fa6bf4d07bafd6ae268852b18d3d0c1242f4ee901c5579006e5bd4894",
+      "revision": "073568f967747a187e032450f9f07b37d2b7f2bb",
+      "url": "https://modelscope.cn/models/openmoss/MOSS-Image-Base/resolve/073568f967747a187e032450f9f07b37d2b7f2bb/text_encoder/model-00002-of-00004.safetensors"
+    },
+    {
+      "source": "text_encoder/model-00003-of-00004.safetensors",
+      "relative_path": "text_encoders/moss-image-base/model-00003-of-00004.safetensors",
+      "size": 4954202112,
+      "sha256": "956f1ef51d0cfe610b0d22987c0b7821c36e3ce228abceccef523518bcf079dc",
+      "revision": "073568f967747a187e032450f9f07b37d2b7f2bb",
+      "url": "https://modelscope.cn/models/openmoss/MOSS-Image-Base/resolve/073568f967747a187e032450f9f07b37d2b7f2bb/text_encoder/model-00003-of-00004.safetensors"
+    },
+    {
+      "source": "text_encoder/model-00004-of-00004.safetensors",
+      "relative_path": "text_encoders/moss-image-base/model-00004-of-00004.safetensors",
+      "size": 1869001848,
+      "sha256": "9e21d20e8adde88c3e0b65d4a0d251f143d98ee9d52db36b4348361091e4e208",
+      "revision": "35690420895349638a42d1ab01998aa5bee60844",
+      "url": "https://modelscope.cn/models/openmoss/MOSS-Image-Base/resolve/35690420895349638a42d1ab01998aa5bee60844/text_encoder/model-00004-of-00004.safetensors"
+    },
+    {
+      "source": "text_encoder/model.safetensors.index.json",
+      "relative_path": "text_encoders/moss-image-base/model.safetensors.index.json",
+      "size": 64641,
+      "sha256": "0af6fa3fa36ba8dcbb6b7ad0325a36c5b1b69862a9a1f1486b1b80385bd8f5ee",
+      "revision": "35690420895349638a42d1ab01998aa5bee60844",
+      "url": "https://modelscope.cn/models/openmoss/MOSS-Image-Base/resolve/35690420895349638a42d1ab01998aa5bee60844/text_encoder/model.safetensors.index.json"
+    },
+    {
+      "source": "tokenizer/chat_template.jinja",
+      "relative_path": "text_encoders/moss-image-base/tokenizer/chat_template.jinja",
+      "size": 7756,
+      "sha256": "a4aee8afcf2e0711942cf848899be66016f8d14a889ff9ede07bca099c28f715",
+      "revision": "35690420895349638a42d1ab01998aa5bee60844",
+      "url": "https://modelscope.cn/models/openmoss/MOSS-Image-Base/resolve/35690420895349638a42d1ab01998aa5bee60844/tokenizer/chat_template.jinja"
+    },
+    {
+      "source": "tokenizer/tokenizer_config.json",
+      "relative_path": "text_encoders/moss-image-base/tokenizer/tokenizer_config.json",
+      "size": 1123,
+      "sha256": "bee8eba30f0eb4af73c0fe2cd06d0f89b657d7819941c438157ec42f7c80ea87",
+      "revision": "33bba8f79c15bc6b866b42b0e790520f3dd29e0e",
+      "url": "https://modelscope.cn/models/openmoss/MOSS-Image-Base/resolve/33bba8f79c15bc6b866b42b0e790520f3dd29e0e/tokenizer/tokenizer_config.json"
+    },
+    {
+      "source": "tokenizer/tokenizer.json",
+      "relative_path": "text_encoders/moss-image-base/tokenizer/tokenizer.json",
+      "size": 19989325,
+      "sha256": "06b9509352d2af50381ab2247e083b80d32d5c0aba91c272ca9ff729b6a0e523",
+      "revision": "33bba8f79c15bc6b866b42b0e790520f3dd29e0e",
+      "url": "https://modelscope.cn/models/openmoss/MOSS-Image-Base/resolve/33bba8f79c15bc6b866b42b0e790520f3dd29e0e/tokenizer/tokenizer.json"
+    },
+    {
+      "source": "vae/diffusion_pytorch_model.safetensors",
+      "relative_path": "vae/moss-image-base/diffusion_pytorch_model.safetensors",
+      "size": 249521372,
+      "sha256": "c3bdf94dc67ec69b30ea9fe1fa8340085679cae64d019f7c7e4a9921f1a7f17a",
+      "revision": "bf675045be106b8c620f856d555d218f881120a2",
+      "url": "https://modelscope.cn/models/openmoss/MOSS-Image-Base/resolve/bf675045be106b8c620f856d555d218f881120a2/vae/diffusion_pytorch_model.safetensors"
+    }
+  ]
+}

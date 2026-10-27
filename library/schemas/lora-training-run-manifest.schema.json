@@ -30,7 +30,10 @@
   ],
   "properties": {
     "version": {
-      "const": 5
+      "enum": [
+        5,
+        6
+      ]
     },
     "id": {
       "type": "string",
@@ -59,7 +62,8 @@
     "family": {
       "enum": [
         "anima",
-        "qwen-image-2-1"
+        "qwen-image-2-1",
+        "moss-image"
       ]
     },
     "prompt_family": {
@@ -152,6 +156,10 @@
     "seed": {
       "type": "integer",
       "minimum": 1
+    },
+    "caption_set_id": {
+      "type": "string",
+      "pattern": "^caption-set-[a-f0-9]{12}$"
     }
   },
   "additionalProperties": false,
@@ -291,7 +299,8 @@
             "dit",
             "text_encoder",
             "vae",
-            "processor"
+            "processor",
+            "tokenizer"
           ]
         },
         "relative_path": {
@@ -933,6 +942,199 @@
         }
       },
       "additionalProperties": false
+    },
+    "moss_trainer": {
+      "type": "object",
+      "required": [
+        "diffsynth_commit",
+        "python",
+        "torch",
+        "gpu",
+        "vram_bytes",
+        "runner",
+        "root"
+      ],
+      "properties": {
+        "diffsynth_commit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "python": {
+          "type": "string",
+          "minLength": 1
+        },
+        "torch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "gpu": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "vram_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "runner": {
+          "type": "object",
+          "required": [
+            "name",
+            "version",
+            "sha256"
+          ],
+          "properties": {
+            "name": {
+              "const": "moss-image-lora-runner"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "sha256": {
+              "$ref": "#/$defs/sha256"
+            }
+          },
+          "additionalProperties": false
+        },
+        "root": {
+          "$ref": "#/$defs/absolute_path"
+        }
+      },
+      "additionalProperties": false
+    },
+    "moss_semantic_config": {
+      "type": "object",
+      "required": [
+        "max_pixels",
+        "network_dim",
+        "network_alpha",
+        "learning_rate",
+        "gradient_accumulation_steps",
+        "micro_batch_size",
+        "optimizer",
+        "scheduler",
+        "precision",
+        "gradient_checkpointing",
+        "lora_target_modules",
+        "activation_cpu_offload"
+      ],
+      "properties": {
+        "max_pixels": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "network_dim": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "network_alpha": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "learning_rate": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "gradient_accumulation_steps": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "micro_batch_size": {
+          "const": 1
+        },
+        "optimizer": {
+          "type": "object",
+          "required": [
+            "type",
+            "betas",
+            "eps",
+            "weight_decay"
+          ],
+          "properties": {
+            "type": {
+              "const": "AdamW"
+            },
+            "betas": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 1
+              }
+            },
+            "eps": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "weight_decay": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "scheduler": {
+          "type": "object",
+          "required": [
+            "type",
+            "factor",
+            "total_iters"
+          ],
+          "properties": {
+            "type": {
+              "const": "ConstantLR"
+            },
+            "factor": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "total_iters": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "precision": {
+          "type": "object",
+          "required": [
+            "base",
+            "lora",
+            "optimizer_state"
+          ],
+          "properties": {
+            "base": {
+              "const": "bf16"
+            },
+            "lora": {
+              "const": "fp32"
+            },
+            "optimizer_state": {
+              "const": "fp32"
+            }
+          },
+          "additionalProperties": false
+        },
+        "gradient_checkpointing": {
+          "const": true
+        },
+        "lora_target_modules": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "activation_cpu_offload": {
+          "const": true
+        }
+      },
+      "additionalProperties": false
     }
   },
   "title": "LoRA 训练 run 冻结清单",
@@ -1009,6 +1211,88 @@
           }
         },
         "type": "object"
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "version": {
+            "const": 6
+          }
+        },
+        "required": [
+          "version"
+        ]
+      },
+      "then": {
+        "required": [
+          "caption_set_id"
+        ],
+        "properties": {
+          "caption_set_id": {}
+        }
+      },
+      "else": {
+        "properties": {
+          "family": {
+            "enum": [
+              "anima",
+              "qwen-image-2-1"
+            ]
+          }
+        },
+        "not": {
+          "required": [
+            "caption_set_id"
+          ],
+          "properties": {
+            "caption_set_id": {}
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "family": {
+            "const": "moss-image"
+          }
+        },
+        "required": [
+          "family"
+        ]
+      },
+      "then": {
+        "properties": {
+          "trainer": {
+            "$ref": "#/$defs/moss_trainer"
+          },
+          "recipe": {
+            "$ref": "#/$defs/recipe"
+          },
+          "semantic_config": {
+            "$ref": "#/$defs/moss_semantic_config"
+          },
+          "resume": {
+            "type": "null"
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "dit",
+                    "text_encoder",
+                    "vae",
+                    "tokenizer"
+                  ]
+                }
+              }
+            }
+          }
+        }
       }
     }
   ]

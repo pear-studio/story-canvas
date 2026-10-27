@@ -8,7 +8,7 @@ import path from "node:path";
 import { registerProject, registeredProjectPath, readProjectRegistry } from "../server/project-registry.mjs";
 import { openProjectDirectory, manageRegisteredProject, projectLibrary } from "../server/project-library.mjs";
 import { readWorkspaceProjects } from "../server/project-http.mjs";
-import { createLoraTrainingDataset, readLoraTrainingTask, updateLoraTrainingDataset, updateLoraTrainingTask } from "../server/lora-training-facts.mjs";
+import { createLoraTrainingDataset, readLoraTrainingTask, updateLoraTrainingDataset, updateLoraTrainingTask } from "./training-project-fixture.mjs";
 import { createLoraTrainingOperations } from "../server/lora-training-operations.mjs";
 
 async function fixture(t) {
@@ -58,7 +58,7 @@ test("临时副本独立复制素材，不带 Git 和输出；提升后保留成
   await assert.rejects(manageRegisteredProject(root, copy.id, "delete"), { code: "temporary_project_required" });
 });
 
-test("训练项目只有一份当前设置，素材和设置共享版本，Saved 清理不影响项目", async t => {
+test("训练项目按模型保存当前设置，素材和设置共享版本，Saved 清理不影响项目", async t => {
   const { root, base } = await fixture(t);
   await cp(new URL("../../library/lora-training", import.meta.url), path.join(root, "library/lora-training"), { recursive: true });
   const created = await createLoraTrainingDataset(root, { name: "角色项目", path: path.join(base, "training") });

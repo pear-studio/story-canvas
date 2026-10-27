@@ -1,4 +1,5 @@
 import path from "node:path";
+import {trainingFamilies,trainingModel} from './lora-training-models.mjs';
 
 const sha256Pattern = /^[0-9a-f]{64}$/;
 const idPatterns = Object.freeze({
@@ -76,7 +77,7 @@ function validateUsageDefaults(value, errors) {
 function validateModel(value, index, errors) {
   const label = `models[${index}]`;
   if (!validateObject(value, label, ["kind", "relative_path", "sha256", "size_bytes", "source"], errors)) return;
-  if (!["dit", "text_encoder", "vae", "processor"].includes(value.kind)) errors.push(`${label}.kind 无效`);
+  if (!["dit", "text_encoder", "vae", "processor", "tokenizer"].includes(value.kind)) errors.push(`${label}.kind 无效`);
   if (!isSafeRelativePath(value.relative_path)) errors.push(`${label}.relative_path 必须是安全的正斜杠相对路径`);
   validateHash(value.sha256, `${label}.sha256`, errors);
   if (!Number.isSafeInteger(value.size_bytes) || value.size_bytes < 0) errors.push(`${label}.size_bytes 必须是非负整数`);
@@ -111,15 +112,15 @@ function validateItem(value, index, groupIds, itemIds, assetIds, errors) {
 function validateTrainer(value, errors, family) {
   const label = "trainer";
   const commit = family === "anima" ? "sd_scripts_commit" : "diffsynth_commit";
-  if (!validateObject(value, label, [commit, "python", "torch", "gpu", "vram_bytes", "runner", ...(family === "anima" ? ["root"] : [])], errors)) return;
+  if (!validateObject(value, label, [commit, "python", "torch", "gpu", "vram_bytes", "runner", ...(family !== "qwen-image-2-1" ? ["root"] : [])], errors)) return;
   for (const key of [commit, "python", "torch"]) validateNonEmptyString(value[key], `${label}.${key}`, errors);
-  if (family === "anima" && (typeof value.root !== "string" || !path.isAbsolute(value.root))) errors.push("trainer.root 必须是绝对路径");
+  if (family !== "qwen-image-2-1" && (typeof value.root !== "string" || !path.isAbsolute(value.root))) errors.push("trainer.root 必须是绝对路径");
   // CPU/toy 环境没有 GPU 身份；正式预检会单独阻断无 CUDA 的运行。
   if (value.gpu !== null && typeof value.gpu !== "string") errors.push(`${label}.gpu 必须是字符串或 null`);
   if (!Number.isSafeInteger(value.vram_bytes) || value.vram_bytes < 0) errors.push(`${label}.vram_bytes 必须是非负整数`);
   const runner = value.runner;
   if (!validateObject(runner, `${label}.runner`, ["name", "version", "sha256"], errors)) return;
-  const name = family === "anima" ? "anima-lora-runner" : "qwen-image21-lora-runner";
+  const name = trainingFamilies.includes(family) ? trainingModel(family).runnerName : null;
   if (runner.name !== name) errors.push(`${label}.runner.name 必须为 ${name}`);
   validatePositiveInteger(runner.version, `${label}.runner.version`, errors);
   validateHash(runner.sha256, `${label}.runner.sha256`, errors);
@@ -140,7 +141,7 @@ function validateRecipe(value, errors, family) {
 
 export function validateSemanticConfig(value, errors, family = "qwen-image-2-1") {
   const label = "semantic_config";
-  const required = ["max_pixels", "network_dim", "network_alpha", "learning_rate", "gradient_accumulation_steps", "micro_batch_size", "optimizer", "scheduler", "precision", "gradient_checkpointing", "lora_target_modules", ...(family === "anima" ? ["blocks_to_swap", "timestep_sampling", "sigmoid_scale", "weighting_scheme", "loss_type"] : [])];
+  const required = ["max_pixels", "network_dim", "network_alpha", "learning_rate", "gradient_accumulation_steps", "micro_batch_size", "optimizer", "scheduler", "precision", "gradient_checkpointing", "lora_target_modules", ...(family === 'moss-image' ? ['activation_cpu_offload'] : []), ...(family === "anima" ? ["blocks_to_swap", "timestep_sampling", "sigmoid_scale", "weighting_scheme", "loss_type"] : [])];
   if (!validateObject(value, label, required, errors)) return;
   for (const key of ["max_pixels", "network_dim", "network_alpha", "gradient_accumulation_steps"]) validatePositiveInteger(value[key], `${label}.${key}`, errors);
   if (family === "anima") validatePositiveInteger(value.micro_batch_size, `${label}.micro_batch_size`, errors);
@@ -170,6 +171,11 @@ export function validateSemanticConfig(value, errors, family = "qwen-image-2-1")
     for (const key of ["base", "lora", "optimizer_state"]) validateNonEmptyString(precision[key], `${label}.precision.${key}`, errors);
   }
   if (typeof value.gradient_checkpointing !== "boolean") errors.push(`${label}.gradient_checkpointing 必须是布尔值`);
+  if(family==='moss-image'){
+    if(value.activation_cpu_offload!==true || value.gradient_checkpointing!==true)errors.push('MOSS 当前训练要求 activation_cpu_offload 与 gradient_checkpointing');
+    if(optimizer?.type!=='AdamW'||scheduler?.type!=='ConstantLR')errors.push('MOSS 当前使用 AdamW/ConstantLR');
+    if(value.precision?.base!=='bf16'||value.precision?.lora!=='fp32'||value.precision?.optimizer_state!=='fp32')errors.push('MOSS precision 必须为 bf16/fp32/fp32');
+  }
   if (!Array.isArray(value.lora_target_modules) || value.lora_target_modules.length === 0) errors.push(`${label}.lora_target_modules 必须是非空字符串数组`);
   else value.lora_target_modules.forEach((entry, index) => validateNonEmptyString(entry, `${label}.lora_target_modules[${index}]`, errors));
   if (family === "anima") {
@@ -258,7 +264,8 @@ export function createLoraTrainingRunManifest({
   createdAt = new Date().toISOString(),
 }) {
   const manifest = {
-    version: 5,
+    version: 6,
+    caption_set_id: task.caption_set_id,
     id: runId,
     task_id: taskId,
     dataset_id: task.dataset_id,
@@ -280,7 +287,7 @@ export function createLoraTrainingRunManifest({
       source: model.identity.source ?? null,
     })),
     trainer: clone({
-      ...(task.target.family === "anima" ? { sd_scripts_commit: preflight.environment.commit, root: preflight.environment.trainer_root } : { diffsynth_commit: preflight.environment.commit }),
+      ...(task.target.family === "anima" ? { sd_scripts_commit: preflight.environment.commit, root: preflight.environment.trainer_root } : { diffsynth_commit: preflight.environment.commit, ...(task.target.family==='moss-image'?{root:preflight.environment.trainer_root}:{}) }),
       python: preflight.environment.runtime.python,
       torch: preflight.environment.runtime.torch,
       gpu: preflight.environment.runtime.gpu ?? null,
@@ -319,16 +326,17 @@ export function createLoraTrainingRunManifest({
 export function validateLoraTrainingRunManifest(value) {
   const errors = [];
   if (!isRecord(value)) return ["manifest 必须是 JSON 对象"];
-  const allowedKeys = ["version", "id", "task_id", "dataset_id", "created_at", "task_name", "dataset_name", "family", "prompt_family", "usage_defaults", "description", "activation_terms", "items", "groups", "models", "trainer", "recipe", "semantic_config", "run", "sampling", "resume", "paths", "execution", "seed"];
+  const allowedKeys = ["version", "id", "task_id", "dataset_id", "created_at", "task_name", "dataset_name", "family", "prompt_family", "usage_defaults", "description", "activation_terms", "items", "groups", "models", "trainer", "recipe", "semantic_config", "run", "sampling", "resume", "paths", "execution", "seed", ...(value.version===6?['caption_set_id']:[])];
   for (const key of Object.keys(value)) if (!allowedKeys.includes(key)) errors.push(`manifest 包含未支持字段：${key}`);
-  if (value.version !== 5) errors.push("version 必须为 5");
+  if (![5,6].includes(value.version)) errors.push("version 必须为 5 或 6");
+  if(value.version===6 && !/^caption-set-[a-f0-9]{12}$/.test(value.caption_set_id??''))errors.push('caption_set_id 无效');
   if (!idPatterns.run.test(value.id ?? "")) errors.push("id 无效");
   if (!idPatterns.task.test(value.task_id ?? "")) errors.push("task_id 无效");
   if (!idPatterns.dataset.test(value.dataset_id ?? "")) errors.push("dataset_id 无效");
   if (!validDate(value.created_at)) errors.push("created_at 无效");
   validateNonEmptyString(value.task_name, "task_name", errors);
   validateNonEmptyString(value.dataset_name, "dataset_name", errors);
-  if (!["anima", "qwen-image-2-1"].includes(value.family)) errors.push("family 必须为 anima 或 qwen-image-2-1");
+  if (!trainingFamilies.includes(value.family) || value.version===5 && value.family==='moss-image') errors.push("family 必须为当前清单版本支持的训练模型");
   validateNonEmptyString(value.prompt_family, "prompt_family", errors);
   validateUsageDefaults(value.usage_defaults, errors);
   if (typeof value.description !== "string") errors.push("description 必须是字符串");
@@ -374,10 +382,11 @@ export function validateLoraTrainingRunManifest(value) {
       }
     }
   });
-  const requiredKinds = value.family === "anima" ? ["dit", "text_encoder", "vae"] : ["dit", "text_encoder", "vae", "processor"];
+  const requiredKinds = trainingFamilies.includes(value.family)?trainingModel(value.family).modelKinds:[];
   for (const kind of requiredKinds) if (!modelKinds.has(kind)) errors.push(`manifest.models 缺少 ${kind} 文件`);
   if (value.family === "anima") for (const kind of requiredKinds) if (value.models?.filter(model => model.kind === kind).length !== 1) errors.push(`Anima ${kind} 必须为单文件`);
   if (value.family === "anima" && modelKinds.has("processor")) errors.push("Anima 不使用 processor 模型文件");
+  for(const kind of modelKinds)if(!requiredKinds.includes(kind))errors.push(`manifest.models 不支持 ${kind} 文件`);
 
   validateTrainer(value.trainer, errors, value.family);
   validateRecipe(value.recipe, errors, value.family);
@@ -385,7 +394,7 @@ export function validateLoraTrainingRunManifest(value) {
   validateRun(value.run, errors);
   validateSampling(value.sampling, itemIds, errors);
   validateResume(value.resume, errors);
-  if (value.family === "anima" && value.resume !== null) errors.push("Anima 当前不支持精确续训");
+  if (value.family !== "qwen-image-2-1" && value.resume !== null) errors.push("当前模型不支持精确续训");
   validatePaths(value.paths, errors);
   validateExecution(value.execution, errors);
   validatePositiveInteger(value.seed, "seed", errors);

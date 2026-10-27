@@ -1,4 +1,5 @@
 import { registeredProjectPath, listRegisteredProjects } from "./project-registry.mjs";
+import {trainingFamilies,trainingModel} from './lora-training-models.mjs';
 import { existsSync } from "node:fs";
 import { validateSavedRunSettings } from "./lora-training-settings.mjs";
 import { validPreparation } from "./lora-image-preparation-contract.mjs";
@@ -175,7 +176,7 @@ export function checkpointDirectoryFromManifest(manifest, fallback = null) {
   return typeof outputDirectory === "string" && outputDirectory.trim() ? path.resolve(outputDirectory) : fallback;
 }
 
-export function itemPaths(projectDirectory, datasetId, item) {
+export function itemPaths(projectDirectory, datasetId, item, {caption_set_id: captionSetId} = {}) {
   const root = datasetRoot(projectDirectory, datasetId);
   const image = path.resolve(root, item.file ?? "");
   if (!isWithin(root, image) || !imageExtensions.has(path.extname(image).toLowerCase()) || !/^assets\/(?:asset-[a-f0-9]{12}|[a-z][a-z0-9]*(?:-[a-z0-9]+)*-\d{3})\/(?:original|processed-[a-f0-9]{64})\.(?:jpe?g|png|webp)$/i.test(String(item.file ?? "").replaceAll("\\", "/"))) {
@@ -184,7 +185,8 @@ export function itemPaths(projectDirectory, datasetId, item) {
   const relativeParts = String(item.file).replaceAll("\\", "/").split("/");
   if (relativeParts[1] !== item.asset_id) throw new LoraTrainingError(422, "invalid_lora_training_item_path", [item.id]);
   const assetDirectory = path.join(root, "assets", item.asset_id);
-  return { image, caption: path.join(assetDirectory, "caption.txt"), meta: path.join(assetDirectory, "meta.json"), assetDirectory };
+  if (captionSetId !== undefined && !/^caption-set-[a-f0-9]{12}$/.test(captionSetId)) throw new LoraTrainingError(422,'caption_set_id_required');
+  return { image, caption: captionSetId ? path.join(root,'captions',captionSetId,'texts',item.asset_id+'.txt') : path.join(assetDirectory, "caption.txt"), meta: path.join(assetDirectory, "meta.json"), assetDirectory };
 }
 
 export function assetMetaPath(projectDirectory, datasetId, assetId) {
@@ -322,7 +324,7 @@ export function canonicalJson(value) {
 }
 
 export function validateTarget(value, errors) {
-  if (!isRecord(value) || !["anima", "qwen-image-2-1"].includes(value.family)) errors.push("target.family 必须为 anima 或 qwen-image-2-1");
+  if (!isRecord(value) || !trainingFamilies.includes(value.family)) errors.push("target.family 必须为已注册训练模型");
   if (typeof value?.prompt_family !== "string" || !value.prompt_family.trim()) errors.push("target.prompt_family 不能为空");
   if (!isRecord(value?.usage_defaults)) errors.push("target.usage_defaults 必须是对象");
   else {
@@ -333,9 +335,9 @@ export function validateTarget(value, errors) {
     if (!Number.isInteger(usage.steps) || usage.steps < 1) errors.push("target.usage_defaults.steps 必须是正整数");
     if (typeof usage.cfg !== "number" || usage.cfg < 0) errors.push("target.usage_defaults.cfg 必须是非负数");
   }
-  const kinds = value?.family === "anima" ? ["dit", "text_encoder", "vae"] : ["dit", "text_encoder", "vae", "processor"];
+  const kinds = trainingFamilies.includes(value?.family) ? trainingModel(value.family).modelKinds : [];
   validateExactKeys(value?.base, kinds, "target.base", errors);
-  for (const kind of kinds) validateBaseDirIdentity(value?.base?.[kind], `target.base.${kind}`, errors, { file: value?.family === "anima" });
+  for (const kind of kinds) validateBaseDirIdentity(value?.base?.[kind], `target.base.${kind}`, errors, { file: value?.family === "anima" || value?.family === 'moss-image' && ['dit','vae'].includes(kind) });
 }
 
 export function validateActivationTerms(value, errors, label = "activation_terms") {
@@ -362,6 +364,7 @@ export const loraTrainingOverrideDefinitions = Object.freeze({
 });
 
 export function loraTrainingOverridesForFamily(family) {
+  if(!trainingFamilies.includes(family))return {};
   return family === "anima" ? { ...loraTrainingOverrideDefinitions, micro_batch_size: "integer", blocks_to_swap: "nonnegative" } : loraTrainingOverrideDefinitions;
 }
 
@@ -392,7 +395,7 @@ export function validateLoraTrainingDataset(value) {
   const errors = [];
   if (!isRecord(value)) return ["dataset.json 必须是 JSON 对象"];
   validateExactKeys(value, ["version", "name", "description", "activation_terms", "groups", "items"], "dataset.json", errors);
-  if (value.version !== 5) errors.push("version 必须为 5");
+  if (![5,6].includes(value.version)) errors.push("version 必须为 5 或 6");
   if (typeof value.name !== "string" || !value.name.trim()) errors.push("name 不能为空");
   if (typeof value.description !== "string") errors.push("description 无效");
   if (Object.hasOwn(value, "concept") || Object.hasOwn(value, "plan")) errors.push("dataset.json 不再保存 concept 或 plan，请手动迁移到 description");
@@ -424,15 +427,16 @@ export function validateLoraTrainingDataset(value) {
     if (Object.hasOwn(item ?? {}, "file")) errors.push(`${item?.id ?? "图片项"} 不保存 file；当前图片由 asset meta.json 唯一确定`);
     if (Object.hasOwn(item ?? {}, "crop")) errors.push(`${item?.id ?? "图片项"} 不再保存 crop；请使用 asset meta.json 的后处理配方`);
   }
-  if (JSON.stringify(value).includes('"caption"')) errors.push("dataset.json 不保存 Caption；Caption 只存在于 asset/caption.txt");
+  if (JSON.stringify(value).includes('"caption"')) errors.push("dataset.json 不保存 Caption；Caption 独立保存在打标集");
   return [...new Set(errors)];
 }
 
 export function validateLoraTrainingTask(value) {
   const errors = [];
   if (!isRecord(value)) return ["plan.json 必须是 JSON 对象"];
-  validateExactKeys(value, ["version", "name", "dataset_id", "target", "training_recipe", "run_defaults"], "plan.json", errors);
-  if (value.version !== 5) errors.push("version 必须为 5");
+  validateExactKeys(value, ["version", "name", "dataset_id", "target", "caption_set_id", "training_recipe", "run_defaults"], "plan.json", errors);
+  if (![5,6].includes(value.version)) errors.push("version 必须为 5 或 6");
+  if (value.version === 6 && !/^caption-set-[a-f0-9]{12}$/.test(value.caption_set_id??'')) errors.push('caption_set_id 必填');
   errors.push(...validateSavedRunSettings(value.run_defaults));
   if (typeof value.name !== "string" || !value.name.trim()) errors.push("name 不能为空");
   if (!idPatterns.dataset.test(value.dataset_id ?? "")) errors.push("dataset_id 无效");

@@ -57,7 +57,7 @@ const groups=[
   {id:'tasks',title:'生成任务与队列',prefixes:['task.']},
   {id:'runtime',title:'本机环境管理',prefixes:['runtime.']},
   {id:'comparison',title:'对比实验',prefixes:['comparison.']},
-  {id:'training-data',title:'训练数据集与 Caption',prefixes:['training.dataset.','training.item.','training.asset.','training.caption.','training.audit.']},
+  {id:'training-data',title:'训练数据集与 Caption',prefixes:['training.dataset.','training.item.','training.asset.','training.caption.','training.audit.','training.migration.']},
   {id:'training-image',title:'训练素材裁剪与处理',prefixes:['training.image.']},
   {id:'training',title:'训练设置、预检与运行',prefixes:['training.task.','training.run.','training.preflight','training.environment','training.recipes','training.activation-guide']},
   {id:'tools',title:'工具帮助与状态',prefixes:['help','status']},

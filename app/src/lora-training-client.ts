@@ -4,7 +4,7 @@ export function createTrainingClient(request: typeof fetch = fetch) {
   let pending: Promise<unknown> = Promise.resolve();
   const scope = (input: RequestInfo | URL) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    return /\/lora-training\/(?:datasets|tasks)\/((?:dataset|lora)-[a-f0-9]{12})(?:\/|$)/.exec(url)?.[1] ?? "training";
+    return /\/lora-training\/(?:datasets|tasks)\/((?:dataset|lora)-[a-f0-9]{12})(?:[/?]|$)/.exec(url)?.[1] ?? "training";
   };
   const read = async (input: RequestInfo | URL, init?: RequestInit) => {
     const response = await request(input, init);

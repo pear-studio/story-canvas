@@ -54,11 +54,11 @@ test("coordination.startRun 在顶层冻结 manifest 后才交给 runtime", asyn
       return { id: manifest.id, status: "running" };
     },
   });
-  const options = { projectId: "rain-protocol", mutateDerived: () => undefined, runSettings: { seed: 7 } };
+  const options = { projectId: "rain-protocol", family: "moss-image", mutateDerived: () => undefined, runSettings: { seed: 7 } };
   const result = await coordination.startRun("root", "project", "lora-task", { models_root: "models" }, options);
   assert.deepEqual(result, { run: { id: manifest.id, status: "running" }, manifest });
   assert.equal(calls[0].kind, "freeze");
-  assert.deepEqual(calls[0].args, ["root", "project", "lora-task", { models_root: "models" }, { runSettings: options.runSettings }]);
+  assert.deepEqual(calls[0].args, ["root", "project", "lora-task", { models_root: "models" }, { runSettings: options.runSettings, family: "moss-image" }]);
   assert.equal(calls[1].kind, "startManifest");
   assert.deepEqual(calls[1].args, ["project", manifest, { projectId: options.projectId, mutateDerived: options.mutateDerived }]);
 

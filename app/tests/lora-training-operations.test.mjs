@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { createLoraTrainingOperations } from "../server/lora-training-operations.mjs";
 import { handleLoraTrainingRequest } from "../server/lora-training-http.mjs";
 import { sendJson } from "../server/http-support.mjs";
-import {  createLoraTrainingTask, readLoraTrainingTask, updateLoraTrainingDataset, updateLoraTrainingTask } from "../server/lora-training-facts.mjs";
+import {  createLoraTrainingTask, readLoraTrainingTask, updateLoraTrainingDataset, updateLoraTrainingTask } from "./training-project-fixture.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 

@@ -3,15 +3,75 @@ import { datasetRoot, taskRoot } from "../server/lora-training-support.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createServer } from "node:http";
-import { mkdtemp, readFile, rm, access, writeFile, stat, utimes } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, access, writeFile, stat, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { handleLoraTrainingRequest } from "../server/lora-training-http.mjs";
 import { createLoraTrainingOperations } from "../server/lora-training-operations.mjs";
 import { createTrainingClient } from "../src/lora-training-client.ts";
 import { readJsonBody, readOptionalJsonBody, readLoraAssetRequest, sendJson } from "../server/http-support.mjs";
 import sharp from "sharp";
 import { importLoraTrainingAssets } from "../server/lora-training-facts.mjs";
+
+test("HTTP 打标集隔离文本、确认和审计，模型配置独立引用，缺省身份拒绝", async t => {
+  const parent = fileURLToPath(new URL("../../Saved/Tests/", import.meta.url));
+  await mkdir(parent, { recursive: true });
+  const root = await mkdtemp(path.join(parent, "training-http-sets-"));
+  await cp(new URL("../../library/lora-training", import.meta.url), path.join(root, "library/lora-training"), { recursive: true });
+  const trainingOperations = createLoraTrainingOperations(root);
+  const server = createServer(async (request,response) => {
+    try {
+      const handled = await handleLoraTrainingRequest({request,response,decodedPath:new URL(request.url,"http://localhost").pathname,resolvedProjectRoot:root,config:{},trainingOperations,readJsonBody,readOptionalJsonBody,readLoraAssetRequest});
+      if (!handled) sendJson(response,404,{error:"not_found"});
+    } catch(error) { sendJson(response,error.status??500,{error:error.code??error.message}); }
+  });
+  await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));
+  t.after(async()=>{await new Promise(resolve=>server.close(resolve));await rm(root,{recursive:true,force:true});});
+  const base=`http://127.0.0.1:${server.address().port}/api/lora-training`;
+  const body=(value,method="POST")=>({method,headers:{"content-type":"application/json"},body:JSON.stringify(value)});
+  const created=await (await fetch(`${base}/datasets`,body({name:"共享项目"}))).json();
+  const id=created.id,url=`${base}/datasets/${id}`,setA=created.caption_sets[0].id;
+  await importLoraTrainingAssets(root,id,{group_id:created.dataset.groups[0].id,files:[{filename:"one.png",buffer:await sharp({create:{width:64,height:64,channels:3,background:"red"}}).png().toBuffer()}]});
+  const client=createTrainingClient();
+  const read=async suffix=>(await (await client.read(`${url}${suffix}`)).json());
+  const write=async(suffix,value,method="POST",expected=200)=>{const response=await client.write(`${url}${suffix}`,body(value,method));const data=await response.json();assert.equal(response.status,expected,JSON.stringify(data));return data;};
+  const shared=await read("");const item=shared.items[0];
+  assert.equal(shared.caption_set_id,null);
+  await write(`/captions/${item.id}`,{caption:"one woman"},"PUT",422);
+  await write(`/captions/${item.id}`,{caption:"one woman",caption_set_id:setA},"PUT");
+  await write(`/captioning/items/${item.id}`,{prompt:"one woman",confirm:true,caption_set_id:setA},"PUT");
+  await write("/caption-audit",{image_sha256:[item.image_version],caption_set_id:setA});
+  const setB=(await write("/caption-sets",{name:"自然语言",format:"prose",source_id:setA},"POST",201)).caption_set_id;
+  const copied=await read(`?caption_set_id=${setB}`);
+  assert.equal(copied.items[0].caption,"one woman");
+  assert.equal(copied.captioning.summary.confirmed,0);
+  assert.equal((await read(`/caption-audit?caption_set_id=${setB}`)).summary.audited,0);
+  const text="  A woman in a red dress.\n";
+  await write(`/caption-sets/${setB}/import`,{entries:[{item_id:item.id,image_sha256:item.image_version,caption:text}]});
+  assert.equal((await read(`?caption_set_id=${setB}`)).items[0].caption,text);
+  const original=await read(`?caption_set_id=${setA}`);
+  assert.equal(original.items[0].caption,"one woman");
+  assert.equal(original.captioning.summary.confirmed,1);
+  await write(`/caption-sets/${setB}`,{name:"改名"},"PUT");
+  assert.equal((await read("/caption-sets")).caption_sets.find(s=>s.id===setB).name,"改名");
+  assert.equal((await fetch(`${base}/tasks/${id}`)).status,422);
+  const model=await client.write(`${base}/tasks/${id}/models`,body({family:"anima",caption_set_id:setB}));
+  assert.equal(model.status,201,JSON.stringify(await model.clone().json()));
+  const taskA=await (await fetch(`${base}/tasks/${id}?family=qwen-image-2-1`)).json();
+  const taskB=await (await fetch(`${base}/tasks/${id}?family=anima`)).json();
+  assert.equal(taskA.task.caption_set_id,setA);
+  assert.equal(taskB.task.caption_set_id,setB);
+  assert.equal(taskB.task.target.family,"anima");
+  const projectPath=path.join(datasetRoot(root,id),"project.json");
+  const legacy={...JSON.parse(await readFile(projectPath,"utf8")),version:5};
+  await writeFile(path.join(datasetRoot(root,id),"assets",item.asset_id,"caption.txt"),"legacy caption");
+  await writeFile(projectPath,JSON.stringify(legacy));
+  assert.equal((await read("")).read_only,true);
+  for (const suffix of ["/postprocess/prepare","/postprocess/preview","/postprocess/apply","/postprocess/restore","/postprocess/bulk-upscale"]) {
+    assert.equal((await write(suffix,{item_id:item.id},"POST",409)).error,"training_project_migration_required");
+  }
+});
 
 test("全局训练无需项目即可创建编辑；并发旧稿被拒绝，其他数据集不影响当前保存", async t => {
   const root = await mkdtemp(path.join(tmpdir(), "global-training-"));
@@ -40,7 +100,7 @@ test("全局训练无需项目即可创建编辑；并发旧稿被拒绝，其�
   const saved = await first.write(url, { ...body({ ...document, name: "新名称" }), method: "PUT" });
   assert.equal(saved.status, 200);
   // 辅助信息刷新不能替换旧草稿所依据的版本。
-  assert.equal((await second.read(`${url}/captioning`)).status, 200);
+  assert.equal((await second.read(`${url}/captioning?caption_set_id=${dataset.caption_sets[0].id}`)).status, 200);
   const stale = await second.write(url, { ...body({ ...document, name: "旧窗口" }), method: "PUT" });
   assert.equal(stale.status, 409);
   assert.deepEqual(await stale.json(), { error: "training_revision_conflict" });

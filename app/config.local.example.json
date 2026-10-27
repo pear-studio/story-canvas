@@ -15,6 +15,10 @@
       "trainer_root": "../story-canvas-trainer/DiffSynth-Studio",
       "python": "../story-canvas-trainer/DiffSynth-Studio/.venv/Scripts/python.exe"
     },
+    "moss": {
+      "trainer_root": "../story-canvas-trainer/MOSS-DiffSynth-Studio",
+      "python": "../story-canvas-trainer/MOSS-DiffSynth-Studio/.venv/Scripts/python.exe"
+    },
     "quality": { "python": "" }
   },
   "prompt_dictionary": {

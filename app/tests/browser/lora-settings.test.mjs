@@ -29,9 +29,10 @@ function qwenSemanticConfig(overrides = {}) {
 
 function qwenTask(overrides = {}) {
   return {
-    version: 5,
+    version: 6,
     name: "主训练方案",
     dataset_id: TASK_ID,
+    caption_set_id:"caption-set-111111111111",
     target: {
       family: "qwen-image-2-1",
       base: {
@@ -50,7 +51,7 @@ function qwenTask(overrides = {}) {
 }
 
 const datasetSummary = { id: TASK_ID, name: "主数据集", activation_terms: [], item_count: 95, enabled_item_count: 95, effective_item_count: 95 };
-const datasetDetail = { id: TASK_ID, dataset: { version: 5, name: "主数据集", description: "", activation_terms: [], groups: [], items: [] }, items: [], captioning: { version: 1, latest: null, summary: { total: 0, with_base: 0, confirmed: 0, unconfirmed: 0 }, items: [] } };
+const datasetDetail = { id: TASK_ID, dataset: { version: 6, name: "主数据集", description: "", activation_terms: [], groups: [], items: [] }, items: [], caption_set_id:"caption-set-111111111111",caption_sets:[{id:"caption-set-111111111111",name:"标签",format:"tags"}],captioning: { version: 1, latest: null, summary: { total: 0, with_base: 0, confirmed: 0, unconfirmed: 0 }, items: [] } };
 const recipe = { id: "qwen-image21-lora-v1", version: 1, name: "Qwen Rank 32", description: "", family: "qwen-image-2-1", semantic_config: qwenSemanticConfig(), default_target: qwenTask().target };
 const animaRecipe = {
   id: "anima-lora-v1", version: 1, name: "Anima Rank 32", description: "", family: "anima",
@@ -68,13 +69,14 @@ async function startFixture(page, extra) {
   });
 }
 
-test("Anima 切换复用素材和预算，可调有效 Batch，环境按家族隔离，保存后刷新保留", async () => {
+test("Anima 独立配置切换复用素材和预算，可调有效 Batch，环境按家族隔离，保存后刷新保留", async () => {
   const server = await createServer({ root: fileURLToPath(new URL("../../", import.meta.url)), cacheDir: ".temp/vite-lora-tests", server: { host: "127.0.0.1", port: 0 }, logLevel: "error" });
   await server.listen();
   const browser = await chromium.launch({ headless: true, channel: process.platform === "win32" ? "msedge" : undefined });
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } });
-    let task = qwenTask();
+    let task=qwenTask();
+    const configs={"qwen-image-2-1":task,anima:qwenTask({target:animaRecipe.default_target,training_recipe:{id:animaRecipe.id,overrides:{learning_rate:0.00002,micro_batch_size:2,blocks_to_swap:0,gradient_accumulation_steps:2,network_dim:32}}})};
     const environmentFamilies = [];
     let releaseAnimaEnvironment;
     const animaEnvironmentGate = new Promise(resolve => { releaseAnimaEnvironment = resolve; });
@@ -91,9 +93,9 @@ test("Anima 切换复用素材和预算，可调有效 Batch，环境按家族�
         if (family === "anima") { await animaEnvironmentGate; return { ...environment, available: false, checks: [{ id: "sd_scripts", ok: false, message: "Anima 测试环境缺失" }] }; }
         return environment;
       }
-      if (pathname.endsWith("run-settings")) return { recipe: { id: task.training_recipe.id, version: 1, name: "当前配方" }, semantic_config: task.target.family === "anima" ? animaRecipe.semantic_config : recipe.semantic_config, values: task.run_defaults, last_run: null };
+      if (pathname.endsWith("run-settings")) {const task=configs[new URL(route.request().url()).searchParams.get("family")];return { recipe: { id: task.training_recipe.id, version: 1, name: "当前配方" }, semantic_config: task.target.family === "anima" ? animaRecipe.semantic_config : recipe.semantic_config, values: task.run_defaults, last_run: null };}
       if (pathname === `/tasks/${TASK_ID}`) {
-        if (route.request().method() === "PUT") task = route.request().postDataJSON();
+        if (route.request().method() === "PUT") {task = route.request().postDataJSON();configs[task.target.family]=task;}else{task=configs[new URL(route.request().url()).searchParams.get("family")];}
         return { id: TASK_ID, task, dataset: datasetSummary, runs: [] };
       }
       return { runs: [] };
@@ -130,15 +132,13 @@ test("Anima 切换复用素材和预算，可调有效 Batch，环境按家族�
     releaseAnimaEnvironment();
     await lateEnvironment;
     assert.equal(await page.getByText("环境就绪", { exact: true }).count(), 1);
-    await save.click();
-    await page.waitForFunction(() => document.querySelector(".lora-state")?.textContent === "已保存");
+    assert.equal(await save.isDisabled(),true);
     assert.deepEqual(Object.keys(task.training_recipe.overrides).sort(), ["gradient_accumulation_steps", "learning_rate", "network_dim"]);
     await model.selectOption("anima");
     await page.getByText(/LoRA 与优化器 ·/).click();
-    await input("Micro Batch").fill("1");
-    await input("梯度累积").fill("4");
-    await save.click();
-    await page.waitForFunction(() => document.querySelector(".lora-state")?.textContent === "已保存");
+    assert.equal(await input("Micro Batch").inputValue(), "1");
+    assert.equal(await input("梯度累积").inputValue(), "4");
+    assert.equal(await save.isDisabled(), true, "切换回来直接恢复模型的已保存配置");
     await page.reload();
     await model.waitFor();
     assert.equal(await model.inputValue(), "anima");
@@ -228,7 +228,7 @@ test("训练记录显示阶段与恢复可用性，续训校验目标并处理�
       id: "run-aaaaaaaaaaaa",
       created_at: "2026-09-22T10:00:00.000Z",
       resumable: true,
-      manifest: { task_id: TASK_ID, task_name: "主训练方案", dataset_name: "主数据集", created_at: "2026-09-22T10:00:00.000Z", run: { max_train_steps: 2000, save_every_n_steps: 500, seed: 42, note: "首轮" }, semantic_config: { network_dim: 32, learning_rate: 0.0001 } },
+      manifest: { family:"qwen-image-2-1",task_id: TASK_ID, task_name: "主训练方案", dataset_name: "主数据集", created_at: "2026-09-22T10:00:00.000Z", run: { max_train_steps: 2000, save_every_n_steps: 500, seed: 42, note: "首轮" }, semantic_config: { network_dim: 32, learning_rate: 0.0001 } },
       status: { status: "completed", phase: null, completed_at: "2026-09-22T11:04:00.000Z", step: 2000, loss: 0.0831, lr: 0.0001, samples_seen: 2000, eta_seconds: null, error: null, checkpoints: [{ id: "checkpoint-1", file: "step-002000.safetensors", step: 2000, sha256: sha, size: 160000000 }], resume: { snapshot_id: "step-002000", step: 2000, sha256: sha }, performance: { wall_seconds: 3840.5, phase_seconds: { cache: 94.2, train: 3745 }, seconds_per_update: 1.845, samples_seen: 2000, runner: null }, loss_history: [{ step: 1, loss: 0.42 }, { step: 2000, loss: 0.0831 }], log_tail: "" },
       disk_bytes: 123456789,
     };

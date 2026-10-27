@@ -1,3 +1,6 @@
+import {captionSetPaths,readCaptionSets,requireCaptionSet} from './lora-caption-sets.mjs';
+import {defaultTrainingTarget,defaultRecipeId,trainingFamilies} from './lora-training-models.mjs';
+export {captionSetPaths,readCaptionSets} from './lora-caption-sets.mjs';
 import { listRegisteredProjects, registerProject } from "./project-registry.mjs";
 import { initialRunSettings } from "./lora-training-settings.mjs";
 import { createHash, randomBytes } from "node:crypto";
@@ -45,7 +48,7 @@ export async function requireDataset(projectDirectory, datasetId) {
     const files = itemPaths(projectDirectory, datasetId, item);
     const originalPath = path.join(files.assetDirectory, meta.original.file);
     const currentPath = path.join(files.assetDirectory, meta.current.file);
-    for (const target of [files.assetDirectory, originalPath, currentPath, files.caption, files.meta]) {
+    for (const target of [files.assetDirectory, originalPath, currentPath, ...(dataset.version===5?[files.caption]:[]), files.meta]) {
       const info = await lstat(target).catch(() => null);
       if (!info || info.isSymbolicLink() || (target === files.assetDirectory ? !info.isDirectory() : !info.isFile())) throw new LoraTrainingError(422, "unsafe_lora_training_dataset_storage", [item.id]);
       if (info) {
@@ -66,14 +69,29 @@ export function storedDatasetProjection(dataset) {
   };
 }
 
-export async function requireDatasetForUpdate(projectDirectory, datasetId) {
-  return requireDataset(projectDirectory, datasetId);
+export async function requireDatasetForUpdate(projectDirectory,datasetId){
+  const result=await requireDataset(projectDirectory,datasetId);
+  if(result.dataset.version!==6)throw new LoraTrainingError(409,'training_project_migration_required');
+  return result;
 }
+export const requireWritableDataset=requireDatasetForUpdate;
 
-export async function requireTask(projectDirectory, taskId) {
-  const stored = await requireStoredDocument(projectDirectory, taskRoot(projectDirectory, taskId), "settings.json", value => validateLoraTrainingTask({ ...value, name: "训练项目", dataset_id: taskId }), "lora_training_task_not_found", "unsafe_lora_training_task_storage", "invalid_lora_training_task");
-  const { dataset } = await requireDataset(projectDirectory, taskId);
-  return { directory: stored.directory, task: { ...stored.value, name: dataset.name, dataset_id: taskId } };
+export async function readModelSettings(projectDirectory,taskId){
+  const stored=await requireStoredDocument(projectDirectory,taskRoot(projectDirectory,taskId),'settings.json',value=>{
+    if(value?.version===5)return validateLoraTrainingTask({...value,name:'训练项目',dataset_id:taskId});
+    if(value?.version!==6||!isRecord(value.models)||Object.keys(value).some(k=>!['version','models'].includes(k)))return ['invalid model settings'];
+    return Object.entries(value.models).flatMap(([family,model])=>!trainingFamilies.includes(family)||model?.target?.family!==family?['invalid family']:validateLoraTrainingTask({...model,name:'训练项目',dataset_id:taskId}));
+  },'lora_training_task_not_found','unsafe_lora_training_task_storage','invalid_lora_training_task');
+  return stored.value;
+}
+export async function requireTask(projectDirectory,taskId,{family}={}){
+  const settings=await readModelSettings(projectDirectory,taskId),{dataset}=await requireDataset(projectDirectory,taskId);
+  if(settings.version===5)return {directory:taskRoot(projectDirectory,taskId),task:{...settings,name:dataset.name,dataset_id:taskId,read_only:true}};
+  if(!family)throw new LoraTrainingError(422,'training_family_required');
+  const selected=settings.models[family];
+  if(!selected)throw new LoraTrainingError(404,'training_model_not_configured',[family]);
+  await requireCaptionSet(projectDirectory,taskId,selected.caption_set_id);
+  return {directory:taskRoot(projectDirectory,taskId),task:{...selected,name:dataset.name,dataset_id:taskId}};
 }
 
 export async function createLoraTrainingDataset(projectDirectory, input = {}) {
@@ -81,7 +99,7 @@ export async function createLoraTrainingDataset(projectDirectory, input = {}) {
   const id = createId("dataset");
   const groupId = createId("group");
   const dataset = {
-    version: 5,
+    version: 6,
     name: String(input.name ?? "新数据集").trim() || "新数据集",
     description: String(input.description ?? "").trim(),
     activation_terms: Array.isArray(input.activation_terms) ? input.activation_terms.map((entry) => String(entry ?? "").trim()) : [],
@@ -96,74 +114,45 @@ export async function createLoraTrainingDataset(projectDirectory, input = {}) {
   registerProject(projectDirectory, { id, type: "training", path: directory, temporary: !input.path });
   await mkdir(path.join(directory, "assets"), { recursive: true });
   await writeJsonAtomic(path.join(directory, "project.json"), dataset);
-  await createLoraTrainingTask(projectDirectory, projectDirectory, { dataset_id: id });
+  const set={id:createId('caption-set'),name:'默认打标',format:'tags'};
+  await mkdir(captionSetPaths(projectDirectory,id,set.id).texts,{recursive:true});
+  await writeJsonAtomic(path.join(directory,'captions','index.json'),{version:1,sets:[set]});
+  await writeJsonAtomic(path.join(directory,'settings.json'),{version:6,models:{}});
+  await createLoraTrainingTask(projectDirectory, projectDirectory, { dataset_id: id, target:{family:input.family??'qwen-image-2-1'},caption_set_id:set.id });
   return readLoraTrainingDataset(projectDirectory, id);
 }
 
-export async function defaultLoraTrainingTarget(projectRoot, family) {
-  if (!["anima", "qwen-image-2-1"].includes(family)) throw new LoraTrainingError(422, "unsupported_lora_training_family");
-  // 默认底模为官方 BF16 目录前缀；逐文件身份以 library/lora-training/qwen-image21-models.json 为准。
-  const qwenSource = "https://huggingface.co/Qwen/Qwen-Image-2.1";
-  return family === "anima" ? {
-    family, prompt_family: "anima",
-    usage_defaults: { clip_skip: null, sampler: "euler_ancestral", scheduler: "normal", steps: 30, cfg: 4 },
-    base: Object.fromEntries((await readJson(path.join(projectRoot, "library", "lora-training", "anima-models.json"))).files.map(file => [file.kind, { relative_path: file.relative_path, source: file.source }])),
-  } : {
-    family,
-    prompt_family: "qwen",
-    usage_defaults: { clip_skip: null, sampler: "euler", scheduler: "simple", steps: 25, cfg: 1 },
-    base: {
-      dit: { relative_path: "diffusion_models/qwen-image-2.1/", source: qwenSource },
-      text_encoder: { relative_path: "text_encoders/qwen-image-2.1/", source: qwenSource },
-      vae: { relative_path: "vae/qwen-image-2.1/", source: qwenSource },
-      processor: { relative_path: "text_encoders/qwen-image-2.1/processor/", source: qwenSource },
-    },
-  };
-}
+export const defaultLoraTrainingTarget=defaultTrainingTarget;
 
-export async function createLoraTrainingTask(projectRoot, projectDirectory, input = {}) {
-  const datasetId = String(input.dataset_id ?? "");
-  const id = datasetId;
-  if (await exists(path.join(taskRoot(projectDirectory, id), "settings.json"))) return readLoraTrainingTask(projectDirectory, id);
-  const { dataset } = await requireDataset(projectDirectory, datasetId);
-  const family = input?.target?.family ?? "qwen-image-2-1";
-  const defaultTarget = await defaultLoraTrainingTarget(projectRoot, family);
-  const target = {
-    family,
-    prompt_family: String(input?.target?.prompt_family ?? defaultTarget.prompt_family).trim() || defaultTarget.prompt_family,
-    usage_defaults: { ...defaultTarget.usage_defaults, ...(isRecord(input?.target?.usage_defaults) ? input.target.usage_defaults : {}) },
-    base: input?.target?.base ?? defaultTarget.base,
-  };
-  const recipeId = typeof input.recipe_id === "string" ? input.recipe_id : family === "anima" ? "anima-lora-v1" : "qwen-image21-lora-v1";
-  const recipe = await readLoraTrainingRecipe(projectRoot, recipeId);
-  if (!recipe || recipe.family !== family) throw new LoraTrainingError(422, "invalid_training_recipe");
-  const task = {
-    version: 5,
-    name: String(input.name ?? dataset.name).trim() || dataset.name,
-    dataset_id: datasetId,
-    target,
-    training_recipe: { id: recipeId, overrides: Object.fromEntries(Object.keys(support.loraTrainingOverridesForFamily(family)).map(key => [key, recipe.semantic_config[key]])) },
-    run_defaults: initialRunSettings(),
-  };
-  const errors = validateLoraTrainingTask(task);
-  if (errors.length) throw new LoraTrainingError(422, "invalid_lora_training_task", errors);
-  const directory = taskRoot(projectDirectory, id);
-  await mkdir(directory, { recursive: true });
-  const { name: _name, dataset_id: _dataset, ...settings } = task;
-  await writeJsonAtomic(path.join(directory, "settings.json"), settings);
-  return readLoraTrainingTask(projectDirectory, id);
+export async function createLoraTrainingTask(projectRoot,projectDirectory,input={}){
+  const datasetId=String(input.dataset_id??''),{dataset}=await requireWritableDataset(projectDirectory,datasetId);
+  const family=input.target?.family;
+  if(!family)throw new LoraTrainingError(422,'training_family_required');
+  await requireCaptionSet(projectDirectory,datasetId,input.caption_set_id);
+  const container=await readModelSettings(projectDirectory,datasetId);
+  if(container.models[family])return readLoraTrainingTask(projectDirectory,datasetId,{family});
+  const defaults=await defaultLoraTrainingTarget(projectRoot,family),target={...defaults,...input.target,usage_defaults:{...defaults.usage_defaults,...input.target?.usage_defaults}};
+  const recipeId=input.recipe_id??defaultRecipeId(family),recipe=await readLoraTrainingRecipe(projectRoot,recipeId);
+  if(!recipe||recipe.family!==family)throw new LoraTrainingError(422,'invalid_training_recipe');
+  const task={version:6,name:dataset.name,dataset_id:datasetId,target,caption_set_id:input.caption_set_id,training_recipe:{id:recipeId,overrides:Object.fromEntries(Object.keys(support.loraTrainingOverridesForFamily(family)).map(k=>[k,recipe.semantic_config[k]]))},run_defaults:initialRunSettings()};
+  const errors=validateLoraTrainingTask(task);if(errors.length)throw new LoraTrainingError(422,'invalid_lora_training_task',errors);
+  const {name,dataset_id,...saved}=task;container.models[family]=saved;
+  await writeJsonAtomic(path.join(taskRoot(projectDirectory,datasetId),'settings.json'),container);
+  return readLoraTrainingTask(projectDirectory,datasetId,{family});
 }
 
 export const listRuns = listLoraTrainingRuns;
 
-export async function readDatasetItems(projectDirectory, datasetId, dataset) {
+export async function readDatasetItems(projectDirectory, datasetId, dataset, options={}) {
+  if(dataset.version===6 && options.caption_set_id)await requireCaptionSet(projectDirectory,datasetId,options.caption_set_id);
   const items = [];
   const assetSources = new Map();
   const originalAssets = new Map();
   for (const item of dataset.items) {
-    const files = itemPaths(projectDirectory, datasetId, item);
-    const caption = await readFile(files.caption, "utf8").catch((error) => error?.code === "ENOENT" ? "" : Promise.reject(error));
-    const captionSha256 = await sha256File(files.caption).catch((error) => error?.code === "ENOENT" ? null : Promise.reject(error));
+    const files = itemPaths(projectDirectory, datasetId, item, options);
+    const captionBytes=dataset.version===6&&!options.caption_set_id?null:await readSafeDatasetFile(projectDirectory,datasetId,files.caption,item.id);
+    const caption=captionBytes?.toString('utf8')??'';
+    const captionSha256=captionBytes?createHash('sha256').update(captionBytes).digest('hex'):null;
     const info = await stat(files.image).catch(() => null);
     const imageBuffer = await readFile(files.image).catch(() => null);
     const metadata = imageBuffer ? await orientedImageMetadata(imageBuffer).catch(() => null) : null;
@@ -191,7 +180,7 @@ export async function readDatasetItems(projectDirectory, datasetId, dataset) {
       ...(meta.preparation_error ? { preparation_error: String(meta.preparation_error) } : {}),
       ...(meta.preparation ? { preparation: structuredClone(meta.preparation) } : {}),
       ...(meta.original ? { original_file: meta.original.file, original_sha256: meta.original.sha256 ?? original?.version ?? null } : {}),
-      caption: caption.trimEnd(),
+      caption,
       caption_sha256: captionSha256,
       image_bytes: info?.size ?? null,
       image_width: metadata?.width ?? null,
@@ -203,11 +192,13 @@ export async function readDatasetItems(projectDirectory, datasetId, dataset) {
   return items;
 }
 
-export async function readLoraTrainingDataset(projectDirectory, datasetId) {
-  const { dataset, storedDataset } = await requireDataset(projectDirectory, datasetId);
-  const items = await readDatasetItems(projectDirectory, datasetId, dataset);
-  const captioning = await readCaptioningProjection(projectDirectory, datasetId, dataset, items);
-  return { id: datasetId, dataset: storedDataset, items, captioning };
+export async function readLoraTrainingDataset(projectDirectory,datasetId,options={}){
+  const {dataset,storedDataset}=await requireDataset(projectDirectory,datasetId);
+  const legacy=dataset.version===5,sets=legacy?[]:await readCaptionSets(projectDirectory,datasetId);
+  if(!legacy&&options.caption_set_id)await requireCaptionSet(projectDirectory,datasetId,options.caption_set_id);
+  const items=await readDatasetItems(projectDirectory,datasetId,dataset,options);
+  const captioning=legacy||options.caption_set_id?await readCaptioningProjection(projectDirectory,datasetId,dataset,items,options):null;
+  return {id:datasetId,dataset:storedDataset,items,captioning,caption_sets:sets,caption_set_id:options.caption_set_id??null,read_only:legacy,migration_required:legacy};
 }
 
 export function effectiveDatasetItemCount(dataset, items) {
@@ -223,7 +214,7 @@ export async function listLoraTrainingDatasets(projectDirectory) {
     // 导航摘要只依赖 dataset.json；图片完整性与 Caption 在打开详情和训练预检时检查。
     try {
       const { value: dataset } = await requireStoredDocument(projectDirectory, datasetRoot(projectDirectory, entry.id), "project.json", validateLoraTrainingDataset, "lora_training_dataset_not_found", "unsafe_lora_training_dataset_storage", "invalid_lora_training_dataset");
-      datasets.push({ id: entry.id, name: dataset.name, activation_terms: dataset.activation_terms, item_count: dataset.items.length, enabled_item_count: dataset.items.filter((item) => item.enabled).length, effective_item_count: effectiveDatasetItemCount(dataset, dataset.items) });
+      datasets.push({ id: entry.id, read_only:dataset.version===5,migration_required:dataset.version===5,name: dataset.name, activation_terms: dataset.activation_terms, item_count: dataset.items.length, enabled_item_count: dataset.items.filter((item) => item.enabled).length, effective_item_count: effectiveDatasetItemCount(dataset, dataset.items) });
     } catch (error) {
       datasets.push({ id: entry.id, error: error.code ?? "invalid_lora_training_dataset" });
     }
@@ -235,7 +226,7 @@ export async function updateLoraTrainingDataset(projectDirectory, datasetId, val
   const { directory, dataset: current } = await requireDatasetForUpdate(projectDirectory, datasetId);
   const next = {
     ...value,
-    version: 5,
+    version: 6,
   };
   const errors = validateLoraTrainingDataset(next);
   if (errors.length) throw new LoraTrainingError(422, "invalid_lora_training_dataset", errors);
@@ -244,9 +235,16 @@ export async function updateLoraTrainingDataset(projectDirectory, datasetId, val
     const previous = currentById.get(item.id);
     if (!previous || previous.asset_id !== item.asset_id) throw new LoraTrainingError(409, "lora_training_item_identity_locked", [item.id]);
   }
-  await pruneCaptioningLatest(projectDirectory, datasetId, next.items.map((item) => item.id));
-  await writeJsonAtomic(path.join(directory, "project.json"), storedDatasetProjection(next));
   const nextItemIds = new Set(next.items.map((item) => item.id));
+  const changes=[];
+  for(const set of await readCaptionSets(projectDirectory,datasetId)){
+    const options={caption_set_id:set.id};
+    const pruned=await pruneCaptioningLatest(projectDirectory,datasetId,[...nextItemIds],null,{...options,persist:false});
+    if(pruned.changed)changes.push({target:captioningLatestPath(projectDirectory,datasetId,options),content:JSON.stringify(pruned.latest,null,2)+'\n'});
+    for(const item of current.items.filter(item=>!nextItemIds.has(item.id)))changes.push({target:itemPaths(projectDirectory,datasetId,item,options).caption,content:null});
+  }
+  changes.push({target:path.join(directory,'project.json'),content:JSON.stringify(storedDatasetProjection(next),null,2)+'\n'});
+  await commitFileChanges(changes);
   const removedAssets = new Set(current.items.filter((item) => !nextItemIds.has(item.id)).map((item) => item.asset_id));
   for (const assetId of removedAssets) {
     if (!next.items.some((item) => item.asset_id === assetId)) {
@@ -257,70 +255,38 @@ export async function updateLoraTrainingDataset(projectDirectory, datasetId, val
   return readLoraTrainingDataset(projectDirectory, datasetId);
 }
 
-export async function readLoraTrainingTask(projectDirectory, taskId) {
-  const { task } = await requireTask(projectDirectory, taskId);
-  const [storedDataset, runs] = await Promise.all([
-    requireStoredDocument(
-      projectDirectory,
-      datasetRoot(projectDirectory, task.dataset_id),
-      "project.json",
-      validateLoraTrainingDataset,
-      "lora_training_dataset_not_found",
-      "unsafe_lora_training_dataset_storage",
-      "invalid_lora_training_dataset",
-    ),
-    listRuns(projectDirectory, taskId),
-  ]);
-  const dataset = storedDataset.value;
-  return { id: taskId, task, dataset: { id: task.dataset_id, name: dataset.name, activation_terms: dataset.activation_terms, item_count: dataset.items.length, enabled_item_count: dataset.items.filter((item) => item.enabled).length, effective_item_count: effectiveDatasetItemCount(dataset, dataset.items) }, runs };
+export async function readLoraTrainingTask(projectDirectory,taskId,{family}={}){
+  const container=await readModelSettings(projectDirectory,taskId),{dataset}=await requireDataset(projectDirectory,taskId);
+  const legacy=dataset.version===5;
+  if(!legacy&&!family)throw new LoraTrainingError(422,'training_family_required');
+  const families=legacy?[container.target.family]:Object.keys(container.models);
+  const task=legacy?(await requireTask(projectDirectory,taskId)).task:container.models[family]?(await requireTask(projectDirectory,taskId,{family})).task:null;
+  return {id:taskId,task,family:legacy?task.target.family:family,families,read_only:legacy,migration_required:legacy,caption_sets:legacy?[]:await readCaptionSets(projectDirectory,taskId),dataset:{id:taskId,name:dataset.name,activation_terms:dataset.activation_terms,item_count:dataset.items.length,enabled_item_count:dataset.items.filter(i=>i.enabled).length,effective_item_count:effectiveDatasetItemCount(dataset,dataset.items)},runs:await listRuns(projectDirectory,taskId)};
 }
-
-export async function listLoraTrainingTasks(projectDirectory) {
-  const entries = listRegisteredProjects(projectDirectory, "training");
-  const tasks = [];
-  for (const entry of entries) {
-    if (!entry.available) continue;
-    const detail = await readLoraTrainingTask(projectDirectory, entry.id).catch((error) => ({ id: entry.id, error: error.code ?? "invalid_lora_training_task" }));
-    if (detail.error) tasks.push(detail);
-    else tasks.push({ id: detail.id, name: detail.task.name, family: detail.task.target.family, dataset: detail.dataset, runs: detail.runs.map(({ id, status: value, created_at, legacy, legacy_note, resumable, disk_bytes }) => ({ id, status: value.status, step: value.step ?? 0, created_at, ...(legacy ? { legacy, legacy_note } : {}), resumable: Boolean(resumable), disk_bytes })) });
+export async function listLoraTrainingTasks(projectDirectory){
+  const tasks=[];
+  for(const entry of listRegisteredProjects(projectDirectory,'training')){
+    if(!entry.available)continue;
+    try{
+      const settings=await readModelSettings(projectDirectory,entry.id),families=settings.version===5?[settings.target.family]:Object.keys(settings.models);
+      const detail=await readLoraTrainingTask(projectDirectory,entry.id,{family:families[0]??'qwen-image-2-1'});
+      tasks.push({id:entry.id,name:detail.dataset.name,family:families[0]??null,families,read_only:detail.read_only,migration_required:detail.migration_required,dataset:detail.dataset,runs:detail.runs.map(({id,status,created_at,legacy,legacy_note,resumable,disk_bytes})=>({id,status:status.status,step:status.step??0,created_at,legacy,legacy_note,resumable:Boolean(resumable),disk_bytes}))});
+    }catch(error){tasks.push({id:entry.id,error:error.code??'invalid_lora_training_task'});}
   }
-  tasks.sort((left, right) => {
-    const latest = task => (task.runs ?? []).reduce((date, run) => run.created_at > date ? run.created_at : date, "");
-    return latest(right).localeCompare(latest(left)) || (left.name ?? left.id).localeCompare(right.name ?? right.id, "zh-CN", { numeric: true }) || left.id.localeCompare(right.id);
-  });
-  return { tasks };
+  tasks.sort((a,b)=>(a.name??a.id).localeCompare(b.name??b.id,'zh-CN',{numeric:true}));return {tasks};
 }
-
-export async function updateLoraTrainingTask(projectRoot, projectDirectory, taskId, value) {
-  const directory = taskRoot(projectDirectory, taskId);
-  const directoryInfo = await lstat(directory).catch(() => null);
-  if (!directoryInfo) throw new LoraTrainingError(404, "lora_training_task_not_found");
-  if (!directoryInfo.isDirectory() || directoryInfo.isSymbolicLink()) throw new LoraTrainingError(422, "unsafe_lora_training_task_storage");
-  const projectReal = path.resolve(directory);
-  const directoryReal = await realpath(directory);
-  if (!isWithin(projectReal, directoryReal)) throw new LoraTrainingError(422, "unsafe_lora_training_task_storage");
-  const taskFile = path.join(directory, "settings.json");
-  const taskFileInfo = await lstat(taskFile).catch(() => null);
-  if (!taskFileInfo) throw new LoraTrainingError(404, "lora_training_task_not_found");
-  if (!taskFileInfo.isFile() || taskFileInfo.isSymbolicLink()) throw new LoraTrainingError(422, "unsafe_lora_training_task_storage");
-  if (value.dataset_id !== taskId) throw new LoraTrainingError(422, "training_project_dataset_fixed");
-  const next = { ...value, version: 5 };
-  const errors = validateLoraTrainingTask(next);
-  if (errors.length) throw new LoraTrainingError(422, "invalid_lora_training_task", errors);
-  const recipe = await readLoraTrainingRecipe(projectRoot, next.training_recipe.id);
-  if (!recipe || recipe.family !== next.target.family) throw new LoraTrainingError(422, "invalid_training_recipe");
-  await requireStoredDocument(
-    projectDirectory,
-    datasetRoot(projectDirectory, next.dataset_id),
-    "project.json",
-    validateLoraTrainingDataset,
-    "lora_training_dataset_not_found",
-    "unsafe_lora_training_dataset_storage",
-    "invalid_lora_training_dataset",
-  );
-  const { name: _name, dataset_id: _dataset, ...settings } = next;
-  await writeJsonAtomic(taskFile, settings);
-  return readLoraTrainingTask(projectDirectory, taskId);
+export async function updateLoraTrainingTask(projectRoot,projectDirectory,taskId,value){
+  await requireWritableDataset(projectDirectory,taskId);
+  if(value.dataset_id!==taskId)throw new LoraTrainingError(422,'training_project_dataset_fixed');
+  const next={...value,version:6};delete next.read_only;
+  const errors=validateLoraTrainingTask(next);if(errors.length)throw new LoraTrainingError(422,'invalid_lora_training_task',errors);
+  await requireCaptionSet(projectDirectory,taskId,next.caption_set_id);
+  const recipe=await readLoraTrainingRecipe(projectRoot,next.training_recipe.id);
+  if(!recipe||recipe.family!==next.target.family)throw new LoraTrainingError(422,'invalid_training_recipe');
+  const container=await readModelSettings(projectDirectory,taskId),{name,dataset_id,...saved}=next;
+  container.models[next.target.family]=saved;
+  await writeJsonAtomic(path.join(taskRoot(projectDirectory,taskId),'settings.json'),container);
+  return readLoraTrainingTask(projectDirectory,taskId,{family:next.target.family});
 }
 
 export function safeUploadFilename(value) {
@@ -362,8 +328,7 @@ export async function importOneAsset(projectDirectory, datasetId, dataset, group
     if (source.buffer) await writeFile(target, source.buffer);
     else await copyFile(source.path, target);
     await normalizeOrientedImage(await readFile(target));
-    const caption = String(source.caption ?? "").trim();
-    await writeAtomic(path.join(directory, "caption.txt"), caption ? `${caption}\n` : "");
+
     const originalSha256 = createHash("sha256").update(await readFile(target)).digest("hex");
     await writeJsonAtomic(path.join(directory, "meta.json"), {
       version: 1,
@@ -382,7 +347,8 @@ export async function importOneAsset(projectDirectory, datasetId, dataset, group
 }
 
 export async function importLoraTrainingAssets(projectDirectory, datasetId, { group_id: groupId, asset_id: assetId, files = [] }) {
-  const { directory, dataset } = await requireDataset(projectDirectory, datasetId);
+  const { directory, dataset } = await requireWritableDataset(projectDirectory, datasetId);
+  if(files.some(file=>String(file.caption??'').trim()))throw new LoraTrainingError(422,'caption_set_import_required');
   const imported = [];
   const usedAssetIds = new Set(dataset.items.map((item) => item.asset_id));
   try {
@@ -392,105 +358,88 @@ export async function importLoraTrainingAssets(projectDirectory, datasetId, { gr
     throw error;
   }
   if (!imported.length) throw new LoraTrainingError(422, "no_lora_training_assets");
+  const sets=await readCaptionSets(projectDirectory,datasetId);
   dataset.items.push(...imported);
-  await writeJsonAtomic(path.join(directory, "project.json"), storedDatasetProjection(dataset));
-  return readLoraTrainingDataset(projectDirectory, datasetId);
-}
-
-export async function copyLoraTrainingItem(projectDirectory, datasetId, value) {
-  const { directory, dataset } = await requireDataset(projectDirectory, datasetId);
-  const source = dataset.items.find((item) => item.id === value?.source_item_id);
-  if (!source) throw new LoraTrainingError(404, "lora_training_item_not_found");
-  const groupId = value?.group_id ?? source.group_id;
-  if (!dataset.groups.some((group) => group.id === groupId)) throw new LoraTrainingError(422, "unknown_lora_training_group");
-  const assetId = reserveAssetId(new Set(dataset.items.map((item) => item.asset_id)), value?.asset_id);
-  const itemId = createId("item");
-  const latest = await readCaptioningLatest(projectDirectory, datasetId);
-  const sourceLatest = latest.items[source.id];
-  const sourceFiles = itemPaths(projectDirectory, datasetId, source);
-  const assetDirectory = path.join(directory, "assets", assetId);
-  try {
-    const sourceAssetDirectory = path.dirname(sourceFiles.meta);
-    await cp(sourceAssetDirectory, assetDirectory, { recursive: true, errorOnExist: true });
-    const sourceMeta = await readAssetMeta(projectDirectory, datasetId, source.asset_id);
-    const copiedMeta = structuredClone(sourceMeta);
-    copiedMeta.version = 1;
-    await writeJsonAtomic(path.join(assetDirectory, "meta.json"), copiedMeta);
-    const currentFile = String(copiedMeta.current?.file ?? path.basename(sourceFiles.image));
-    const target = path.join(assetDirectory, currentFile);
-    await sharp(await readFile(target)).metadata();
-  } catch (error) {
-    await rm(assetDirectory, { recursive: true, force: true });
-    if (error instanceof LoraTrainingError) throw error;
-    throw new LoraTrainingError(422, "invalid_lora_training_image", [path.basename(sourceFiles.image), error.message]);
-  }
-  const copiedMeta = await readAssetMeta(projectDirectory, datasetId, assetId);
-  const currentFile = String(copiedMeta.current?.file ?? path.basename(sourceFiles.image));
-  dataset.items.push({ id: itemId, asset_id: assetId, file: `assets/${assetId}/${currentFile}`, group_id: groupId, enabled: source.enabled });
-  try {
-    await writeJsonAtomic(path.join(directory, "project.json"), storedDatasetProjection(dataset));
-    if (sourceLatest) {
-      const nextLatest = { ...latest, items: { ...latest.items, [itemId]: structuredClone(sourceLatest) } };
-      await writeJsonAtomic(captioningLatestPath(projectDirectory, datasetId), nextLatest);
-    }
-  } catch (error) {
-    dataset.items = dataset.items.filter((item) => item.id !== itemId);
-    await writeJsonAtomic(path.join(directory, "project.json"), storedDatasetProjection(dataset)).catch(() => undefined);
-    await rm(assetDirectory, { recursive: true, force: true }).catch(() => undefined);
+  const changes=imported.flatMap(item=>sets.map(set=>({target:itemPaths(projectDirectory,datasetId,item,{caption_set_id:set.id}).caption,content:''})));
+  changes.push({target:path.join(directory,'project.json'),content:JSON.stringify(storedDatasetProjection(dataset),null,2)+'\n'});
+  try{await commitFileChanges(changes);}catch(error){
+    for(const item of imported)await rm(itemPaths(projectDirectory,datasetId,item).assetDirectory,{recursive:true,force:true});
     throw error;
   }
   return readLoraTrainingDataset(projectDirectory, datasetId);
 }
 
+export async function copyLoraTrainingItem(projectDirectory,datasetId,value){
+ const {directory,dataset}=await requireWritableDataset(projectDirectory,datasetId);
+ const source=dataset.items.find(i=>i.id===value?.source_item_id);if(!source)throw new LoraTrainingError(404,'lora_training_item_not_found');
+ const groupId=value?.group_id??source.group_id;if(!dataset.groups.some(g=>g.id===groupId))throw new LoraTrainingError(422,'unknown_lora_training_group');
+ const assetId=reserveAssetId(new Set(dataset.items.map(i=>i.asset_id)),value?.asset_id),itemId=createId('item'),sourceFiles=itemPaths(projectDirectory,datasetId,source),assetDirectory=path.join(directory,'assets',assetId);
+ try{
+  await cp(sourceFiles.assetDirectory,assetDirectory,{recursive:true,errorOnExist:true});
+  const meta=await readAssetMeta(projectDirectory,datasetId,assetId),item={id:itemId,asset_id:assetId,file:'assets/'+assetId+'/'+meta.current.file,group_id:groupId,enabled:source.enabled};
+  const changes=[];
+  for(const set of await readCaptionSets(projectDirectory,datasetId)){
+   const options={caption_set_id:set.id},text=await readSafeDatasetFile(projectDirectory,datasetId,itemPaths(projectDirectory,datasetId,source,options).caption,source.id);
+   changes.push({target:itemPaths(projectDirectory,datasetId,item,options).caption,content:text??''});
+   const latest=await readCaptioningLatest(projectDirectory,datasetId,options);
+   if(latest.items[source.id])latest.items[item.id]={...structuredClone(latest.items[source.id]),confirmation:null};
+   changes.push({target:captioningLatestPath(projectDirectory,datasetId,options),content:JSON.stringify(latest,null,2)+'\n'});
+  }
+  dataset.items.push(item);changes.push({target:path.join(directory,'project.json'),content:JSON.stringify(storedDatasetProjection(dataset),null,2)+'\n'});
+  await commitFileChanges(changes);
+ }catch(error){await rm(assetDirectory,{recursive:true,force:true});throw error;}
+ return readLoraTrainingDataset(projectDirectory,datasetId);
+}
 
-
-export async function saveLoraTrainingCaption(projectDirectory, datasetId, itemId, caption) {
-  const { dataset } = await requireDataset(projectDirectory, datasetId);
+export async function saveLoraTrainingCaption(projectDirectory, datasetId, itemId, caption, options={}) {
+  const { dataset } = await requireWritableDataset(projectDirectory, datasetId);
+  await requireCaptionSet(projectDirectory,datasetId,options.caption_set_id);
   const item = dataset.items.find((entry) => entry.id === itemId);
   if (!item) throw new LoraTrainingError(404, "lora_training_item_not_found");
   if (typeof caption !== "string") throw new LoraTrainingError(422, "invalid_lora_training_caption");
-  const files = itemPaths(projectDirectory, datasetId, item);
-  const captionContent = caption.trim() ? `${caption.trim()}\n` : "";
-  const latest = (await pruneCaptioningLatest(projectDirectory, datasetId, dataset.items.map((entry) => entry.id), null, { persist: false })).latest;
+  const files = itemPaths(projectDirectory, datasetId, item,options);
+  const captionContent = caption;
+  const latest = (await pruneCaptioningLatest(projectDirectory, datasetId, dataset.items.map((entry) => entry.id), null, {...options,persist: false})).latest;
   if (latest.items[itemId]) latest.items[itemId] = { ...latest.items[itemId], confirmation: null };
   await commitFileChanges([
     { target: files.caption, content: captionContent },
-    { target: captioningLatestPath(projectDirectory, datasetId), content: `${JSON.stringify(latest, null, 2)}\n` },
+    { target: captioningLatestPath(projectDirectory, datasetId,options), content: `${JSON.stringify(latest, null, 2)}\n` },
   ]);
-  return { saved: true, item_id: itemId, caption: caption.trim() };
+  return { saved: true, item_id: itemId, caption };
 }
 
 /*
  * 基础 Prompt 的持久化和三方合并。
  *
- * latest.json 只保存最近一次成功的自动结果；图片旁的 .txt 是当前有效文本，
+ * 每个打标集的 latest.json 保存基础结果；texts/*.txt 是当前有效文本，
  * 因此手工编辑不会覆盖自动结果。打标器本身通过配置注入，未配置时接口明确
  * 报错，不在服务端伪造标签。
  */
 const captioningVersion = 1;
-export function captioningRoot(projectDirectory, datasetId) {
-  return path.join(datasetRoot(projectDirectory, datasetId), "captioning");
+export function captioningRoot(projectDirectory, datasetId, options={}) {
+  return options.caption_set_id?captionSetPaths(projectDirectory,datasetId,options.caption_set_id).root:path.join(datasetRoot(projectDirectory, datasetId), "captioning");
 }
 
-export function captioningLatestPath(projectDirectory, datasetId) {
-  return path.join(captioningRoot(projectDirectory, datasetId), "latest.json");
+export function captioningLatestPath(projectDirectory, datasetId, options={}) {
+  return path.join(captioningRoot(projectDirectory, datasetId,options), "latest.json");
 }
 
 const captionAuditVersion = 1;
-const defaultCaptionAuditScope = Object.freeze({ family: "anima", prompt_family: "anima" });
+const defaultCaptionAuditScope = Object.freeze({kind:"images"});
 
-export function captionAuditPath(projectDirectory, datasetId) {
-  return path.join(captioningRoot(projectDirectory, datasetId), "audit.json");
+export function captionAuditPath(projectDirectory, datasetId, options={}) {
+  return path.join(captioningRoot(projectDirectory, datasetId,options), "audit.json");
 }
 
-export async function readCaptionAuditSnapshot(projectDirectory, datasetId) {
-  const value = await readJson(captionAuditPath(projectDirectory, datasetId), { optional: true });
+export async function readCaptionAuditSnapshot(projectDirectory, datasetId, options={}) {
+  if(options.caption_set_id)await requireCaptionSet(projectDirectory,datasetId,options.caption_set_id);
+  const buffer=await readSafeDatasetFile(projectDirectory,datasetId,captionAuditPath(projectDirectory,datasetId,options),'caption audit');
+  const value=buffer?JSON.parse(buffer.toString('utf8')):null;
   if (value === null) return { version: captionAuditVersion, scope: { ...defaultCaptionAuditScope }, updated_at: null, images: {} };
   if (!isRecord(value)
     || value.version !== captionAuditVersion
     || !isRecord(value.scope)
-    || value.scope.family !== defaultCaptionAuditScope.family
-    || value.scope.prompt_family !== defaultCaptionAuditScope.prompt_family
+    || !(value.scope.kind==='images'||!options.caption_set_id&&value.scope.family==='anima'&&value.scope.prompt_family==='anima')
     || (value.updated_at !== null && typeof value.updated_at !== "string")
     || !isRecord(value.images)) throw new LoraTrainingError(422, "invalid_lora_caption_audit");
   for (const [imageSha256, entry] of Object.entries(value.images)) {
@@ -505,10 +454,11 @@ function captionAuditEntry(item, extra = {}) {
   return { item_id: item.id, asset_id: item.asset_id, image_sha256: item.image_version ?? null, ...extra };
 }
 
-export async function readLoraCaptionAudit(projectDirectory, datasetId) {
+export async function readLoraCaptionAudit(projectDirectory, datasetId, options={}) {
   const { dataset } = await requireDataset(projectDirectory, datasetId);
-  const items = await readDatasetItems(projectDirectory, datasetId, dataset);
-  const snapshot = await readCaptionAuditSnapshot(projectDirectory, datasetId);
+  if(dataset.version===6)await requireCaptionSet(projectDirectory,datasetId,options.caption_set_id);
+  const items = await readDatasetItems(projectDirectory, datasetId, dataset,options);
+  const snapshot = await readCaptionAuditSnapshot(projectDirectory, datasetId,options);
   const enabledGroupIds = new Set(dataset.groups.filter((group) => group.enabled).map((group) => group.id));
   const effectiveItems = items.filter((item) => item.enabled && enabledGroupIds.has(item.group_id));
   const audited = [];
@@ -517,10 +467,6 @@ export async function readLoraCaptionAudit(projectDirectory, datasetId) {
   for (const item of effectiveItems) {
     if (!item.image_version || !item.image_width || !item.image_height) {
       blocked.push(captionAuditEntry(item, { reason: "invalid_image", message: "图片无法解码" }));
-      continue;
-    }
-    if (!comparablePrompt(item.caption)) {
-      blocked.push(captionAuditEntry(item, { reason: "empty_caption", message: "Caption 为空" }));
       continue;
     }
     const audit = snapshot.images[item.image_version];
@@ -538,32 +484,27 @@ export async function readLoraCaptionAudit(projectDirectory, datasetId) {
   };
 }
 
-export async function recordLoraCaptionAudit(projectDirectory, datasetId, value) {
-  const promptFamily = value?.prompt_family ?? defaultCaptionAuditScope.prompt_family;
-  if (promptFamily !== defaultCaptionAuditScope.prompt_family || !Array.isArray(value?.image_sha256) || value.image_sha256.some((entry) => !sha256Pattern.test(entry ?? ""))) {
-    throw new LoraTrainingError(422, "invalid_lora_caption_audit_request");
-  }
-  const requestedHashes = [...new Set(value.image_sha256)];
-  const current = await readLoraCaptionAudit(projectDirectory, datasetId);
-  const availableHashes = new Set([...current.audited, ...current.pending].map((entry) => entry.image_sha256));
-  const unknownHashes = requestedHashes.filter((imageSha256) => !availableHashes.has(imageSha256));
-  if (unknownHashes.length) throw new LoraTrainingError(422, "lora_caption_audit_unknown_image", unknownHashes);
-  const snapshot = await readCaptionAuditSnapshot(projectDirectory, datasetId);
-  const auditedAt = new Date().toISOString();
-  for (const imageSha256 of requestedHashes) snapshot.images[imageSha256] = { audited_at: auditedAt };
-  snapshot.version = captionAuditVersion;
-  snapshot.scope = { ...defaultCaptionAuditScope, prompt_family: promptFamily };
-  snapshot.updated_at = auditedAt;
-  await writeJsonAtomic(captionAuditPath(projectDirectory, datasetId), snapshot);
-  return readLoraCaptionAudit(projectDirectory, datasetId);
+export async function recordLoraCaptionAudit(projectDirectory,datasetId,value){
+ await requireWritableDataset(projectDirectory,datasetId);
+ const options={caption_set_id:value?.caption_set_id};await requireCaptionSet(projectDirectory,datasetId,options.caption_set_id);
+ if(!Array.isArray(value?.image_sha256)||value.image_sha256.some(h=>!sha256Pattern.test(h??'')))throw new LoraTrainingError(422,'invalid_lora_caption_audit_request');
+ const current=await readLoraCaptionAudit(projectDirectory,datasetId,options),available=new Set([...current.audited,...current.pending].map(i=>i.image_sha256)),requested=[...new Set(value.image_sha256)];
+ const unknown=requested.filter(h=>!available.has(h));if(unknown.length)throw new LoraTrainingError(422,'lora_caption_audit_unknown_image',unknown);
+ const snapshot=await readCaptionAuditSnapshot(projectDirectory,datasetId,options),now=new Date().toISOString();
+ for(const hash of requested)snapshot.images[hash]={audited_at:now};
+ snapshot.scope={...defaultCaptionAuditScope};snapshot.updated_at=now;
+ await writeJsonAtomic(captionAuditPath(projectDirectory,datasetId,options),snapshot);
+ return readLoraCaptionAudit(projectDirectory,datasetId,options);
 }
-
-export async function invalidateLoraCaptioningItem(projectDirectory, datasetId, itemId) {
-  const latestPath = captioningLatestPath(projectDirectory, datasetId);
-  const latest = await readCaptioningLatest(projectDirectory, datasetId);
-  if (!Object.hasOwn(latest.items, itemId)) return;
-  latest.items[itemId] = { ...latest.items[itemId], confirmation: null };
-  await writeJsonAtomic(latestPath, latest);
+export async function invalidateLoraCaptioningItem(projectDirectory,datasetId,itemId){
+ await requireWritableDataset(projectDirectory,datasetId);
+ const changes=[];
+ for(const set of await readCaptionSets(projectDirectory,datasetId)){
+  const options={caption_set_id:set.id},latest=await readCaptioningLatest(projectDirectory,datasetId,options);
+  if(!latest.items[itemId])continue;latest.items[itemId]={...latest.items[itemId],confirmation:null};
+  changes.push({target:captioningLatestPath(projectDirectory,datasetId,options),content:JSON.stringify(latest,null,2)+'\n'});
+ }
+ await commitFileChanges(changes);
 }
 
 export function captioningRuntimeRoot(projectDirectory, datasetId) {
@@ -580,8 +521,10 @@ export function comparablePrompt(value) {
   return String(value ?? "").replaceAll("\r\n", "\n").trim();
 }
 
-export async function readCaptioningLatest(projectDirectory, datasetId) {
-  const value = await readJson(captioningLatestPath(projectDirectory, datasetId), { optional: true });
+export async function readCaptioningLatest(projectDirectory, datasetId, options={}) {
+  if(options.caption_set_id)await requireCaptionSet(projectDirectory,datasetId,options.caption_set_id);
+  const buffer=await readSafeDatasetFile(projectDirectory,datasetId,captioningLatestPath(projectDirectory,datasetId,options),'caption latest');
+  const value=buffer?JSON.parse(buffer.toString('utf8')):null;
   if (value === null) return { version: captioningVersion, items: {}, tagger: null, updated_at: null };
   if (!isRecord(value) || value.version !== captioningVersion || !isRecord(value.items)) throw new LoraTrainingError(422, "invalid_lora_captioning_latest");
   for (const [itemId, entry] of Object.entries(value.items)) {
@@ -591,8 +534,9 @@ export async function readCaptioningLatest(projectDirectory, datasetId) {
   return value;
 }
 
-export async function pruneCaptioningLatest(projectDirectory, datasetId, itemIds, currentImageHashes = null, { persist = true } = {}) {
-  const latest = await readCaptioningLatest(projectDirectory, datasetId);
+export async function pruneCaptioningLatest(projectDirectory, datasetId, itemIds, currentImageHashes = null, { persist = true,caption_set_id } = {}) {
+  const options={caption_set_id};
+  const latest = await readCaptioningLatest(projectDirectory, datasetId,options);
   const allowed = new Set(itemIds);
   const staleItemIds = Object.keys(latest.items).filter((itemId) => !allowed.has(itemId)
     || currentImageHashes instanceof Map && latest.items[itemId]?.image_sha256 !== currentImageHashes.get(itemId));
@@ -602,12 +546,16 @@ export async function pruneCaptioningLatest(projectDirectory, datasetId, itemIds
     ...latest,
     items: Object.fromEntries(Object.entries(latest.items).filter(([itemId]) => allowed.has(itemId) && !stale.has(itemId))),
   };
-  if (persist) await writeJsonAtomic(captioningLatestPath(projectDirectory, datasetId), next);
+  if (persist){
+    await requireWritableDataset(projectDirectory,datasetId);
+    await requireCaptionSet(projectDirectory,datasetId,options.caption_set_id);
+    await writeJsonAtomic(captioningLatestPath(projectDirectory, datasetId,options), next);
+  }
   return { latest: next, stale_item_ids: staleItemIds, changed: true };
 }
 
-export async function readCaptioningProjection(projectDirectory, datasetId, dataset, items) {
-  const latest = await readCaptioningLatest(projectDirectory, datasetId);
+export async function readCaptioningProjection(projectDirectory, datasetId, dataset, items,options={}) {
+  const latest = await readCaptioningLatest(projectDirectory, datasetId,options);
   const projections = items.map((item) => {
     const candidateRecord = latest.items[item.id] ?? null;
     const record = candidateRecord?.image_sha256 === item.image_version ? candidateRecord : null;
@@ -628,6 +576,7 @@ export async function readCaptioningProjection(projectDirectory, datasetId, data
     };
   });
   return {
+    caption_set_id:options.caption_set_id??null,
     version: captioningVersion,
     latest: latest.updated_at ? { updated_at: latest.updated_at, tagger: latest.tagger ?? null } : null,
     summary: { total: dataset.items.length, with_base: projections.filter((entry) => entry.base_prompt !== null).length, confirmed: projections.filter((entry) => entry.state === "confirmed").length, unconfirmed: projections.filter((entry) => entry.state !== "confirmed").length },
@@ -635,16 +584,18 @@ export async function readCaptioningProjection(projectDirectory, datasetId, data
   };
 }
 
-export async function readLoraCaptioning(projectDirectory, datasetId) {
+export async function readLoraCaptioning(projectDirectory, datasetId, options={}) {
   const { dataset } = await requireDataset(projectDirectory, datasetId);
-  const items = await readDatasetItems(projectDirectory, datasetId, dataset);
-  return readCaptioningProjection(projectDirectory, datasetId, dataset, items);
+  if(dataset.version===6)await requireCaptionSet(projectDirectory,datasetId,options.caption_set_id);
+  const items = await readDatasetItems(projectDirectory, datasetId, dataset,options);
+  return readCaptioningProjection(projectDirectory, datasetId, dataset, items,options);
 }
 
-export async function readLoraCaptioningRun(projectDirectory, datasetId, runId) {
+export async function readLoraCaptioningRun(projectDirectory, datasetId, runId,options={}) {
   const runDirectory = captioningRuntimeRunRoot(projectDirectory, datasetId, runId);
   const result = await readJson(path.join(runDirectory, "result.json"), { optional: true });
   if (!result) throw new LoraTrainingError(404, "lora_caption_run_not_found");
+  if(result.caption_set_id!==options.caption_set_id)throw new LoraTrainingError(404,'lora_caption_run_not_found');
   return result;
 }
 
@@ -836,12 +787,15 @@ export async function runConfiguredCaptioner(projectRoot, projectDirectory, data
   return { provider, results };
 }
 
-export async function runLoraCaptioning(projectRoot, projectDirectory, datasetId, mode, config, { item_id: itemId = null, confirm_overwrite: confirmOverwrite = false } = {}) {
+export async function runLoraCaptioning(projectRoot, projectDirectory, datasetId, mode, config, { item_id: itemId = null, confirm_overwrite: confirmOverwrite = false,caption_set_id } = {}) {
   if (mode !== "missing" && mode !== "single") throw new LoraTrainingError(400, "invalid_lora_caption_run_mode");
-  const { dataset } = await requireDataset(projectDirectory, datasetId);
-  const items = await readDatasetItems(projectDirectory, datasetId, dataset);
+  const options={caption_set_id};
+  const { dataset } = await requireWritableDataset(projectDirectory, datasetId);
+  const set=await requireCaptionSet(projectDirectory,datasetId,caption_set_id);
+  if(set.format!=='tags')throw new LoraTrainingError(422,'caption_set_requires_agent_text');
+  const items = await readDatasetItems(projectDirectory, datasetId, dataset,options);
   const currentImageHashes = new Map(items.map((item) => [item.id, item.image_version]));
-  const pruned = await pruneCaptioningLatest(projectDirectory, datasetId, items.map((item) => item.id), currentImageHashes, { persist: false });
+  const pruned = await pruneCaptioningLatest(projectDirectory, datasetId, items.map((item) => item.id), currentImageHashes, {...options,persist:false});
   const { latest } = pruned;
   let candidates;
   if (mode === "missing") {
@@ -856,8 +810,8 @@ export async function runLoraCaptioning(projectRoot, projectDirectory, datasetId
   const runDirectory = captioningRuntimeRunRoot(projectDirectory, datasetId, runId);
   await mkdir(runDirectory, { recursive: true });
   if (!candidates.length) {
-    if (pruned.changed) await commitFileChanges([{ target: captioningLatestPath(projectDirectory, datasetId), content: `${JSON.stringify(latest, null, 2)}\n` }]);
-    const result = { version: 1, run_id: runId, mode, created_at: new Date().toISOString(), tagger: latest.tagger ?? null, processed: 0, updated: 0 };
+    if (pruned.changed) await commitFileChanges([{ target: captioningLatestPath(projectDirectory, datasetId,options), content: `${JSON.stringify(latest, null, 2)}\n` }]);
+    const result = { caption_set_id,version: 1, run_id: runId, mode, created_at: new Date().toISOString(), tagger: latest.tagger ?? null, processed: 0, updated: 0 };
     await writeJsonAtomic(path.join(runDirectory, "result.json"), result);
     return result;
   }
@@ -870,8 +824,12 @@ export async function runLoraCaptioning(projectRoot, projectDirectory, datasetId
   const captionChanges = [];
   for (const item of candidates) {
     const generated = resultById.get(item.id);
-    const files = itemPaths(projectDirectory, datasetId, item);
+    const files = itemPaths(projectDirectory, datasetId, item,options);
     const imageSha = await sha256File(files.image);
+    if(imageSha!==item.image_version)throw new LoraTrainingError(409,'captioning_inputs_changed',[item.id]);
+    const currentCaption=await readSafeDatasetFile(projectDirectory,datasetId,files.caption,item.id);
+    const currentCaptionSha=currentCaption?createHash('sha256').update(currentCaption).digest('hex'):null;
+    if(currentCaptionSha!==item.caption_sha256)throw new LoraTrainingError(409,'captioning_inputs_changed',[item.id]);
     const captionContent = `${generated.prompt}\n`;
     const captionSha = createHash("sha256").update(captionContent).digest("hex");
     captionChanges.push({ target: files.caption, content: captionContent });
@@ -881,22 +839,24 @@ export async function runLoraCaptioning(projectRoot, projectDirectory, datasetId
   nextLatest.version = captioningVersion;
   nextLatest.updated_at = new Date().toISOString();
   nextLatest.tagger = captioningTagger(provider);
-  captionChanges.push({ target: captioningLatestPath(projectDirectory, datasetId), content: `${JSON.stringify(nextLatest, null, 2)}\n` });
+  captionChanges.push({ target: captioningLatestPath(projectDirectory, datasetId,options), content: `${JSON.stringify(nextLatest, null, 2)}\n` });
   await commitFileChanges(captionChanges);
-  const result = { version: 1, run_id: runId, mode, created_at: new Date().toISOString(), tagger: nextLatest.tagger, processed: candidates.length, updated };
+  const result = { caption_set_id,version: 1, run_id: runId, mode, created_at: new Date().toISOString(), tagger: nextLatest.tagger, processed: candidates.length, updated };
   await writeJsonAtomic(path.join(runDirectory, "result.json"), result);
   return result;
 }
 
-export async function updateLoraCaptioningItem(projectDirectory, datasetId, itemId, prompt, { confirm = false } = {}) {
-  const { dataset } = await requireDataset(projectDirectory, datasetId);
+export async function updateLoraCaptioningItem(projectDirectory, datasetId, itemId, prompt, { confirm = false,caption_set_id } = {}) {
+  const options={caption_set_id};
+  const { dataset } = await requireWritableDataset(projectDirectory, datasetId);
+  await requireCaptionSet(projectDirectory,datasetId,caption_set_id);
   const item = dataset.items.find((entry) => entry.id === itemId);
   if (!item) throw new LoraTrainingError(404, "lora_training_item_not_found");
   if (typeof prompt !== "string") throw new LoraTrainingError(422, "invalid_lora_training_caption");
-  const files = itemPaths(projectDirectory, datasetId, item);
+  const files = itemPaths(projectDirectory, datasetId, item,options);
   const text = comparablePrompt(prompt);
-  const captionContent = text ? `${text}\n` : "";
-  const latest = (await pruneCaptioningLatest(projectDirectory, datasetId, dataset.items.map((entry) => entry.id), null, { persist: false })).latest;
+  const captionContent = prompt;
+  const latest = (await pruneCaptioningLatest(projectDirectory, datasetId, dataset.items.map((entry) => entry.id), null, {...options,persist:false})).latest;
   const imageSha = await sha256File(files.image);
   const captionSha = createHash("sha256").update(captionContent).digest("hex");
   const previous = latest.items[itemId];
@@ -904,20 +864,82 @@ export async function updateLoraCaptioningItem(projectDirectory, datasetId, item
   const rawResult = sameImage
     ? previous
     : { image_sha256: imageSha, caption_sha256: captionSha, base_prompt: null, raw_tags: [] };
-  latest.items[itemId] = { ...rawResult, image_sha256: imageSha, confirmation: confirm ? { image_sha256: imageSha, caption_sha256: captionSha } : null };
+  latest.items[itemId] = { ...rawResult, image_sha256: imageSha, confirmation: confirm && Boolean(text) ? { image_sha256: imageSha, caption_sha256: captionSha } : null };
   latest.version = captioningVersion;
   latest.updated_at = new Date().toISOString();
   await commitFileChanges([
     { target: files.caption, content: captionContent },
-    { target: captioningLatestPath(projectDirectory, datasetId), content: `${JSON.stringify(latest, null, 2)}\n` },
+    { target: captioningLatestPath(projectDirectory, datasetId,options), content: `${JSON.stringify(latest, null, 2)}\n` },
   ]);
-  return { saved: true, item_id: itemId, prompt: text, confirmed: Boolean(confirm) };
+  return { saved: true, item_id: itemId, prompt, confirmed: Boolean(confirm&&text) };
 }
 
+
+export async function listLoraCaptionSets(projectDirectory,datasetId){
+  const {dataset}=await requireDataset(projectDirectory,datasetId);
+  return {caption_sets:dataset.version===6?await readCaptionSets(projectDirectory,datasetId):[],read_only:dataset.version!==6};
+}
+
+export async function createLoraCaptionSet(projectDirectory,datasetId,value={}){
+  const {dataset}=await requireWritableDataset(projectDirectory,datasetId);
+  const sets=await readCaptionSets(projectDirectory,datasetId);
+  const source=value.source_id?await requireCaptionSet(projectDirectory,datasetId,value.source_id):null;
+  const name=String(value.name??'').trim(),format=value.format??source?.format??'tags';
+  if(!name||!['tags','prose'].includes(format))throw new LoraTrainingError(422,'invalid_caption_set');
+  const set={id:createId('caption-set'),name,format},paths=captionSetPaths(projectDirectory,datasetId,set.id),changes=[];
+  await mkdir(paths.texts,{recursive:true});
+  try{
+    for(const item of dataset.items){
+      const content=source?await readSafeDatasetFile(projectDirectory,datasetId,itemPaths(projectDirectory,datasetId,item,{caption_set_id:source.id}).caption,item.id):'';
+      changes.push({target:itemPaths(projectDirectory,datasetId,item,{caption_set_id:set.id}).caption,content:content??''});
+    }
+    if(source){
+      const latest=await readCaptioningLatest(projectDirectory,datasetId,{caption_set_id:source.id});
+      for(const entry of Object.values(latest.items))entry.confirmation=null;
+      changes.push({target:paths.latest,content:JSON.stringify(latest,null,2)+'\n'});
+    }
+    changes.push({target:path.join(datasetRoot(projectDirectory,datasetId),'captions','index.json'),content:JSON.stringify({version:1,sets:[...sets,set]},null,2)+'\n'});
+    await commitFileChanges(changes);
+  }catch(error){await rm(paths.root,{recursive:true,force:true});throw error;}
+  return readLoraTrainingDataset(projectDirectory,datasetId,{caption_set_id:set.id});
+}
+
+export async function updateLoraCaptionSet(projectDirectory,datasetId,setId,value){
+  await requireWritableDataset(projectDirectory,datasetId);
+  await requireCaptionSet(projectDirectory,datasetId,setId);
+  if(!isRecord(value)||Object.keys(value).some(k=>k!=='name')||typeof value.name!=='string'||!value.name.trim())throw new LoraTrainingError(422,'invalid_caption_set');
+  const sets=await readCaptionSets(projectDirectory,datasetId);
+  await writeJsonAtomic(path.join(datasetRoot(projectDirectory,datasetId),'captions','index.json'),{version:1,sets:sets.map(set=>set.id===setId?{...set,name:value.name.trim()}:set)});
+  return readLoraTrainingDataset(projectDirectory,datasetId,{caption_set_id:setId});
+}
+
+export async function importLoraCaptionSet(projectDirectory,datasetId,setId,value){
+  const {dataset}=await requireWritableDataset(projectDirectory,datasetId);
+  await requireCaptionSet(projectDirectory,datasetId,setId);
+  if(!Array.isArray(value?.entries)||!value.entries.length)throw new LoraTrainingError(422,'invalid_caption_import');
+  const options={caption_set_id:setId},latest=await readCaptioningLatest(projectDirectory,datasetId,options),changes=[],seen=new Set();
+  for(const entry of value.entries){
+    const item=dataset.items.find(item=>item.id===entry?.item_id);
+    if(!item||seen.has(item.id)||typeof entry.caption!=='string'||!sha256Pattern.test(entry.image_sha256??''))throw new LoraTrainingError(422,'invalid_caption_import',[entry?.item_id]);
+    seen.add(item.id);
+    const files=itemPaths(projectDirectory,datasetId,item,options),imageSha=await sha256File(files.image);
+    if(imageSha!==entry.image_sha256)throw new LoraTrainingError(409,'caption_import_image_changed',[item.id]);
+    const captionSha=createHash('sha256').update(entry.caption).digest('hex');
+    if(entry.caption_sha256!==undefined&&entry.caption_sha256!==captionSha)throw new LoraTrainingError(422,'caption_import_hash_mismatch',[item.id]);
+    changes.push({target:files.caption,content:entry.caption});
+    const previous=latest.items[item.id];
+    latest.items[item.id]={image_sha256:imageSha,caption_sha256:captionSha,base_prompt:previous?.image_sha256===imageSha?previous.base_prompt:null,raw_tags:previous?.image_sha256===imageSha?previous.raw_tags:[],confirmation:null};
+  }
+  latest.updated_at=new Date().toISOString();
+  changes.push({target:captioningLatestPath(projectDirectory,datasetId,options),content:JSON.stringify(latest,null,2)+'\n'});
+  await commitFileChanges(changes);
+  return {saved:true,caption_set_id:setId,imported:seen.size};
+}
 
 export function createLoraTrainingFactsInterface(implementation) {
   return Object.freeze({
     datasets: Object.freeze({
+      assertWritable:implementation.requireWritableDataset,
       list: implementation.listLoraTrainingDatasets,
       read: implementation.readLoraTrainingDataset,
       create: implementation.createLoraTrainingDataset,
@@ -925,11 +947,12 @@ export function createLoraTrainingFactsInterface(implementation) {
       importAssets: implementation.importLoraTrainingAssets,
       copyItem: implementation.copyLoraTrainingItem,
     }),
+    captionSets:Object.freeze({list:implementation.listLoraCaptionSets,create:implementation.createLoraCaptionSet,update:implementation.updateLoraCaptionSet,import:implementation.importLoraCaptionSet}),
     captions: Object.freeze({
       read: implementation.readLoraCaptioning,
       readRun: implementation.readLoraCaptioningRun,
-      run: ({ projectRoot, projectDirectory, datasetId, mode = "missing", itemId = null, config, confirmOverwrite = false }) =>
-        implementation.runLoraCaptioning(projectRoot, projectDirectory, datasetId, mode, config, { item_id: itemId, confirm_overwrite: confirmOverwrite }),
+      run: ({ projectRoot, projectDirectory, datasetId, mode = "missing", itemId = null, config, confirmOverwrite = false,captionSetId }) =>
+        implementation.runLoraCaptioning(projectRoot, projectDirectory, datasetId, mode, config, { item_id: itemId, confirm_overwrite: confirmOverwrite,caption_set_id:captionSetId }),
       save: implementation.saveLoraTrainingCaption,
       confirm: implementation.updateLoraCaptioningItem,
       audit: Object.freeze({

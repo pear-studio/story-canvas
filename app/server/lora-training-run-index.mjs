@@ -129,8 +129,9 @@ export async function listLoraTrainingRuns(projectDirectory, taskId) {
     ]);
     const rawStatus = outcome && !runningStatuses.has(outcome.status) ? outcome : live ?? (outcome ? { ...outcome, status: "interrupted", pid: null } : null);
     if (!manifest && !rawStatus) continue;
-    // v4 历史或无法解析的清单进入只读 legacy 分支，不影响整表。
+    // 只有明确的 v4 Anima 清单属于历史格式；损坏的新清单单独标记。
     const valid = manifest && validateLoraTrainingRunManifest(manifest).length === 0 && manifest.task_id === sourceTaskId && manifest.id === entry.name;
+    const legacy = manifest?.version===4 && (!manifest.family||manifest.family==='anima') && manifest.task_id===sourceTaskId && manifest.id===entry.name;
     const runtimeDirectory = runRoot(projectDirectory, sourceTaskId, entry.name);
     const statusValue = { ...rawStatus, log_tail: [consoleLog, stdout, stderr].filter(Boolean).join("\n") || rawStatus?.log_tail || "" };
     statusValue.loss_history = rawStatus?.loss_history ?? await readRunLossHistory(runtimeDirectory);
@@ -144,7 +145,7 @@ export async function listLoraTrainingRuns(projectDirectory, taskId) {
       created_at: manifest?.created_at ?? rawStatus?.updated_at ?? "",
       status: statusValue,
       disk_bytes: await directorySize(directory),
-      ...(valid ? { resumable: Boolean(statusValue.resume) } : { legacy: true, resumable: false, legacy_note: legacyRunNote }),
+      ...(valid ? { resumable: Boolean(statusValue.resume) } : legacy ? { legacy: true, resumable: false, legacy_note: legacyRunNote } : {invalid_manifest:true,resumable:false,legacy_note:'训练清单无效；不能加载或续训'}),
     });
   }
   combined.push(...runs);

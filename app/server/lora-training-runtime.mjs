@@ -345,18 +345,16 @@ export async function requireRun(projectDirectory, taskId, runId) {
   const info = await lstat(directory).catch(() => null);
   if (info && (!info.isDirectory() || info.isSymbolicLink())) throw new LoraTrainingError(422, "unsafe_lora_training_run_storage");
   if (info) {
-    const [projectReal, runReal] = await Promise.all([realpath(projectDirectory), realpath(directory)]);
+    const [projectReal, runReal] = await Promise.all([realpath(support.trainingRecordProjectRoot(projectDirectory,taskId)), realpath(directory)]);
     if (!isWithin(projectReal, runReal)) throw new LoraTrainingError(422, "unsafe_lora_training_run_storage");
   }
   const [manifest, statusValue] = await Promise.all([readJson(path.join(directory, "manifest.json"), { optional: true }), readJson(path.join(directory, "result.json"), { optional: true })]);
   if (!manifest || !statusValue) throw new LoraTrainingError(404, "lora_training_run_not_found");
   // v4（Anima）历史 run 只读展示：基本信息保留，明确标记不支持精确续训。
   let legacy = null;
-  try {
-    assertLoraTrainingRunManifest(manifest, { taskId, runId });
-  } catch {
-    legacy = { family: typeof manifest?.family === "string" ? manifest.family : "anima", resumable: false, note: "Anima 历史记录，不支持精确续训" };
-  }
+  if(manifest.version===4 && (!manifest.family||manifest.family==='anima') && manifest.id===runId && manifest.task_id===taskId){
+    legacy = { family: 'anima', resumable: false, note: "Anima 历史记录，不支持精确续训" };
+  } else assertLoraTrainingRunManifest(manifest, { taskId, runId });
   const live = await readJson(path.join(runtimeDirectory, "status.json"), { optional: true });
   const status = ["completed", "interrupted", "failed"].includes(statusValue.status) ? statusValue : live ?? { ...statusValue, status: "interrupted", pid: null };
   return { directory, runtimeDirectory, manifest, status, ...(legacy ? { legacy } : {}) };
@@ -448,7 +446,7 @@ export async function recoverLoraTrainingRuns(projectRoot, { mutateDerived = nul
         if (!runningStatuses.has(statusValue?.status)) continue;
         const manifest = await readJson(path.join(directory, "manifest.json"), { optional: true }).catch(() => null);
         // v4（Anima）历史 run 没有可恢复语义，直接标中断，不尝试接管。
-        if (manifest && manifest.version !== 5) {
+        if (manifest?.version===4 && (!manifest.family||manifest.family==='anima') && manifest.id===entry.name && manifest.task_id===task.name) {
           const update = { status: "interrupted", pid: null, eta_seconds: null, interrupted_at: new Date().toISOString(), error: null, recovery: "legacy_manifest" };
           await writeJsonAtomic(path.join(directory, "status.json"), mergeLoraRunStatus(statusValue, update));
           recovered.push({ task_id: task.name, run_id: entry.name, verified: false, process_found: false, legacy_manifest: true });

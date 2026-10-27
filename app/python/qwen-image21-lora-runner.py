@@ -592,8 +592,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         manifest = json.loads(pathlib.Path(args.manifest).read_text(encoding="utf-8"))
-        if manifest.get("version") != 5:
-            raise RunnerError(f"manifest version 必须为 5（实际 {manifest.get('version')}）")
+        if manifest.get("version") not in (5, 6):
+            raise RunnerError(f"manifest version 必须为 5 或 6（实际 {manifest.get('version')}）")
         events = Events(manifest["paths"]["events_file"])
     except Exception as e:
         print(f"runner 启动失败：{e}", file=sys.stderr)
