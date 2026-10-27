@@ -10,8 +10,7 @@
 .comic-canvas.is-preview .comic-frame-number{display:none}
 .comic-lettering-editor{padding-top:14px}
 .comic-lettering-editor[hidden]{display:none}
-.page-mobile-history{display:none}
-@media(max-width:1160px){.page-mobile-history{display:flex;gap:8px;margin-bottom:10px}.comic-page-actions .button{min-height:44px;font-size:16px;padding:8px 10px}.comic-page-actions{gap:6px;padding-inline:8px}}
+@media(max-width:1160px){.comic-page-actions .button{min-height:44px;font-size:16px;padding:8px 10px}.comic-page-actions{gap:6px;padding-inline:8px}}
 .comic-page-shell{display:flex;flex-direction:column;height:100%;min-height:0;min-width:0}
 .comic-view{flex:1;min-height:0;min-width:0}
 .comic-view[hidden]{display:none}

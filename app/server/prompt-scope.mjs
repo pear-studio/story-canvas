@@ -46,10 +46,12 @@ export async function readPromptScope(options) {
   const result = receipt(state,options.projectId);
   if (state.target.kind === 'page') {
     const {narrative,sources} = state;
-    result.references = {characters:narrative.characters ?? [],composition:state.document.composition ?? 'settings',
+    result.references = {characters:narrative.characters ?? [],composition:modelAdapter(state.target.model_id).consumesSettings(state.document)?'settings':'standalone',
       edit:{operation:'page.editor.read',args:{project_id:options.projectId,page_key:{page_id:state.target.id},section:'content'}}};
     result.inherited_sources = Object.entries(sources).map(([key,value])=>promptSourceView(key,value,state.document));
     Object.assign(result,modelAdapter(state.target.model_id).pageScopeDetails({document:state.document,narrative,inheritedSources:result.inherited_sources,referenceEdit:result.references.edit}));
+    const readProjectPrompt=modelAdapter(state.target.model_id).readProjectPrompt;
+    if(readProjectPrompt)result.project_prompt=await readProjectPrompt({projectRoot:options.projectRoot,projectDirectory:state.project.projectDirectory,render:await readPageRenderSettings(state.project.projectDirectory,state.target.id),projectId:options.projectId,document:state.document});
   } else if (state.target.scope === 'variant' && modelAdapter(state.target.model_id).inheritedSettingReadHint) {
     const sources = await readPromptScopeSources({...options,target:state.target});
     result.inherited_sources = sources.sources;
@@ -112,7 +114,7 @@ export async function readPromptScopeSources(options) {
   const selected = Object.entries(sources);
   return {target:state.target,sources:source ? selected.map(([key,value])=>promptSourceView(key,value,state.document,{baseOnly:state.target.kind !== 'page'})) : selected.map(([key,value])=>({source:key,kind:value.kind,id:value.id,variant_id:value.variant_id,sha256:value.sha256,...(value.missing ? {missing:value.missing} : {})})),
     source_versions:Object.fromEntries(selected.map(([key,value])=>[key,value.sha256])),
-    usage:state.target.kind === 'page' ? '把 source_versions 合并进原 prompt.read 的 save.args.source_versions；保留原 expected_sha256，不能用来源查询更新页面版本。页面调整写 inheritance[source][key]。' : '本子设定只显示可覆盖的基础词，调整写 identity_overrides[key]；自身词在 prompt.read 的 prompt 分类数组中编辑。',
+    usage:(state.target.kind === 'page' ? '把 source_versions 合并进原 prompt.read 的 save.args.source_versions；保留原 expected_sha256，不能用来源查询更新页面版本。' : '')+modelAdapter(state.target.model_id).sourceReadHint(state.target),
   };
 }
 

@@ -31,7 +31,8 @@
         "enum": [
           "anima",
           "qwen-image-2-1",
-          "minimax-h3"
+          "minimax-h3",
+          "moss-image"
         ]
       }
     },

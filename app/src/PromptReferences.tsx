@@ -1,9 +1,10 @@
 import {useRef,useState,type CSSProperties,type ReactNode,type PointerEvent as ReactPointerEvent} from 'react';
 import type {WorkbenchCharacter} from './project-workbench-client';
+import './PromptDisclosure.css';
 export function ReferenceRow({ title, editor, children }: { title: string; editor: ReactNode; children: ReactNode }) {
   const [open, setOpen] = useState(false);
   return <div className="page-reference-row">
-    <div className="page-reference-header"><button type="button" className="reference-disclosure" title={`展开${title}引用`} aria-expanded={open} onClick={() => setOpen(value => !value)}><span aria-hidden="true">{open ? '▾' : '▸'}</span>{title}</button>{editor}</div>
+    <div className="page-reference-header"><button type="button" className="reference-disclosure prompt-disclosure" title={`展开${title}引用`} aria-expanded={open} onClick={() => setOpen(value => !value)}>{title}</button>{editor}</div>
     <div className="page-reference-body" hidden={!open}>{children}</div>
   </div>;
 }

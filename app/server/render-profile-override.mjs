@@ -1,3 +1,4 @@
+import {validateMossEntries} from '../shared/moss-prompt.mjs';
 import { randomUUID } from "node:crypto";
 import { readFile, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -86,6 +87,7 @@ function assertJsonValue(value, path, seen = new Set()) {
 }
 
 function parseTarget(target) {
+  if (['prompt.style','prompt.lighting','prompt.avoid'].includes(target)) return {kind:'moss_entries',field:target.slice(7)};
   if (target === "prompt.text") return { kind: "prompt_text" };
   if (target === "prompt.policy") return { kind: "prompt_policy" };
   const fragment = /^prompt\.fragments\.([a-z0-9][a-z0-9-]*)$/.exec(target);
@@ -343,6 +345,7 @@ function routeAccessor(profile, descriptor, target) {
 function targetAccessor(profile, target) {
   const descriptor = parseTarget(target);
   if (!descriptor) fail(`target 不在允许列表中：${String(target)}`);
+  if (descriptor.kind==='moss_entries') {if(profile.architecture_family!=='moss-image')fail(`${target} 仅适用于 MOSS`);return validatedAccessor(nestedPropertyAccessor(profile,['prompt'],descriptor.field),(value)=>{const errors=validateMossEntries(value,target);if(errors.length)fail(errors.join('；'));},{required:true});}
   if (['prompt_policy','prompt_fragment'].includes(descriptor.kind) && profile.architecture_family !== 'anima') fail(`${target} 仅适用于 Anima`);
   if (descriptor.kind === 'prompt_text' && profile.architecture_family === 'anima') fail(`${target} 不适用于 Anima`);
   if (descriptor.kind === "prompt_text") return validatedAccessor(nestedPropertyAccessor(profile, ["prompt"], "text"), assertPromptTextValue, { required: true });

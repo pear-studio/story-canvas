@@ -1,0 +1,32 @@
+{
+  "$schema": "../schemas/workflow-manifest.schema.json",
+  "id": "moss-image-text",
+  "template": "moss-image-text.api.json",
+  "architecture_families": [
+    "moss-image"
+  ],
+  "operations": [
+    "candidates"
+  ],
+  "input_sources": [
+    "empty_latent"
+  ],
+  "modifiers": [
+    "lora.model_only"
+  ],
+  "bindings": {
+    "dit": "1.inputs.unet_name",
+    "text_encoder": "2.inputs.clip_name",
+    "vae": "3.inputs.vae_name",
+    "positive_prompt": "4.inputs.text",
+    "negative_prompt": "5.inputs.text",
+    "width": "6.inputs.width",
+    "height": "6.inputs.height",
+    "filename_prefix": "10.inputs.filename_prefix",
+    "seed": "8.inputs.seed",
+    "steps": "8.inputs.steps",
+    "cfg": "8.inputs.cfg",
+    "sampler": "8.inputs.sampler_name",
+    "scheduler": "8.inputs.scheduler"
+  }
+}

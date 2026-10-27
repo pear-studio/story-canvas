@@ -12,6 +12,7 @@ import { placePromptSuggestions } from "./prompt-suggestion-placement";
 import { PromptDictionaryDetailsDialog, dictionaryCategoryLabels as categoryShortLabels, dictionaryFrequency as frequencyLabel, type DictionaryEditAction } from "./PromptDictionaryDetailsDialog";
 import type { PromptTagSpan } from "../shared/prompt-tags.mjs";
 import "./prompt-compact.css";
+import {PromptTextArea} from './SourcePromptEditor';
 
 
 
@@ -817,7 +818,7 @@ function PromptFragmentRow({
   </article>;
 }
 
-export function PromptFragmentList({ categoryId, categoryLabel, scope, rowScopeKey = "", fragments, roles, issues = [], toggleOnly = false, upstreamWeights, upstreamEnabled, onPersonDragStart, onDictionaryEdit, canAddNegative, onChange }: {
+export function PromptFragmentList({ categoryId, categoryLabel, scope, rowScopeKey = "", fragments, roles, issues = [], toggleOnly = false, naturalLanguage=false, upstreamWeights, upstreamEnabled, onPersonDragStart, onDictionaryEdit, canAddNegative, onChange }: {
   categoryId: string;
   categoryLabel: string;
   scope: PromptDictionaryScope;
@@ -826,6 +827,7 @@ export function PromptFragmentList({ categoryId, categoryLabel, scope, rowScopeK
   roles?: PromptRoleOption[];
   issues?: PromptAuditIssue[];
   toggleOnly?: boolean;
+  naturalLanguage?: boolean;
   /** 人物分组的跨组排序由外层编辑器统一处理（指针拖拽），行内列表不自行排序。 */
   onPersonDragStart?: (event: ReactPointerEvent<HTMLButtonElement>, fragmentId: string) => void;
   onDictionaryEdit?: DictionaryEditHandler;
@@ -838,7 +840,7 @@ export function PromptFragmentList({ categoryId, categoryLabel, scope, rowScopeK
   const listRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ from: number; to: number; pointerId: number } | null>(null);
   const [drag, setDrag] = useState<{ from: number; to: number; pointerId: number } | null>(null);
-  const dictionaryMatches = usePromptDictionaryMatches(fragments, scope);
+  const dictionaryMatches = usePromptDictionaryMatches(naturalLanguage?[]:fragments, scope);
 
   function updateDrag(next: { from: number; to: number; pointerId: number } | null) {
     dragRef.current = next;
@@ -881,16 +883,27 @@ export function PromptFragmentList({ categoryId, categoryLabel, scope, rowScopeK
   return <div className={`prompt-fragment-list ${roles ? "has-roles" : ""}`} ref={listRef} onPointerMove={(event) => moveDrag(event.clientY, event.pointerId)} onPointerUp={(event) => finishDrag(event.pointerId)} onPointerCancel={(event) => finishDrag(event.pointerId, true)}>
     {fragments.map((fragment, index) => {
       const dragPosition = drag?.from === index ? "source" : drag && drag.to !== drag.from && drag.to === index ? (drag.to < drag.from ? "before" : "after") : undefined;
+      if(naturalLanguage)return <div className="prompt-fragment-entry" key={`${rowScopeKey}:${fragment.id}`}><article className={`prompt-fragment-row ${fragment.enabled===false?'is-disabled':''} ${dragPosition?`is-drag-${dragPosition}`:''}`} data-fragment-id={fragment.id}>
+        <button type="button" className="prompt-fragment-drag" disabled={toggleOnly} title="拖动排序" aria-label={`拖动${categoryLabel}第 ${index+1} 项排序`} onPointerDown={event=>categoryId==='person'&&onPersonDragStart?onPersonDragStart(event,fragment.id):startDragging(event,index)}>⋮</button>
+        <div className="prompt-fragment-fields"><div className="prompt-fragment-prompt"><PromptTextArea ariaLabel={`${categoryLabel}第 ${index+1} 项 Prompt`} rows={1} value={fragment.prompt_text} disabled={toggleOnly} placeholder="描述画面…" onChange={text=>onChange(fragments.map(item=>item.id===fragment.id?{...item,prompt_text:text}:item),{group:`${fragment.id}:text`,continueGroup:true})} onKeyDown={event=>{
+          if(event.key!=='Enter'||event.shiftKey||event.nativeEvent.isComposing||event.ctrlKey||event.metaKey)return;
+          event.preventDefault();const added:PromptFragment={id:crypto.randomUUID(),prompt_type:'custom_description',prompt_text:'',...(fragment.role?{role:fragment.role}:{})};
+          onChange([...fragments.slice(0,index+1),added,...fragments.slice(index+1)]);
+          requestAnimationFrame(()=>listRef.current?.querySelector<HTMLTextAreaElement>(`[data-fragment-id="${added.id}"] textarea`)?.focus());
+        }}/></div></div>
+        <label className={`prompt-fragment-enabled ${fragment.enabled===false?'is-off':'is-on'}`} title={fragment.enabled===false?'已关闭，不参与生成':'参与生成'}><input type="checkbox" aria-label={`${categoryLabel}第 ${index+1} 项参与生成`} checked={fragment.enabled!==false} onChange={event=>onChange(fragments.map(item=>item.id===fragment.id?{...item,enabled:event.target.checked}:item))}/><span aria-hidden="true"><i/></span></label>
+        <button type="button" className="prompt-fragment-delete" disabled={toggleOnly} aria-label={`删除${categoryLabel}第 ${index+1} 项`} onClick={()=>onChange(fragments.filter(item=>item.id!==fragment.id))}>×</button>
+      </article></div>;
       return <div className="prompt-fragment-entry" key={`${rowScopeKey}:${fragment.id}`}><PromptFragmentRow onDictionaryEdit={onDictionaryEdit} canAddNegative={canAddNegative} categoryId={categoryId} categoryLabel={categoryLabel} scope={scope} fragment={fragment} dictionaryMatch={dictionaryMatches[fragment.prompt_text.trim()]} dictionaryMatches={dictionaryMatches} index={index} roles={roles} issues={issues} dragPosition={dragPosition} toggleOnly={toggleOnly} upstreamWeight={upstreamWeights?.[fragment.id]} upstreamEnabled={upstreamEnabled?.[fragment.id]} onChange={(next, metadata) => onChange(fragments.map((current) => current.id === fragment.id ? next : current), metadata)} onDelete={() => onChange(fragments.filter((current) => current.id !== fragment.id))} onDragStart={categoryId === "person" && onPersonDragStart ? (event) => onPersonDragStart(event, fragment.id) : (event) => startDragging(event, index)} /></div>;
     })}
     {categoryIssues.length > 0 && <div className="prompt-fragment-category-issues">{categoryIssues.map((issue, index) => <p className={issue.severity === "error" ? "is-error" : "is-warning"} key={`${issue.code ?? "category"}-${index}`}>{issueText(issue)}</p>)}</div>}
   </div>;
 }
 
-export function PromptFragmentTableHeader({ roles = false, category = false, deleteLabel = false, compact = false }: { roles?: boolean; category?: boolean; deleteLabel?: boolean | string; compact?: boolean }) {
+export function PromptFragmentTableHeader({ roles = false, category = false, deleteLabel = false, compact = false, naturalLanguage=false }: { roles?: boolean; category?: boolean; deleteLabel?: boolean | string; compact?: boolean; naturalLanguage?:boolean }) {
   return <div className={`prompt-fragment-table-head ${roles ? "has-roles" : ""} ${category ? "has-category" : ""}`} aria-hidden="true">
     {category && <span className="prompt-fragment-category-heading">分类</span>}
-    <span className="prompt-fragment-table-columns"><span className="prompt-fragment-drag-heading">排序</span>{roles && <span>角色</span>}<span className="prompt-fragment-field-headings">{!compact && <span>类型</span>}<span>Prompt</span><span>权重</span></span><span className="prompt-fragment-enabled-heading">启用</span><span className="prompt-fragment-delete-heading">{typeof deleteLabel === "string" ? deleteLabel : deleteLabel ? "删除" : ""}</span></span>
+    <span className="prompt-fragment-table-columns"><span className="prompt-fragment-drag-heading">排序</span>{roles && <span>角色</span>}<span className="prompt-fragment-field-headings">{!compact && <span>类型</span>}<span>Prompt</span>{!naturalLanguage&&<span>权重</span>}</span><span className="prompt-fragment-enabled-heading">启用</span><span className="prompt-fragment-delete-heading">{typeof deleteLabel === "string" ? deleteLabel : deleteLabel ? "删除" : ""}</span></span>
   </div>;
 }
 
@@ -899,6 +912,7 @@ export function PromptFragmentEditor(props: PromptFragmentEditorProps) {
 }
 
 type PromptFragmentEditorProps = {
+  naturalLanguage?: boolean;
   categories: Array<{ id: string; label: string }>;
   scope: PromptDictionaryScope;
   fragments: Record<string, PromptFragment[]>;
@@ -914,9 +928,18 @@ type PromptFragmentEditorProps = {
   showEmptyCategories?: boolean;
 };
 
-function CategoryPromptEditor({ categories, scope, fragments, roles, issues = [], createFragment, onChange, historyScopeKey = "prompt", toggleOnly = false, upstreamWeights, upstreamEnabled, showEmptyCategories = false }: PromptFragmentEditorProps) {
+function CategoryPromptEditor({ categories, scope, fragments, roles, issues = [], createFragment, onChange, historyScopeKey = "prompt", toggleOnly = false, naturalLanguage=false, upstreamWeights, upstreamEnabled, showEmptyCategories = false }: PromptFragmentEditorProps) {
   const history = usePromptUndoHistory({ value: fragments, scopeKey: historyScopeKey, onChange });
   const editorRef = useRef<HTMLDivElement | null>(null);
+  const [personPickerOpen,setPersonPickerOpen] = useState(false);
+  const personPickerTrigger = useRef<HTMLButtonElement | null>(null);
+  const personPicker = useRef<HTMLDivElement | null>(null);
+  const personPickerId = useId();
+  useDismissableLayer({open:personPickerOpen,ref:personPicker,triggerRef:personPickerTrigger,onClose:()=>setPersonPickerOpen(false),closeOnScroll:true});
+  useEffect(()=>{
+    if(personPickerOpen)personPicker.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
+  },[personPickerOpen]);
+  useEffect(()=>{setPersonPickerOpen(false);},[historyScopeKey]);
   // 人物分组排序用指针拖拽（与其他分类一致）；HTML5 原生拖拽在 Windows Chrome 会触发非法 hover/事件洪流导致页面卡死。
   const personDrag = useRef<{ id: string; pointerId: number; roleId: string; beforeId: string | null } | null>(null);
   const [personIndicator, setPersonIndicator] = useState<{ roleId: string; line: number | null } | null>(null);
@@ -1005,20 +1028,38 @@ function CategoryPromptEditor({ categories, scope, fragments, roles, issues = []
     return { text };
   }
 
-  function addFragment(categoryId: string) {
+  function addFragment(categoryId: string,role?:string) {
     const entries = fragments[categoryId] ?? [];
-    history.apply({ ...fragments, [categoryId]: [...entries, createFragment(categoryId)] });
+    const fragment={...createFragment(categoryId),...(role?{role}:{})};
+    history.apply({ ...fragments, [categoryId]: [...entries, fragment] });
+    if(naturalLanguage)requestAnimationFrame(()=>editorRef.current?.querySelector<HTMLTextAreaElement>(`[data-fragment-id="${fragment.id}"] textarea`)?.focus());
+  }
+  function requestAdd(categoryId:string,trigger:HTMLButtonElement) {
+    if(naturalLanguage&&categoryId==='person'&&roles?.length){personPickerTrigger.current=trigger;setPersonPickerOpen(true);}
+    else addFragment(categoryId);
+  }
+  function selectPerson(role?:string) {
+    setPersonPickerOpen(false);
+    if(personPickerTrigger.current?.matches(':disabled')||personPickerTrigger.current?.closest('[inert]'))return;
+    addFragment('person',role);
+  }
+  function personPickerKeyDown(event:ReactKeyboardEvent<HTMLDivElement>) {
+    const buttons=[...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
+    const index=buttons.indexOf(document.activeElement as HTMLButtonElement);
+    const target=event.key==='ArrowDown'?(index+1)%buttons.length:event.key==='ArrowUp'?(index-1+buttons.length)%buttons.length:event.key==='Home'?0:event.key==='End'?buttons.length-1:null;
+    if(target!==null){event.preventDefault();buttons[target]?.focus();}
+    else if(event.key==='Tab'){setPersonPickerOpen(false);personPickerTrigger.current?.focus();}
   }
 
-  return <div className="visual-editor prompt-fragment-editor workbench-prompt-fragment-editor prompt-compact" ref={editorRef} onKeyDown={history.onKeyDown} onPointerMove={movePersonDrag} onPointerUp={event => finishPersonDrag(event)} onPointerCancel={event => finishPersonDrag(event, true)}>
-    <PromptFragmentTableHeader category deleteLabel={toggleOnly ? "恢复" : true} compact />
+  return <div className={`visual-editor prompt-fragment-editor workbench-prompt-fragment-editor prompt-compact${naturalLanguage?' prompt-natural':''}`} ref={editorRef} onKeyDown={history.onKeyDown} onPointerMove={movePersonDrag} onPointerUp={event => finishPersonDrag(event)} onPointerCancel={event => finishPersonDrag(event, true)}>
+    <PromptFragmentTableHeader category deleteLabel={toggleOnly ? "恢复" : true} compact naturalLanguage={naturalLanguage}/>
     <div className="category-list">
       {populatedCategories.map((category) => {
         const entries = (fragments[category.id] ?? []).map((fragment, index) => ({ ...fragment, source_index: index }));
         return <section data-prompt-category={category.id} className={`category-card ${category.id === "avoid" ? "category-card--avoid" : ""}`} key={category.id}>
           <header>
             <span className="category-label"><b>{category.label}</b></span>
-            {!toggleOnly && <span className="category-header-actions"><button type="button" className="category-header-action" title={`添加${category.label}`} aria-label={`添加${category.label}`} onClick={() => addFragment(category.id)}>＋</button></span>}
+            {!toggleOnly && <span className="category-header-actions"><button type="button" className="category-header-action" title={`添加${category.label}`} aria-label={`添加${category.label}`} aria-haspopup={naturalLanguage&&category.id==='person'&&roles?.length?'menu':undefined} aria-expanded={naturalLanguage&&category.id==='person'&&roles?.length?personPickerOpen:undefined} aria-controls={naturalLanguage&&category.id==='person'&&roles?.length&&personPickerOpen?personPickerId:undefined} onClick={event => requestAdd(category.id,event.currentTarget)}>＋</button></span>}
           </header>
           <div className="category-content">
             {category.id === "person" && roles ? (() => {
@@ -1030,19 +1071,23 @@ function CategoryPromptEditor({ categories, scope, fragments, roles, issues = []
                 if (!role.id && !groupEntries.length && !personIndicator) return null;
                 return <section key={role.id} className={`prompt-person-group ${groupEntries.length ? "" : "is-empty"} ${personIndicator?.roleId === role.id ? "is-drop-target" : ""}`} data-person-role={role.id} aria-label={role.label} title={role.label} style={{ "--person-color": role.color ?? "#929a96" } as CSSProperties}>
                   {personIndicator?.roleId === role.id && personIndicator.line !== null && <span className="prompt-person-drop-line" aria-hidden="true" style={{ top: personIndicator.line }} />}
-                  <PromptFragmentList onDictionaryEdit={editDictionary} canAddNegative={categories.some(category => category.id === "avoid")} categoryId="person" categoryLabel={`人物·${role.label}`} scope={scope} rowScopeKey={historyScopeKey} fragments={groupEntries} roles={roles} issues={issues} toggleOnly={toggleOnly} upstreamWeights={upstreamWeights} upstreamEnabled={upstreamEnabled} onPersonDragStart={startPersonDrag} onChange={(next, metadata) => {
+                  <PromptFragmentList naturalLanguage={naturalLanguage} onDictionaryEdit={editDictionary} canAddNegative={categories.some(category => category.id === "avoid")} categoryId="person" categoryLabel={`人物·${role.label}`} scope={scope} rowScopeKey={historyScopeKey} fragments={groupEntries} roles={roles} issues={issues} toggleOnly={toggleOnly} upstreamWeights={upstreamWeights} upstreamEnabled={upstreamEnabled} onPersonDragStart={startPersonDrag} onChange={(next, metadata) => {
                     const ids = new Set(groupEntries.map(entry => entry.id)); let cursor = 0;
                     const combined = entries.flatMap(entry => ids.has(entry.id) ? (cursor < next.length ? [next[cursor++]] : []) : [entry]);
                     history.apply({ ...fragments, person: [...combined, ...next.slice(cursor)] }, metadata);
                   }} />
                 </section>;
               });
-            })() : <PromptFragmentList onDictionaryEdit={editDictionary} canAddNegative={categories.some(category => category.id === "avoid")} categoryId={category.id} categoryLabel={category.label} scope={scope} rowScopeKey={historyScopeKey} fragments={entries} issues={issues} toggleOnly={toggleOnly} upstreamWeights={upstreamWeights} upstreamEnabled={upstreamEnabled} onChange={(next, metadata) => history.apply({ ...fragments, [category.id]: next }, metadata)} />}
+            })() : <PromptFragmentList naturalLanguage={naturalLanguage} onDictionaryEdit={editDictionary} canAddNegative={categories.some(category => category.id === "avoid")} categoryId={category.id} categoryLabel={category.label} scope={scope} rowScopeKey={historyScopeKey} fragments={entries} issues={issues} toggleOnly={toggleOnly} upstreamWeights={upstreamWeights} upstreamEnabled={upstreamEnabled} onChange={(next, metadata) => history.apply({ ...fragments, [category.id]: next }, metadata)} />}
           </div>
         </section>;
       })}
     </div>
-    {!toggleOnly && emptyCategories.length > 0 && <div className="empty-category-actions">{emptyCategories.map((category) => <button type="button" key={category.id} onClick={() => addFragment(category.id)}>＋ {category.label}</button>)}</div>}
+    {!toggleOnly && emptyCategories.length > 0 && <div className="empty-category-actions">{emptyCategories.map((category) => <button type="button" key={category.id} aria-haspopup={naturalLanguage&&category.id==='person'&&roles?.length?'menu':undefined} aria-expanded={naturalLanguage&&category.id==='person'&&roles?.length?personPickerOpen:undefined} aria-controls={naturalLanguage&&category.id==='person'&&roles?.length&&personPickerOpen?personPickerId:undefined} onClick={event => requestAdd(category.id,event.currentTarget)}>＋ {category.label}</button>)}</div>}
+    {personPickerOpen&&createPortal(<FloatingPanel className="navigation-context-menu" id={personPickerId} ref={personPicker} target={personPickerTrigger.current??undefined} role="menu" aria-label="选择人物描述归属" onKeyDown={personPickerKeyDown}>
+      {roles?.map(role=><button type="button" role="menuitem" key={role.id} onClick={()=>selectPerson(role.id)}>{role.label}</button>)}
+      <button type="button" role="menuitem" onClick={()=>selectPerson()}>未绑定／自由人物</button>
+    </FloatingPanel>,floatingLayerHost())}
   </div>;
 }
 

@@ -13,8 +13,9 @@ export const pageCanvases = Object.freeze(['3:4', '1:1', '4:3', '2:3', '9:16']);
 export function validatePageRenderSettings(value) {
   const errors = [];
   if (!value || typeof value !== 'object' || Array.isArray(value)) return ['页面生成设置必须是对象'];
-  if (Object.keys(value).some(key => !['version', 'model_id', 'profile_id', 'canvas'].includes(key))) errors.push('页面生成设置包含未知字段');
+  if (Object.keys(value).some(key => !['version', 'model_id', 'profile_id', 'canvas', 'resolution_scale'].includes(key))) errors.push('页面生成设置包含未知字段');
   try { modelAdapter(value.model_id); } catch(error) { errors.push(error.message); }
+  if (value.resolution_scale!==undefined&&![1,1.5].includes(value.resolution_scale)) errors.push('分辨率倍率必须为 1 或 1.5');
   if (value.version !== 1) errors.push('页面生成设置 version 必须为 1');
   if (!/^[a-z0-9][a-z0-9-]*$/.test(value.profile_id ?? '')) errors.push('profile_id 无效');
   if (!pageCanvases.includes(value.canvas)) errors.push('页面画幅无效');

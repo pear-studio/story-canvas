@@ -228,7 +228,7 @@ export function checkPagePromptInputOverrideReferences(prompt, characterReferenc
   const active = new Set((Array.isArray(characterReferences) ? characterReferences : [])
     .map((reference) => `character:${reference?.character_id}:${reference?.variant_id}`));
   if (prompt?.scene_id) active.add(`scene:${prompt.scene_id}:${prompt.scene_variant_id}`);
-  for (const field of ["text_overrides", "reference_overrides", "inheritance"]) {
+  for (const field of ["text_overrides", "reference_overrides", "inheritance", "entry_overrides"]) {
     for (const source of Object.keys(isRecord(prompt?.[field]) ? prompt[field] : {})) {
       if (!active.has(source)) errors.push(`${field} 引用了未出场的设定：${source}`);
     }
@@ -242,7 +242,7 @@ export function promptOverrideCharacterIds(prompt) {
 
 export function promptInputOverrideCharacterIds(prompt) {
   const ids = new Set();
-  for (const field of ["text_overrides", "reference_overrides", "inheritance"]) {
+  for (const field of ["text_overrides", "reference_overrides", "inheritance", "entry_overrides"]) {
     for (const source of Object.keys(isRecord(prompt?.[field]) ? prompt[field] : {})) {
       const parsed = parseOverrideSource(source);
       if (parsed?.kind === "character") ids.add(parsed.id);

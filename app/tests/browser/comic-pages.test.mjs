@@ -41,14 +41,14 @@ async function open(t,viewport={width:1440,height:1000},query=''){
 test('切格保留各自画面、Prompt及文案草稿，保存整页提交所有修改',async t=>{
  const {page,saved}=await open(t);
  await page.getByRole('tab',{name:'分镜 1',exact:true}).click();
- await page.getByLabel('画面内容',{exact:true}).filter({visible:true}).fill('第一格的新画面');
+ await page.getByLabel('画面目标',{exact:true}).filter({visible:true}).fill('第一格的新画面');
  await page.getByLabel('本页 Prompt',{exact:true}).filter({visible:true}).fill('first panel prompt draft');
  await page.getByRole('tab',{name:'分镜 2',exact:true}).click();
- await page.getByLabel('画面内容',{exact:true}).filter({visible:true}).fill('第二格的新画面');
+ await page.getByLabel('画面目标',{exact:true}).filter({visible:true}).fill('第二格的新画面');
  await page.getByRole('tab',{name:'嵌字',exact:true}).filter({visible:true}).click();
  await page.getByLabel('第 1 条文案',{exact:true}).filter({visible:true}).fill('第二格的新对白');
  await page.getByRole('tab',{name:'分镜 1',exact:true}).click();
- assert.equal(await page.getByLabel('画面内容',{exact:true}).filter({visible:true}).inputValue(),'第一格的新画面');
+ assert.equal(await page.getByLabel('画面目标',{exact:true}).filter({visible:true}).inputValue(),'第一格的新画面');
  assert.equal(await page.getByLabel('第 1 条文案',{exact:true}).filter({visible:true}).inputValue(),'对白 1');
  await page.getByRole('tab',{name:'整页',exact:true}).click();
  await page.getByRole('button',{name:'保存整页',exact:true}).click();
@@ -57,7 +57,7 @@ test('切格保留各自画面、Prompt及文案草稿，保存整页提交所�
  assert.equal(saved[1].content.dialogue[0].text,'第二格的新对白');
  assert.equal(saved[0].prompt.text,'first panel prompt draft');
  await page.getByRole('tab',{name:'分镜 1',exact:true}).click();
- await page.getByLabel('画面内容',{exact:true}).filter({visible:true}).fill('第一格再次修改');
+ await page.getByLabel('画面目标',{exact:true}).filter({visible:true}).fill('第一格再次修改');
  const savedAgain=page.waitForResponse(response=>response.url().endsWith('/page-save'));
  await page.keyboard.press('Control+s');await savedAgain;
  assert.equal(saved[2].expected_layout_sha256,'layout-2','其他格保存后的最新嵌字指纹广播回第一格');
@@ -149,13 +149,13 @@ test('分镜复用普通候选：右键详情、用于整页、历史、迭代�
 
 test('快捷键只保存或生成当前分镜；切回整页保留未保存草稿和选图',async t=>{
  const {page,saved,generations}=await open(t);
- await page.getByRole('tab',{name:'分镜 1',exact:true}).click();await page.getByLabel('画面内容',{exact:true}).filter({visible:true}).fill('第一格保留草稿');
- await page.getByRole('tab',{name:'分镜 2',exact:true}).click();await page.getByLabel('画面内容',{exact:true}).filter({visible:true}).fill('第二格保存');await page.keyboard.press('Control+s');
+ await page.getByRole('tab',{name:'分镜 1',exact:true}).click();await page.getByLabel('画面目标',{exact:true}).filter({visible:true}).fill('第一格保留草稿');
+ await page.getByRole('tab',{name:'分镜 2',exact:true}).click();await page.getByLabel('画面目标',{exact:true}).filter({visible:true}).fill('第二格保存');await page.keyboard.press('Control+s');
  await page.waitForTimeout(120);assert.deepEqual(saved.map(value=>value.page_key.page_id),['page-002']);
  const generate=page.locator('.comic-panel-view:not([hidden]) .desktop-page-actions .generate-split__action');await generate.waitFor();await page.waitForFunction(()=>!document.querySelector('.comic-panel-view:not([hidden]) .desktop-page-actions .generate-split__action')?.disabled);
  await page.keyboard.press('Control+g');await page.waitForTimeout(180);assert.deepEqual(generations.map(value=>value.page_key.page_id),['page-002']);
  await page.getByRole('tab',{name:'整页',exact:true}).click();await page.keyboard.press('Control+g');await page.waitForTimeout(100);assert.equal(generations.length,1);
- await page.getByRole('tab',{name:'分镜 1',exact:true}).click();assert.equal(await page.getByLabel('画面内容',{exact:true}).filter({visible:true}).inputValue(),'第一格保留草稿');
+ await page.getByRole('tab',{name:'分镜 1',exact:true}).click();assert.equal(await page.getByLabel('画面目标',{exact:true}).filter({visible:true}).inputValue(),'第一格保留草稿');
 });
 
 test('版式与嵌字切换真实控件，布局和文案均可撤销重做',async t=>{
@@ -169,7 +169,11 @@ test('版式与嵌字切换真实控件，布局和文案均可撤销重做',asy
  await page.getByText('裁切与版式设置',{exact:true}).click();const gap=page.getByLabel('格间距',{exact:true});await gap.focus();await gap.press('ArrowRight');await page.keyboard.press('Escape');
  await page.getByRole('button',{name:'撤销布局',exact:true}).click();await page.getByText('裁切与版式设置',{exact:true}).click();assert.equal(await gap.inputValue(),'12');await page.keyboard.press('Escape');
  await page.getByRole('button',{name:'重做布局',exact:true}).click();await page.getByText('裁切与版式设置',{exact:true}).click();assert.equal(await gap.inputValue(),'13');await page.keyboard.press('Escape');
- await page.getByRole('button',{name:'放弃修改',exact:true}).filter({visible:true}).click();assert.equal(await page.locator('.comic-page-shell').getAttribute('data-project-fact-dirty'),null);
+ await page.getByRole('button',{name:'放弃修改',exact:true}).filter({visible:true}).click();
+ // 子编辑器的脏状态经 effect 回传到整页，等待真实状态收敛，而非读取点击后的上一帧。
+ await page.waitForFunction(()=>document.querySelector('.comic-page-shell')?.getAttribute('data-project-fact-dirty')===null);
+ await page.getByText('裁切与版式设置',{exact:true}).click();assert.equal(await gap.inputValue(),'12');await page.keyboard.press('Escape');
+ await page.getByRole('button',{name:'嵌字',exact:true}).click();assert.equal(await page.locator('.comic-lettering-editor').getByLabel('第 1 条文案',{exact:true}).inputValue(),'对白 1');
 });
 
 for(const orientation of ['portrait','landscape'])test(`${orientation} 整页、分镜与共用全屏的普通字和爱心使用相同字号基准`,async t=>{

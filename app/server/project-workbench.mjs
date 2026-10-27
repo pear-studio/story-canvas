@@ -3,7 +3,9 @@ import { targetPath, assertProjectFactBoundary, writeJsonAtomic } from './fact-s
 import {factConflict} from './fact-conflict.mjs';
 import {readCollage} from './collage-pages.mjs';
 import {readComicDocument} from './comic-pages.mjs';
+import {comicPanelDimensions} from '../shared/comic-layout.mjs';
 import { readPageIndex, pageRelativePath } from './pages-store.mjs';
+import {generationDimensions} from '../shared/generation-dimensions.mjs';
 import { readPageRenderSettings, pageProjectSettings } from './page-render-settings.mjs';
 import { modelPrompt, promptModelEntries, replaceModelPrompt } from './model-prompts.mjs';
 import { settingPromptSourceVersions } from './prompt-source-context.mjs';
@@ -125,7 +127,7 @@ async function readCharacters(projectDirectory) {
   return characters;
 }
 
-async function readPageRenderConfiguration(repositoryRoot, projectDirectory, projectDocument) {
+async function readPageRenderConfiguration(repositoryRoot, projectDirectory, projectDocument, resolutionScale=1) {
   try {
     const compilation = await compileEffectiveRenderProfile({
       repositoryRoot,
@@ -151,6 +153,9 @@ async function readPageRenderConfiguration(repositoryRoot, projectDirectory, pro
       textPage = { dimensions: null, error: error.message };
     }
     return {
+      model_project_prompt: structuredClone(compilation.effective_profile.prompt),
+      generation_resolutions:structuredClone(operations.candidates?.routes?.empty_latent?.recipe?.resolutions??{}),
+      generation_dimensions:generationDimensions(operations.candidates?.routes?.empty_latent?.recipe?.resolutions,projectDocument.canvas,resolutionScale),
       project_loras: Object.keys(compilation.effective_profile.style_loras ?? {}).sort().map(id => structuredClone(compilation.effective_profile.style_loras[id])),
       render_capabilities: {
         text_page: textPage,
@@ -279,11 +284,11 @@ export async function readProjectWorkbenchView(projectRoot, projectId, requested
     const page = {
       ...(edit ? { model_id: render.model_id, ...(full ? {model_prompts: structuredClone(promptDocument)} : {}),
       render, render_sha256: hashCanonicalJson(render),
-      ...(full || scope.kind === 'page' ? await readPageRenderConfiguration(path.resolve(projectRoot), project.projectDirectory, pageProjectSettings(projectDocument, render)) : {}),
+      ...(full || scope.kind === 'page' ? await readPageRenderConfiguration(path.resolve(projectRoot), project.projectDirectory, pageProjectSettings(projectDocument, render),render.resolution_scale) : {}),
       prompt:publicPrompt(promptValue),prompt_sha256:hashCanonicalJson(promptDocument),
       prompt_context_sha256:await pagePromptContextSha256(project.projectDirectory, membership.owner_kind,pageId),
       } : {}),
-      ...(output && render ? {render, ...await readPageRenderConfiguration(path.resolve(projectRoot), project.projectDirectory, pageProjectSettings(projectDocument, render))} : {}),
+      ...(output && render ? {render, ...await readPageRenderConfiguration(path.resolve(projectRoot), project.projectDirectory, pageProjectSettings(projectDocument, render),render.resolution_scale)} : {}),
       ...membership, kind: membership.owner_kind, owner: structuredClone(membership),
       owner_id: membership.character_id ?? membership.scene_id,
       page_key: createPageKey(pageId), title: content.title, page_kind: content.page_kind ?? null,
@@ -327,7 +332,10 @@ export async function readProjectWorkbenchView(projectRoot, projectId, requested
   for(const page of pages.filter(page=>!page.parent_page_id)) {
     const document=await readComicDocument(project.projectDirectory,page.page_id);
     if(document&&(document.order.some(id=>!pages.some(panel=>panel.page_id===id&&(id===page.page_id||panel.parent_page_id===page.page_id)))||pages.some(panel=>panel.parent_page_id===page.page_id&&!document.order.includes(panel.page_id))))fail('invalid_comic_membership',[page.page_id]);
-    if(document)page.comic={document,sha256:hashCanonicalJson(document),panels:full||scope.kind==='page'||scope.kind==='finished'?document.order.map(id=>structuredClone(pages.find(panel=>panel.page_id===id))):[]};
+    if(document){
+      for(const id of document.order)if(document.panels[id].size_mode==='panel')Object.assign(pages.find(panel=>panel.page_id===id),{generation_dimensions:comicPanelDimensions(document,id),generation_size_locked:true});
+      page.comic={document,sha256:hashCanonicalJson(document),panels:full||scope.kind==='page'||scope.kind==='finished'?document.order.map(id=>structuredClone(pages.find(panel=>panel.page_id===id))):[]};
+    }
   }
   return {
     version: 6,

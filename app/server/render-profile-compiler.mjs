@@ -215,7 +215,7 @@ function materializeRecipe(recipe, definition, { architectureFamily, operation, 
   for (const [field, consumed] of topologyConsumers) {
     if (value[field] !== undefined && !consumed) fail(`${recipe.id} 提供了 ${definition.id} 不消费的参数：${field}`);
   }
-  if (architectureFamily === "qwen-image-2-1" && value.clip_skip !== 1) fail(`${recipe.id} 的 clip_skip 必须为 1`);
+  if (["qwen-image-2-1","moss-image"].includes(architectureFamily) && value.clip_skip !== 1) fail(`${recipe.id} 的 clip_skip 必须为 1`);
   assertWorkflowSupports(definition, { architectureFamily, operation, inputSource });
   return value;
 }

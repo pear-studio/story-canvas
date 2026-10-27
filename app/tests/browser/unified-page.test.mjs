@@ -64,7 +64,7 @@ for(const failure of ['conflict','receipt'])test(`源页面${failure==='conflict
      return route.fulfill({json:value});
    });
  });
- await page.getByLabel('画面内容').fill('本地 Prompt 草稿');
+ await page.getByLabel('画面目标').fill('本地 Prompt 草稿');
  await page.getByRole('tab',{name:'嵌字',exact:true}).click();
  await page.getByLabel('嵌字语言',{exact:true}).selectOption('en');
  await page.getByLabel('English译文 dialogue-123456789abc').fill('Good morning draft.');
@@ -198,13 +198,13 @@ test('场景子设定切换后失败保留全部草稿，重试提交新引用�
  await page.getByLabel('艾莲 · 白天 引用文字').fill('本页覆盖的角色描述');
  await page.getByLabel('页面场景设定').selectOption('room:night');
  await page.getByLabel('艾莲角色设定').selectOption('night');
- await page.getByLabel('画面内容').fill('夜间窗边休息');
+ await page.getByLabel('画面目标').fill('夜间窗边休息');
  await page.getByRole('button',{name:'保存',exact:true}).click();
  await page.getByRole('alert').filter({hasText:'草稿已保留'}).waitFor();
  assert.equal(await page.evaluate(()=>localStorage.getItem('saved-page')),null);
  assert.equal(await page.getByLabel('页面场景设定').inputValue(),'room:night');
  assert.equal(await page.getByLabel('艾莲角色设定').inputValue(),'night');
- assert.equal(await page.getByLabel('画面内容').inputValue(),'夜间窗边休息');
+ assert.equal(await page.getByLabel('画面目标').inputValue(),'夜间窗边休息');
  await page.getByRole('button',{name:'保存',exact:true}).click();
  await page.waitForFunction(()=>localStorage.getItem('saved-page'));
  const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('saved-page')));
@@ -214,16 +214,16 @@ test('场景子设定切换后失败保留全部草稿，重试提交新引用�
 
 test('同页外部刷新丢弃过时草稿，重新编辑使用最新指纹',async t=>{
  const page=await open(t,'kind=scene');
- await page.getByLabel('画面内容').fill('本地未保存内容');
+ await page.getByLabel('画面目标').fill('本地未保存内容');
  await page.getByLabel('艾莲角色设定').selectOption('night');
  await page.getByRole('button',{name:'移除场景引用',exact:true}).click();
  await page.getByRole('button',{name:'模拟外部刷新',exact:true}).click();
  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
  await page.getByText('内容已更新，过时的修改已丢弃，请在最新内容上重新编辑。',{exact:true}).waitFor();
  assert.equal(await page.evaluate(()=>localStorage.getItem('saved-page')),null);
- assert.equal(await page.getByLabel('画面内容').inputValue(),'外部改写的内容');
+ assert.equal(await page.getByLabel('画面目标').inputValue(),'外部改写的内容');
  assert.equal(await page.getByLabel('页面场景设定').inputValue(),'room:night');
- await page.getByLabel('画面内容').fill('基于外部版本的修改');
+ await page.getByLabel('画面目标').fill('基于外部版本的修改');
  await page.getByRole('button',{name:'保存',exact:true}).click();
  await page.waitForFunction(()=>localStorage.getItem('saved-page'));
  const reloaded=await page.evaluate(()=>JSON.parse(localStorage.getItem('submitted-baseline')));
@@ -372,11 +372,11 @@ test('引用文字默认生效，缩略图切换颜色，底部只读汇总随�
 test('未保存内容可添加附图，放弃恢复，保存失败保留附图草稿',async t=>{
  const page=await open(t,'kind=story&fail-once');let writes=0;
  await page.route('**/workbench/reference-library',route=>{writes++;return route.fulfill({json:{entries:[],sha256:'refs'}});});
- await page.getByLabel('画面内容').fill('未保存的画面');
+ await page.getByLabel('画面目标').fill('未保存的画面');
  await page.getByRole('button',{name:'添加参考图',exact:true}).click();
  await page.getByRole('button',{name:'角色参考',exact:true}).click();
  await page.getByRole('button',{name:'添加 1 张',exact:true}).click();await page.getByRole('dialog').waitFor({state:'hidden'});
- assert.equal(writes,0);assert.equal(await page.getByLabel('画面内容').inputValue(),'未保存的画面');
+ assert.equal(writes,0);assert.equal(await page.getByLabel('画面目标').inputValue(),'未保存的画面');
  assert.equal(await page.locator('[data-reference-card]').count(),1);
  await page.getByRole('button',{name:'放弃修改',exact:true}).click();assert.equal(await page.locator('[data-reference-card]').count(),0);
  await page.getByRole('button',{name:'添加参考图',exact:true}).click();await page.getByRole('button',{name:'角色参考',exact:true}).click();await page.getByRole('button',{name:'添加 1 张',exact:true}).click();await page.getByRole('dialog').waitFor({state:'hidden'});

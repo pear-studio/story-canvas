@@ -250,6 +250,7 @@ function prepareModelAndClip(workflow, profile, loras = [], clipSkip = 1) {
   const clipEntry = Object.entries(workflow).find(([, node]) => node.class_type === "CLIPLoader");
   if (!unetEntry || !clipEntry) throw new Error("工作流缺少 UNETLoader 或 CLIPLoader 节点");
   if (clipSkip !== 1) throw new Error("当前配置不支持 CLIP skip，请使用 1");
+  const originalNodes=Object.values(workflow);
   let modelSource = [unetEntry[0], 0];
   const clipSource = [clipEntry[0], 0];
   let nextNode = Math.max(...Object.keys(workflow).map(Number).filter(Number.isFinite)) + 1;
@@ -261,11 +262,10 @@ function prepareModelAndClip(workflow, profile, loras = [], clipSkip = 1) {
     };
     modelSource = [nodeId, 0];
   }
-  const cache = Object.entries(workflow).find(([, node]) => node.class_type === "QwenImage21Cache");
-  if (cache) { cache[1].inputs.model = modelSource; modelSource = [cache[0], 0]; }
-  for (const node of Object.values(workflow)) {
+  // 在模型加载器之后插入 LoRA，保留模板已有的 SLG／缓存等模型处理链。
+  for (const node of originalNodes) {
+    for(const [key,value] of Object.entries(node.inputs))if(Array.isArray(value)&&value[0]===unetEntry[0]&&value[1]===0)node.inputs[key]=modelSource;
     if (["CLIPTextEncode", "TextEncodeQwenImage21"].includes(node.class_type)) node.inputs.clip = clipSource;
-    if (["KSampler", "BasicGuider", "BasicScheduler"].includes(node.class_type)) node.inputs.model = modelSource;
   }
   return { modelSource, clipSource };
 }

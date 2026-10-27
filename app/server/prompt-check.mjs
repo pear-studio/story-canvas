@@ -9,7 +9,7 @@ export async function checkProjectPrompts(projectRoot, input, readFacts) {
   const {project_id:projectId,offset=0,limit=20,model_id:modelId,chapter_id:chapterId,sequence_id:sequenceId}=input;
   if (Object.keys(input).some(key=>!['project_id','offset','limit','model_id','chapter_id','sequence_id'].includes(key))
     || !Number.isInteger(offset) || offset<0 || !Number.isInteger(limit) || limit<1 || limit>50
-    || modelId!==undefined && !['anima','qwen'].includes(modelId)
+    || modelId!==undefined && !['anima','qwen','moss'].includes(modelId)
     || [chapterId,sequenceId].some(value=>value!==undefined && (typeof value!=='string'||!value))) throw new ApiError(400,'invalid_prompt_check');
   const listed=await readFacts(projectId,async ({projectDirectory})=>{
     let pages=(await readPageIndex(projectDirectory)).pages;
@@ -27,9 +27,11 @@ export async function checkProjectPrompts(projectRoot, input, readFacts) {
   for (const page of pages) {
     try {
       const {value}=await readFacts(projectId,()=>readPromptScope({projectRoot,projectId,target:{kind:'page',id:page.page_id,...(modelId?{model_id:modelId}:{})}}));
-      const diagnostics=value.diagnostics ?? [];
+      const diagnostics=[...(value.diagnostics ?? [])];
+      const projectIncomplete=['unavailable','conflict'].includes(value.project_prompt?.status);
+      if(projectIncomplete)diagnostics.push({code:`project_prompt_${value.project_prompt.status}`,severity:'error',profile_id:value.project_prompt.profile_id,next:value.project_prompt.inspect});
       for(const issue of diagnostics)counts[issue.code]=(counts[issue.code]??0)+1;
-      results.push({target:value.target,status:diagnostics.some(issue=>issue.code==='source_missing')?'incomplete':'checked',issue_count:diagnostics.length,
+      results.push({target:value.target,status:projectIncomplete||diagnostics.some(issue=>issue.code==='source_missing')?'incomplete':'checked',issue_count:diagnostics.length,
         issue_counts:diagnostics.reduce((counts,issue)=>(counts[issue.code]=(counts[issue.code]??0)+1,counts),{}),
         samples:diagnostics.slice(0,3),...(diagnostics.length?{details:{operation:'prompt.read',args:{project_id:projectId,target:value.target}}}:{})});
     } catch(error) {

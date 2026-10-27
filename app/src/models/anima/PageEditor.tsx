@@ -40,7 +40,7 @@ export function AnimaPageEditor({projectId,page,prompt,onChange,characters,scene
     return <LoraListEditor projectId={projectId} profileId={page.render?.profile_id} title="继承 LoRA" inherited={inherited} value={local.filter(lora=>names.has(lora.filename))} overrides={prompt.lora_overrides} allowAdd={false} collapsed disabled={disabled} onChange={(value,lora_overrides)=>onChange({...prompt,loras:[...local.filter(lora=>!names.has(lora.filename)),...value],lora_overrides})}/>;
   }
   return <>
-    <div className="prompt-heading-row">{header??<h3>Prompt</h3>}<PromptPopulationEditor fragments={draft.population??[]} disabled={disabled} onChange={population=>changeDraft({...draft,population})}/></div>
+    <div className="prompt-heading-row">{header}<PromptPopulationEditor fragments={draft.population??[]} disabled={disabled} onChange={population=>changeDraft({...draft,population})}/></div>
     <div className="page-reference-rows">
       <ReferenceRow title="角色" editor={<ParticipantEditor characters={characters} value={references} onChange={onReferencesChange} enabledCounts={enabledCounts}/>}>
         {references.map(ref=>{const c=characters.find(c=>c.id===ref.character_id),input=c&&setting(c),variant=input?.variants[ref.variant_id];

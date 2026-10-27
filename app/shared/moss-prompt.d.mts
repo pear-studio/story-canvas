@@ -1,0 +1,13 @@
+export type MossEntry={id?:string;description:string;enabled?:boolean;character_id?:string};
+export type MossCategory='composition'|'person'|'setting'|'camera'|'extra'|'avoid';
+export const mossCategories:readonly MossCategory[];
+export const mossLabels:Record<MossCategory,string>;
+export const mossPageCategories:readonly Exclude<MossCategory,'avoid'>[];
+export type MossProjectField='style'|'lighting'|'avoid';
+export const mossProjectFields:readonly MossProjectField[];
+export const mossProjectLabels:Record<MossProjectField,string>;
+export function emptyMossPrompt():Record<Exclude<MossCategory,'avoid'>,MossEntry[]>;
+export function mossText(entries?:MossEntry[]):string;
+export function mossLayoutBox(box:number[],width:number,height:number):number[];
+export function clampMossBox(box:number[]):[number,number,number,number];
+export function validateMossEntries(value:unknown,label:string,options?:{person?:boolean}):string[];

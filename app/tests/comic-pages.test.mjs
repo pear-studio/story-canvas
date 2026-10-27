@@ -45,6 +45,7 @@ test('转换保留原事实和候选，切分原子建立独立分镜且目录�
   const view=await readProjectWorkbenchView(f.root,'demo',{kind:'page',page_id:key.page_id});
   const pages=view.outline.chapters[0].sequences[0].pages;
   assert.equal(pages.length,1);assert.equal(pages[0].comic.panels.length,2);
+  for(const panel of pages[0].comic.panels){assert.equal(panel.generation_size_locked,true);assert.deepEqual(panel.generation_dimensions,await comicGenerationDimensions(f.directory,panel.page_id));}
   assert.ok(pages[0].comic.panels.every(panel=>panel.prompt&&panel.render&&panel.content_sha256));
   assert.equal(pages[0].comic.panels[1].dialogue.length,0);
   const doc=await readComicDocument(f.directory,key.page_id),order=[...doc.order];doc.layout.ratio=.7;

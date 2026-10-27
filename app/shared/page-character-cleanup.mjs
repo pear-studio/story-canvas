@@ -7,13 +7,14 @@ export function cleanPageCharacterInput(input, beforeCharacters = [], afterChara
   const retained = new Set(afterCharacters.map(ref => ref.character_id));
   const removed = new Set(beforeCharacters.map(ref => ref.character_id).filter(id => !retained.has(id)));
   const keep = new Set(afterCharacters.map(ref => characterSource(ref.character_id, ref.variant_id)));
-  for (const field of ['text_overrides','reference_overrides','inheritance'])
+  for (const field of ['text_overrides','reference_overrides','inheritance','entry_overrides'])
     for (const source of Object.keys(next[field] ?? {}))
       if (source.startsWith('character:') && !keep.has(source)) delete next[field][source];
   for (const category of inheritanceCategories)
     if (Array.isArray(next[category])) next[category] = next[category].filter(fragment => !removed.has(fragment.character_id));
   for (const id of Object.keys(next.trigger_sources?.characters ?? {}))
     if (!retained.has(id) || beforeCharacters.some(ref=>ref.character_id===id&&!keep.has(characterSource(id,ref.variant_id)))) delete next.trigger_sources.characters[id];
+  if (next.layout?.items) next.layout.items=next.layout.items.filter(item=>!item.character_id||retained.has(item.character_id));
   if (loraScope) {
     const {beforeSources,afterSources,styleLoras}=loraScope;
     const removedSources=Object.entries(beforeSources).filter(([key])=>!Object.hasOwn(afterSources,key));

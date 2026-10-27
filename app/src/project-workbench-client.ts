@@ -56,7 +56,11 @@ export type WorkbenchPage = {
   comic?: {document:import('../shared/comic-layout.mjs').ComicDocument;sha256:string;panels:WorkbenchPage[]};
   project_loras?: PagePrompt['loras'];
   model_id: GenerationModelId;
-  render?: {version:1;model_id:GenerationModelId;profile_id:string;canvas:string};
+  render?: {version:1;model_id:GenerationModelId;profile_id:string;canvas:string;resolution_scale?:1|1.5};
+  model_project_prompt?:Partial<import('./models/moss/types').MossProjectPrompt>;
+  generation_dimensions?:{width:number;height:number}|null;
+  generation_size_locked?:boolean;
+  generation_resolutions?:Record<string,{width:number;height:number}>;
   render_sha256?: string;
   model_prompts?: {models?:Partial<PagePrompts>};
   render_capabilities?: ProjectWorkbenchView['render_capabilities'];
@@ -512,7 +516,7 @@ export async function inspectPageRender(
   // 保存并生成会在提交后重新检查完整页面，不能将这里的结果直接用于出图。
   const inspectionPrompt = prompt === undefined ? undefined : {
     ...prompt,
-    ...(prompt.reference_images ? { reference_images: prompt.reference_images.filter(entry => !entry.draft) } : {}),
+    ...('reference_images' in prompt && prompt.reference_images ? { reference_images: prompt.reference_images.filter(entry => !entry.draft) } : {}),
   };
   return workbenchResponseJson<{ inspection: PageRenderInspection }>(await readFacts(`${base(projectId)}/page-render-inspection`, {
     method: "POST",
@@ -612,8 +616,9 @@ export async function saveSettingScope<T extends object>(projectId: string, targ
 }
 
 export async function saveWholePage(projectId: string, page: WorkbenchPage, content: StoryPageContentDraft, prompt: PagePrompt, items: LetteringItem[], source_versions?: PromptSourceVersions, layers?:ImageLayers) {
-  const reference_inputs = (prompt.reference_images ?? []).filter(entry => entry.draft).map(entry => {const {preview_url,...source}=entry.draft!;return {id:entry.id,...source};});
-  prompt = { ...prompt, ...(prompt.reference_images ? { reference_images: prompt.reference_images.map(({ draft, ...entry }) => entry) } : {}) };
+  const references='reference_images' in prompt?prompt.reference_images:undefined;
+  const reference_inputs = (references ?? []).filter(entry => entry.draft).map(entry => {const {preview_url,...source}=entry.draft!;return {id:entry.id,...source};});
+  prompt = { ...prompt, ...(references ? { reference_images: references.map(({ draft, ...entry }) => entry) } : {}) };
   return workbenchResponseJson<{ content: StoryPageContentDraft & { dialogue: NonNullable<WorkbenchPage["dialogue"]> }; content_sha256: string; prompt: PagePrompt; prompt_sha256: string; prompt_context_sha256: string; lettering: { page: string; items: LetteringItem[] }; layout_sha256: string;layers?:LayerScope }>(await mutateTargetFacts(`${base(projectId)}/page-save`, {
     method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ page_key: page.page_key, content, prompt, reference_inputs, ...(layers?{layers,expected_layers_sha256:page.layers?.sha256}:{}),
       expected_content_sha256: page.content_sha256, expected_prompt_sha256: page.prompt_sha256,

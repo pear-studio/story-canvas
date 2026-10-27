@@ -37,7 +37,7 @@ import { PromptIssueList } from "./PromptIssueList";
 import type { PromptIssue } from "./prompt-audit-display";
 import { PromptTextArea } from "./SourcePromptEditor";
 import { ProjectRefreshRequiredError } from "./api-response";
-import { InlineTitleEditor, SectionHeader, WorkspaceHeader } from "./WorkspaceHeader";
+import { InlineTitleEditor, WorkspaceHeader } from "./WorkspaceHeader";
 import {
   deletePageTextSource,
   loadPageTextSources,
@@ -189,7 +189,7 @@ function contentFromPage(page: WorkbenchPage): WorkbenchPageContentDraft {
   };
 }
 
-function readPromptSourceVersions(model: 'anima' | 'qwen', characters: WorkbenchCharacter[], scenes: Scene[]): PromptSourceVersions {
+function readPromptSourceVersions(model: import('./models/prompt-types').PromptModelId, characters: WorkbenchCharacter[], scenes: Scene[]): PromptSourceVersions {
   return Object.fromEntries([
     ...characters.flatMap(setting => Object.entries(setting.prompt_source_versions?.[model] ?? {}).map(([variant, sha]) => [characterSource(setting.id, variant), sha])),
     ...scenes.flatMap(setting => Object.entries(setting.prompt_source_versions?.[model] ?? {}).map(([variant, sha]) => [sceneSource(setting.id, variant), sha])),
@@ -893,8 +893,8 @@ export default function WorkbenchPageEditor({
         ...refs.map(ref=>({key:characterSource(ref.character_id,ref.variant_id),setting:characters.find(item=>item.id===ref.character_id),variant:ref.variant_id})),
         ...(sceneId?[{key:sceneSource(sceneId,sceneVariantId!),setting:scenes.find(item=>item.id===sceneId),variant:sceneVariantId!}]:[]),
       ].map(({key,setting,variant})=>{
-        const input=setting?.model_prompts?.models?.anima;
-        return [key,{identity:input?.identity,variant:input?.variants[variant],...(!input?.variants[variant]?{missing:'prompt'}:{})}];
+        const input=page.model_id==='h3'?undefined:setting?.model_prompts?.models?.[page.model_id];
+        return [key,{identity:input&&'identity' in input?input.identity:undefined,variant:input?.variants[variant],...(!input?.variants[variant]?{missing:'prompt'}:{})}];
       }));
       return cleanPageCharacterInput(current, contentDraft.characters ?? [], value, {
         beforeSources:sources(contentDraft.characters ?? []),afterSources:sources(value),styleLoras:page.render_capabilities?.candidates?.available ? page.project_loras : undefined,
@@ -908,9 +908,7 @@ export default function WorkbenchPageEditor({
   const displayLetteringStyle = targetStyle?{...targetStyle,font_size:targetStyle.font_size/letteringWidth}:null;
   const displayLetteringItems = letteringStyle?scaleLetteringHearts(letteringLocale==='zh'?previewItems:previewLetteringItems(page.dialogue??[],letteringItems,letteringStyle),1/letteringWidth):[];
   const [generationSettingsTarget,setGenerationSettingsTarget]=useState<HTMLDivElement|null>(null);
-  const [desktopSettings,setDesktopSettings]=useState(()=>window.matchMedia('(min-width: 1161px)').matches);
-  useEffect(()=>{const query=window.matchMedia('(min-width: 1161px)');const update=()=>setDesktopSettings(query.matches);query.addEventListener('change',update);return ()=>query.removeEventListener('change',update);},[]);
-  const generationSettings=<PageGenerationSettings compact={desktopSettings} projectId={projectId} page={page} disabled={busy||saving} beforeChange={saveAll} onSaved={()=>onReloadPrompt?.()}/>;
+  const generationSettings=<PageGenerationSettings compact projectId={projectId} page={page} disabled={busy||saving} beforeChange={saveAll} onSaved={()=>onReloadPrompt?.()}/>;
   const pageActions=<span className="workbench-page-editor__dock-actions">{historyActions}
           <button type="button" className="button button--quiet" disabled={busy || saving || !(anyDirty || contentPhase === "error" || promptPhase === "error")} title="放弃本页全部未保存修改" onClick={discardAll}>放弃修改</button>
           <button type="button" className="button button--primary" disabled={busy || saving || !saveNeeded} title="保存本页全部修改（Ctrl+S）" onClick={() => void (onSaveAllRequested??saveAll)()}>{saving ? "保存中…" : "保存"}</button>
@@ -937,12 +935,11 @@ export default function WorkbenchPageEditor({
       {isTextPage
         ? <>{letteringLocale==='zh'&&<TextPageEditor value={contentDraft} disabled={busy || saving} onChange={patch => setContentDraft(current => ({ ...current, ...patch }))} />}{textOverflow && <p className="prompt-save-error" role="alert">文字超出画布，请缩小字号或减少内容后再输出。</p>}</>
         : <>
-        <label><span>画面内容<small className={sceneDescriptionWarning ? "is-over-limit" : undefined} aria-live="polite">{sceneDescriptionLength} / {SCENE_DESCRIPTION_CHARACTER_LIMIT} 字</small></span><textarea className="page-scene-description" rows={1} aria-label="画面内容" placeholder="简单描述谁在做什么，20 字以内" value={contentDraft.scene_description} onChange={(event) => setContentDraft((current) => ({ ...current, scene_description: event.target.value }))} />{sceneDescriptionWarning && <small className="is-over-limit" role="status">{sceneDescriptionWarning.message}</small>}</label>
+        <label><span>画面目标<small className={sceneDescriptionWarning ? "is-over-limit" : undefined} aria-live="polite">{sceneDescriptionLength} / {SCENE_DESCRIPTION_CHARACTER_LIMIT} 字</small></span><textarea className="page-scene-description" rows={1} aria-label="画面目标" placeholder="简单描述谁在做什么，20 字以内" value={contentDraft.scene_description} onChange={(event) => setContentDraft((current) => ({ ...current, scene_description: event.target.value }))} />{sceneDescriptionWarning && <small className="is-over-limit" role="status">{sceneDescriptionWarning.message}</small>}</label>
       </>}
     </div>
 
-    {desktopSettings&&generationSettingsTarget?createPortal(generationSettings,generationSettingsTarget):generationSettings}
-    <div className="page-mobile-history">{historyActions}</div>
+    {generationSettingsTarget&&createPortal(generationSettings,generationSettingsTarget)}
     {!isTextPage && <div className="editor-mode-tabs" role="tablist" aria-label="页面编辑内容">
       <button role="tab" aria-selected={visibleTab === "visual"} className={visibleTab === "visual" ? "is-active" : ""} onClick={() => setActiveTab("visual")}>视觉描述 / Prompt{promptDirty && <i />}</button>
       {<button role="tab" aria-selected={visibleTab === "lettering"} className={visibleTab === "lettering" ? "is-active" : ""} onClick={() => setActiveTab("lettering")}>嵌字{layoutDirty && <i />}</button>}
@@ -960,7 +957,7 @@ export default function WorkbenchPageEditor({
       {promptError && <p className="prompt-save-error" role="alert">{promptError}</p>}
       {promptAuditErrors.length > 0 && <PromptIssueList issues={promptAuditErrors} title="Prompt 错误" />}
       {references.pending && <p role={references.error ? 'alert' : 'status'}>{references.error || '正在读取引用设定…'}{references.error && <button type="button" onClick={references.retry}>重试</button>}</p>}
-      <ModelPromptEditor key={promptDiscardCount} header={<SectionHeader title="Prompt" actions={<div className="prompt-save-actions">{promptPhase === "error" && <button type="button" className="button button--quiet" onClick={() => void reloadAll()}>放弃本页草稿并重新载入</button>}{promptAuditWarnings.length > 0 && <button type="button" className="issue-indicator issue-indicator--warning" aria-label={`查看 ${promptAuditWarnings.length} 条 Prompt 警告`} title="查看 Prompt 警告" onClick={() => setPromptWarningsOpen(true)}>!</button>}</div>} />} projectId={projectId} page={page} prompt={promptDraft} onChange={setPromptDraft} characters={characters} scenes={scenes} references={contentDraft.characters??[]} onReferencesChange={changeCharacters} disabled={busy||saving} onOpenOverview={onOpenPromptOverview} qwenRewrite={qwenRewrite} dirty={anyDirty}/>
+      <ModelPromptEditor key={promptDiscardCount} header={(promptPhase === "error" || promptAuditWarnings.length > 0) && <div className="prompt-save-actions">{promptPhase === "error" && <button type="button" className="button button--quiet" onClick={() => void reloadAll()}>放弃本页草稿并重新载入</button>}{promptAuditWarnings.length > 0 && <button type="button" className="issue-indicator issue-indicator--warning" aria-label={`查看 ${promptAuditWarnings.length} 条 Prompt 警告`} title="查看 Prompt 警告" onClick={() => setPromptWarningsOpen(true)}>!</button>}</div>} projectId={projectId} page={page} prompt={promptDraft} onChange={setPromptDraft} characters={characters} scenes={scenes} references={contentDraft.characters??[]} onReferencesChange={changeCharacters} disabled={busy||saving} onOpenOverview={onOpenPromptOverview} qwenRewrite={qwenRewrite} dirty={anyDirty}/>
     </section>}
 
     {!isTextPage && visibleTab === "lettering" && !layerMode && letteringLocale==='zh' && letteringStyle && <>

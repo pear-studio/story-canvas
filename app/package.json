@@ -35,6 +35,7 @@
     "test:lora-ui": "node --test tests/browser/lora-preparation.test.mjs",
     "test:prompt-ui": "node --test tests/browser/prompt-editor.test.mjs tests/browser/prompt-overview.test.mjs tests/browser/inheritance.test.mjs tests/browser/unified-page.test.mjs tests/browser/reference-library.test.mjs tests/browser/mobile-candidates.test.mjs tests/browser/candidate-thumbnails.test.mjs",
     "test:anima-ui": "node --test tests/browser/anima-prompt-editor.test.mjs tests/browser/anima-inheritance.test.mjs tests/browser/lora-inheritance.test.mjs",
+    "test:moss-ui": "node --test tests/browser/moss-prompt-editor.test.mjs tests/browser/moss-project-settings.test.mjs",
     "project:storage": "node scripts/project-storage.mjs",
     "test:finished-ui": "npm run build && node --test tests/browser/finished-reader.test.mjs tests/browser/finished-pages.test.mjs tests/browser/text-pages.test.mjs tests/browser/translations.test.mjs"
   },

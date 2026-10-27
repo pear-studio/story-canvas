@@ -587,7 +587,7 @@ test("添加入口与当前项目管理分开，取消移除不发送修改请�
 
 for(const mobile of [false,true])for(const dirty of [false,true])test(`页面拖动排序保持当前页 ${mobile?'手机':'桌面'} ${dirty?'有草稿':'无草稿'}`,async t=>{
   const {page}=await setup(t,{mobile});
-  if(dirty)await page.getByLabel('画面内容',{exact:true}).fill('未保存画面');
+  if(dirty)await page.getByLabel('画面目标',{exact:true}).fill('未保存画面');
   if(mobile)await page.getByRole('button',{name:'目录',exact:true}).click();
   const from=await page.getByRole('button',{name:'拖动排序：页面a',exact:true}).boundingBox();
   const target=await page.locator('[data-nav-kind="story-page"][data-nav-id="c"]').boundingBox();
@@ -602,7 +602,7 @@ for(const mobile of [false,true])for(const dirty of [false,true])test(`页面拖
   assert.deepEqual(await page.locator('[data-nav-kind="story-page"]').evaluateAll(rows=>rows.map(row=>row.dataset.navId)),['b','c','a']);
   assert.equal(new URL(page.url()).searchParams.get('page'),'b');
   assert.equal(await page.locator('.tree-page.is-active').getAttribute('aria-selected'),'true');
-  if(dirty)assert.equal(await page.getByLabel('画面内容',{exact:true}).inputValue(),'未保存画面');
+  if(dirty)assert.equal(await page.getByLabel('画面目标',{exact:true}).inputValue(),'未保存画面');
   await page.locator('.tree-page').filter({hasText:'页面c'}).click();
   if(dirty){
     const confirmation=page.getByRole('dialog',{name:'未保存的修改',exact:true});
@@ -710,9 +710,9 @@ test("Ctrl+S 保存包含本页 Prompt 文本框中未保存的草稿", async t 
 test("分区浏览不离开草稿，搜索实际打开页面并同步目录和前后历史", async t => {
   const { page } = await setup(t);
   const search = page.getByRole('combobox', { name: '搜索项目内容' });
-  await page.getByLabel('画面内容', { exact: true }).fill('未保存的画面');
+  await page.getByLabel('画面目标', { exact: true }).fill('未保存的画面');
   await page.locator('.navigation-sections').getByRole('button', { name: '设定', exact: true }).click();
-  assert.equal(await page.getByLabel('画面内容', { exact: true }).inputValue(), '未保存的画面');
+  assert.equal(await page.getByLabel('画面目标', { exact: true }).inputValue(), '未保存的画面');
   assert.equal(await page.getByRole('dialog').count(), 0);
   await search.fill('3'); await search.press('Enter');
   await page.getByRole('dialog').getByRole('button', { name: '取消', exact: true }).click();
@@ -968,7 +968,7 @@ for(const mobile of [false,true])test(`总览按类型集中查看，批量操�
 
 test('离开普通页可取消或保存后切换，保存失败继续保留草稿',async t=>{
  const {page}=await setup(t,{generationSettings:true});let saves=[];
- await page.getByLabel('画面内容',{exact:true}).fill('需要保留的修改');await page.locator('.tree-page').filter({hasText:'页面c'}).click();let dialog=page.getByRole('dialog',{name:'未保存的修改',exact:true});await dialog.getByRole('button',{name:'取消',exact:true}).click();assert.equal(await page.getByLabel('画面内容',{exact:true}).inputValue(),'需要保留的修改');
+ await page.getByLabel('画面目标',{exact:true}).fill('需要保留的修改');await page.locator('.tree-page').filter({hasText:'页面c'}).click();let dialog=page.getByRole('dialog',{name:'未保存的修改',exact:true});await dialog.getByRole('button',{name:'取消',exact:true}).click();assert.equal(await page.getByLabel('画面目标',{exact:true}).inputValue(),'需要保留的修改');
  await page.route('**/workbench/page-save',route=>route.fulfill({status:500,json:{error:'save_failed'}}));await page.locator('.tree-page').filter({hasText:'页面c'}).click();await dialog.getByRole('button',{name:'保存后切换',exact:true}).click();await dialog.getByRole('alert').waitFor();assert.equal(new URL(page.url()).searchParams.get('page'),'b');await dialog.getByRole('button',{name:'取消',exact:true}).click();
  await page.unroute('**/workbench/page-save');await page.route('**/workbench/page-save',route=>{const body=route.request().postDataJSON();saves.push(body);return route.fulfill({json:{content:body.content,prompt:body.prompt,content_sha256:'saved-content',prompt_sha256:'saved-prompt',lettering:{page:body.page_key.page_id,items:body.lettering.items},layout_sha256:'saved-layout'}});});
  await page.locator('.tree-page').filter({hasText:'页面c'}).click();await dialog.getByRole('button',{name:'保存后切换',exact:true}).click();await page.waitForFunction(()=>new URLSearchParams(location.search).get('page')==='c');assert.equal(saves[0].content.scene_description,'需要保留的修改');

@@ -27,7 +27,7 @@ export function PageGenerationSettings({projectId,page,disabled,beforeChange,onS
   }
   return <div className={`page-generation-settings${compact?" page-generation-settings--compact":""}`}>
     <label><span className="generation-setting-label">生成模型</span> <select aria-label="本页生成模型" disabled={disabled||saving} value={page.render.model_id} onChange={event=>{const choice=modelChoices.find(c=>c.id===event.target.value)!;void change({model_id:choice.id,profile_id:choice.profileId});}}>{modelChoices.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}</select></label>
-    <CanvasControl value={page.render.canvas} disabled={disabled||saving} onChange={canvas=>void change({canvas})}/>
+    {!page.generation_size_locked&&<CanvasControl value={page.render.canvas} disabled={disabled||saving} onChange={canvas=>void change({canvas})}/>}
     {page.model_id==='qwen'&&page.model_prompts?.models?.anima&&<button type="button" className="button button--quiet" disabled={disabled||saving} onClick={()=>void reimport()}>从 Anima 重新带入文字</button>}
     {saving&&<small>保存中…</small>}{error&&<p role="alert">{error}</p>}
   </div>;

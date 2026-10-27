@@ -139,7 +139,7 @@ export async function savePageRewriteResult({ repositoryRoot, projectDirectory, 
 export async function selectedPagePrompt({ projectDirectory, resolved, promptSource = "original" }) {
   if (promptSource === "original") return resolved.compiled_page;
   if (promptSource !== "rewrite") throw new ApiError(400, "invalid_prompt_source");
-  if (resolved.model_id === 'anima') throw new ApiError(422,'model_rewrite_unsupported');
+  if (!profileModelAdapter(resolved.compiled_profile.effective_profile).capabilities.rewrite) throw new ApiError(422,'model_rewrite_unsupported');
   const document = await readDocument(projectDirectory, resolved.page_id);
   if (!document) throw new ApiError(409, "page_rewrite_missing");
   const prefix = referencePrefix(resolved.compiled_page);

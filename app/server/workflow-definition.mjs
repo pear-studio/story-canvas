@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 const idPattern = /^[a-z0-9][a-z0-9-]*$/;
-const architectureFamilies = new Set(["anima", "qwen-image-2-1", "minimax-h3"]);
+const architectureFamilies = new Set(["anima", "qwen-image-2-1", "minimax-h3", "moss-image"]);
 const operations = new Set(["candidates"]);
 const inputSources = new Set(["empty_latent", "reference_image"]);
 const modifiers = new Set(["lora.model_only"]);
@@ -170,8 +170,8 @@ export function validateWorkflowDefinition(definition) {
   }
   if (manifest.input_sources.some(source => ["empty_latent", "reference_image"].includes(source))) {
     requireBindings(manifest, ["width", "height", ...primarySamplingBindings], "empty_latent 输入");
-    requireBindingNodeType(template, manifest, "width", ["EmptyLatentImage"]);
-    requireBindingNodeType(template, manifest, "height", ["EmptyLatentImage"]);
+    requireBindingNodeType(template, manifest, "width", manifest.architecture_families.includes("moss-image") ? ["EmptyFlux2LatentImage"] : ["EmptyLatentImage"]);
+    requireBindingNodeType(template, manifest, "height", manifest.architecture_families.includes("moss-image") ? ["EmptyFlux2LatentImage"] : ["EmptyLatentImage"]);
   }
 
   const presentPrimarySampling = primarySamplingBindings.filter((name) => Object.hasOwn(manifest.bindings, name));

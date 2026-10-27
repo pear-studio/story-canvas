@@ -1,12 +1,14 @@
 import {animaAdapter} from './models/anima/adapter.mjs';
 import {qwenAdapter} from './models/qwen/adapter.mjs';
 import {h3Adapter} from './models/h3/adapter.mjs';
+import {mossAdapter} from './models/moss/adapter.mjs';
 
 // 模型拥有 Prompt 和能力；候选/队列只消费编译结果。显式注册，不扫描或运行外部插件。
 const adapters = Object.freeze({
   h3:h3Adapter,
   anima:animaAdapter,
   qwen:qwenAdapter,
+  moss:mossAdapter,
 });
 
 export function modelAdapter(id) {

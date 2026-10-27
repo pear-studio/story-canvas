@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import {ModelOverviewEditor} from './models/registry';
+import {ModelOverviewEditor,generationModelLabel} from './models/registry';
 import { GenerateSplitButton } from "./GenerateSplitButton";
 import { savePagePrompt, startPageRender, type ProjectWorkbenchView, type WorkbenchPage, type EditableWorkbenchPage, isEditablePage } from "./project-workbench-client";
 import { useFeedback } from "./feedback";
@@ -41,7 +41,7 @@ function PromptColumn({ projectId, entry, characters, scenes, selected, busy, vi
   useLayoutEffect(() => { handles.set(page.page_id, handle); return () => { handles.delete(page.page_id); }; });
   return <article className="prompt-overview-column" data-overview-page={page.page_id} data-page-prompt-dirty={dirty ? "true" : undefined} onFocusCapture={() => setFocused(true)} onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false); }}>
     <header className="prompt-overview-column-header"><label><input type="checkbox" checked={selected} disabled={busy} onChange={onSelect} /><b>{page.title}</b></label><small>{entry.chapter} / {entry.sequence}</small><div><span>{dirty ? "● 未保存" : "已保存"}</span><button type="button" className="button button--quiet" disabled={busy} onClick={onOpenPage}>打开单页</button></div>
-      <small>{page.model_id==='h3'?'MiniMax H3 · 动态页':page.model_id==='anima'?'Anima Basic':'Qwen-Image-2.1'} · {page.render?.canvas}</small>
+      <small>{generationModelLabel(page.model_id)} · {page.render?.canvas}</small>
       {(error || conflict && dirty) && <p role="alert">{error || "页面或角色已变化，草稿保留；请重新载入后编辑。"}<button type="button" disabled={busy} onClick={() => { setBase(page); setDraft(structuredClone(page.prompt)); setError(""); }}>放弃草稿并载入最新</button></p>}
       <small>{(page.characters ?? []).map(ref => { const c = characters.find(c => c.id === ref.character_id); return (c?.name ?? ref.character_id) + ' · ' + (c?.visual.variants.find(v => v.id === ref.variant_id)?.name ?? ref.variant_id); }).join('、')}{sceneId ? ' / 场景：' + (scenes.find(s => s.id === sceneId)?.name ?? sceneId) : ''}</small>
     </header>

@@ -1,4 +1,5 @@
 import {useState} from 'react';
+import '../PromptDisclosure.css';
 import {Modal} from '../Modal';
 import {ResourcePicker,ResourcePreview,ResourceDetailsButton,loraResourceCatalogItem,rawLoraCatalogItem,type LoraResourceDefinition} from '../ResourceCatalog';
 import {useProjectLoraResources,rawLoraResourceDefinition} from '../use-lora-resources';
@@ -25,6 +26,6 @@ export function LoraListEditor({projectId,profileId,title,inherited=[],value,ove
   const localRows=loras.filter(lora=>!inheritedNames.has(lora.filename));
   const addButton=allowAdd&&<button type="button" className="button button--quiet" disabled={disabled} onClick={()=>setOpen(true)}>{single&&value.length?'替换 LoRA':'添加 LoRA'}</button>;
   const changed=(rows:Lora[])=>rows.some(lora=>overrides[lora.filename]||inheritedNames.has(lora.filename)&&value.some(item=>item.filename===lora.filename));
-  const group=(label:string,rows:Lora[],add=false)=><div className="lora-fold-row"><details><summary>{label} · {rows.length} 项{changed(rows)&&' · 已调整'}</summary><div className="project-lora-current-list">{rows.map(row)}</div></details>{add&&addButton}</div>;
+  const group=(label:string,rows:Lora[],add=false)=><div className="lora-fold-row"><details><summary className="prompt-disclosure"><span>{label}</span><span className="prompt-disclosure__meta">· {rows.length} 项{changed(rows)&&' · 已调整'}</span></summary><div className="project-lora-current-list">{rows.map(row)}</div></details>{add&&addButton}</div>;
   return <section className="page-loras" aria-label={title}>{collapsed?<>{collapseInherited?group(title,localRows,true):group(title,loras,allowAdd)}{collapseInherited&&inheritedRows.length>0&&group('继承的项目 LoRA',inheritedRows)}</>:<><div className="section-header"><h4>{title}</h4>{addButton}</div>{inheritedRows.length>0&&(collapseInherited?group('继承的项目 LoRA',inheritedRows):<div className="project-lora-current-list">{inheritedRows.map(row)}</div>)}<div className="project-lora-current-list">{localRows.map(row)}</div></>}{open&&<Modal size="workspace" title="选择 LoRA" onClose={()=>setOpen(false)} ariaLabel="选择 LoRA"><div className="lora-picker-body">{error?<p role="alert">{error}</p>:!list?<p>正在读取资源…</p>:<ResourcePicker items={choices.map(value=>value.item)} empty="没有可添加的 LoRA" onSelect={item=>{const choice=choices.find(value=>value.item.id===item.id);if(choice)add(choice.resource);}}/>}</div></Modal>}</section>;
 }

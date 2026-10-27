@@ -137,6 +137,11 @@ test('字段帮助按需展开，分类与默认操作帮助不注入完整细�
   assert.ok(help.topics.dialogue);assert.equal(help.helpTopics,undefined);
   const topic=await f.tool.execute({operation:'help',target:'page.editor.save',topic:'dialogue'});
   assert.match(topic.details,/不按数组索引/);
+  const projectPromptHelp=await f.tool.execute({operation:'help',target:'generation.override.save'});
+  assert.ok(projectPromptHelp.topics.moss);assert.equal(projectPromptHelp.helpTopics,undefined);
+  const mossProject=await f.tool.execute({operation:'help',target:'generation.override.save',topic:'moss'});
+  assert.match(mossProject.details,/prompt_targets/);assert.match(mossProject.details,/移除该 target/);
+  assert.equal(mossProject.example.target,'prompt.avoid');assert.deepEqual(mossProject.example.original,{exists:false});
   const batch=await f.tool.execute({operation:'help',target:'prompt.batch.save',topic:'inheritance'});
   assert.equal(batch.example.changes.inheritance['scene:study:default']['identity:token-012345abcdef'].enabled,false);
   assert.equal((await failure(f.tool,{operation:'help',target:'page',topic:'dialogue'})).error,'invalid_arguments');
@@ -1116,4 +1121,14 @@ test('批量 Prompt 读取保留逐页引用编辑入口并解释对白解耦',a
  const r=await f.tool.execute({operation:'prompt.batch.read',args:{project_id:'demo',targets:['a','b'].map(id=>({kind:'page',id}))}});
  assert.match(r.read_hint,/解除引用保留对白/);
  assert.deepEqual(r.results.map(x=>x.references.edit.args.page_key.page_id),['a','b']);
+});
+
+test('批量 Prompt 按模型保留去重的操作提示与各页项目描述',async t=>{
+ const hints={moss:'MOSS entry_overrides；avoid 缺省继承项目。',qwen:'Qwen text_overrides 与 reference_overrides。'};
+ const f=await fixture(t,({body},res)=>res.end(JSON.stringify({target:body.target,document:{},read_hint:hints[body.target.model_id],project_prompt:{profile_id:body.target.model_id,fields:{avoid:{effective:[{description:body.target.id}]}}},save:{args:{expected_sha256:'hash'}}})));
+ const targets=[{kind:'page',id:'a',model_id:'moss'},{kind:'page',id:'b',model_id:'moss'},{kind:'page',id:'c',model_id:'qwen'}];
+ const result=await f.tool.execute({operation:'prompt.batch.read',args:{project_id:'demo',targets}});
+ assert.deepEqual(result.model_read_hints,{moss:[hints.moss],qwen:[hints.qwen]});
+ assert.deepEqual(result.results.map(row=>row.project_prompt.fields.avoid.effective[0].description),['a','b','c']);
+ assert.ok(result.results.every(row=>!Object.hasOwn(row,'read_hint')));
 });

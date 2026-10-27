@@ -3,6 +3,10 @@ import { promptWeightPresets } from '../../shared/prompt-weight-presets.mjs';
 export const promptWeightGuidance = `网页词条权重预设为 ${promptWeightPresets.join('、')}；这是快捷选项，不是保存值域，LoRA 权重另按其契约。`;
 // 页面编辑工具自己的按需字段帮助；普通分类目录不展开这些细则。
 export const pageEditHelp = {
+  moss: {
+    summary:'MOSS 自然语言条目、项目画风与 Layout',
+    details:'model_id:moss。设定 base 保存 prompt_name 与 identity.lora，variant 保存完整 entries、loras/lora_overrides。页面 composition/person/setting/camera/extra 是 description/enabled 条目数组，avoid 缺省继承项目避免；数组替换，[] 明确清空，null 恢复继承；person 可用 character_id 绑定当前角色。entry_overrides 用 prompt.sources 返回的来源键替换整份设定描述，null 恢复继承。project_overrides.style/lighting 分别替换项目画风和光照；[] 明确清空，null 恢复。Layout 保存 enabled 和 items，角色元素只含 id/character_id/bbox，复用同一份人物描述；独立元素含 id/label:object或text/entries/bbox，文字另存 text。bbox 使用画幅内归一化 [x,y,width,height]，编译按实际生成分辨率换算；每个角色最多一个框。MOSS 不接受 Qwen 参考图和 Anima tag/weight。',
+  },
   camera: {
     summary:'独立机位参数：局部修改，自动生成只读 Prompt',
     workflow:'先 prompt.read 读取页面，沿用返回的 save.args，用 prompt.save 提交 changes.camera_settings；多页使用 prompt.batch.read/save。网页“机位控制”对应这个字段，不需要迁移操作。',

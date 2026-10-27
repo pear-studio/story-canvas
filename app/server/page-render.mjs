@@ -98,14 +98,15 @@ function compileTask({ resolved, projectDirectory, projectId, taskId, count, see
     };
   });
   const profileBundle = resolved.compiled_profile;
-  const profile = profileBundle.effective_profile;
+  const profile = structuredClone(profileBundle.effective_profile);
+  if(resolved.candidate_recipe&&resolved.candidate_route)profile.operations.candidates.routes[resolved.candidate_route.input_source].recipe=structuredClone(resolved.candidate_recipe);
   const routedItems = freezeRenderRoutes(items, { purpose: "candidate", resolvedProfile: profile });
   const pageKey = encodePageKey(resolved.page_key);
   const snapshot = createTaskSnapshot({
     purpose: "candidate",
     canvas: resolved.project.canvas,
     profile,
-    effectiveProfileSha256: profileBundle.effective_profile_sha256,
+    effectiveProfileSha256: hashCanonicalJson(profile),
     sourceIdentity: profileBundle.source_identity,
     workflowDefinitions: profileBundle.workflow_definitions,
     items: routedItems,

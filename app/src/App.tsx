@@ -540,7 +540,8 @@ function SinglePageWorkspace({ panelContext,letteringLocale="zh",onLetteringLoca
   const {promptSource} = qwenRewrite;
   const inspectionDepsKey = JSON.stringify([location.key, page.content_sha256, page.render_sha256, panelContext?.layoutVersion, characterFactsSignature, sceneFactsSignature, page.project_loras, defaultRenderProfile, promptDraft, promptSource]);
   // 待保存附图不参与编译检查；其余草稿字段都影响编译结果，任意变化都应让旧预览失效。
-  const { reference_images: _draftAttachments, ...promptCompileBase } = promptDraft;
+  const promptCompileBase={...promptDraft};
+  if('reference_images' in promptCompileBase)delete promptCompileBase.reference_images;
   const currentBaseKey = JSON.stringify([location.key, page.content_sha256, characterFactsSignature, sceneFactsSignature, page.project_loras, defaultRenderProfile, promptCompileBase, promptSource]);
 
   useEffect(() => {

@@ -21,6 +21,8 @@ import {
 } from "./ResourceCatalog";
 import { mutateFacts, readFacts } from "./project-write-client";
 import RenderProfileInspection, { RenderProfileOverrideInspection, type RenderProfileInspectionProjection } from "./RenderProfileInspection";
+import {MossEntriesEditor} from './models/moss/EntriesEditor';
+import type {MossEntry} from '../shared/moss-prompt.mjs';
 
 type AssetStatus = { id?: string; filename: string; relative_path?: string; size_bytes?: number; sha256?: string; status: string; weight?: number | null };
 type RenderProfile = {
@@ -41,6 +43,8 @@ type RenderProfile = {
 type ProfileResponse = { current_profile_id: string; render_profiles: RenderProfile[] };
 type OverrideState = { exists: false } | { exists: true; value: unknown };
 type OverrideDocument = { version: 1; profiles: Record<string, { changes: Array<{ target: string; original: OverrideState; project: OverrideState }> }> };
+type MossProjectPrompt = import('./models/moss/types').MossProjectPrompt;
+import {mossProjectFields as mossPromptFields,mossProjectLabels as mossPromptLabels} from '../shared/moss-prompt.mjs';
 type LoraDefinition = { filename: string; sha256: string; weight: number; trigger?: string };
 type LoraResourceList = {
   resources: LoraResourceEntry[];
@@ -116,6 +120,10 @@ export default function ProjectGenerationSettingsView({ projectId, project, busy
   const [loraNotice, setLoraNotice] = useState("");
   const [promptDraft, setPromptDraft] = useState("");
   const [promptSaved, setPromptSaved] = useState("");
+  const [mossPromptDraft,setMossPromptDraft] = useState<MossProjectPrompt>({style:[],lighting:[],avoid:[]});
+  const [mossPromptSaved,setMossPromptSaved] = useState<MossProjectPrompt>({style:[],lighting:[],avoid:[]});
+  const [adjustmentLoading,setAdjustmentLoading] = useState(false);
+  const [adjustmentError,setAdjustmentError] = useState('');
   const loadGeneration = useRef(0);
   useProjectSnapshotReader(projectId, async (read) => {
     const [next, document] = await Promise.all([
@@ -124,12 +132,22 @@ export default function ProjectGenerationSettingsView({ projectId, project, busy
     ]);
     return () => { loadGeneration.current += 1; setProfiles(next.render_profiles); setOverrideDocument(document.override); setLoading(false); };
   });
+  async function readProfileInspection(id:string):Promise<RenderProfile> {
+    const result=await responseJson<ProfileResponse>(await readFacts(`/api/projects/${encodeURIComponent(projectId)}/render-profile?profile_id=${encodeURIComponent(id)}`,{headers:{accept:'application/json'}}));
+    const profile=result.render_profiles.find(value=>value.id===id);
+    if(!profile?.inspection)throw new Error(profile?.errors.join('；')||'模型配置没有可读取的项目调整');
+    return profile;
+  }
   async function refresh() {
     const generation = ++loadGeneration.current;
     setLoading(true);
     try {
-      const result = await responseJson<ProfileResponse>(await readFacts(`/api/projects/${encodeURIComponent(projectId)}/render-profile`, { headers: { accept: "application/json" } }));
-      if (generation === loadGeneration.current) setProfiles(result.render_profiles);
+      const requiredIds=[...new Set([selectedAdjustment,loraProfile].filter(profile=>profile?.architecture_family==='moss-image'&&profile.id!==project.default_render_profile).map(profile=>profile!.id))];
+      const [result,inspections]=await Promise.all([
+        readFacts(`/api/projects/${encodeURIComponent(projectId)}/render-profile`,{headers:{accept:'application/json'}}).then(response=>responseJson<ProfileResponse>(response)),
+        Promise.all(requiredIds.map(readProfileInspection)),
+      ]);
+      if (generation === loadGeneration.current) setProfiles(result.render_profiles.map(profile=>inspections.find(value=>value.id===profile.id)??profile));
     } catch (error) { notify({ kind: "error", message: `生成配置读取失败：${error instanceof Error ? error.message : String(error)}` }); }
     finally { setLoading(false); }
   }
@@ -145,6 +163,32 @@ export default function ProjectGenerationSettingsView({ projectId, project, busy
   useEffect(() => { setLoraProfileId(project.default_render_profile); }, [projectId, project.default_render_profile]);
   const selectedAdjustment = profiles.find((profile) => profile.id === selectedAdjustmentId) ?? current;
   const selectedAdjustmentCurrent = selectedAdjustment?.id === current?.id;
+  const selectedMoss = selectedAdjustment?.architecture_family === 'moss-image';
+  const missingMossProfile=[selectedAdjustment,loraProfile].find(profile=>profile?.architecture_family==='moss-image'&&!profile.inspection&&!profile.diagnosis_loaded);
+  useEffect(() => {
+    if (!missingMossProfile) {setAdjustmentLoading(false);return;}
+    let cancelled=false;
+    const id=missingMossProfile.id,generation=loadGeneration.current;
+    setAdjustmentLoading(true);setAdjustmentError('');
+    void readProfileInspection(id).then(full=>{
+        if(cancelled||generation!==loadGeneration.current)return;
+        setAdjustmentLoading(false);
+        setProfiles(values=>values.map(profile=>profile.id===id?full:profile));
+      }).catch(error=>{if(!cancelled){const message=error instanceof Error?error.message:String(error);setAdjustmentError(message);if(loraProfile?.id===id)setLoraNotice(message);}})
+      .finally(()=>{if(!cancelled)setAdjustmentLoading(false);});
+    return ()=>{cancelled=true;};
+  },[projectId,missingMossProfile]);
+  const mossPromptChanges = (overrideDocument?.profiles[selectedAdjustment?.id ?? '']?.changes ?? []).filter(change=>mossPromptFields.some(field=>change.target===`prompt.${field}`));
+  const mossPromptIdentity = JSON.stringify([projectId,selectedAdjustment?.id,selectedAdjustment?.inspection?.project_override.effective_sha256,selectedAdjustment?.inspection?.prompt.style,selectedAdjustment?.inspection?.prompt.lighting,selectedAdjustment?.inspection?.prompt.avoid,mossPromptChanges]);
+  useEffect(()=>{
+    if(!selectedMoss||!selectedAdjustment?.inspection)return;
+    const prompt=selectedAdjustment.inspection.prompt;
+    const value=Object.fromEntries(mossPromptFields.map(field=>{
+      const change=mossPromptChanges.find(item=>item.target===`prompt.${field}`);
+      return [field,structuredClone(change?.project.exists&&Array.isArray(change.project.value)?change.project.value:prompt[field]??[])];
+    })) as MossProjectPrompt;
+    setMossPromptDraft(value);setMossPromptSaved(value);
+  },[mossPromptIdentity]);
   const inspected = inspectionOverride?.id === inspectionId ? inspectionOverride : profiles.find((profile) => profile.id === inspectionId) ?? null;
   const styleLoras = Object.values(loraProfile?.inspection?.style_loras ?? {});
   const activeLoraBySha = new Map(styleLoras.map((lora) => [lora.sha256, lora]));
@@ -267,16 +311,50 @@ export default function ProjectGenerationSettingsView({ projectId, project, busy
   }
 
   const promptDirty = promptDraft !== promptSaved;
+  const mossPromptDirty = selectedMoss && JSON.stringify(mossPromptDraft)!==JSON.stringify(mossPromptSaved);
   const promptHasChanges = promptChanges.some((change) => change.target === "prompt.text");
 
   async function confirmDiscardPromptDrafts() {
-    if (!promptDirty) return true;
-    return confirm({
+    if (!promptDirty && !mossPromptDirty) return true;
+    const discard=await confirm({
       kind: "warning",
       title: "放弃未保存的 Prompt？",
       message: "继续后会重新读取生成配置，当前未保存的 Prompt 修改将丢失。",
       confirmLabel: "放弃并继续",
     });
+    if(discard){setMossPromptDraft(mossPromptSaved);setPromptDraft(promptSaved);}
+    return discard;
+  }
+
+  function mossPromptBase(field:typeof mossPromptFields[number]):MossEntry[] {
+    const inspection=selectedAdjustment?.inspection?.project_override;
+    const projected=[...(inspection?.changes??[]),...(inspection?.conflicts??[]),...(inspection?.redundant??[])].find(change=>change.target===`prompt.${field}`);
+    if(projected)return structuredClone(projected.current.exists&&Array.isArray(projected.current.value)?projected.current.value:[]);
+    const existing=mossPromptChanges.find(change=>change.target===`prompt.${field}`);
+    if(existing)return structuredClone(existing.original.exists&&Array.isArray(existing.original.value)?existing.original.value:[]);
+    return structuredClone(selectedAdjustment?.inspection?.prompt[field]??[]);
+  }
+
+  async function saveMossPromptOverrides() {
+    if(!selectedMoss||!selectedAdjustment?.inspection||overrideBusy||!mossPromptDirty)return;
+    setOverrideBusy(true);
+    try {
+      const document=await readOverrideDocument();
+      const group=document.profiles[selectedAdjustment.id]??{changes:[]};
+      let changes=[...group.changes];
+      for(const field of mossPromptFields){
+        if(JSON.stringify(mossPromptDraft[field])===JSON.stringify(mossPromptSaved[field]))continue;
+        const target=`prompt.${field}`;
+        const existing=changes.find(change=>change.target===target);
+        const original=existing?.original??(selectedAdjustment.inspection.prompt[field]===undefined?{exists:false as const}:{exists:true as const,value:selectedAdjustment.inspection.prompt[field]});
+        changes=changes.filter(change=>change.target!==target);
+        if(JSON.stringify(mossPromptDraft[field])!==JSON.stringify(mossPromptBase(field)))changes.push({target,original,project:{exists:true,value:mossPromptDraft[field]}});
+      }
+      await putOverrideDocument({...document,profiles:{...document.profiles,[selectedAdjustment.id]:{...group,changes}}});
+      setMossPromptSaved(structuredClone(mossPromptDraft));
+      notify({kind:'success',message:'MOSS 项目描述已保存'});
+    }catch(error){notify({kind:'error',message:`项目描述保存失败：${error instanceof Error?error.message:String(error)}`});}
+    finally{setOverrideBusy(false);}
   }
 
   async function savePromptOverrides() {
@@ -315,8 +393,7 @@ export default function ProjectGenerationSettingsView({ projectId, project, busy
       const result = await responseJson<{ override: OverrideDocument }>(await readFacts(`/api/projects/${encodeURIComponent(projectId)}/render-profile-override`, { headers: { accept: "application/json" } }));
       const group = result.override.profiles[current.id] ?? { changes: [] };
       const next = { ...result.override, profiles: { ...result.override.profiles, [current.id]: { ...group, changes: group.changes.filter((change) => change.target !== target) } } };
-      await responseJson(await mutateFacts(`/api/projects/${encodeURIComponent(projectId)}/render-profile-override`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(next) }));
-      await refresh();
+      await putOverrideDocument(next);
       notify({ kind: "success", message: "项目调整已恢复为基础值" });
     } catch (error) { notify({ kind: "error", message: `恢复调整失败：${error instanceof Error ? error.message : String(error)}` }); }
     finally { setResettingTarget(""); }
@@ -342,9 +419,18 @@ export default function ProjectGenerationSettingsView({ projectId, project, busy
         {loraNotice && <p className="project-lora-settings__notice">{loraNotice}</p>}
       </section>
     </section>
-    <section className="settings-card project-adjustments" data-project-fact-dirty={promptDirty ? "true" : undefined}><header className="project-adjustments__header"><div><span className="settings-eyebrow">项目级调整</span><h3>项目调整</h3><p>调整只写入当前项目，不会复制整套模型配置。</p></div>{selectedAdjustment?.inspection && <span className={`project-adjustments__status project-adjustments__status--${selectedOverrideStatus}`}>{selectedOverrideStatus === "conflict" ? "需要处理" : selectedOverrideStatus === "applied" ? "已设置" : "未设置"}</span>}</header>
-      <div className="project-adjustments__selector"><label><span>调整对象</span><select value={selectedAdjustment?.id ?? ""} onChange={(event) => setSelectedAdjustmentId(event.target.value)}>{ordered.map((profile) => <option value={profile.id} key={profile.id}>{profile.name}{profile.id === current?.id ? "（当前）" : ""}</option>)}</select></label><p>{selectedAdjustmentCurrent ? "下面的调整会用于当前项目后续生成。" : "这里只读查看其他模型配置；切换为当前配置后才能修改。"}</p></div>
+    <section className="settings-card project-adjustments" data-project-fact-dirty={promptDirty || mossPromptDirty ? "true" : undefined}><header className="project-adjustments__header"><div><span className="settings-eyebrow">项目级调整</span><h3>项目调整</h3><p>调整只写入当前项目，不会复制整套模型配置。</p></div>{selectedAdjustment?.inspection && <span className={`project-adjustments__status project-adjustments__status--${selectedOverrideStatus}`}>{selectedOverrideStatus === "conflict" ? "需要处理" : selectedOverrideStatus === "applied" ? "已设置" : "未设置"}</span>}</header>
+      <div className="project-adjustments__selector"><label><span>调整对象</span><select aria-label="调整对象" disabled={overrideBusy} value={selectedAdjustment?.id ?? ""} onChange={(event) => {const id=event.target.value;void (async()=>{if(await confirmDiscardPromptDrafts())setSelectedAdjustmentId(id);})();}}>{ordered.map((profile) => <option value={profile.id} key={profile.id}>{profile.name}{profile.id === current?.id ? "（当前）" : ""}</option>)}</select></label><p>{selectedMoss ? "可编辑 MOSS 项目描述，用于本项目采用 MOSS 的页面。" : selectedAdjustmentCurrent ? "下面的调整会用于当前项目后续生成。" : "这里只读查看其他模型配置；切换为当前配置后才能修改。"}</p></div>
       {selectedAdjustment?.inspection ? <RenderProfileOverrideInspection inspection={selectedAdjustment.inspection} isCurrent={selectedAdjustmentCurrent} embedded onResetChange={selectedAdjustmentCurrent ? (target) => void resetChange(target) : undefined} resettingTarget={resettingTarget || null} /> : <div className="empty-card">{selectedAdjustment?.errors.join("；") || "当前模型配置没有可读取的项目调整。"}</div>}
+      {selectedMoss && !selectedAdjustment?.inspection && adjustmentLoading && <p role="status">正在读取 MOSS 项目描述…</p>}
+      {selectedMoss && adjustmentError && <p role="alert">{adjustmentError}</p>}
+      {selectedMoss && selectedAdjustment?.inspection && <section className="project-prompt-override"><header><div><h4>项目描述</h4><p>画风、光照与避免用于本项目的 MOSS 页面，也可以在页面 Prompt 中单独覆盖。</p></div></header>
+        {mossPromptFields.map(field=><div key={field}>
+          <MossEntriesEditor label={mossPromptLabels[field]} value={mossPromptDraft[field]} scopeKey={`${projectId}:${selectedAdjustment.id}:project:${field}`} disabled={overrideBusy||busy} onChange={value=>setMossPromptDraft(current=>({...current,[field]:value}))}/>
+          {(mossPromptChanges.some(change=>change.target===`prompt.${field}`)||JSON.stringify(mossPromptDraft[field])!==JSON.stringify(mossPromptBase(field)))&&<div className="prompt-camera-actions"><button type="button" className="button button--quiet" disabled={overrideBusy||busy} onClick={()=>setMossPromptDraft(current=>({...current,[field]:mossPromptBase(field)}))}>恢复{mossPromptLabels[field]}基础值</button></div>}
+        </div>)}
+        <div className="project-prompt-override__footer"><button type="button" className="button button--primary" disabled={overrideBusy||busy||!mossPromptDirty} onClick={()=>void saveMossPromptOverrides()}>{overrideBusy?'保存中…':'保存项目描述'}</button>{mossPromptDirty&&<span>有未保存修改</span>}</div>
+      </section>}
       {current?.inspection && current.architecture_family === "qwen-image-2-1" && selectedAdjustmentCurrent && <section className="project-prompt-override"><header><div><h4>Prompt 调整</h4><p>全局 Prompt 放在各设定之前，整段替换；清空后生成时省略这段文字。</p></div></header><div className="project-prompt-override__groups"><label className="project-prompt-override__field project-prompt-override__field--combined"><span><b>全局 Prompt</b>{promptHasChanges ? <i>已有调整</i> : <em>基础值</em>}</span><textarea value={promptDraft} onChange={(event) => setPromptDraft(event.currentTarget.value)} disabled={overrideBusy} rows={4} placeholder="输入全局 Prompt 文本，留空则省略" /></label></div><div className="project-prompt-override__footer">{promptHasChanges && <button className="button button--quiet" type="button" disabled={overrideBusy} onClick={() => void resetPromptOverrides()}>重置 Prompt</button>}<button className="button button--primary" type="button" disabled={overrideBusy || !promptDirty} onClick={() => void savePromptOverrides()}>{overrideBusy ? "保存中…" : "保存 Prompt 调整"}</button>{promptDirty && <span>有未保存修改</span>}</div></section>}
     </section>
     {profilePicker && <Modal size="workspace" title="选择基模" subtitle="当前项目" onClose={() => setProfilePicker(false)} busy={busy} ariaLabel="选择基模"><div className="profile-picker-body"><ResourcePicker items={basePickerItems} busy={busy} empty="没有其他可选择的基模。" onInspect={(item) => { const profile = profiles.find((entry) => entry.id === item.id); if (!profile) return; setProfilePicker(false); void inspectProfile(profile); }} onSelect={(item) => { const profile = profiles.find((entry) => entry.id === item.id); if (!profile) return; void (async () => { if (await saveChoice({ default_render_profile: profile.id })) setProfilePicker(false); })(); }} /></div></Modal>}

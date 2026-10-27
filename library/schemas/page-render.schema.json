@@ -16,7 +16,8 @@
       "enum": [
         "anima",
         "qwen",
-        "h3"
+        "h3",
+        "moss"
       ]
     },
     "profile_id": {
@@ -30,6 +31,12 @@
         "4:3",
         "2:3",
         "9:16"
+      ]
+    },
+    "resolution_scale": {
+      "enum": [
+        1,
+        1.5
       ]
     }
   },

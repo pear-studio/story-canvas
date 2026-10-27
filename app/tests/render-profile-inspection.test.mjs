@@ -72,6 +72,22 @@ test("Qwen inspection 展示已解析候选资产、全局文字与真实 route"
   assert.deepEqual(Object.keys(inspected.models), ["dit", "text_encoder", "vae"]);
 });
 
+test('MOSS inspection 提供首次覆盖的真实基础值，并保留已有覆盖读据',async t=>{
+  const base=await readResolvedRenderProfile(repositoryRoot,'moss-image');
+  const initial=inspectRenderProfile({bundle:base,diagnosis:availableDiagnosis(base.resolved_profile)});
+  const style=initial.prompt_targets.find(item=>item.target==='prompt.style');
+  const avoid=initial.prompt_targets.find(item=>item.target==='prompt.avoid');
+  assert.deepEqual(style.original,{exists:true,value:[]});
+  assert.deepEqual(avoid.original,{exists:false});assert.deepEqual(avoid.effective,{exists:false});
+  const projectRoot=await mkdtemp(path.join(repositoryRoot,'Saved/Tests/moss-targets-'));
+  t.after(()=>rm(projectRoot,{recursive:true,force:true}));
+  await writeFile(path.join(projectRoot,'render-profile.override.json'),JSON.stringify({version:1,profiles:{'moss-image':{changes:[{target:avoid.target,original:avoid.original,project:state([{description:'watermark'}])}]}}}));
+  const bundle=await compileEffectiveRenderProfile({repositoryRoot,projectRoot,profileId:'moss-image'});
+  const current=inspectRenderProfile({bundle,diagnosis:availableDiagnosis(bundle.effective_profile)}).prompt_targets.find(item=>item.target===avoid.target);
+  assert.deepEqual(current.original,{exists:false});assert.deepEqual(current.current,{exists:false});
+  assert.deepEqual(current.effective,state([{description:'watermark'}]));
+});
+
 test("缺少候选 workflow registry 身份会阻止候选 route", async () => {
   const bundle = await readResolvedRenderProfile(repositoryRoot, "qwen-image-2-1");
   const partialBundle = structuredClone(bundle);

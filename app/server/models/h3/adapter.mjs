@@ -11,6 +11,7 @@ export const h3Adapter=Object.freeze({
   normalizePagePromptDraft:source=>qwenAdapter.normalizePagePromptDraft(source),
   consumesSettings:value=>value.composition!=='standalone',
   pageScopeDetails:context=>qwenAdapter.pageScopeDetails(context),
+  sourceReadHint:target=>qwenAdapter.sourceReadHint(target),
   sourceOverrideFields:Object.freeze(['inheritance','text_overrides','reference_overrides']),
   validateProfilePrompt(value){if(typeof value?.text!=='string')throw Error('H3 prompt.text 必须是字符串');},
   async resolveProfilePrompt(_root,profile){return {prompt:profile.prompt,identity:{}};},

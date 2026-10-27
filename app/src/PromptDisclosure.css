@@ -1,0 +1,19 @@
+/* Prompt 中引用、项目描述与 LoRA 共用折叠入口。 */
+.prompt-disclosure.prompt-disclosure {
+  display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 32px;
+  margin: 0; padding: 4px 0; border: 0; background: transparent;
+  color: var(--ink); font: inherit; font-size: var(--text-label); font-weight: 600;
+  line-height: 24px; text-align: left; list-style: none; cursor: pointer;
+}
+.prompt-disclosure::-webkit-details-marker { display: none; }
+.prompt-disclosure::marker { content: ''; }
+.prompt-disclosure::before {
+  content: ''; flex: none; width: 0; height: 0; margin: 0 3px;
+  border-top: 4px solid transparent; border-bottom: 4px solid transparent;
+  border-left: 6px solid var(--muted);
+}
+.prompt-disclosure[aria-expanded="true"]::before,
+details[open] > .prompt-disclosure::before { transform: rotate(90deg); }
+.prompt-disclosure:hover { color: var(--green); }
+.prompt-disclosure:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; border-radius: 4px; }
+.prompt-disclosure__meta { color: var(--muted); font-weight: 400; }

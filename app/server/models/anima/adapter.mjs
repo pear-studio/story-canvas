@@ -27,6 +27,9 @@ export const animaAdapter=Object.freeze({
     if(record(input.identity)&&!Object.hasOwn(input.identity,'lora'))input.identity.lora=null;
   },
   inheritedSettingReadHint:'document 是子设定自身词；inherited_sources 是基础继承词，调整 identity_overrides，不重复添加。',
+  sourceReadHint:target=>target.kind==='page'
+    ?'页面调整写 changes.inheritance[source][key]，使用来源返回的稳定 key；null 删除该调整以恢复继承。'
+    :'本子设定只显示可覆盖的基础词，调整写 changes.identity_overrides[key]；自身词在 prompt.read 的 prompt 分类数组中编辑。',
   sourceOverrideFields:Object.freeze(['inheritance','text_overrides','reference_overrides']),
   normalizePagePromptDraft(source){
     return {prompt:{$schema:page.STORY_PAGE_PROMPT_SCHEMA_ID,...structuredClone(source)},

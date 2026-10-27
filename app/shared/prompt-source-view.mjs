@@ -8,6 +8,7 @@ export function qwenSourceSelection(setting, pagePrompt, source) {
 
 export function promptSourceView(source, value, prompt = {}, {baseOnly = false} = {}) {
   const {identity,variant,...metadata} = value;
+  if (Array.isArray(variant?.entries)) return {source,...metadata,entries:(baseOnly?[]:prompt.entry_overrides?.[source]??variant.entries).map((e,i)=>({key:e.id??String(i),text:e.description,enabled:e.enabled!==false,consumed:e.enabled!==false&&Boolean(e.description.trim())})),loras:{identity:identity?.lora??null,local:variant.loras??[],overrides:variant.lora_overrides??{}}};
   if (!identity || !variant) return {source,...metadata,...(variant ? qwenSourceSelection(variant,prompt,source) : {})};
   const adjustments = baseOnly ? prompt.identity_overrides : prompt.inheritance?.[source];
   // 子设定编辑展示基础本身，不再应用该子设定自己的基础调整两次。
@@ -28,7 +29,7 @@ export function promptPageDiagnostics(prompt, references, sources, modelId) {
     if (modelId === 'anima' && !source.missing && !(source.entries ?? []).some(entry=>entry.consumed))
       issues.push({code:'source_has_no_consumed_words',severity:'info',source:source.source});
   }
-  for (const field of ['inheritance','text_overrides','reference_overrides']) for (const [source,adjustments] of Object.entries(prompt[field] ?? {})) {
+  for (const field of ['inheritance','text_overrides','reference_overrides','entry_overrides']) for (const [source,adjustments] of Object.entries(prompt[field] ?? {})) {
     const current = sourceMap.get(source);
     if (!current) issues.push({code:'unused_source_override',severity:'warning',field,source});
     else if (field === 'inheritance') for (const key of Object.keys(adjustments))

@@ -1,0 +1,22 @@
+.moss-entry-fieldset{min-width:0;border:0;padding:0;margin:0;}
+.moss-reference-actions,.moss-layout-toolbar{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;}
+.moss-reference-actions{justify-content:flex-end;min-height:1.6rem;color:var(--muted);font-size:.75rem;}
+.moss-project-description{border-top:1px solid var(--line);padding:0;min-width:0;}
+.moss-project-description > summary > span:first-child{flex:none;}
+.moss-project-description__preview{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:var(--text-label);font-weight:400;}
+.moss-layout-editor{display:grid;grid-template-columns:minmax(15rem,1.2fr) minmax(17rem,1fr);gap:1rem;min-width:0;}
+.moss-layout-modal .modal__body{padding:12px;font-size:var(--text-body);}
+.moss-layout-stage-wrap{display:flex;align-items:center;justify-content:center;container-type:size;min-height:15rem;height:min(65vh,36rem);overflow:hidden;background:var(--paper);border:1px solid var(--line);border-radius:.5rem;padding:.7rem;}
+.moss-layout-stage{position:relative;flex:none;width:min(100cqw,calc(100cqh * var(--layout-ratio)));aspect-ratio:var(--layout-ratio);box-shadow:0 0 0 1px #8c969b;background:linear-gradient(90deg,#90999918 1px,transparent 1px),linear-gradient(#90999918 1px,transparent 1px),#fff;background-size:10% 10%;touch-action:none;}
+.moss-layout-box{position:absolute;display:flex;align-items:flex-start;justify-content:flex-start;box-sizing:border-box;border:2px solid var(--box-color,#528a95);background:color-mix(in srgb,var(--box-color,#528a95) 15%,transparent);padding:.3rem;cursor:grab;touch-action:none;text-align:left;user-select:none;overflow:hidden;}
+.moss-layout-box.is-selected{outline:2px solid var(--ink);outline-offset:2px;z-index:1;}
+.moss-layout-box-label{font-size:.75rem;line-height:1.3;background:var(--paper);padding:.1rem .25rem;border-radius:.2rem;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;pointer-events:none;}
+.moss-layout-resize{position:absolute;right:0;bottom:0;width:1.1rem;height:1.1rem;background:var(--box-color,#528a95);cursor:nwse-resize;touch-action:none;border:0;padding:0;}
+.moss-layout-sidebar{min-width:0;max-height:65vh;overflow:auto;}
+.moss-layout-items{display:flex;flex-wrap:wrap;gap:.35rem;margin:.5rem 0;}
+.moss-layout-coordinates{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.4rem;margin:.75rem 0;}
+.moss-layout-coordinates label{font-size:.75rem;display:grid;gap:.2rem;}
+.moss-layout-coordinates input{min-width:0;width:100%;}
+.moss-layout-caption{font-size:.8rem;line-height:1.6;white-space:pre-wrap;}
+.moss-layout-actions{display:flex;gap:.5rem;justify-content:flex-end;}
+@media(max-width:700px){.moss-layout-editor{grid-template-columns:1fr;}.moss-layout-stage-wrap{height:35vh;}.moss-layout-sidebar{max-height:none;}}

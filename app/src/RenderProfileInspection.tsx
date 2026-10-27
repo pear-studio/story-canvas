@@ -1,4 +1,5 @@
 import { useId } from "react";
+import {mossText,type MossEntry} from '../shared/moss-prompt.mjs';
 
 import "./render-profile-inspection.css";
 
@@ -70,6 +71,9 @@ export type RenderProfileInspectionProjection = {
   };
   prompt: {
     text: string;
+    style?: MossEntry[];
+    lighting?: MossEntry[];
+    avoid?: MossEntry[];
     diagnostics?: InspectionDiagnostic[];
   };
   models: Record<string, InspectionAsset>;
@@ -115,6 +119,7 @@ function valueText(value: unknown) {
   if (value === null) return "无";
   if (typeof value === "string") return value || "（空）";
   if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value) && value.every(entry => entry && typeof entry.description === 'string')) return value.map(entry => `${entry.enabled === false ? '（已关闭）' : ''}${entry.description}`).join('\n') || '（空）';
   try {
     return JSON.stringify(value);
   } catch {
@@ -266,7 +271,7 @@ export default function RenderProfileInspection({ inspection, isCurrent, classNa
       </section>
       <section className="rpi-panel rpi-panel--prompt" aria-labelledby={`${id}-prompt-title`}>
         <header><div><h3 id={`${id}-prompt-title`}>全局 Prompt</h3></div></header>
-        <pre className="rpi-prompt-text">{inspection.prompt.text || "（空，生成时省略全局文字）"}</pre>
+        {inspection.base_profile.architecture_family === 'moss-image' ? <>{(['style','lighting','avoid'] as const).map(field => <div key={field}><b>{field === 'style' ? '画风' : field === 'lighting' ? '光照' : '避免'}</b><pre className="rpi-prompt-text">{mossText(inspection.prompt[field] ?? []) || '（空，生成时省略）'}</pre></div>)}</> : <pre className="rpi-prompt-text">{inspection.prompt.text || "（空，生成时省略全局文字）"}</pre>}
         <Diagnostics items={inspection.prompt.diagnostics} />
       </section>
       </div>

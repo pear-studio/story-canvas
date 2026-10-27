@@ -1,4 +1,5 @@
 import { hashCanonicalJson } from "./workflow-definition.mjs";
+import {mossProjectFields,mossProjectLabels} from '../shared/moss-prompt.mjs';
 
 function clone(value) {
   return structuredClone(value);
@@ -138,11 +139,15 @@ function recipeSummary(recipe) {
 function promptProjection(profile) {
   return {
     text: profile.prompt.text ?? Object.values(profile.prompt.fragments??{}).sort((a,b)=>a.order-b.order).map(fragment=>`${fragment.polarity==='negative'?'负向':'正向'}：${fragment.prompt_text}`).join('\n'),
+    ...(profile.architecture_family==='moss-image'?{style:structuredClone(profile.prompt.style),lighting:structuredClone(profile.prompt.lighting),...(profile.prompt.avoid===undefined?{}:{avoid:structuredClone(profile.prompt.avoid)})}:{}),
     diagnostics: [],
   };
 }
 
 function overrideTargetLabel(target) {
+  if (target === "prompt.style") return "画风";
+  if (target === "prompt.lighting") return "光照";
+  if (target === "prompt.avoid") return "避免";
   if (target === "prompt.text") return "全局 Prompt";
   const model = /^models\.(.+)$/.exec(target);
   if (model) return `模型 · ${model[1]}`;
@@ -256,6 +261,13 @@ export function inspectRenderProfile({ bundle, diagnosis, baseDiagnosis = diagno
     },
     project_override: overrideProjection(context),
     prompt: promptProjection(profile),
+    ...(profile.architecture_family==='moss-image'?{prompt_targets:mossProjectFields.map(field=>{
+      const target=`prompt.${field}`,base=context.base.resolved_profile.prompt;
+      const current=Object.hasOwn(base,field)?{exists:true,value:clone(base[field])}:{exists:false};
+      const change=[...context.resolution.changes,...context.resolution.conflicts,...context.resolution.redundant].find(item=>item.target===target);
+      return {target,label:mossProjectLabels[field],original:clone(change?.original??current),current,
+        effective:context.blocked?null:Object.hasOwn(profile.prompt,field)?{exists:true,value:clone(profile.prompt[field])}:{exists:false}};
+    })}:{}),
     models: Object.fromEntries(Object.entries(profile.models).map(([id, model]) => [id, modelProjection(id, model, diagnosis.models?.[id])])),
     style_loras: includeStyleLoras ? Object.fromEntries(Object.entries(profile.style_loras).map(([id, lora]) => [id, loraProjection(id, lora, diagnosis.style_loras?.[id])])) : {},
     routes,

@@ -8,6 +8,7 @@ import { resolveSceneConfiguration } from './scene-files.mjs';
 import { createHash } from "node:crypto";
 import { lstat, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
+import {generationDimensions} from "../shared/generation-dimensions.mjs";
 
 import {
   validateCharacterIndexDocument,
@@ -338,6 +339,7 @@ export function compilePagePromptSnapshot(snapshot, profile) {
     scenes: snapshot.scenes ?? [],
     participantIds: snapshot.character_references.map((reference) => reference.character_id),
     referencePlan,
+    dimensions: snapshot.panel_dimensions ?? generationDimensions(profile.operations?.candidates?.routes?.empty_latent?.recipe?.resolutions,snapshot.project?.canvas,snapshot.render?.resolution_scale??1),
   });
   compiled.errors.push(...(snapshot.reference_errors ?? []));
   compiled.ready = compiled.ready && !compiled.errors.length;
@@ -347,6 +349,7 @@ export function compilePagePromptSnapshot(snapshot, profile) {
 function panelRecipe(recipe,snapshot) {
   const value=structuredClone(recipe);
   if(snapshot.panel_dimensions)value.resolutions[snapshot.project.canvas]=snapshot.panel_dimensions;
+  else if(snapshot.render?.resolution_scale && snapshot.render.resolution_scale!==1)value.resolutions[snapshot.project.canvas]=generationDimensions(value.resolutions,snapshot.project.canvas,snapshot.render.resolution_scale);
   return value;
 }
 export function pagePromptDiagnostics(compiled) {

@@ -217,6 +217,45 @@
       "relative_path": "vae/minimax_h3_video_vae_fp16.safetensors",
       "sha256": "7c1f131492e7eddacaac9069a61b81bdd39de5cc96561e677c5eab1cdce5e522",
       "source": "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/e5eb578a89295337b8ff433a035929ce0279e0b6/vae/minimax_h3_video_vae_fp16.safetensors"
+    },
+    {
+      "id": "moss-image-dit",
+      "name": "MOSS SFT INT8 ConvRot",
+      "kind": "dit",
+      "architecture_family": "moss-image",
+      "prompt_family": "moss",
+      "filename": "moss_image_sft_int8_convrot.safetensors",
+      "relative_path": "diffusion_models/moss_image_sft_int8_convrot.safetensors",
+      "sha256": "b4d1475bc7eeffd7b809e82ea13a1fba1fb85c4e18365af3813722faa5c0fe4f",
+      "source": "https://huggingface.co/Comfy-Org/MOSS-Image/resolve/530a4c94f92c35ef6818b1b035a983fe9dcf5f54/diffusion_models/moss_image_sft_int8_convrot.safetensors",
+      "preview": {
+        "images": [
+          {
+            "src": "/resource-previews/moss-image-sft-int8.png",
+            "alt": "MOSS SFT INT8 本机验证示例：荧立绘，无 LoRA"
+          }
+        ]
+      }
+    },
+    {
+      "id": "moss-image-text-encoder",
+      "name": "MOSS Qwen3.5 9B W4A8 文本编码器",
+      "kind": "text_encoder",
+      "architecture_family": "moss-image",
+      "prompt_family": "moss",
+      "filename": "qwen3.5_9b_w4a8_gptq.safetensors",
+      "relative_path": "text_encoders/qwen3.5_9b_w4a8_gptq.safetensors",
+      "sha256": "4cc6a1543ad2061806da46f35f90cadb4801dcba246c44782cf42ec0feb6407c"
+    },
+    {
+      "id": "moss-image-vae",
+      "name": "MOSS Flux2 Small VAE",
+      "kind": "vae",
+      "architecture_family": "moss-image",
+      "prompt_family": "moss",
+      "filename": "flux2-vae_small.safetensors",
+      "relative_path": "vae/flux2-vae_small.safetensors",
+      "sha256": "d8d52ba036475f5fb07c8b435e176d3d97ebfa82f0d1a1c317f9cc1e25bd013b"
     }
   ]
 }

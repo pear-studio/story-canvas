@@ -8,6 +8,12 @@ export async function putProject(id, suffix, body, revision) {
   return (await requestWorkbench(`${projectRoute(id)}/${suffix}`, { method: 'PUT', body, revision })).value;
 }
 const profiles = (id, profileId) => read(id, 'render-profile' + (profileId ? `?profile_id=${encodeURIComponent(profileId)}` : ''));
+const mossPromptHelp={
+  summary:'MOSS 项目画风、光照与避免的读取、替换和恢复',
+  details:'先 generation.inspect(project_id,profile_id)；value.inspection.prompt 是项目有效描述，prompt_targets 列出 prompt.style、prompt.lighting、prompt.avoid 的 original/current/effective。original 是可保存的基础读据（已有调整保留其原读据）；current 是当前真实基础值；effective:null 表示配置冲突，不得当空内容使用。再 generation.override.read 取得完整 document 和 revision，两次 revision 不同则重新读取并判断。仅修改所选 profile 的目标 change，保留其他 profile、LoRA 与参数；新增目标使用 prompt_targets 中的 original，已有目标保留文档的 original，不能用有效值冒充基础值。project:{exists:true,value:[{description:"...",enabled:true}]} 替换该项目描述；value:[] 明确清空；从 changes 移除该 target 恢复模型基础值（不是 project.exists:false，也不写 null）。generation.override.save 使用最新一次读取的 revision；409 重读判断，不能只换版本重放。页面级覆盖另走 prompt.save：project_overrides.style/lighting，avoid；null 删除本页覆盖恢复项目，[] 明确清空。不会启动生成。',
+  example:{target:'prompt.avoid',original:{exists:false},project:{exists:true,value:[{description:'watermark, logo'}]}},
+  example_note:'仅当 prompt_targets 返回 original:{exists:false} 时适用；不要照抄 original，保留真实读取结果。示例是放入所选 profile.changes 的一项，不是完整保存文档。',
+};
 function selected(value, id) {
   const profile = value.render_profiles.find(p => p.id === (id ?? value.current_profile_id));
   if (!profile) throw Object.assign(new Error('生成配置不存在'), { code: 'profile_not_found' });
@@ -31,7 +37,8 @@ export const projectSettingsActions = {
   },
   'generation.inspect': {
     summary: '查看一个配置的有效参数、LoRA、Prompt 和诊断', parameters: schema({ ...project, profile_id: string('省略为项目默认配置') }, ['project_id']),
-    details: '返回单个完整配置和 revision。页面自己的模型设置另用 facts.read/save page/render；不假定默认配置覆盖所有页面。',
+    details: '返回单个完整配置和 revision。MOSS 的 value.inspection.prompt_targets 列出画风、光照、避免的可编辑 target 及 original/current/effective，首次覆盖无需猜基础值。页面自己的模型设置另用 page.render.read/set；不假定默认配置覆盖所有页面。',
+    helpTopics:{moss:mossPromptHelp},
     async execute({ project_id, profile_id }) { const { value, revision } = await profiles(project_id, profile_id); return { value: selected(value, profile_id), revision }; },
   },
   'generation.select': {
@@ -42,11 +49,13 @@ export const projectSettingsActions = {
   'generation.override.read': {
     summary: '读取完整项目生成调整草稿', parameters: schema(project),
     details: '返回 {value:{override},revision}。用于高级参数调整；LoRA 优先用 generation.lora.set/remove。',
+    helpTopics:{moss:mossPromptHelp},
     execute: ({ project_id }) => read(project_id, 'render-profile-override'),
   },
   'generation.override.save': {
     summary: '保存项目生成调整，保留三方冲突检查', parameters: schema({ ...project, document: object('read 返回的 value.override 完整文档'), revision: string('读取时的 revision') }),
-    details: '文档 {version:1,profiles:{配置ID:{changes:[{target,original:{exists,value?},project:{exists,value?}}]}}。original 必须保留真实基础值，不能猜。target 包括 prompt.text、style_loras.ID、style_loras.ID.weight 和 inspection 中的语义参数。未知 target 查 generation.inspect；仍缺说明时请求补充工具。不会启动生成。',
+    details: '文档 {version:1,profiles:{配置ID:{changes:[{target,original:{exists,value?},project:{exists,value?}}]}}。original 必须保留真实基础值，不能猜。target 包括 prompt.text、MOSS 的 prompt.style/prompt.lighting/prompt.avoid、style_loras.ID、style_loras.ID.weight 和 inspection 中的语义参数。MOSS 用 help 的 moss topic，generation.inspect 返回 prompt_targets 可直接取 original。未知 target 查 generation.inspect；仍缺说明时请求补充工具。不会启动生成。',
+    helpTopics:{moss:mossPromptHelp},
     execute: ({ project_id, document, revision }) => putProject(project_id, 'render-profile-override', document, revision),
   },
 };

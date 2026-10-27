@@ -110,6 +110,7 @@ export async function inspectPageRender({
           page_id: context.snapshot.page_id,
           page_key: context.snapshot.page_key,
           project: context.project,
+          compiled_profile: context.compiled_profile,
           compiled_page: context.compiled_page,
           reference_images: context.reference_images,
         },

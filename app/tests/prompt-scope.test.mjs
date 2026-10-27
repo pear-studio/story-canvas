@@ -90,6 +90,7 @@ test('新来源须先读据，sources不替换原scope版本，公共来源返�
   const source='scene:room:default';
   await assert.rejects(f.save(pageRead,{scene_id:'room',scene_variant_id:'default'}),{code:'prompt_source_read_required'});
   const sourceRead=await readPromptScopeSources({...f.options,target,source});
+  assert.match(sourceRead.usage,/changes\.text_overrides\[source\]/);assert.match(sourceRead.usage,/changes\.reference_overrides\[source\]/);assert.doesNotMatch(sourceRead.usage,/changes\.inheritance/);
   assert.equal(sourceRead.save,undefined,'来源读取不能悄悄更新旧页面指纹');
   assert.match(sourceRead.source_versions[source],/^[a-f0-9]{64}$/);
   const saved=await f.save(pageRead,{scene_id:'room',scene_variant_id:'default'},{...pageRead.save.args.source_versions,...sourceRead.source_versions});
@@ -98,9 +99,12 @@ test('新来源须先读据，sources不替换原scope版本，公共来源返�
   const base=await f.read(character('anima','base'));
   const next=await f.save(base,{identity:{prompt:{person:[{tag:'blue_jacket'}]}}});
   const inherited=await readPromptScopeSources({...f.options,target:character('anima')});
+  assert.match(inherited.usage,/changes\.identity_overrides\[key\]/);
   assert.equal(inherited.sources[0].entries[0].key,'identity:'+next.document.identity.prompt.person[0].id);
   assert.equal(inherited.sources[0].entries[0].text,'blue_jacket');
   assert.ok(inherited.sources[0].entries.every(entry=>entry.key.startsWith('identity:')));
+  const qwenVariant=await readPromptScopeSources({...f.options,target:character('qwen')});
+  assert.match(qwenVariant.usage,/直接编辑.*text.*reference_images/);assert.doesNotMatch(qwenVariant.usage,/changes\.identity_overrides/);
 });
 
 test('显式非活动模型只依赖自身来源，保留活动模型并明确审计未运行',async t=>{

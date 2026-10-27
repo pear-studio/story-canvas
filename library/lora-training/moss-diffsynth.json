@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "status": "standalone-forward-backward-validated",
+  "repository": "https://github.com/modelscope/DiffSynth-Studio",
+  "commit": "60b709c4dab8eeabce06ee9bc168328ed4c780e8",
+  "source_archive": {
+    "url": "https://api.github.com/repos/modelscope/DiffSynth-Studio/zipball/60b709c4dab8eeabce06ee9bc168328ed4c780e8",
+    "sha256": "1c3f0c6931dc7524c526dee7907278942cdddfdc50262ed735caf25ec4d96c54"
+  },
+  "architecture_family": "moss-image",
+  "identity_files": [
+    {
+      "file": "examples/moss_image/model_training/train.py",
+      "sha256": "6572b21a0a60847d2dd1c1341b72ed6edadd28100a63628a81e66675bafe6bea"
+    },
+    {
+      "file": "examples/moss_image/model_training/lora/MOSS-Image-Base.sh",
+      "sha256": "359d8f79d2045fb9754002130327b88704e0c0a6233f0defaeb7a60434121283"
+    },
+    {
+      "file": "diffsynth/pipelines/moss_image.py",
+      "sha256": "3ce4dcde435d292e0cdac387d876ba0ca3d49091c8a073ba6941a10118fa80c4"
+    },
+    {
+      "file": "diffsynth/models/moss_image_dit.py",
+      "sha256": "ba71a73cc163d1adf82790a367371870b175f2ebb18ae0ffd1b72f6365273a5d"
+    },
+    {
+      "file": "diffsynth/models/moss_image_text_encoder.py",
+      "sha256": "09ab217c80f4ae7c8e902b09bc68232b758a7948585b96a1815f84a4c81b52ff"
+    },
+    {
+      "file": "diffsynth/diffusion/training_module.py",
+      "sha256": "57589f54ee286c90a619af4495d9da6ffbb5cb80379a3d6f62b690fe64298a91"
+    },
+    {
+      "file": "diffsynth/diffusion/runner.py",
+      "sha256": "3139843474906974263517f29d7fc1a39d07f8544d32e9dd6ad56316b6adca7e"
+    }
+  ],
+  "entry": "examples/moss_image/model_training/train.py",
+  "dependency_lock": "app/python/moss-diffsynth.lock",
+  "model_manifest": "library/lora-training/moss-image-base-models.json",
+  "runtime": {
+    "python": "3.11.14",
+    "torch": "2.13.0+cu130",
+    "torchvision": "0.28.0+cu130",
+    "transformers": "5.17.0",
+    "peft": "0.21.0",
+    "accelerate": "1.15.0"
+  },
+  "integration": "standalone",
+  "notes": "独立 MOSS 环境；工作台现有训练调度仍只支持 Anima 与 Qwen。本清单不改变 Veloria 当前设置。",
+  "verification": {
+    "date": "2026-10-25",
+    "gpu": "NVIDIA GeForce RTX 4090",
+    "resolution": [
+      1024,
+      1024
+    ],
+    "micro_batch": 1,
+    "lora_rank": 32,
+    "trainable_parameters": 77660160,
+    "only_dit_lora_trainable": true,
+    "text_encoder_frozen": true,
+    "vae_frozen": true,
+    "vae_precision": "float32",
+    "gradient_checkpointing": true,
+    "activation_cpu_offload": true,
+    "attention_backend": "torch",
+    "loss_finite": true,
+    "gradients_finite": true,
+    "optimizer_steps": 0,
+    "peak_allocated_gib": {
+      "text": 14.813,
+      "vae": 3.246,
+      "backward": 10.917
+    }
+  },
+  "limitations": [
+    "文本编码器使用 Transformers 的 PyTorch 兼容实现，未安装可选 causal_conv1d/flash-linear-attention 加速内核。",
+    "验证使用合成测试输入，不代表 Veloria 数据审计、正式训练或成图质量已通过。",
+    "未验证优化器更新、训练 checkpoint 导出、续训及 ComfyUI LoRA 权重映射。"
+  ]
+}

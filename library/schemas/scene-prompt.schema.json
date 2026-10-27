@@ -19,6 +19,9 @@
         },
         "qwen": {
           "$ref": "#/$defs/qwen"
+        },
+        "moss": {
+          "$ref": "#/$defs/moss"
         }
       },
       "additionalProperties": false
@@ -340,6 +343,133 @@
         },
         "additionalProperties": false
       }
+    },
+    "moss": {
+      "type": "object",
+      "required": [
+        "prompt_name",
+        "identity",
+        "variants"
+      ],
+      "properties": {
+        "prompt_name": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "identity": {
+          "type": "object",
+          "required": [
+            "lora"
+          ],
+          "properties": {
+            "lora": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "filename",
+                    "sha256",
+                    "weight"
+                  ],
+                  "properties": {
+                    "filename": {
+                      "type": "string",
+                      "pattern": "^(?!\\s)(?!.*\\s$)(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*[\\\\:]).+$"
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "weight": {
+                      "type": "number",
+                      "minimum": -2,
+                      "maximum": 2
+                    },
+                    "trigger": {
+                      "type": "string",
+                      "pattern": "\\S"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "variants": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": [
+              "entries"
+            ],
+            "properties": {
+              "entries": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "description"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "loras": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "filename",
+                    "sha256",
+                    "weight"
+                  ],
+                  "properties": {
+                    "filename": {
+                      "type": "string",
+                      "pattern": "^(?!\\s)(?!.*\\s$)(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*[\\\\:]).+$"
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "weight": {
+                      "type": "number",
+                      "minimum": -2,
+                      "maximum": 2
+                    },
+                    "trigger": {
+                      "type": "string",
+                      "pattern": "\\S"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "lora_overrides": {
+                "$ref": "#/$defs/loraOverrides"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
     }
   }
 }
