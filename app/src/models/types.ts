@@ -8,10 +8,7 @@ export type ModelPageEditorProps<TPrompt extends PagePrompt=PagePrompt,TSetting=
   characters:WorkbenchCharacter<TSetting>[];scenes:WorkbenchCharacter<TSetting>[];
   references:Array<{character_id:string;variant_id:string}>;
   onReferencesChange:(value:Array<{character_id:string;variant_id:string}>)=>void;
-  header?:ReactNode;disabled:boolean;qwenRewrite?:PageRewriteController;dirty?:boolean;onOpenOverview?:()=>void;
-};
-export type ModelOverviewEditorProps<TPrompt extends PagePrompt=PagePrompt> = {
-  page:WorkbenchPage;prompt:TPrompt;onChange:(prompt:TPrompt)=>void;disabled:boolean;
+  header?:ReactNode;disabled:boolean;qwenRewrite?:PageRewriteController;dirty?:boolean;
 };
 export type SettingUiAdapter = {
   label:string;
@@ -23,7 +20,6 @@ export type ModelUiAdapter = {
   label:string;
   profileId:string;
   PageEditor:ComponentType<ModelPageEditorProps>;
-  OverviewEditor:ComponentType<ModelOverviewEditorProps>;
   pageFrame:{header:boolean;settingLoraFilenames?:(props:ModelPageEditorProps)=>string[]}|null;
   setting?:SettingUiAdapter;
 };

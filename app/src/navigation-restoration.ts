@@ -15,7 +15,7 @@ export type NavigationUrlState = {
 
 /** PageKey 不含归属；具体目录在工作台快照载入后解析。 */
 export function pageKeyBelongsToTab(tab: string, pageKey: PageKey | null | undefined) {
-  return Boolean(pageKey && ["story", "prompt-overview", "characters", "scenes", "orphan-pages"].includes(tab));
+  return Boolean(pageKey && ["story", "characters", "scenes", "orphan-pages"].includes(tab));
 }
 
 export function readNavigationUrlState(search: string): NavigationUrlState {

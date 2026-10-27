@@ -153,7 +153,6 @@ export type WorkbenchPageEditorProps = {
   onReloadPrompt?: () => Promise<void> | void;
   onPromptDraftChange?: (prompt: PagePrompt) => void;
   onDirtyChange?: (dirty: boolean) => void;
-  onOpenPromptOverview?: () => void;
   onOpenLetteringSettings?: () => void;
   editorTab?: EditorTab;
   onEditorTabChange?: (tab: EditorTab) => void;
@@ -688,7 +687,6 @@ export default function WorkbenchPageEditor({
   onPageSaved,
   onPromptDraftChange,
   onDirtyChange,
-  onOpenPromptOverview,
   onOpenLetteringSettings,
   editorTab,
   onEditorTabChange,
@@ -957,7 +955,7 @@ export default function WorkbenchPageEditor({
       {promptError && <p className="prompt-save-error" role="alert">{promptError}</p>}
       {promptAuditErrors.length > 0 && <PromptIssueList issues={promptAuditErrors} title="Prompt 错误" />}
       {references.pending && <p role={references.error ? 'alert' : 'status'}>{references.error || '正在读取引用设定…'}{references.error && <button type="button" onClick={references.retry}>重试</button>}</p>}
-      <ModelPromptEditor key={promptDiscardCount} header={(promptPhase === "error" || promptAuditWarnings.length > 0) && <div className="prompt-save-actions">{promptPhase === "error" && <button type="button" className="button button--quiet" onClick={() => void reloadAll()}>放弃本页草稿并重新载入</button>}{promptAuditWarnings.length > 0 && <button type="button" className="issue-indicator issue-indicator--warning" aria-label={`查看 ${promptAuditWarnings.length} 条 Prompt 警告`} title="查看 Prompt 警告" onClick={() => setPromptWarningsOpen(true)}>!</button>}</div>} projectId={projectId} page={page} prompt={promptDraft} onChange={setPromptDraft} characters={characters} scenes={scenes} references={contentDraft.characters??[]} onReferencesChange={changeCharacters} disabled={busy||saving} onOpenOverview={onOpenPromptOverview} qwenRewrite={qwenRewrite} dirty={anyDirty}/>
+      <ModelPromptEditor key={promptDiscardCount} header={(promptPhase === "error" || promptAuditWarnings.length > 0) && <div className="prompt-save-actions">{promptPhase === "error" && <button type="button" className="button button--quiet" onClick={() => void reloadAll()}>放弃本页草稿并重新载入</button>}{promptAuditWarnings.length > 0 && <button type="button" className="issue-indicator issue-indicator--warning" aria-label={`查看 ${promptAuditWarnings.length} 条 Prompt 警告`} title="查看 Prompt 警告" onClick={() => setPromptWarningsOpen(true)}>!</button>}</div>} projectId={projectId} page={page} prompt={promptDraft} onChange={setPromptDraft} characters={characters} scenes={scenes} references={contentDraft.characters??[]} onReferencesChange={changeCharacters} disabled={busy||saving} qwenRewrite={qwenRewrite} dirty={anyDirty}/>
     </section>}
 
     {!isTextPage && visibleTab === "lettering" && !layerMode && letteringLocale==='zh' && letteringStyle && <>

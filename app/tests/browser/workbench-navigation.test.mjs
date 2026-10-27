@@ -132,7 +132,7 @@ async function setup(t, { character = false, mobile = false, visualPages = false
       view.scope = JSON.parse(new URL(route.request().url()).searchParams.get('scope'));
       for (const page of [...view.outline.chapters.flatMap(c=>c.sequences.flatMap(s=>s.pages)),...view.characters.flatMap(c=>c.pages)]) {
         if (view.scope.kind === 'page' && view.scope.page_id === page.page_id) page.render_capabilities = view.render_capabilities;
-        else if (view.scope.kind !== 'prompts') for (const key of ['prompt','prompt_sha256','prompt_context_sha256','project_loras','render_capabilities']) delete page[key];
+        else for (const key of ['prompt','prompt_sha256','prompt_context_sha256','project_loras','render_capabilities']) delete page[key];
       }
       delete view.render_capabilities;
       return reply(view);
@@ -172,6 +172,18 @@ async function setup(t, { character = false, mobile = false, visualPages = false
   };
   return { page, renders, switchTo };
 }
+
+test('删除 Prompt 总览后旧链接进入单页，系列菜单保留故事总览', async t => {
+  const {page}=await setup(t);
+  await page.goto(`${origin}/?project=alpha&tab=prompt-overview&page=b`);
+  await page.getByLabel('画面目标',{exact:true}).waitFor();
+  await page.waitForURL(url=>url.searchParams.get('tab')==='story'&&url.searchParams.get('page')==='b');
+  assert.equal(await page.getByRole('button',{name:'Prompt 总览',exact:true}).count(),0);
+  await page.locator('.navigation-sections').getByRole('button',{name:'系列',exact:true}).click({button:'right'});
+  assert.equal(await page.getByText('Prompt 总览',{exact:true}).count(),0);
+  await page.getByRole('menuitem',{name:'故事总览',exact:true}).click();
+  await page.getByRole('navigation',{name:'剧情阅读目录'}).waitFor();
+});
 
 for(const mobile of [false,true])test(`目录四类页面使用彩色图标和各自摘要${mobile?'（手机）':''}`,async t=>{
   const {page}=await setup(t,{pageTypes:true,mobile});

@@ -1,8 +1,7 @@
 import {settingLoras} from '../../../shared/lora-inheritance.mjs';
 import type {EditableWorkbenchCharacter,WorkbenchCharacter} from '../../project-workbench-client';
-import type {ModelPageEditorProps,ModelSettingEditorProps,ModelOverviewEditorProps,SettingModelUiAdapter} from '../types';
+import type {ModelPageEditorProps,ModelSettingEditorProps,SettingModelUiAdapter} from '../types';
 import {AnimaPageEditor} from './PageEditor';
-import {AnimaOverviewEditor} from './OverviewEditor';
 import {AnimaSettingView} from './SettingView';
 import type {CharacterPromptDocument,PagePrompt,PagePromptDraft} from './types';
 
@@ -19,9 +18,6 @@ function settingLoraFilenames(props:ModelPageEditorProps) {
 function PageEditor(props:ModelPageEditorProps) {
   return <AnimaPageEditor {...props} prompt={props.prompt as PagePromptDraft} characters={props.characters.map(projectSetting)} scenes={props.scenes.map(projectSetting)}/>;
 }
-function OverviewEditor(props:ModelOverviewEditorProps) {
-  return <AnimaOverviewEditor {...props} prompt={props.prompt as PagePromptDraft}/>;
-}
 function SettingEditor(props:ModelSettingEditorProps) {
   return <AnimaSettingView {...props} character={props.character as EditableWorkbenchCharacter<CharacterPromptDocument>}/>;
 }
@@ -29,7 +25,7 @@ function emptyPrompt():PagePrompt {
   return {population:[],person:[],setting:[],camera:[],avoid:[]};
 }
 export const animaUiAdapter = {
-  id:'anima',label:'Anima Basic',profileId:'anima-base-v1',PageEditor,OverviewEditor,
+  id:'anima',label:'Anima Basic',profileId:'anima-base-v1',PageEditor,
   pageFrame:{header:false,settingLoraFilenames},
   setting:{
     label:'Anima',Editor:SettingEditor,

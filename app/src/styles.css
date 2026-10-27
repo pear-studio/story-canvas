@@ -2799,8 +2799,6 @@ label:has(> input:is([type="checkbox"], [type="radio"]):disabled) { cursor: not-
 .prompt-camera-row:hover:not(:disabled) { border-color: var(--green); }
 .prompt-camera-row:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
 .prompt-camera-row:disabled { opacity: .5; cursor: default; }
-.prompt-overview-action { border-top: 1px solid var(--line); padding-top: 6px; }
-.prompt-overview-action .button { font-size: var(--text-label); }
 /* 手机词条保持单行，低频操作收进选项菜单。 */
 @media (max-width: 680px) {
   .workbench-shell--page .project-main { padding-inline: 8px; }
@@ -2808,8 +2806,7 @@ label:has(> input:is([type="checkbox"], [type="radio"]):disabled) { cursor: not-
   .current-workbench-prompts { padding: 0; border: 0; background: transparent; }
   .compact-prompt-editor .page-reference-setting { margin-inline: 0; padding: 4px; border: 0; }
   .workbench-page-editor textarea:not([readonly]), .prompt-inline-input { font-size: 16px; }
-  .workbench-prompt-fragment-editor .category-card,
-  .prompt-overview-editor .workbench-prompt-fragment-editor .category-card { grid-template-columns: minmax(0, 1fr); }
+  .workbench-prompt-fragment-editor .category-card { grid-template-columns: minmax(0, 1fr); }
   .workbench-prompt-fragment-editor .category-card > header { border-right: 0; border-bottom: 1px solid var(--line); }
   .prompt-compact .prompt-fragment-table-head { display: none !important; }
   .prompt-compact .prompt-fragment-table-head.has-category { display: none !important; }

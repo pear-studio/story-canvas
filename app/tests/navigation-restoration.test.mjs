@@ -12,6 +12,19 @@ const view = (first = [story("a"), story("b"), story("c")], portraits = [portrai
   characters: [{ id: "alice", visual: { variants: [{ id: "daily" }, { id: "dress" }] }, pages: portraits }, { id: "bob", visual: { variants: [{ id: "daily" }] }, pages: [portrait("bob-page", "bob")] }],
 });
 
+test('已删除的 Prompt 总览链接沿未知标签回退，保留页面归属', () => {
+  for (const [pageId,tab] of [['b','story'],['p2','characters']]) {
+    const initial=initialWorkbenchNavigation(`?project=alpha&tab=prompt-overview&page=${pageId}`);
+    const restored=reconcileNavigation(initial,null,view());
+    assert.equal(restored.activeTab,tab);
+    assert.equal(restored.activePageKey.page_id,pageId);
+    const url=new URL(syncNavigationUrl(new URL('http://local/?tab=prompt-overview'),restored),'http://local');
+    assert.equal(url.searchParams.get('tab'),tab);
+    assert.equal(url.searchParams.get('page'),pageId);
+  }
+  assert.equal(initialWorkbenchNavigation('?project=alpha&tab=prompt-overview').activeTab,'project-settings');
+});
+
 test("会话历史保留页内标签，后台更新不新增记录，返回后新跳转丢弃前进分支，切项目重置", () => {
   const a = openNavigationPage(projectNavigation('alpha'), story('a').page_key, view());
   const b = openNavigationPage(a, story('b').page_key, view());

@@ -670,8 +670,10 @@ test("Agent 草稿与网页共用窄写入：无关页面放行，目标和 Prom
     const response = await fetch(origin + route, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     return { status: response.status, body: await response.json() };
   };
-  const view = await (await fetch(origin + base + '?scope=' + encodeURIComponent(JSON.stringify({kind:'prompts'})))).json();
-  const [page, other] = view.outline.chapters[0].sequences[0].pages;
+  const view = await (await fetch(origin + base + '?scope=' + encodeURIComponent(JSON.stringify({kind:'page',page_id:first.page_id})))).json();
+  const page = view.outline.chapters[0].sequences[0].pages[0];
+  const otherView = await (await fetch(origin + base + '?scope=' + encodeURIComponent(JSON.stringify({kind:'page',page_id:second.page_id})))).json();
+  const other = otherView.outline.chapters[0].sequences[0].pages[1];
   const begin = await call("/api/agent/facts/story/narrative/read", { project_id: "current-story", target_id: first.page_id });
   assert.equal(begin.status, 200);
   const draft = begin.body.document;
@@ -684,7 +686,7 @@ test("Agent 草稿与网页共用窄写入：无关页面放行，目标和 Prom
   const stalePrompt = await call(base + "/page-prompt", promptRequest, "PUT");
   assert.equal(stalePrompt.status, 409);
   assert.equal(stalePrompt.body.error, "page_prompt_upstream_conflict");
-  const current = (await (await fetch(origin + base + '?scope=' + encodeURIComponent(JSON.stringify({kind:'prompts'})))).json()).outline.chapters[0].sequences[0].pages[0];
+  const current = (await (await fetch(origin + base + '?scope=' + encodeURIComponent(JSON.stringify({kind:'page',page_id:first.page_id})))).json()).outline.chapters[0].sequences[0].pages[0];
   assert.equal(current.title, "Agent 的修改");
   const pending = await call("/api/agent/facts/story/narrative/read", { project_id: "current-story", target_id: first.page_id });
   const changed = await call(base + "/page-content", { page_key: current.page_key, expected_sha256: current.content_sha256, content: { ...content(current), title: "网页的新修改" } }, "PUT");

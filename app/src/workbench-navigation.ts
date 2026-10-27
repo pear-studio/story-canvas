@@ -2,7 +2,7 @@ import { pageKeyId, samePageKey, type PageKey } from "./page-key.ts";
 import { pageKeyBelongsToTab, readNavigationUrlState, type NavigationUrlState } from "./navigation-restoration.ts";
 import type { ProjectWorkbenchView, WorkbenchPage } from "./project-workbench-client.ts";
 
-const tabs = ["scenes", "orphan-pages", "prompt-overview", "finished", "project-story", "project-settings", "project-render-profile", "project-lettering", "project-tasks", "project-materials", "comparison", "resource-base", "resource-loras", "lora-datasets", "lora-tasks", "lora-runs", "lora-history", "characters", "story"] as const;
+const tabs = ["scenes", "orphan-pages", "finished", "project-story", "project-settings", "project-render-profile", "project-lettering", "project-tasks", "project-materials", "comparison", "resource-base", "resource-loras", "lora-datasets", "lora-tasks", "lora-runs", "lora-history", "characters", "story"] as const;
 export type ActiveTab = typeof tabs[number];
 export type NavigationState = Omit<NavigationUrlState, "activeTab"> & { activeTab: ActiveTab; editorTab?: "visual" | "lettering" | "flow" };
 
@@ -32,7 +32,7 @@ export function allWorkbenchPages(view: ProjectWorkbenchView | null): WorkbenchP
 
 export function openNavigationPage(state: NavigationState, pageKey: PageKey, view: ProjectWorkbenchView | null, tab?: ActiveTab): NavigationState {
   const location = pageLocations(view).find(item => samePageKey(item.page.page_key, pageKey));
-  const activeTab = location ? (tab === "prompt-overview" && location.tab === "story" ? tab : location.tab) : tab ?? "story";
+  const activeTab = location ? location.tab : tab ?? "story";
   return { ...state, activeTab, activePageKey: pageKey, editorTab: samePageKey(state.activePageKey, pageKey) ? state.editorTab : "visual",
     activeCharacterId: location?.tab === "characters" ? location.ownerId : "",
     activeCharacterSettingId: location?.tab === "characters" ? location.page.variant_id ?? "profile" : "profile",
@@ -51,7 +51,7 @@ export function openNavigationScene(state: NavigationState, sceneId: string, set
 export function openNavigationTab(state: NavigationState, activeTab: ActiveTab, view: ProjectWorkbenchView | null): NavigationState {
   if (state.activeTab === activeTab) return state;
   const next = { ...projectNavigation(state.projectId), activeTab };
-  if (activeTab === "story" || activeTab === "prompt-overview" || activeTab === "orphan-pages") {
+  if (activeTab === "story" || activeTab === "orphan-pages") {
     const page = pageLocations(view).find(item => item.tab === (activeTab === "orphan-pages" ? "orphan-pages" : "story"))?.page;
     return page ? openNavigationPage(next, page.page_key, view, activeTab) : next;
   }
@@ -78,7 +78,7 @@ export function reconcileNavigation(state: NavigationState, previous: ProjectWor
     }
     return { ...state, activePageKey: null, activeCharacterId: "", activeCharacterSettingId: "profile", sceneId: "", sceneSettingId: "profile" };
   }
-  if (!previous && (state.activeTab === "story" || state.activeTab === "prompt-overview" || state.activeTab === "orphan-pages")) {
+  if (!previous && (state.activeTab === "story" || state.activeTab === "orphan-pages")) {
     const first = available.find(item => item.tab === (state.activeTab === "orphan-pages" ? "orphan-pages" : "story"));
     if (first) return openNavigationPage(state, first.page.page_key, next, state.activeTab);
   }

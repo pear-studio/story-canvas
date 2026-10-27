@@ -256,7 +256,7 @@ export async function readProjectWorkbenchView(projectRoot, projectId, requested
   for (const membership of pagesIndex.pages) {
     const pageId = membership.page_id;
     const output = scope.kind === 'finished' && (!scope.page_id || scope.page_id === pageId || scope.page_id === membership.parent_page_id);
-    let edit = full || scope.kind === 'page' && (scope.page_id === pageId || scope.page_id === membership.parent_page_id) || scope.kind === 'prompts' && membership.owner_kind === 'story';
+    let edit = full || scope.kind === 'page' && (scope.page_id === pageId || scope.page_id === membership.parent_page_id);
     const story = scope.kind === 'story' && membership.owner_kind === 'story' && (!scope.sequence_id || membership.sequence_id === scope.sequence_id) && (!scope.chapter_id || chapterSequences.has(membership.sequence_id));
     const narrative=await readJson(project.projectDirectory,pageRelativePath(pageId,'content'));
     if(narrative.page_kind==='collage')edit=false;

@@ -183,14 +183,6 @@ export async function loadPageMedia(
   return result.unchanged ? null : result;
 }
 
-export async function savePagePrompt(projectId: string, page: WorkbenchPage, prompt: PagePrompt) {
-  return workbenchResponseJson<{ kind: WorkbenchPage["kind"]; page_id: string; prompt: PagePrompt; prompt_sha256: string; audit?: import("./prompt-audit-display").PromptAuditReport }>(await mutateTargetFacts(`${base(projectId)}/page-prompt`, {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ kind: page.kind, page_id: page.page_id, prompt, expected_sha256: page.prompt_sha256, expected_context_sha256: page.prompt_context_sha256 }),
-  }));
-}
-
 export async function saveCharacterPrompt<TPrompt extends object>(projectId: string, character: WorkbenchCharacter<TPrompt>, prompt: TPrompt, kind: SettingKind = "character") {
   const document = {models:{...character.model_prompts?.models,[character.model_id]:prompt}};
   const result = await workbenchResponseJson<{ character_id: string; prompt: {models: Record<string,TPrompt>}; prompt_sha256: string; downstream_diagnostics?: Array<{ code: string }> }>(await mutateTargetFacts(`${base(projectId)}/${kind}-prompt`, {

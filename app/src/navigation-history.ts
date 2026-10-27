@@ -23,7 +23,7 @@ export function rememberNavigation(history: NavigationHistory, next: NavigationS
 export type NavigationSection = 'settings' | 'story' | 'output' | 'auxiliary';
 export function navigationSection(tab: string): NavigationSection | null {
   if (tab === 'characters' || tab === 'scenes' || tab === 'orphan-pages') return 'settings';
-  if (['story', 'project-story', 'prompt-overview'].includes(tab)) return 'story';
+  if (['story', 'project-story'].includes(tab)) return 'story';
   if (['finished', 'project-lettering'].includes(tab)) return 'output';
   return null;
 }

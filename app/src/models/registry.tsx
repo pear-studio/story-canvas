@@ -6,7 +6,7 @@ import {h3UiAdapter} from './h3/ui-adapter';
 import {mossUiAdapter} from './moss/ui-adapter';
 import {PagePromptFrame} from './PagePromptFrame';
 import type {GenerationModelId,PromptModelId} from './prompt-types';
-import type {ModelPageEditorProps,ModelSettingEditorProps,ModelOverviewEditorProps,ModelUiAdapter} from './types';
+import type {ModelPageEditorProps,ModelSettingEditorProps,ModelUiAdapter} from './types';
 
 const models={anima:animaUiAdapter,qwen:qwenUiAdapter,h3:h3UiAdapter,moss:mossUiAdapter} satisfies Record<GenerationModelId,ModelUiAdapter>;
 const settingModels={anima:models.anima,qwen:models.qwen,moss:models.moss};
@@ -28,10 +28,6 @@ export function ModelSettingEditor(props:ModelSettingEditorProps) {
     catch(cause){setError(cause instanceof Error?cause.message:String(cause));}finally{setSaving(false);}
   }
   return <><div className="prompt-camera-actions"><label>设定模型 <select aria-label="设定模型" disabled={props.busy||saving||dirty} value={modelId} onChange={event=>{setSelection({id:props.character.id,model:event.target.value as PromptModelId});setError('');}}>{modelChoices.map(choice=><option key={choice.id} value={choice.id}>{choice.label}</option>)}</select></label>{dirty&&<small>请先保存当前修改再切换模型</small>}</div>{input?<Editor key={`${props.projectId}:${props.kind ?? 'character'}:${character.id}:${modelId}`} {...props} character={character} onDirtyChange={setDirty}/>:<div className="setting-section"><p>此模型尚未配置设定。创建后可为各个子设定编写对应模型的描述。</p><button className="button" disabled={props.busy||saving} onClick={()=>void enable()}>创建 {adapter.label} 设定</button>{error&&<p role="alert">{error}</p>}</div>}</>;
-}
-export function ModelOverviewEditor(props:ModelOverviewEditorProps) {
-  const Editor=models[props.page.model_id].OverviewEditor;
-  return <Editor {...props}/>;
 }
 export function ModelPromptEditor(props:ModelPageEditorProps) {
   const adapter:ModelUiAdapter=models[props.page.model_id];

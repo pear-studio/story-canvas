@@ -2,7 +2,6 @@
 .prompt-compact .prompt-fragment-table-head.has-category { display: grid !important; }
 .prompt-compact .prompt-fragment-table-columns { grid-template-columns: 14px minmax(0, 1fr) 30px 24px; gap: 6px; }
 .prompt-compact .prompt-fragment-field-headings { grid-template-columns: minmax(0, 1fr) 44px; gap: 6px; }
-.prompt-overview-editor .workbench-prompt-fragment-editor .category-card, .prompt-overview-editor .prompt-fragment-table-head.has-category { grid-template-columns: 30px minmax(0, 1fr); }
 .prompt-compact .prompt-fragment-entry { margin: 0; border-bottom: 0; }
 .prompt-compact .prompt-fragment-row { padding: 2px 0; border-bottom: 0; }
 .prompt-compact .prompt-fragment-list .prompt-fragment-row { display: grid; grid-template-columns: 14px minmax(0, 1fr) 30px 24px !important; gap: 6px; }

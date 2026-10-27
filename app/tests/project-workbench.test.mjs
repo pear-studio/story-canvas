@@ -178,6 +178,7 @@ test("workbench只组织页面事实，候选媒体按完整PageKey独立读取"
 test('工作台按视图读取：目录和正文总览不读取 Prompt，单页只读取自身及引用', async context => {
   const current = await fixture(context);
   const read = scope => readProjectWorkbenchView(current.root, current.projectId, scope);
+  await assert.rejects(read({kind:'prompts'}), /无效工作台读取范围/);
   const directory = await read({kind:'directory'});
   const summary = directory.outline.chapters[0].sequences[0].pages[0];
   assert.equal(summary.title, '抵达');
@@ -202,15 +203,9 @@ test('工作台按视图读取：目录和正文总览不读取 Prompt，单页�
   assert.equal(story.characters[0].prompt, undefined);
 });
 
-test('Prompt 总览不编译生成配置或加载角色 Prompt，设定视图不读取页面 Prompt', async context => {
+test('设定视图不读取页面 Prompt', async context => {
   const current = await fixture(context);
   await writeFile(path.join(current.directory, 'pages/page-101.prompt.json'), '{broken');
-  const prompts = await readProjectWorkbenchView(current.root, current.projectId, {kind:'prompts'});
-  const page = prompts.outline.chapters[0].sequences[0].pages[0];
-  assert.ok(page.prompt_sha256);
-  assert.equal(page.render_capabilities, undefined);
-  assert.equal(page.project_loras, undefined);
-  assert.equal(prompts.characters[0].prompt, undefined);
   await writeFile(path.join(current.directory, 'pages/page-001.prompt.json'), '{broken');
   const setting = await readProjectWorkbenchView(current.root, current.projectId, {kind:'setting',setting_kind:'character',setting_id:'ellen'});
   assert.equal(setting.characters[0].description, '短篇主角。');
