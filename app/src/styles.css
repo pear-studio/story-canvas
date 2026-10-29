@@ -178,7 +178,7 @@ html[data-image-privacy="peek"] .lettering-overlay, html[data-image-privacy="pee
 .resource-meter i, .task-entry__progress i { height: 100%; display: block; position: absolute; top: 0; left: 0; border-radius: inherit; transition: width .18s ease; }
 .resource-meter__global, .task-entry__progress i { background: #75a991; }
 .resource-meter__comfy { min-width: 2px; z-index: 1; background: var(--navy); }
-.task-popover { width: 420px; }
+.task-popover { width: 420px; grid-template-columns: minmax(0, 1fr); }
 .task-section-heading { padding: 5px 3px 0; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .task-section-heading b { font-size: var(--text-label); }
 .task-section-heading small { color: var(--muted); font-size: var(--text-meta); }
