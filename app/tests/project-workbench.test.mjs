@@ -1,3 +1,7 @@
+import { pageSaveRequest } from "./helpers/workbench-page-save.mjs";
+import { savePage } from "../server/page-facts.mjs";
+import { readPageEditContext, savePageEditChanges } from "../server/page-edit-context.mjs";
+import { saveSetting } from "../server/setting-save.mjs";
 import {installQwenProfiles} from './helpers/qwen-fixture.mjs';
 import {writeQwenFixtureJson, qwenDocument} from './helpers/qwen-fixture.mjs';
 import { registerFixtureProjects } from "./project-registry-fixture.mjs";
@@ -35,11 +39,8 @@ import { withCandidateMutationLock } from "../server/candidate-mutation-lock.mjs
 import {
   readPageCandidateDetail,
   readProjectWorkbenchView,
-  saveCharacterProfile,
   saveCharacterPrompt as saveCharacterPromptDirect,
-  saveCharacterVisual,
   saveLetteringSettings,
-  savePageContent,
   savePageLettering,
   savePagePrompt,
   saveStorySummary,
@@ -143,7 +144,7 @@ async function fixture(context) {
     task.items[0].generated_at = "2026-08-26T01:02:13.000Z";
   });
   const completed = (await readRenderTask(directory, renderTask.id)).task;
-  await publishCandidateResult(directory, completed, completed.items[0], Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aJXkAAAAASUVORK5CYII=", "base64"));
+  await publishCandidateResult(directory, completed, completed.items[0], Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aJXkAAAAASUVORK5CYII=", "base64"), {warm: false});
   registerFixtureProjects(root); return { root, projectId, directory, candidateId, candidateFile, storyPrompt };
 }
 
@@ -255,69 +256,27 @@ test("角色 Prompt 一次保存 prompt_name 与各造型自由文本", async (c
   assert.match(result.prompt_sha256, /^[a-f0-9]{64}$/);
 });
 
-test("角色 profile 与 visual 分文件保存并以各自目标SHA阻止陈旧覆盖", async (context) => {
-  const current = await fixture(context);
-  const character = (await readProjectWorkbenchView(current.root, current.projectId)).characters[0];
-  assert.match(character.profile_sha256, /^[a-f0-9]{64}$/);
-  assert.match(character.visual_sha256, /^[a-f0-9]{64}$/);
+test("角色档案与子设定改名分别保存，同一字段的过时修改被拒绝", async (context) => {
+  const {root, projectId, directory} = await fixture(context);
+  const character = (await readProjectWorkbenchView(root, projectId)).characters[0];
+  const target = {kind: "character", id: character.id, model_id: "qwen", scope: "base"};
+  const baseline = {name: character.name, description: character.description};
+  const profile = {name: "艾莲·乔", description: "短篇主角，表面从容。"};
+  await saveSetting(root, projectId, {target, profile: {baseline, value: profile}});
+  assert.deepEqual(await readJson(path.join(directory, "characters", "ellen.profile.json")), {$schema: CHARACTER_PROFILE_SCHEMA_ID, ...profile});
+  await assert.rejects(saveSetting(root, projectId, {target, profile: {baseline, value: {...baseline, description: "陈旧覆盖"}}}), {code: "setting_scope_conflict", status: 409});
 
-  const profile = { name: "艾莲·乔", description: "短篇主角，表面从容。" };
-  const profileResult = await saveCharacterProfile(current.root, current.projectId, {
-    character_id: character.id,
-    profile,
-    expected_sha256: character.profile_sha256,
-  });
-  assert.deepEqual(profileResult.profile, profile);
-  assert.deepEqual(
-    await readJson(path.join(current.directory, "characters", "ellen.profile.json")),
-    { $schema: CHARACTER_PROFILE_SCHEMA_ID, ...profile },
-  );
-  await assert.rejects(
-    saveCharacterProfile(current.root, current.projectId, {
-      character_id: character.id,
-      profile: { ...profile, description: "陈旧覆盖" },
-      expected_sha256: character.profile_sha256,
-    }),
-    (error) => error?.code === "character_profile_target_conflict" && error.status === 409,
-  );
-
-  const visual = structuredClone(character.visual);
-
-  visual.variants[0].name = "日常服";
-  const visualResult = await saveCharacterVisual(current.root, current.projectId, {
-    character_id: character.id,
-    visual,
-    expected_sha256: character.visual_sha256,
-  });
-  assert.deepEqual(visualResult.visual, visual);
-  await assert.rejects(
-    saveCharacterVisual(current.root, current.projectId, {
-      character_id: character.id,
-      visual,
-      expected_sha256: character.visual_sha256,
-    }),
-    (error) => error?.code === "character_visual_target_conflict" && error.status === 409,
-  );
+  const variant = character.visual.variants[0];
+  const variantTarget = {...target, scope: "variant", variant_id: variant.id};
+  const renamed = await saveSetting(root, projectId, {target: variantTarget, variant: {baseline: variant, value: {...variant, name: "日常服"}}});
+  assert.deepEqual(renamed.setting.visual.variants, [{...variant, name: "日常服"}, ...character.visual.variants.slice(1)]);
+  await assert.rejects(saveSetting(root, projectId, {target: variantTarget, variant: {baseline: variant, value: {...variant, name: "陈旧名称"}}}), {code: "setting_scope_conflict", status: 409});
+  await assert.rejects(saveSetting(root, projectId, {target: {...variantTarget, variant_id: "uniform"}, variant: {baseline: variant, value: variant}}), {code: "setting_scope_conflict", status: 409});
 });
 
-test("角色 visual 内容入口拒绝结构变化，Prompt 允许缺少下游 variant 但拒绝悬空 key 与 visual 漂移", async (context) => {
+test("角色 Prompt 允许缺少下游 variant 但拒绝悬空 key 与 visual 漂移", async (context) => {
   const current = await fixture(context);
   const character = (await readProjectWorkbenchView(current.root, current.projectId)).characters[0];
-  await assert.rejects(
-    saveCharacterVisual(current.root, current.projectId, {
-      character_id: character.id,
-      visual: {
-        ...structuredClone(character.visual),
-        variants: [
-          ...structuredClone(character.visual.variants),
-          { id: "uniform", name: "制服", description: "学校制服。" },
-        ],
-      },
-      expected_sha256: character.visual_sha256,
-    }),
-    (error) => error?.code === "character_visual_structure_change_forbidden" && error.status === 409,
-  );
-
   const promptWithoutVariant = structuredClone(character.prompt);
   delete promptWithoutVariant.variants.casual;
   const removedPrompt = await saveCharacterPrompt(current.root, current.projectId, {
@@ -363,7 +322,7 @@ test("文字页：创建、内容保存携带正文、类型不可改写、生�
   assert.equal(page.page_kind, "text");
   assert.equal(page.body, "");
   const content = { title: "后记", scene_description: "", characters: [], dialogue: [], page_kind: "text", body: "作者的话。", display_title: "", text_layout: { ...defaultTextPageLayout, body_font_size: 36, body_align: "left", position: "upper" } };
-  const saved = await savePageContent(current.root, current.projectId, { page_key: page.page_key, content, expected_sha256: page.content_sha256 });
+  const saved = await savePage(current.root, current.projectId, pageSaveRequest(page, content));
   assert.equal(saved.content.body, "作者的话。");
   const persisted = await readJson(path.join(current.directory, "pages", `${created.page_id}.content.json`));
   assert.equal(persisted.page_kind, "text");
@@ -375,16 +334,16 @@ test("文字页：创建、内容保存携带正文、类型不可改写、生�
   const reloaded = (await readProjectWorkbenchView(current.root, current.projectId)).outline.chapters[0].sequences[0].pages.find(entry => entry.page_id === created.page_id);
   assert.equal(reloaded.display_title, "");
   assert.deepEqual(reloaded.text_layout, content.text_layout);
-  await assert.rejects(savePageContent(current.root, current.projectId, { page_key: page.page_key, content: { ...content, text_layout: { ...content.text_layout, body_font_size: 0 } }, expected_sha256: saved.content_sha256 }), error => error.code === "invalid_story_edit_document" && error.details.some(detail => detail.includes("body_font_size")));
-  await assert.rejects(savePageContent(current.root, current.projectId, { page_key: page.page_key, content: { ...content, display_title: "新标题" }, expected_sha256: page.content_sha256 }), error => error.code === "page_content_target_conflict");
+  await assert.rejects(savePage(current.root, current.projectId, pageSaveRequest(saved, { ...content, text_layout: { ...content.text_layout, body_font_size: 0 } })), error => error.code === "invalid_page_document" && error.details.some(detail => detail.includes("body_font_size")));
+  await assert.rejects(savePage(current.root, current.projectId, pageSaveRequest(page, { ...content, display_title: "新标题" })), error => error.code === "page_content_target_conflict");
   await assert.rejects(
-    savePageContent(current.root, current.projectId, { page_key: page.page_key, content: { ...content, page_kind: null }, expected_sha256: saved.content_sha256 }),
-    (error) => error?.code === "invalid_page_content_update",
+    savePage(current.root, current.projectId, pageSaveRequest(saved, { ...content, page_kind: null })),
+    (error) => error?.code === "page_kind_immutable",
     "页面类型创建时定死,内容保存不得改写",
   );
   await assert.rejects(
-    savePageContent(current.root, current.projectId, { page_key: page.page_key, content: { title: "后记", scene_description: "", characters: [], dialogue: [] }, expected_sha256: saved.content_sha256 }),
-    (error) => error?.code === "invalid_page_content_update",
+    savePage(current.root, current.projectId, pageSaveRequest(saved, { title: "后记", scene_description: "", characters: [], dialogue: [] })),
+    (error) => error?.code === "page_kind_immutable",
     "文字页必须携带 page_kind/body",
   );
   await assert.rejects(
@@ -404,16 +363,14 @@ test("页面内容保存补对白ID，旧目标被拒绝；删除被排版引用
     characters: [{ character_id: "ellen", variant_id: "default" }],
     dialogue: [{ mode: "thought", speaker: "ellen", text: "就在这里。" }],
   };
-  const saved = await savePageContent(current.root, current.projectId, {
-    page_key: page.page_key, content, expected_sha256: page.content_sha256,
-  });
+  const saved = await savePage(current.root, current.projectId, pageSaveRequest(page, content));
   const persistedPage = await readJson(path.join(current.directory, "pages", "page-001.content.json"));
   assert.equal(persistedPage.scene_description, content.scene_description);
   assert.equal(Object.hasOwn(persistedPage, "visual_goal"), false);
   assert.match(saved.content.dialogue[0].id, /^dialogue-[a-f0-9]{12}$/);
   assert.equal((await readJson(path.join(current.directory, "pages", "page-001.content.json"))).dialogue[0].id, saved.content.dialogue[0].id);
   await assert.rejects(
-    savePageContent(current.root, current.projectId, { page_key: page.page_key, content, expected_sha256: page.content_sha256 }),
+    savePage(current.root, current.projectId, pageSaveRequest(page, content)),
     (error) => error?.code === "page_content_target_conflict" && error.status === 409,
   );
 
@@ -423,9 +380,10 @@ test("页面内容保存补对白ID，旧目标被拒绝；删除被排版引用
     lettering: { items: [{ dialogue_id: saved.content.dialogue[0].id, box: { x: 0.1, y: 0.1, w: 0.3, h: 0.1 } }] },
     expected_sha256: page.layout_sha256,
   });
-  const withoutDialogue = { ...saved.content, dialogue: [] };
+  const partial = {projectRoot: current.root, projectId: current.projectId, pageKey: page.page_key, section: "content"};
+  const edit = await readPageEditContext(partial);
   await assert.rejects(
-    savePageContent(current.root, current.projectId, { page_key: page.page_key, content: withoutDialogue, expected_sha256: saved.content_sha256 }),
+    savePageEditChanges({...partial, expectedSha256: edit.save.args.expected_sha256, changes: {dialogue: []}}),
     (error) => error?.code === "page_lettering_anchor_conflict" && error.status === 409
       && error.details.some((detail) => detail.includes(saved.content.dialogue[0].id) && detail.includes("请先调整排版")),
   );
@@ -439,14 +397,14 @@ test("页面内容写入返回超长画面内容警告，精简后警告清除�
   const current = await fixture(context);
   const page = (await readProjectWorkbenchView(current.root, current.projectId)).outline.chapters[0].sequences[0].pages[0];
   const content = { title: page.title, scene_description: "重".repeat(31), characters: page.characters, dialogue: page.dialogue };
-  const saved = await savePageContent(current.root, current.projectId, { page_key: page.page_key, content, expected_sha256: page.content_sha256 });
+  const saved = await savePage(current.root, current.projectId, pageSaveRequest(page, content));
   assert.equal(saved.content.scene_description, content.scene_description);
   assert.equal(saved.warnings.length, 1);
   assert.equal(saved.warnings[0].code, "scene_description_too_long");
   assert.equal(saved.warnings[0].actual_length, 31);
   assert.equal(saved.warnings[0].max_length, 20);
   assert.equal(Object.hasOwn(await readJson(path.join(current.directory, "pages/page-001.content.json")), "warnings"), false);
-  const shortened = await savePageContent(current.root, current.projectId, { page_key: page.page_key, content: { ...saved.content, scene_description: "停顿时的迟疑" }, expected_sha256: saved.content_sha256 });
+  const shortened = await savePage(current.root, current.projectId, pageSaveRequest(saved, { ...saved.content, scene_description: "停顿时的迟疑" }));
   assert.deepEqual(shortened.warnings, []);
   assert.equal((await readProjectWorkbenchView(current.root, current.projectId)).outline.chapters[0].sequences[0].pages[0].scene_description, "停顿时的迟疑");
 });
@@ -542,8 +500,6 @@ test("媒体与数量通知丢失后周期补偿，缺失文件不计数", async
   const request = { page_key: createStoryPageKey("page-001") };
   const first = await reader.read(current.projectId, request);
   assert.deepEqual((await reader.counts(current.projectId)).counts, { "v3/page-001": 1 });
-  // 此用例验证通知补偿；等待 fixture 发布时的预热结束，避免 Windows 文件占用干扰。
-  await warmMediaVariants(current.directory, candidateFileRelativePath(request.page_key, current.candidateId));
   await rm(path.join(current.directory, candidateFileRelativePath(request.page_key, current.candidateId)));
   clock = 60_001;
   const [media, counts] = await Promise.all([reader.read(current.projectId, request), reader.counts(current.projectId)]);
@@ -612,10 +568,9 @@ test("短暂写锁释放后继续操作，不重复执行写入", async (context
 test("爱心文案与各自的字号、旋转、种子通过现有保存链路完整往返", async (context) => {
   const current = await fixture(context);
   let page = (await readProjectWorkbenchView(current.root, current.projectId)).outline.chapters[0].sequences[0].pages[0];
-  const saved = await savePageContent(current.root, current.projectId, {
-    page_key: page.page_key, expected_sha256: page.content_sha256,
-    content: { title: page.title, scene_description: page.scene_description, characters: page.characters, dialogue: [{mode:"heart",text:"呜"},{mode:"heart",speaker:"ellen",text:"嗯嗯"}] },
-  });
+  const saved = await savePage(current.root, current.projectId, pageSaveRequest(page, {
+    title: page.title, scene_description: page.scene_description, characters: page.characters, dialogue: [{mode:"heart",text:"呜"},{mode:"heart",speaker:"ellen",text:"嗯嗯"}],
+  }));
   page = (await readProjectWorkbenchView(current.root, current.projectId)).outline.chapters[0].sequences[0].pages[0];
   const items = saved.content.dialogue.map((line,i)=>({dialogue_id:line.id,box:{x:.1+i*.3,y:.2,w:.3,h:.1},heart:{font_size:i?64:48,rotation:i?15:-8,seed:i?123:703}}));
   await savePageLettering(current.root,current.projectId,{page_key:page.page_key,expected_sha256:page.layout_sha256,lettering:{items}});
@@ -806,12 +761,13 @@ test("删除角色后仍可编辑剧情页移除悬空引用，不要求先恢�
   const current = await fixture(context);
   const page = (await readProjectWorkbenchView(current.root, current.projectId)).outline.chapters[0].sequences[0].pages[0];
   await deleteCharacter(current.root, current.projectId, "ellen");
-  const saved = await savePageContent(current.root, current.projectId, {
-    page_key: page.page_key, expected_sha256: page.content_sha256,
-    content: { title: "空镜", scene_description: "门口无人。", characters: [], dialogue: [] },
+  const partial = {projectRoot: current.root, projectId: current.projectId, pageKey: page.page_key, section: "content"};
+  const edit = await readPageEditContext(partial);
+  const saved = await savePageEditChanges({...partial, expectedSha256: edit.save.args.expected_sha256, expectedReferenceSha256: edit.save.args.expected_reference_sha256,
+    changes: {title: "空镜", scene_description: "门口无人。", characters: [], dialogue: []},
   });
-  assert.deepEqual(saved.content.characters, []);
-  assert.deepEqual(saved.content.dialogue, []);
+  assert.deepEqual(saved.document.characters, []);
+  assert.deepEqual(saved.document.dialogue, []);
   assert.equal((await readJson(path.join(current.directory, "pages/page-001.content.json"))).scene_description, "门口无人。");
 });
 

@@ -1,4 +1,5 @@
 import {createQwenFixtureProject as createProject, installModelResources} from './model-fixture.mjs';
+import { pageSaveRequest } from './helpers/workbench-page-save.mjs';
 import { cp } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -678,8 +679,10 @@ test("Agent 草稿与网页共用窄写入：无关页面放行，目标和 Prom
   assert.equal(begin.status, 200);
   const draft = begin.body.document;
   draft.title = "Agent 的修改";
-  const content = p => ({ title: p.title, scene_description: p.scene_description, characters: p.characters, dialogue: p.dialogue });
-  assert.equal((await call(base + "/page-content", { page_key: other.page_key, expected_sha256: other.content_sha256, content: { ...content(other), title: "另一页" } }, "PUT")).status, 200);
+  const savePageTitle = (p, title) => call(base + "/page-save", pageSaveRequest(p, {
+    title, scene_description: p.scene_description, characters: p.characters, dialogue: p.dialogue,
+  }), "PUT");
+  assert.equal((await savePageTitle(other, "另一页")).status, 200);
   const promptRequest = { kind: "story", page_id: first.page_id, prompt: page.prompt, expected_sha256: page.prompt_sha256, expected_context_sha256: page.prompt_context_sha256 };
   assert.equal((await call(base + "/page-prompt", promptRequest, "PUT")).status, 200, "无关页面变化不能阻塞 Prompt 保存");
   assert.equal((await call("/api/agent/facts/story/narrative/save", begin.body)).status, 200);
@@ -689,9 +692,9 @@ test("Agent 草稿与网页共用窄写入：无关页面放行，目标和 Prom
   const current = (await (await fetch(origin + base + '?scope=' + encodeURIComponent(JSON.stringify({kind:'page',page_id:first.page_id})))).json()).outline.chapters[0].sequences[0].pages[0];
   assert.equal(current.title, "Agent 的修改");
   const pending = await call("/api/agent/facts/story/narrative/read", { project_id: "current-story", target_id: first.page_id });
-  const changed = await call(base + "/page-content", { page_key: current.page_key, expected_sha256: current.content_sha256, content: { ...content(current), title: "网页的新修改" } }, "PUT");
+  const changed = await savePageTitle(current, "网页的新修改");
   assert.equal(changed.status, 200);
-  const refreshedPrompt = await call(base + "/page-prompt", { ...promptRequest, expected_context_sha256: changed.body.prompt_context_sha256 }, "PUT");
+  const refreshedPrompt = await call(base + "/page-prompt", { ...promptRequest, expected_sha256: changed.body.prompt_sha256, expected_context_sha256: changed.body.prompt_context_sha256 }, "PUT");
   assert.equal(refreshedPrompt.status, 200, "内容保存返回新依赖指纹，紧接着可保存 Prompt");
   const conflict = await call("/api/agent/facts/story/narrative/save", pending.body);
   assert.equal(conflict.status, 409);

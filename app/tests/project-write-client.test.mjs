@@ -306,14 +306,15 @@ test("目标级写入不携带项目 revision，仍参与写队列并接纳服�
   const originalWindow = globalThis.window;
   globalThis.window = { location: { origin: "http://story-canvas.local" } };
   let release;
+  const draft = { page_key: { page_id: "page-001" }, expected_sha256: "target-sha", lettering: { items: [] } };
   globalThis.fetch = async (_input, init) => {
     assert.equal(new Headers(init.headers).has("x-story-canvas-expected-revision"), false);
-    assert.deepEqual(JSON.parse(init.body), { expected_sha256: "target-sha", content: "草稿" });
+    assert.deepEqual(JSON.parse(init.body), draft);
     return new Promise(resolve => { release = resolve; });
   };
   try {
     const client = await import(`../src/project-write-client.ts?target=${Date.now()}`);
-    const pending = client.mutateTargetFacts("/api/projects/paper-moon/workbench/page-content", { method: "PUT", body: JSON.stringify({ expected_sha256: "target-sha", content: "草稿" }) });
+    const pending = client.mutateTargetFacts("/api/projects/paper-moon/workbench/page-lettering", { method: "PUT", body: JSON.stringify(draft) });
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(client.isProjectWritePending("paper-moon"), true);
     release(new Response("{}", { headers: { "x-story-canvas-revision": "new-project-revision" } }));

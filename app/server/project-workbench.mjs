@@ -21,9 +21,7 @@ import path from "node:path";
 import { readCandidateGeneration, readGenerationCandidateRecords } from "./candidate-storage.mjs";
 import { readFactDraft, saveFactDraft, pagePromptContextSha256 } from "./fact-drafts.mjs";
 import {
-  CHARACTER_PROFILE_SCHEMA_ID,
   CHARACTER_PROMPT_SCHEMA_ID,
-  CHARACTER_VISUAL_SCHEMA_ID,
   validateCharacterIndexDocument,
   validateCharacterProfileDocument,
   validateCharacterPromptDocument,
@@ -394,46 +392,6 @@ export async function saveStorySummary(projectRoot, projectId, value) {
   return { target: structuredClone(value.target), text: target[field], sha256: hashCanonicalJson(target[field]) };
 }
 
-function publicPageContent(kind, document) {
-  return {
-      title: document.title,
-      scene_description: document.scene_description,
-      characters: structuredClone(document.characters),
-      dialogue: structuredClone(document.dialogue),
-      // 仅文字页携带类型与正文，普通页保持原有四键契约。
-      ...(document.page_kind === "text" ? { page_kind: "text", body: document.body ?? "", display_title: document.display_title ?? "", text_layout: structuredClone(document.text_layout ?? defaultTextPageLayout) } : {}),
-    };
-}
-
-function contentRelativePath(kind, pageId) { return pageRelativePath(pageId, 'content'); }
-
-export async function savePageContent(projectRoot, projectId, value) {
-  requireExactObject(value, ["page_key", "content", "expected_sha256"], "invalid_page_content_update");
-  if (!isRecord(value.page_key) || !isRecord(value.content) || !/^[a-f0-9]{64}$/.test(value.expected_sha256 ?? "")) fail("invalid_page_content_update", [], 400);
-  const project = await resolveProjectLocation(path.resolve(projectRoot), projectId);
-  const identity = await resolveExactPageIdentity(project.projectDirectory, value.page_key);
-  const relativePath = contentRelativePath(identity.kind, identity.page_id);
-  const current = await readJson(project.projectDirectory, relativePath);
-  const isTextPage = current.page_kind === "text";
-  // 页面类型创建时定死：普通剧情页保持原有四键契约，文字页必须携带 page_kind/body。
-  requireExactObject(value.content, isTextPage ? ["title", "scene_description", "characters", "dialogue", "page_kind", "body", "display_title", "text_layout"] : ["title", "scene_description", "characters", "dialogue"], "invalid_page_content_update");
-  if (isTextPage && (value.content.page_kind !== "text" || typeof value.content.body !== "string" || typeof value.content.display_title !== "string" || !isRecord(value.content.text_layout))) fail("invalid_page_content_update", [], 400);
-  const document = isTextPage
-    ? { $schema: current.$schema, title: value.content.title, scene_description: value.content.scene_description, characters: structuredClone(value.content.characters), dialogue: structuredClone(value.content.dialogue), page_kind: "text", body: value.content.body, display_title: value.content.display_title ?? "", text_layout: structuredClone(value.content.text_layout ?? defaultTextPageLayout) }
-    : { $schema: current.$schema, ...structuredClone(value.content) };
-  const saved = await saveFactDraft(projectRoot, {
-    domain: "page", kind: "content",
-    projectId, targetId: identity.page_id, document,
-    expectedSha256: value.expected_sha256, conflictCode: "page_content_target_conflict",
-    beforeCommit: () => resolveExactPageIdentity(project.projectDirectory, value.page_key),
-  });
-  return { page_key: identity.page_key, content: publicPageContent(identity.kind, saved.value),
-    ...(saved.page_prompt ? { prompt: publicPrompt(saved.page_prompt), prompt_sha256: hashCanonicalJson(saved.page_prompt) } : {}),
-    content_sha256: hashCanonicalJson(saved.value),
-    prompt_context_sha256: await pagePromptContextSha256(project.projectDirectory, identity.kind, identity.page_id).catch(() => null),
-    warnings: saved.warnings ?? [], downstream_diagnostics: saved.downstream_diagnostics ?? [] };
-}
-
 export async function savePageLettering(projectRoot, projectId, value) {
   requireExactObject(value, ["page_key", "lettering", "expected_sha256"], "invalid_page_lettering_update");
   if (!isRecord(value.page_key) || !isRecord(value.lettering) || !/^[a-f0-9]{64}$/.test(value.expected_sha256 ?? "")) {
@@ -509,50 +467,12 @@ export async function savePagePrompt(projectRoot, projectId, value) {
   return { kind, page_id: pageId, prompt: publicPrompt(modelPrompt(saved.value,render.model_id)), prompt_sha256: hashCanonicalJson(saved.value), audit: saved.audit };
 }
 
-function sameOrderedStrings(left, right) {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
-}
-
-function publicCharacterProfile(profile) {
-  const result = structuredClone(profile);
-  delete result.$schema;
-  return result;
-}
-
 function publicCharacterVisual(visual) {
   const result = structuredClone(visual);
   delete result.$schema;
   delete result.description; delete result.base_description;
   result.variants = result.variants.map(({ id, name }) => ({ id, name }));
   return result;
-}
-
-export async function saveCharacterProfile(projectRoot, projectId, value) {
-  requireExactObject(value, ["character_id", "profile", "expected_sha256"], "invalid_character_profile_update");
-  if (typeof value.character_id !== "string" || !isRecord(value.profile) || !/^[a-f0-9]{64}$/.test(value.expected_sha256 ?? "")) fail("invalid_character_profile_update", [], 400);
-  requireExactObject(value.profile, ["name", "description"], "invalid_character_profile_update");
-  const saved = await saveFactDraft(projectRoot, {
-    domain: "character", kind: "profile", projectId, targetId: value.character_id,
-    document: { $schema: CHARACTER_PROFILE_SCHEMA_ID, ...structuredClone(value.profile) },
-    expectedSha256: value.expected_sha256, conflictCode: "character_profile_target_conflict",
-  });
-  return { character_id: value.character_id, profile: publicCharacterProfile(saved.value), profile_sha256: hashCanonicalJson(saved.value) };
-}
-
-export async function saveCharacterVisual(projectRoot, projectId, value) {
-  requireExactObject(value, ["character_id", "visual", "expected_sha256"], "invalid_character_visual_update");
-  if (typeof value.character_id !== "string" || !isRecord(value.visual) || !/^[a-f0-9]{64}$/.test(value.expected_sha256 ?? "")) fail("invalid_character_visual_update", [], 400);
-  requireExactObject(value.visual, ["description", "variants", "base_description"].filter(key => key === "variants" || Object.hasOwn(value.visual, key)), "invalid_character_visual_update");
-  const project = await resolveProjectLocation(path.resolve(projectRoot), projectId);
-  const current = await readJson(project.projectDirectory, `characters/${value.character_id}.visual.json`);
-  if (hashCanonicalJson(current) !== value.expected_sha256) throw factConflict('character_visual_target_conflict', []);
-  if (!Array.isArray(value.visual.variants) || !sameOrderedStrings(current.variants.map(v => v.id), value.visual.variants.map(v => v.id))) fail("character_visual_structure_change_forbidden", [], 409);
-  const saved = await saveFactDraft(projectRoot, {
-    domain: "character", kind: "visual", projectId, targetId: value.character_id,
-    document: { $schema: CHARACTER_VISUAL_SCHEMA_ID, ...structuredClone(value.visual) },
-    expectedSha256: value.expected_sha256, conflictCode: "character_visual_target_conflict",
-  });
-  return { character_id: value.character_id, visual: publicCharacterVisual(saved.value), visual_sha256: hashCanonicalJson(saved.value), downstream_diagnostics: saved.downstream_diagnostics };
 }
 
 export async function saveCharacterPrompt(projectRoot, projectId, value) {

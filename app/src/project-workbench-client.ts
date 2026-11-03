@@ -201,30 +201,6 @@ export async function saveCharacterPrompt<TPrompt extends object>(projectId: str
 export type CharacterProfileDraft = Pick<WorkbenchCharacter, "name" | "description">;
 export type CharacterVisualDraft = WorkbenchCharacter["visual"];
 
-export async function saveCharacterProfile(projectId: string, character: WorkbenchCharacter<unknown>, profile: CharacterProfileDraft, kind: SettingKind = "character") {
-  return workbenchResponseJson<{
-    character_id: string;
-    profile: CharacterProfileDraft;
-    profile_sha256: string;
-  }>(await mutateTargetFacts(`${base(projectId)}/${kind}-profile`, {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ [`${kind}_id`]: character.id, profile, expected_sha256: character.profile_sha256 }),
-  }));
-}
-
-export async function saveCharacterVisual(projectId: string, character: WorkbenchCharacter<unknown>, visual: CharacterVisualDraft, kind: SettingKind = "character") {
-  return workbenchResponseJson<{
-    character_id: string;
-    visual: CharacterVisualDraft;
-    visual_sha256: string;
-  }>(await mutateTargetFacts(`${base(projectId)}/${kind}-visual`, {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ [`${kind}_id`]: character.id, visual, expected_sha256: character.visual_sha256 }),
-  }));
-}
-
 export async function renameCharacterVariant<TPrompt extends object>(projectId: string, character: WorkbenchCharacter<TPrompt>, oldId: string, newId: string, kind: SettingKind = "character") {
   const result = await workbenchResponseJson<{
     character_id: string;

@@ -33,11 +33,8 @@ import {
   readWorkbenchSettingDetail,
   readWorkbenchLettering,
   deletePageTextSource,
-  saveCharacterProfile,
   saveCharacterPrompt,
-  saveCharacterVisual,
   saveLetteringSettings,
-  savePageContent,
   savePageLettering,
   savePagePrompt,
   saveStorySummary,
@@ -380,30 +377,6 @@ export async function handleWorkbenchRequest({
   if (request.method === "PUT" && characterPromptMatch) {
     const value = await readJsonBody(request);
     const result = await mutateTargetFacts(characterPromptMatch[1], ({ projectId }) => saveCharacterPrompt(projectRoot, projectId, value));
-    sendOperation(200, result);
-    return true;
-  }
-
-  const characterProfileMatch = /^\/api\/projects\/([^/]+)\/workbench\/character-profile\/?$/.exec(decodedPath);
-  if (request.method === "PUT" && characterProfileMatch) {
-    const value = await readJsonBody(request);
-    const result = await mutateTargetFacts(characterProfileMatch[1], ({ projectId }) => saveCharacterProfile(projectRoot, projectId, value));
-    sendOperation(200, result);
-    return true;
-  }
-
-  const characterVisualMatch = /^\/api\/projects\/([^/]+)\/workbench\/character-visual\/?$/.exec(decodedPath);
-  if (request.method === "PUT" && characterVisualMatch) {
-    const value = await readJsonBody(request);
-    const result = await mutateTargetFacts(characterVisualMatch[1], ({ projectId }) => saveCharacterVisual(projectRoot, projectId, value));
-    sendOperation(200, result);
-    return true;
-  }
-
-  const pageContentMatch = /^\/api\/projects\/([^/]+)\/workbench\/page-content\/?$/.exec(decodedPath);
-  if (request.method === "PUT" && pageContentMatch) {
-    const value = await readJsonBody(request);
-    const result = await mutateTargetFacts(pageContentMatch[1], ({ projectId }) => savePageContent(projectRoot, projectId, value));
     sendOperation(200, result);
     return true;
   }

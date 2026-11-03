@@ -12,7 +12,9 @@ import { fixture, key, json, candidateId } from "./helpers/finished-fixture.mjs"
 import { candidateFileRelativePath } from "../server/candidate-storage.mjs";
 import { PAGES_INDEX_SCHEMA_ID } from "../server/pages-store.mjs";
 import { deleteFinishedPage, planFinishedBatch, prepareFinishedPage, readFinishedPages, readFinishedRecord, runFinishedBatch, upscaleFinishedImage, finishedModel } from "../server/finished-pages.mjs";
-import { savePageContent, readProjectWorkbenchView } from "../server/project-workbench.mjs";
+import { pageSaveRequest } from "./helpers/workbench-page-save.mjs";
+import { savePage } from "../server/page-facts.mjs";
+import { readProjectWorkbenchView } from "../server/project-workbench.mjs";
 import { handleFinishedRequest } from "../server/finished-http.mjs";
 import { listWorkspaceRenderTasks, listWorkspaceRenderHistory, readWorkspaceTaskDetail, readWorkspaceTaskResults } from "../server/render-task-workspace.mjs";
 
@@ -171,8 +173,7 @@ test("成品记录进入事实 revision；更新失败保留旧成品，改文�
   assert.deepEqual(await readFinishedRecord(f.directory, key.page_id), record);
   const view = await readProjectWorkbenchView(f.root, "demo");
   const page = view.outline.chapters[0].sequences[0].pages[0];
-  await f.operations.mutateTargetFacts("demo", () => savePageContent(f.root, "demo", { page_key: key, expected_sha256: page.content_sha256,
-    content: { title: page.title, scene_description: page.scene_description, characters: [], dialogue: [{ mode: "narration", text: "新文案" }] } }));
+  await f.operations.mutateTargetFacts("demo", () => savePage(f.root, "demo", pageSaveRequest(page, { title: page.title, scene_description: page.scene_description, characters: [], dialogue: [{ mode: "narration", text: "新文案" }] })));
   assert.equal((await readFinishedPages(f.root, "demo", f.directory)).pages[0].status, "stale");
   await rm(path.dirname(f.file), { recursive: true });
   const next = await f.prepare();
@@ -229,14 +230,13 @@ test("文字页成品不需要候选图：黑底直出、记录无候选字段�
   let view = await readProjectWorkbenchView(f.root, "demo");
   let page = view.outline.chapters[0].sequences[0].pages.find(entry => entry.page_id === textKey.page_id);
   const content = { title: "目录名称改了", scene_description: "", characters: [], dialogue: [], page_kind: "text", body: page.body, display_title: page.display_title, text_layout: page.text_layout };
-  const renamed = await f.operations.mutateTargetFacts("demo", () => savePageContent(f.root, "demo", { page_key: textKey, expected_sha256: page.content_sha256, content }));
+  const renamed = await f.operations.mutateTargetFacts("demo", () => savePage(f.root, "demo", pageSaveRequest(page, content)));
   assert.equal((await readFinishedPages(f.root, "demo", f.directory)).pages.find(entry => entry.page_id === textKey.page_id).status, "ready");
-  await f.operations.mutateTargetFacts("demo", () => savePageContent(f.root, "demo", { page_key: textKey, expected_sha256: renamed.value.content_sha256, content: { ...content, text_layout: { ...content.text_layout, position: "lower" } } }));
+  await f.operations.mutateTargetFacts("demo", () => savePage(f.root, "demo", pageSaveRequest(renamed.value, { ...content, text_layout: { ...content.text_layout, position: "lower" } })));
   assert.equal((await readFinishedPages(f.root, "demo", f.directory)).pages.find(entry => entry.page_id === textKey.page_id).status, "stale");
   view = await readProjectWorkbenchView(f.root, "demo");
   page = view.outline.chapters[0].sequences[0].pages.find(entry => entry.page_id === textKey.page_id);
-  await f.operations.mutateTargetFacts("demo", () => savePageContent(f.root, "demo", { page_key: textKey, expected_sha256: page.content_sha256,
-    content: { title: "后记", scene_description: "", characters: [], dialogue: [], page_kind: "text", body: "改过的作者的话。", display_title: page.display_title, text_layout: page.text_layout } }));
+  await f.operations.mutateTargetFacts("demo", () => savePage(f.root, "demo", pageSaveRequest(page, { title: "后记", scene_description: "", characters: [], dialogue: [], page_kind: "text", body: "改过的作者的话。", display_title: page.display_title, text_layout: page.text_layout })));
   const after = await readFinishedPages(f.root, "demo", f.directory);
   assert.equal(after.pages.find(page => page.page_id === textKey.page_id).status, "stale");
 });
@@ -297,8 +297,7 @@ test("批量输出计划：零张或多张候选跳过，唯一候选与文字�
   assert.deepEqual(forced.targets, [{locale:"zh", page_key: key, candidate_id: candidateId, page_label: "001" }, {locale:"zh", page_key: textKey, page_label: "003" }], "强制模式已就绪页面也排队");
   const view = await readProjectWorkbenchView(f.root, "demo");
   const page = view.outline.chapters[0].sequences[0].pages[0];
-  await f.operations.mutateTargetFacts("demo", () => savePageContent(f.root, "demo", { page_key: key, expected_sha256: page.content_sha256,
-    content: { title: page.title, scene_description: page.scene_description, characters: [], dialogue: [{ mode: "narration", text: "新文案" }] } }));
+  await f.operations.mutateTargetFacts("demo", () => savePage(f.root, "demo", pageSaveRequest(page, { title: page.title, scene_description: page.scene_description, characters: [], dialogue: [{ mode: "narration", text: "新文案" }] })));
   const stale = await planFinishedBatch(f.root, "demo", f.directory, {});
   assert.deepEqual(stale.targets, [{locale:"zh", page_key: key, candidate_id: candidateId, page_label: "001" }, {locale:"zh", page_key: textKey, page_label: "003" }], "内容过时页使用当前唯一候选");
 });
